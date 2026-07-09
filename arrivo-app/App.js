@@ -1,0 +1,117 @@
+import "./i18n"; // side-effect: initializes i18next before anything renders
+
+import React from "react";
+import { View, ActivityIndicator } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
+
+import { AuthProvider, useAuth } from "./context/AuthContext";
+
+import LoginScreen from "./screens/LoginScreen";
+import SignupScreen from "./screens/SignupScreen";
+import HomeScreen from "./screens/HomeScreen";
+import RouteScreen from "./screens/RouteScreen";
+import CheckoutScreen from "./screens/CheckoutScreen";
+import TrackingScreen from "./screens/TrackingScreen";
+import ChauffeurScreen from "./screens/ChauffeurScreen";
+import OwnerScreen from "./screens/OwnerScreen";
+import ActivityScreen from "./screens/ActivityScreen";
+import WalletScreen from "./screens/WalletScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+
+import { colors } from "./theme/tokens";
+
+const Stack = createNativeStackNavigator();
+const AuthStack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+const navTheme = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: colors.ink, card: colors.ink, border: "rgba(255,255,255,0.08)" },
+};
+
+const stackScreenOptions = {
+  headerStyle: { backgroundColor: colors.ink },
+  headerTintColor: colors.cream,
+  headerTitleStyle: { color: colors.cream },
+  contentStyle: { backgroundColor: colors.ink },
+};
+
+// Home tab is its own stack so booking flows (Route -> Checkout / Tracking / Chauffeur / Owner)
+// can be pushed on top without losing the bottom tab bar structure.
+function HomeStack() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+      <Stack.Screen name="HomeMain" component={HomeScreen} options={{ title: "Arrivo" }} />
+      <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
+      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
+      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
+      <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
+    </Stack.Navigator>
+  );
+}
+
+const ICONS = {
+  Home: "home",
+  Activity: "time",
+  Wallet: "wallet",
+  Profile: "person",
+};
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: colors.amber,
+        tabBarInactiveTintColor: "#5F5F8F",
+        tabBarStyle: { backgroundColor: colors.ink, borderTopColor: "rgba(255,255,255,0.08)" },
+        tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeStack} />
+      <Tab.Screen name="Activity" component={ActivityScreen} />
+      <Tab.Screen name="Wallet" component={WalletScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+function AuthFlow() {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Signup" component={SignupScreen} />
+    </AuthStack.Navigator>
+  );
+}
+
+function RootNavigator() {
+  const { isAuthenticated, initializing } = useAuth();
+
+  if (initializing) {
+    // Restoring a saved session token — brief splash-like loading state.
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={colors.amber} size="large" />
+      </View>
+    );
+  }
+
+  return isAuthenticated ? <MainTabs /> : <AuthFlow />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <NavigationContainer theme={navTheme}>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </NavigationContainer>
+    </AuthProvider>
+  );
+}

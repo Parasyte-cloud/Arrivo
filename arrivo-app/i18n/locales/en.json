@@ -1,0 +1,48 @@
+{
+  "home": {
+    "greeting": "Good evening, {{name}}",
+    "whereTo": "Where to, Lagos?",
+    "airportPickup": "Airport Pickup",
+    "flightPlaceholder": "Flight number, e.g. BA075",
+    "track": "Track",
+    "bookRide": "Book a ride",
+    "chauffeurForDay": "Chauffeur for a day",
+    "ownVehicle": "Own a car or SUV?",
+    "earnWeekly": "Earn weekly",
+    "listVehicle": "List your vehicle for pickups →",
+    "bookAirportPickup": "Book Airport Pickup",
+    "flightNotFound": "Couldn't find that flight. Check the number and try again.",
+    "landing": "Landing {{time}}",
+    "terminal": "Terminal {{terminal}}",
+    "arrivingAt": "Arriving at {{airport}}"
+  },
+  "auth": {
+    "login": "Log In",
+    "signup": "Sign Up",
+    "name": "Full name",
+    "email": "Email",
+    "phone": "Phone number",
+    "password": "Password",
+    "createAccount": "Create account",
+    "haveAccount": "Already have an account? Log in",
+    "needAccount": "New here? Create an account",
+    "welcomeBack": "Welcome back",
+    "joinArrivo": "Join Arrivo",
+    "invalidCredentials": "Invalid email or password",
+    "loading": "Please wait…"
+  },
+  "profile": {
+    "title": "Profile",
+    "verifiedId": "Verified ID",
+    "emergencyContacts": "Emergency contacts",
+    "rideSharingPrefs": "Ride-sharing preferences",
+    "support": "Support",
+    "language": "Language",
+    "logOut": "Log Out"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "back": "Back"
+  }
+}

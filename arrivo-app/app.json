@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Arrivo",
+    "slug": "arrivo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#12123B"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.arrivo.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Arrivo uses your location to find nearby pickups and show your live route.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Arrivo uses your location to track your ride in progress."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#12123B"
+      },
+      "package": "com.arrivo.app",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiBaseUrl": "https://api.arrivo.example.com",
+      "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY",
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
+  }
+}
