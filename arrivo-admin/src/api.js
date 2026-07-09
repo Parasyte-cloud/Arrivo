@@ -32,6 +32,8 @@ export const updateRide = (token, id, payload) =>
 
 export const getAnalytics = (token) => request("/api/admin/analytics", token);
 
+export const getRiders = (token) => request("/api/admin/riders", token);
+
 export const getPanics = (token) => request("/api/admin/panics", token);
 export const resolvePanic = (token, rideId, notes) =>
   request(`/api/admin/panics/${rideId}/resolve`, token, { method: "PATCH", body: JSON.stringify({ notes }) });

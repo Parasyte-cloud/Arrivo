@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { PanicsPage } from "./pages/PanicsPage";
+import { RidersPage } from "./pages/RidersPage";
 import { DriversPage } from "./pages/DriversPage";
 import { RidesPage } from "./pages/RidesPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
@@ -18,6 +19,7 @@ function Dashboard() {
       <Sidebar page={page} setPage={setPage} />
       <main className="main">
         {page === "panics" && <PanicsPage />}
+        {page === "riders" && <RidersPage />}
         {page === "drivers" && <DriversPage />}
         {page === "rides" && <RidesPage />}
         {page === "analytics" && <AnalyticsPage />}

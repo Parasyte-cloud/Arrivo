@@ -4,6 +4,7 @@ import * as api from "../api";
 
 const NAV_ITEMS = [
   { id: "panics", label: "Panic Alerts", danger: true },
+  { id: "riders", label: "Riders" },
   { id: "drivers", label: "Drivers" },
   { id: "rides", label: "Rides" },
   { id: "analytics", label: "Analytics" },

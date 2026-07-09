@@ -99,6 +99,34 @@ router.patch("/panics/:rideId/resolve", async (req, res) => {
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
 });
 
+// ── Riders ───────────────────────────────────────────────────────────────
+
+// GET /api/admin/riders — every rider account, with their ride count and
+// last activity. This is what makes a "signed up but never booked" person
+// visible — before this, that data existed only as a row in the database
+// with no page to see it.
+router.get("/riders", async (req, res) => {
+  const result = await pool.query(
+    `SELECT users.id, users.name, users.email, users.phone, users.preferred_language, users.created_at,
+            COUNT(rides.id) as ride_count,
+            COALESCE(SUM(CASE WHEN rides.payment_status = 'paid' THEN rides.fare_naira ELSE 0 END), 0) as total_spent_naira,
+            MAX(rides.created_at) as last_ride_at
+     FROM users
+     LEFT JOIN rides ON rides.rider_id = users.id
+     WHERE users.role = 'rider'
+     GROUP BY users.id
+     ORDER BY users.created_at DESC
+     LIMIT 200`
+  );
+  res.json({
+    riders: result.rows.map((r) => ({
+      ...r,
+      ride_count: Number(r.ride_count),
+      total_spent_naira: Number(r.total_spent_naira),
+    })),
+  });
+});
+
 // ── Analytics ────────────────────────────────────────────────────────────
 
 router.get("/analytics", async (req, res) => {
