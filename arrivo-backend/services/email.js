@@ -62,6 +62,7 @@ function sendBookingConfirmationEmail(to, ride) {
       <p><strong>Fare:</strong> ₦${Number(ride.fare_naira).toLocaleString()}</p>
       <p><strong>Reference:</strong> ${ride.payment_reference || ride.id}</p>
       <p style="color:#6b6b85;font-size:13px;">We'll be in touch with your driver's details closer to pickup time.</p>
+      <p style="color:#6b6b85;font-size:13px;">Need to cancel or change your booking? Read our <a href="https://ridearrivo.com/terms.html#cancellation">Cancellation &amp; Refund Policy</a> before doing so.</p>
     `),
   });
 }
@@ -77,4 +78,16 @@ function sendWelcomeEmail(to, name) {
   });
 }
 
-module.exports = { sendPasswordResetEmail, sendBookingConfirmationEmail, sendWelcomeEmail };
+function sendVerificationEmail(to, verifyUrl) {
+  return sendEmail({
+    to,
+    subject: "Verify your Arrivo email",
+    html: wrapper(`
+      <p>Thanks for creating your Arrivo profile. Please verify your email to finish setting it up.</p>
+      <p><a href="${verifyUrl}" style="background:#F4A300;color:#12123B;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Verify Email</a></p>
+      <p style="color:#6b6b85;font-size:13px;">This link expires in 24 hours.</p>
+    `),
+  });
+}
+
+module.exports = { sendPasswordResetEmail, sendBookingConfirmationEmail, sendWelcomeEmail, sendVerificationEmail };

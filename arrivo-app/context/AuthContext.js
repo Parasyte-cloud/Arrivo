@@ -43,10 +43,10 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const signup = async ({ name, email, phone, password, preferredLanguage }) => {
+  const signup = async ({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage }) => {
     const data = await request("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ name, email, phone, password, preferredLanguage }),
+      body: JSON.stringify({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage }),
     });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
     setToken(data.token);

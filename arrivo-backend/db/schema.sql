@@ -8,8 +8,15 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
+  whatsapp_number TEXT,
+  country_of_residence TEXT,
+  passport_number TEXT,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'rider',        -- 'rider' | 'driver' | 'owner' | 'admin'
+  agreed_to_terms BOOLEAN NOT NULL DEFAULT false,
+  email_verified BOOLEAN NOT NULL DEFAULT false,
+  email_verification_token TEXT,
+  email_verification_expires TIMESTAMPTZ,
   preferred_language TEXT NOT NULL DEFAULT 'en',  -- 'en' | 'fr' | 'zh'
   reset_token TEXT,
   reset_token_expires TIMESTAMPTZ,
@@ -20,6 +27,13 @@ CREATE TABLE IF NOT EXISTS users (
 -- update (CREATE TABLE IF NOT EXISTS won't add columns to an existing table).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS country_of_residence TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS agreed_to_terms BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id SERIAL PRIMARY KEY,
@@ -61,6 +75,7 @@ CREATE TABLE IF NOT EXISTS rides (
   payment_reference TEXT,
   payment_status TEXT NOT NULL DEFAULT 'pending',
   ride_status TEXT NOT NULL DEFAULT 'requested',
+  agreed_cancellation_policy BOOLEAN NOT NULL DEFAULT false,
   admin_notes TEXT,
   panic_triggered_at TIMESTAMPTZ,
   panic_resolved_at TIMESTAMPTZ,
@@ -68,6 +83,9 @@ CREATE TABLE IF NOT EXISTS rides (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS agreed_cancellation_policy BOOLEAN NOT NULL DEFAULT false;
+
 
 CREATE TABLE IF NOT EXISTS waitlist (
   id SERIAL PRIMARY KEY,

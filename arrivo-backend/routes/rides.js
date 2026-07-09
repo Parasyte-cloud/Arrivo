@@ -12,12 +12,12 @@ function withParsedStops(ride) {
 
 // POST /api/rides — create a new ride/booking (requires auth)
 // body: { pickupAddress, stops?, flightNumber?, vehicleType, fareNaira,
-//         paymentReference?, bookingType?, durationDays? }
+//         paymentReference?, bookingType?, durationDays?, agreedCancellationPolicy }
 // bookingType: 'one_way' | 'full_day' | 'full_week' | 'full_month'
 router.post("/", requireAuth, async (req, res) => {
   const {
     pickupAddress, stops, flightNumber, vehicleType, fareNaira, paymentReference,
-    bookingType = "one_way", durationDays = 1,
+    bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
   } = req.body;
 
   if (!pickupAddress || !fareNaira) {
@@ -27,10 +27,13 @@ router.post("/", requireAuth, async (req, res) => {
   if (!allowedTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: ${allowedTypes.join(", ")}` });
   }
+  if (!agreedCancellationPolicy) {
+    return res.status(400).json({ error: "You must agree to the Cancellation & Refund Policy before booking" });
+  }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true) RETURNING *`,
     [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays]
   );
 
