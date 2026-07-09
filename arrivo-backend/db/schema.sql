@@ -11,8 +11,15 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'rider',        -- 'rider' | 'driver' | 'owner' | 'admin'
   preferred_language TEXT NOT NULL DEFAULT 'en',  -- 'en' | 'fr' | 'zh'
+  reset_token TEXT,
+  reset_token_expires TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Adds the reset token columns if this table already existed before this
+-- update (CREATE TABLE IF NOT EXISTS won't add columns to an existing table).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id SERIAL PRIMARY KEY,

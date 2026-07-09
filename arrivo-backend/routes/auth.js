@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
+const { sendPasswordResetEmail, sendWelcomeEmail } = require("../services/email");
 
 const router = express.Router();
 
@@ -119,7 +120,58 @@ router.post("/guest", async (req, res) => {
 
   const user = inserted.rows[0];
   const token = signToken(user);
+  sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
   res.status(201).json({ token, user: publicUser(user) });
+});
+
+// POST /api/auth/forgot-password
+// body: { email }
+// Always responds the same way whether or not the email exists — otherwise
+// this endpoint becomes a way to check which emails have accounts.
+router.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "email is required" });
+
+  const genericResponse = { message: "If an account exists for that email, a reset link has been sent." };
+
+  const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
+  const user = result.rows[0];
+  if (!user) return res.json(genericResponse); // don't reveal whether the email exists
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await pool.query("UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3", [
+    resetToken, expires, user.id,
+  ]);
+
+  const resetUrl = `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
+  sendPasswordResetEmail(user.email, resetUrl).catch((e) => console.error("Reset email failed:", e.message));
+
+  res.json(genericResponse);
+});
+
+// POST /api/auth/reset-password
+// body: { token, newPassword }
+router.post("/reset-password", async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
+  if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+
+  const result = await pool.query(
+    "SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > now()",
+    [token]
+  );
+  const user = result.rows[0];
+  if (!user) return res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+
+  const passwordHash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
+  await pool.query(
+    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
+    [passwordHash, user.id]
+  );
+
+  res.json({ message: "Password updated. You can now log in with your new password." });
 });
 
 module.exports = router;

@@ -2,6 +2,7 @@ const express = require("express");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
+const { sendBookingConfirmationEmail } = require("../services/email");
 
 const router = express.Router();
 
@@ -125,7 +126,18 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
     "UPDATE rides SET payment_status = $1, payment_reference = $2, updated_at = now() WHERE id = $3 RETURNING *",
     [paymentStatus || ride.payment_status, paymentReference || ride.payment_reference, ride.id]
   );
-  res.json({ ride: withParsedStops(updated.rows[0]) });
+
+  const newRide = updated.rows[0];
+  if (newRide.payment_status === "paid" && ride.payment_status !== "paid") {
+    const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
+    if (rider.rows[0]) {
+      sendBookingConfirmationEmail(rider.rows[0].email, newRide).catch((e) =>
+        console.error("Booking confirmation email failed:", e.message)
+      );
+    }
+  }
+
+  res.json({ ride: withParsedStops(newRide) });
 });
 
 // GET /api/rides/:id — full details for one ride, including the driver's
