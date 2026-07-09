@@ -8,6 +8,8 @@ export function RidersPage() {
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all"); // 'all' | 'never_booked' | 'booked'
 
   const load = useCallback(async () => {
     try {
@@ -25,6 +27,16 @@ export function RidersPage() {
 
   const neverBooked = riders.filter((r) => r.ride_count === 0).length;
 
+  const filtered = riders.filter((r) => {
+    if (filter === "never_booked" && r.ride_count !== 0) return false;
+    if (filter === "booked" && r.ride_count === 0) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q) || (r.phone || "").includes(q);
+    }
+    return true;
+  });
+
   return (
     <div>
       <div className="page-header">
@@ -32,6 +44,7 @@ export function RidersPage() {
           <span className="eyebrow">Rider accounts</span>
           <h1>Riders</h1>
         </div>
+        <button className="btn ghost" onClick={() => exportWaitlistCsv(token)}>Export Waitlist CSV</button>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 24 }}>
@@ -49,13 +62,27 @@ export function RidersPage() {
         </div>
       </div>
 
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        <input
+          type="text"
+          placeholder="Search name, email, or phone…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="field"
+          style={{ flex: 1, minWidth: 220, maxWidth: 320 }}
+        />
+        <button className={`btn ${filter === "all" ? "primary" : "ghost"}`} onClick={() => setFilter("all")}>All</button>
+        <button className={`btn ${filter === "never_booked" ? "primary" : "ghost"}`} onClick={() => setFilter("never_booked")}>Never booked</button>
+        <button className={`btn ${filter === "booked" ? "primary" : "ghost"}`} onClick={() => setFilter("booked")}>Booked</button>
+      </div>
+
       {error ? <div className="error-text">{error}</div> : null}
 
       <div className="table-wrap">
         {loading ? (
           <div className="empty-state">Loading riders…</div>
-        ) : riders.length === 0 ? (
-          <div className="empty-state">No riders have signed up yet.</div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">{riders.length === 0 ? "No riders have signed up yet." : "No riders match your search."}</div>
         ) : (
           <table>
             <thead>
@@ -68,7 +95,7 @@ export function RidersPage() {
               </tr>
             </thead>
             <tbody>
-              {riders.map((r) => (
+              {filtered.map((r) => (
                 <tr key={r.id}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{r.name}</div>
@@ -96,4 +123,18 @@ export function RidersPage() {
       </div>
     </div>
   );
+}
+
+function exportWaitlistCsv(token) {
+  api.getWaitlist(token).then(({ waitlist }) => {
+    const header = "email,source,signed_up_at\n";
+    const rows = waitlist.map((w) => `${w.email},${w.source || ""},${w.created_at}`).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `arrivo-waitlist-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 }

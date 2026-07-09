@@ -99,6 +99,15 @@ router.patch("/panics/:rideId/resolve", async (req, res) => {
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
 });
 
+// ── Waitlist ─────────────────────────────────────────────────────────────
+
+// GET /api/admin/waitlist — every waitlist signup, for manual export into
+// a marketing tool (Mailchimp, etc.) until a real CRM integration exists.
+router.get("/waitlist", async (req, res) => {
+  const result = await pool.query("SELECT email, source, created_at FROM waitlist ORDER BY created_at DESC");
+  res.json({ waitlist: result.rows });
+});
+
 // ── Riders ───────────────────────────────────────────────────────────────
 
 // GET /api/admin/riders — every rider account, with their ride count and
