@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
@@ -53,10 +54,14 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
       [licenseNumber || existingDriver.license_number, lasdriNumber || existingDriver.lasdri_number, spokenLanguages, vehicleId, req.user.id]
     );
   } else {
+    // scan_token is generated once, permanently, the day a driver's profile
+    // is created — this is what gets encoded into their placard's QR code,
+    // so it must never change afterward or every printed placard breaks.
+    const scanToken = crypto.randomBytes(16).toString("hex");
     await pool.query(
-      `INSERT INTO drivers (user_id, vehicle_id, license_number, lasdri_number, spoken_languages)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [req.user.id, vehicleId, licenseNumber || null, lasdriNumber || null, spokenLanguages]
+      `INSERT INTO drivers (user_id, vehicle_id, license_number, lasdri_number, spoken_languages, scan_token)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [req.user.id, vehicleId, licenseNumber || null, lasdriNumber || null, spokenLanguages, scanToken]
     );
   }
 

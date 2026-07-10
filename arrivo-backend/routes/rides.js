@@ -196,4 +196,49 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
   res.status(201).json({ ride: withParsedStops(updated.rows[0]) });
 });
 
+// POST /api/rides/scan — a rider scans the driver's placard QR code. This
+// is what actually starts live tracking: it confirms the rider is physically
+// getting into the car that was actually assigned to them (not just
+// trusting the app screen), then flips the ride to "in_progress".
+// body: { scanToken }
+router.post("/scan", requireAuth, async (req, res) => {
+  const { scanToken } = req.body;
+  if (!scanToken) return res.status(400).json({ error: "scanToken is required" });
+
+  const driver = (
+    await pool.query(
+      `SELECT drivers.id, users.name as driver_name
+       FROM drivers JOIN users ON users.id = drivers.user_id
+       WHERE drivers.scan_token = $1`,
+      [scanToken]
+    )
+  ).rows[0];
+  if (!driver) return res.status(404).json({ error: "This QR code isn't recognized. Please ask your driver for help." });
+
+  // Find THIS rider's currently-accepted ride with THIS specific driver —
+  // scanning a random driver's placard should never start tracking on a
+  // ride that isn't actually theirs.
+  const ride = (
+    await pool.query(
+      `SELECT * FROM rides WHERE rider_id = $1 AND driver_id = $2 AND ride_status = 'accepted'
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id, driver.id]
+    )
+  ).rows[0];
+
+  if (!ride) {
+    return res.status(404).json({
+      error: `No active booking found with ${driver.driver_name}. Make sure this is the driver assigned to your ride, and that it hasn't already started.`,
+    });
+  }
+
+  const updated = await pool.query(
+    `UPDATE rides SET ride_status = 'in_progress', tracking_started_at = now(), updated_at = now()
+     WHERE id = $1 RETURNING *`,
+    [ride.id]
+  );
+
+  res.json({ ride: withParsedStops(updated.rows[0]), driverName: driver.driver_name });
+});
+
 module.exports = router;

@@ -58,8 +58,11 @@ CREATE TABLE IF NOT EXISTS drivers (
   current_lat DOUBLE PRECISION,
   current_lng DOUBLE PRECISION,
   location_updated_at TIMESTAMPTZ,
+  scan_token TEXT UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS scan_token TEXT UNIQUE;
 
 CREATE TABLE IF NOT EXISTS rides (
   id SERIAL PRIMARY KEY,
@@ -76,6 +79,7 @@ CREATE TABLE IF NOT EXISTS rides (
   payment_status TEXT NOT NULL DEFAULT 'pending',
   ride_status TEXT NOT NULL DEFAULT 'requested',
   agreed_cancellation_policy BOOLEAN NOT NULL DEFAULT false,
+  tracking_started_at TIMESTAMPTZ,
   admin_notes TEXT,
   panic_triggered_at TIMESTAMPTZ,
   panic_resolved_at TIMESTAMPTZ,
@@ -85,6 +89,7 @@ CREATE TABLE IF NOT EXISTS rides (
 );
 
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS agreed_cancellation_policy BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS tracking_started_at TIMESTAMPTZ;
 
 
 CREATE TABLE IF NOT EXISTS waitlist (
