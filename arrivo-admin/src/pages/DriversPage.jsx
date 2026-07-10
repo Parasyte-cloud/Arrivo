@@ -9,6 +9,8 @@ export function DriversPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [qrModal, setQrModal] = useState(null); // { driverName, imageUrl } | null
+  const [qrLoadingId, setQrLoadingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +39,24 @@ export function DriversPage() {
   };
 
   const pendingCount = drivers.filter((d) => !d.is_verified).length;
+
+  const viewPlacard = async (driver) => {
+    setQrLoadingId(driver.id);
+    setError(null);
+    try {
+      const imageUrl = await api.getDriverQrImage(token, driver.id);
+      setQrModal({ driverName: driver.name, imageUrl });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setQrLoadingId(null);
+    }
+  };
+
+  const closeQrModal = () => {
+    if (qrModal) URL.revokeObjectURL(qrModal.imageUrl); // free the memory once done
+    setQrModal(null);
+  };
 
   return (
     <div>
@@ -116,6 +136,17 @@ export function DriversPage() {
                     >
                       {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
                     </button>
+                    {d.is_verified && (
+                      <button
+                        className="btn"
+                        style={{ marginLeft: 8 }}
+                        disabled={qrLoadingId === d.id}
+                        onClick={() => viewPlacard(d)}
+                        title="View this driver's printable QR placard"
+                      >
+                        {qrLoadingId === d.id ? "…" : "Placard QR"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -123,6 +154,38 @@ export function DriversPage() {
           </table>
         )}
       </div>
+
+      {qrModal && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+          }}
+          onClick={closeQrModal}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 360, textAlign: "center" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: 4 }}>{qrModal.driverName}</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 16 }}>
+              Print this and place it on the dashboard or a window placard. Riders scan it to confirm their driver and start live tracking.
+            </p>
+            <img src={qrModal.imageUrl} alt="Driver placard QR code" style={{ width: "100%", borderRadius: 8, border: "1px solid #eee" }} />
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <a
+                href={qrModal.imageUrl}
+                download={`${qrModal.driverName.replace(/\s+/g, "-")}-placard-qr.png`}
+                className="btn verify"
+                style={{ flex: 1, textAlign: "center", textDecoration: "none" }}
+              >
+                Download
+              </a>
+              <button className="btn" style={{ flex: 1 }} onClick={closeQrModal}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

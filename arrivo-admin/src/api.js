@@ -32,6 +32,22 @@ export const updateRide = (token, id, payload) =>
 
 export const getAnalytics = (token) => request("/api/admin/analytics", token);
 
+// This one isn't a JSON fetch — it returns a PNG directly, and the browser
+// needs to send the admin's auth token as it loads the image. Since a plain
+// <img src="..."> or window.open() can't attach an Authorization header,
+// we fetch the image as a blob and hand back an object URL to display it.
+export const getDriverQrImage = async (token, driverId) => {
+  const res = await fetch(`${API_BASE_URL}/api/admin/drivers/${driverId}/qr`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Couldn't generate this driver's QR code.");
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
+
 export const getRiders = (token) => request("/api/admin/riders", token);
 
 export const getWaitlist = (token) => request("/api/admin/waitlist", token);
