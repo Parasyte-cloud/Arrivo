@@ -21,7 +21,9 @@ app.use(cors());
 // handle raw parsing itself. Every other route gets normal JSON parsing.
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payments/webhook") return next();
-  express.json()(req, res, next);
+  // Bumped from the 100kb default — profile photos come in as base64 inside
+  // the JSON body, which is roughly a third larger than the raw image bytes.
+  express.json({ limit: "6mb" })(req, res, next);
 });
 
 app.get("/", (req, res) => {

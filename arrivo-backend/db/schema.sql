@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   preferred_language TEXT NOT NULL DEFAULT 'en',  -- 'en' | 'fr' | 'zh'
   reset_token TEXT,
   reset_token_expires TIMESTAMPTZ,
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -29,6 +30,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS country_of_residence TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS passport_number TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS agreed_to_terms BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;

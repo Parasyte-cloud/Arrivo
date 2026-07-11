@@ -15,6 +15,20 @@ function signToken(user) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
 }
 
+// Registration photos arrive as a base64 data URL from the browser/app
+// (avoids needing separate multipart upload handling and cloud storage for
+// now). Kept intentionally simple: valid image type, and a real size cap so
+// nobody can wedge a multi-megabyte file into the database by mistake.
+const MAX_AVATAR_BYTES = 4 * 1024 * 1024; // 4MB
+function validateAvatarDataUrl(dataUrl) {
+  if (!dataUrl) return null; // optional — no photo is fine
+  const match = /^data:image\/(png|jpe?g|webp);base64,(.+)$/.exec(dataUrl);
+  if (!match) return "Profile photo must be a PNG, JPEG, or WEBP image.";
+  const approxBytes = (match[2].length * 3) / 4; // rough base64 -> bytes size
+  if (approxBytes > MAX_AVATAR_BYTES) return "Profile photo must be smaller than 4MB.";
+  return null;
+}
+
 function publicUser(user) {
   const { password_hash, email_verification_token, email_verification_expires, reset_token, reset_token_expires, ...safe } = user;
   return safe;
@@ -28,7 +42,7 @@ function publicUser(user) {
 router.post("/signup", async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
-    password, confirmPassword, agreedToTerms,
+    password, confirmPassword, agreedToTerms, avatarDataUrl,
     preferredLanguage = "en", role = "rider",
   } = req.body;
 
@@ -47,6 +61,8 @@ router.post("/signup", async (req, res) => {
   if (!["rider", "driver", "owner"].includes(role)) {
     return res.status(400).json({ error: "Invalid role. Admin accounts can't be created via signup — see scripts/create-admin.js" });
   }
+  const avatarError = validateAvatarDataUrl(avatarDataUrl);
+  if (avatarError) return res.status(400).json({ error: avatarError });
 
   const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
   if (existing.rows.length) {
@@ -60,9 +76,9 @@ router.post("/signup", async (req, res) => {
 
   const inserted = await pool.query(
     `INSERT INTO users (name, email, phone, passport_number, password_hash, role, preferred_language,
-                         agreed_to_terms, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9) RETURNING *`,
-    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires]
+                         agreed_to_terms, email_verification_token, email_verification_expires, avatar_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10) RETURNING *`,
+    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null]
   );
 
   const user = inserted.rows[0];
@@ -123,14 +139,20 @@ router.get("/me", requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me
 router.patch("/me", requireAuth, async (req, res) => {
-  const { name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber } = req.body;
+  const { name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber, avatarDataUrl } = req.body;
   const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
   if (!current) return res.status(404).json({ error: "User not found" });
 
+  if (avatarDataUrl !== undefined) {
+    const avatarError = validateAvatarDataUrl(avatarDataUrl);
+    if (avatarError) return res.status(400).json({ error: avatarError });
+  }
+
   const updated = await pool.query(
     `UPDATE users SET name = $1, phone = $2, preferred_language = $3,
-                       whatsapp_number = $4, country_of_residence = $5, passport_number = $6
-     WHERE id = $7 RETURNING *`,
+                       whatsapp_number = $4, country_of_residence = $5, passport_number = $6,
+                       avatar_url = $7
+     WHERE id = $8 RETURNING *`,
     [
       name ?? current.name,
       phone ?? current.phone,
@@ -138,6 +160,7 @@ router.patch("/me", requireAuth, async (req, res) => {
       whatsappNumber ?? current.whatsapp_number,
       countryOfResidence ?? current.country_of_residence,
       passportNumber ?? current.passport_number,
+      avatarDataUrl !== undefined ? avatarDataUrl : current.avatar_url,
       req.user.id,
     ]
   );
