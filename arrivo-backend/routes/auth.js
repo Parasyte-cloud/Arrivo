@@ -43,6 +43,7 @@ router.post("/signup", async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
     password, confirmPassword, agreedToTerms, avatarDataUrl,
+    whatsappNumber, countryOfResidence,
     preferredLanguage = "en", role = "rider",
   } = req.body;
 
@@ -76,9 +77,10 @@ router.post("/signup", async (req, res) => {
 
   const inserted = await pool.query(
     `INSERT INTO users (name, email, phone, passport_number, password_hash, role, preferred_language,
-                         agreed_to_terms, email_verification_token, email_verification_expires, avatar_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10) RETURNING *`,
-    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null]
+                         agreed_to_terms, email_verification_token, email_verification_expires, avatar_url,
+                         whatsapp_number, country_of_residence)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12) RETURNING *`,
+    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null, whatsappNumber || null, countryOfResidence || null]
   );
 
   const user = inserted.rows[0];

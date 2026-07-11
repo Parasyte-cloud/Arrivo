@@ -43,10 +43,10 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const signup = async ({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage }) => {
+  const signup = async ({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage, whatsappNumber, countryOfResidence, avatarDataUrl }) => {
     const data = await request("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage }),
+      body: JSON.stringify({ firstName, lastName, email, passportNumber, phone, password, confirmPassword, agreedToTerms, preferredLanguage, whatsappNumber, countryOfResidence, avatarDataUrl }),
     });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
     setToken(data.token);

@@ -30,7 +30,8 @@
     "i18next": "^23.11.5",
     "react-i18next": "^14.1.2",
     "expo-localization": "~15.0.3",
-    "expo-secure-store": "~13.0.2"
+    "expo-secure-store": "~13.0.2",
+    "expo-image-picker": "~15.0.7"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
