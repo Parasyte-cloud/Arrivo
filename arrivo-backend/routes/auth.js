@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
+const { validateImageDataUrl } = require("../services/imageValidation");
 
 const router = express.Router();
 
@@ -20,13 +21,9 @@ function signToken(user) {
 // now). Kept intentionally simple: valid image type, and a real size cap so
 // nobody can wedge a multi-megabyte file into the database by mistake.
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024; // 4MB
+
 function validateAvatarDataUrl(dataUrl) {
-  if (!dataUrl) return null; // optional — no photo is fine
-  const match = /^data:image\/(png|jpe?g|webp);base64,(.+)$/.exec(dataUrl);
-  if (!match) return "Profile photo must be a PNG, JPEG, or WEBP image.";
-  const approxBytes = (match[2].length * 3) / 4; // rough base64 -> bytes size
-  if (approxBytes > MAX_AVATAR_BYTES) return "Profile photo must be smaller than 4MB.";
-  return null;
+  return validateImageDataUrl(dataUrl, "Profile photo", MAX_AVATAR_BYTES);
 }
 
 function publicUser(user) {
@@ -43,7 +40,7 @@ router.post("/signup", async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
     password, confirmPassword, agreedToTerms, avatarDataUrl,
-    whatsappNumber, countryOfResidence,
+    whatsappNumber, countryOfResidence, dateOfBirth,
     preferredLanguage = "en", role = "rider",
   } = req.body;
 
@@ -78,9 +75,9 @@ router.post("/signup", async (req, res) => {
   const inserted = await pool.query(
     `INSERT INTO users (name, email, phone, passport_number, password_hash, role, preferred_language,
                          agreed_to_terms, email_verification_token, email_verification_expires, avatar_url,
-                         whatsapp_number, country_of_residence)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12) RETURNING *`,
-    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null, whatsappNumber || null, countryOfResidence || null]
+                         whatsapp_number, country_of_residence, date_of_birth)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12, $13) RETURNING *`,
+    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null, whatsappNumber || null, countryOfResidence || null, dateOfBirth || null]
   );
 
   const user = inserted.rows[0];

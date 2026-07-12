@@ -1,11 +1,15 @@
 const express = require("express");
 const QRCode = require("qrcode");
 const { pool } = require("../db/db");
-const { requireAuth, requireRole } = require("../middleware/auth");
+const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.use(requireAuth, requireRole("admin"));
+// Both roles can view everything in this router — the distinction is that
+// mutating routes below additionally require requireRole("admin") on top
+// of this, so a 'support' token can GET any of these but gets a 403 on
+// anything that changes data (verify a driver, resolve a panic, edit a ride).
+router.use(requireAuth, requireAnyRole(["admin", "support"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
@@ -24,7 +28,7 @@ router.get("/drivers", async (req, res) => {
   res.json({ drivers: result.rows });
 });
 
-router.patch("/drivers/:id/verify", async (req, res) => {
+router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {
   const existing = await pool.query("SELECT * FROM drivers WHERE id = $1", [req.params.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: "Driver not found" });
 
@@ -71,7 +75,7 @@ router.get("/rides", async (req, res) => {
   res.json({ rides: result.rows.map((r) => ({ ...r, stops: JSON.parse(r.stops || "[]") })) });
 });
 
-router.patch("/rides/:id", async (req, res) => {
+router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
   const { adminNotes, rideStatus } = req.body;
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
   const ride = existing.rows[0];
@@ -136,7 +140,7 @@ router.get("/panics", async (req, res) => {
 });
 
 // PATCH /api/admin/panics/:rideId/resolve — mark a panic alert as handled
-router.patch("/panics/:rideId/resolve", async (req, res) => {
+router.patch("/panics/:rideId/resolve", requireRole("admin"), async (req, res) => {
   const { notes } = req.body;
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.rideId]);
   if (!existing.rows[0]) return res.status(404).json({ error: "Ride not found" });

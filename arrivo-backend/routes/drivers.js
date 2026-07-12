@@ -2,6 +2,9 @@ const express = require("express");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const { validateImageDataUrl } = require("../services/imageValidation");
+
+const MAX_DOCUMENT_PHOTO_BYTES = 6 * 1024 * 1024; // 6MB — matches the 6MB cap already enforced client-side
 
 const router = express.Router();
 
@@ -25,7 +28,14 @@ async function getDriverWithVehicle(userId) {
 
 // POST /api/drivers/profile — create or update the driver + vehicle profile
 router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => {
-  const { licenseNumber, lasdriNumber, spokenLanguages = "en", vehicle } = req.body;
+  const {
+    licenseNumber, lasdriNumber, spokenLanguages = "en", vehicle,
+    insuranceNumber, vehicleOwnership = "self", ownerName, ownerWhatsapp,
+  } = req.body;
+
+  if (vehicleOwnership === "other" && (!ownerName || !ownerWhatsapp)) {
+    return res.status(400).json({ error: "Owner's name and WhatsApp number are required when the vehicle isn't yours." });
+  }
 
   let vehicleId = null;
   const existingDriver = await getDriverForUser(req.user.id);
@@ -49,9 +59,15 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
 
   if (existingDriver) {
     await pool.query(
-      `UPDATE drivers SET license_number = $1, lasdri_number = $2, spoken_languages = $3, vehicle_id = COALESCE($4, vehicle_id)
-       WHERE user_id = $5`,
-      [licenseNumber || existingDriver.license_number, lasdriNumber || existingDriver.lasdri_number, spokenLanguages, vehicleId, req.user.id]
+      `UPDATE drivers SET license_number = $1, lasdri_number = $2, spoken_languages = $3, vehicle_id = COALESCE($4, vehicle_id),
+              insurance_number = $5, vehicle_ownership = $6, owner_name = $7, owner_whatsapp = $8
+       WHERE user_id = $9`,
+      [
+        licenseNumber || existingDriver.license_number, lasdriNumber || existingDriver.lasdri_number, spokenLanguages, vehicleId,
+        insuranceNumber || existingDriver.insurance_number, vehicleOwnership,
+        vehicleOwnership === "other" ? ownerName : null, vehicleOwnership === "other" ? ownerWhatsapp : null,
+        req.user.id,
+      ]
     );
   } else {
     // scan_token is generated once, permanently, the day a driver's profile
@@ -59,9 +75,14 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
     // so it must never change afterward or every printed placard breaks.
     const scanToken = crypto.randomBytes(16).toString("hex");
     await pool.query(
-      `INSERT INTO drivers (user_id, vehicle_id, license_number, lasdri_number, spoken_languages, scan_token)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [req.user.id, vehicleId, licenseNumber || null, lasdriNumber || null, spokenLanguages, scanToken]
+      `INSERT INTO drivers (user_id, vehicle_id, license_number, lasdri_number, spoken_languages, scan_token,
+                             insurance_number, vehicle_ownership, owner_name, owner_whatsapp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        req.user.id, vehicleId, licenseNumber || null, lasdriNumber || null, spokenLanguages, scanToken,
+        insuranceNumber || null, vehicleOwnership,
+        vehicleOwnership === "other" ? ownerName : null, vehicleOwnership === "other" ? ownerWhatsapp : null,
+      ]
     );
   }
 
@@ -73,6 +94,61 @@ router.get("/me", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverWithVehicle(req.user.id);
   if (!driver) return res.status(404).json({ error: "No driver profile yet — complete it via POST /api/drivers/profile" });
   res.json({ driver });
+});
+
+// PATCH /api/drivers/me — everything a driver edits about themself after
+// their initial application: profile/license/vehicle photos, their own
+// WhatsApp number (stored on users, not drivers), and their emergency
+// contact + background-check consent. Each field is independently
+// optional so the web signup wizard can call this once per step without
+// needing to resend fields from earlier steps.
+router.patch("/me", requireAuth, requireRole("driver"), async (req, res) => {
+  const {
+    profilePhotoDataUrl, licensePhotoDataUrl, vehiclePhotoDataUrl,
+    whatsappNumber, emergencyContactName, emergencyContactPhone,
+    agreedBackgroundCheck, agreedTerms,
+  } = req.body;
+
+  const driver = await getDriverForUser(req.user.id);
+  if (!driver) return res.status(404).json({ error: "Complete your driver profile first via POST /api/drivers/profile" });
+
+  for (const [dataUrl, label] of [
+    [profilePhotoDataUrl, "Profile photo"],
+    [licensePhotoDataUrl, "Driver's license photo"],
+    [vehiclePhotoDataUrl, "Vehicle photo"],
+  ]) {
+    const err = validateImageDataUrl(dataUrl, label, MAX_DOCUMENT_PHOTO_BYTES);
+    if (err) return res.status(400).json({ error: err });
+  }
+
+  await pool.query(
+    `UPDATE drivers SET
+       profile_photo_url = COALESCE($1, profile_photo_url),
+       license_photo_url = COALESCE($2, license_photo_url),
+       vehicle_photo_url = COALESCE($3, vehicle_photo_url),
+       emergency_contact_name = COALESCE($4, emergency_contact_name),
+       emergency_contact_phone = COALESCE($5, emergency_contact_phone),
+       agreed_background_check = COALESCE($6, agreed_background_check)
+     WHERE user_id = $7`,
+    [
+      profilePhotoDataUrl || null, licensePhotoDataUrl || null, vehiclePhotoDataUrl || null,
+      emergencyContactName || null, emergencyContactPhone || null,
+      agreedBackgroundCheck === true ? true : null,
+      req.user.id,
+    ]
+  );
+
+  if (whatsappNumber || agreedTerms === true) {
+    await pool.query(
+      `UPDATE users SET
+         whatsapp_number = COALESCE($1, whatsapp_number),
+         agreed_to_terms = COALESCE($2, agreed_to_terms)
+       WHERE id = $3`,
+      [whatsappNumber || null, agreedTerms === true ? true : null, req.user.id]
+    );
+  }
+
+  res.json({ driver: await getDriverWithVehicle(req.user.id) });
 });
 
 // PATCH /api/drivers/status — toggle online/offline. Blocked unless verified.

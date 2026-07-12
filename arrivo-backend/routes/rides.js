@@ -173,12 +173,19 @@ router.get("/:id", requireAuth, async (req, res) => {
   res.json({ ride: withParsedStops(ride) });
 });
 
-// POST /api/rides/:id/panic — rider safety button. Only the rider who
-// booked the ride can trigger it. Intentionally simple and fast — this is
-// a safety-critical path, not the place for complex validation.
+// POST /api/rides/:id/panic — safety button. Either the rider who booked
+// the ride OR the driver assigned to it can trigger this — the PRD for
+// this feature is explicit that it's activated by "driver or passenger,"
+// not just the rider. Intentionally simple and fast — this is a
+// safety-critical path, not the place for complex validation.
 router.post("/:id/panic", requireAuth, async (req, res) => {
   const { note } = req.body;
-  const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND rider_id = $2", [req.params.id, req.user.id]);
+  const existing = await pool.query(
+    `SELECT rides.* FROM rides
+     LEFT JOIN drivers ON drivers.id = rides.driver_id
+     WHERE rides.id = $1 AND (rides.rider_id = $2 OR drivers.user_id = $2)`,
+    [req.params.id, req.user.id]
+  );
   if (!existing.rows[0]) return res.status(404).json({ error: "Ride not found" });
 
   const updated = await pool.query(
@@ -187,7 +194,7 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
     [note || null, req.params.id]
   );
 
-  console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, rider ${req.user.email}`);
+  console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, triggered by user ${req.user.email}`);
   // TODO before real launch: wire this to an actual alert — SMS/call to an
   // ops phone, a Slack webhook, or a push notification to the admin
   // dashboard. Right now it's logged server-side and visible in the admin

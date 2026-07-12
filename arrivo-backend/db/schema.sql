@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   country_of_residence TEXT,
   passport_number TEXT,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'rider',        -- 'rider' | 'driver' | 'owner' | 'admin'
+  role TEXT NOT NULL DEFAULT 'rider',        -- 'rider' | 'driver' | 'owner' | 'admin' | 'support' (support = read-only admin dashboard access, see scripts/create-support.js)
   agreed_to_terms BOOLEAN NOT NULL DEFAULT false,
   email_verified BOOLEAN NOT NULL DEFAULT false,
   email_verification_token TEXT,
@@ -36,6 +36,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS agreed_to_terms BOOLEAN NOT NULL DEFA
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id SERIAL PRIMARY KEY,
@@ -65,6 +66,21 @@ CREATE TABLE IF NOT EXISTS drivers (
 );
 
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS scan_token TEXT UNIQUE;
+
+-- Added for the comprehensive driver application flow: insurance, vehicle
+-- ownership (a driver may not own the car they drive — Arrivo's vehicle-owner
+-- program means someone else could), verification photos, and a driver-side
+-- emergency contact (the same safety feature riders already have).
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS insurance_number TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS vehicle_ownership TEXT NOT NULL DEFAULT 'self'; -- 'self' | 'other'
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS owner_name TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS owner_whatsapp TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS license_photo_url TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS vehicle_photo_url TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS agreed_background_check BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS rides (
   id SERIAL PRIMARY KEY,

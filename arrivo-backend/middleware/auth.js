@@ -28,4 +28,17 @@ function requireRole(role) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+// For routes multiple roles should be able to reach — e.g. both 'admin'
+// and 'support' can view the dashboard, but only 'admin' can act on it.
+// That distinction is enforced by pairing this at the router level with
+// requireRole("admin") on the specific mutating routes underneath it.
+function requireAnyRole(roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user?.role)) {
+      return res.status(403).json({ error: `This action requires one of: ${roles.join(", ")}` });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireAnyRole };
