@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
+import { formatDateTime } from "../utils";
 
 export function DriversPage() {
   const { token } = useAuth();
@@ -96,6 +97,7 @@ export function DriversPage() {
                 <th>Driver</th>
                 <th>Vehicle</th>
                 <th>License / LASDRI</th>
+                <th>Joined</th>
                 <th>Status</th>
                 <th>Online</th>
                 <th></th>
@@ -121,6 +123,9 @@ export function DriversPage() {
                   <td>
                     <div>{d.license_number || "—"}</div>
                     <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{d.lasdri_number || "No LASDRI on file"}</div>
+                  </td>
+                  <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
+                    {d.created_at ? formatDateTime(d.created_at) : "—"}
                   </td>
                   <td>
                     <StatusPill label={d.is_verified ? "Verified" : "Pending"} tone={d.is_verified ? "teal" : "coral"} />

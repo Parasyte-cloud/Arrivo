@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
+import { formatDateTime } from "../utils";
 
 export function PanicsPage() {
   const { token } = useAuth();
@@ -76,7 +77,7 @@ export function PanicsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: "var(--coral)" }}>
-                    🚨 Ride #{p.id} — triggered {new Date(p.panic_triggered_at).toLocaleString()}
+                    🚨 Ride #{p.id} — triggered {formatDateTime(p.panic_triggered_at)}
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 4 }}>
                     {Math.round((Date.now() - new Date(p.panic_triggered_at)) / 60000)} minutes ago

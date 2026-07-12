@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
+import { formatDateTime } from "../utils";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -127,7 +128,7 @@ export function RidesPage() {
                     <td>₦{r.fare_naira?.toLocaleString()}</td>
                     <td><StatusPill label={r.payment_status} tone={r.payment_status === "paid" ? "teal" : "muted"} /></td>
                     <td><StatusPill label={r.ride_status.replace("_", " ")} tone={rideStatusTone(r.ride_status)} /></td>
-                    <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{new Date(r.created_at).toLocaleString()}</td>
+                    <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{formatDateTime(r.created_at)}</td>
                   </tr>
                   {expandedId === r.id ? (
                     <tr>
