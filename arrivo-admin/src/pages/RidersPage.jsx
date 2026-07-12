@@ -102,7 +102,7 @@ export function RidersPage() {
                     <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.email}{r.phone ? ` · ${r.phone}` : ""}</div>
                   </td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
-                    {new Date(r.created_at).toLocaleDateString()}
+                    {new Date(r.created_at).toLocaleDateString()} · {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </td>
                   <td>
                     {r.ride_count === 0 ? (
@@ -113,7 +113,9 @@ export function RidersPage() {
                   </td>
                   <td>₦{r.total_spent_naira.toLocaleString()}</td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
-                    {r.last_ride_at ? new Date(r.last_ride_at).toLocaleDateString() : "—"}
+                    {r.last_ride_at
+                      ? `${new Date(r.last_ride_at).toLocaleDateString()} · ${new Date(r.last_ride_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      : "—"}
                   </td>
                 </tr>
               ))}
