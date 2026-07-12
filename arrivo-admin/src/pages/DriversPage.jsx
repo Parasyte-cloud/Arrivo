@@ -3,9 +3,10 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
+import { PhoneLink } from "../components/PhoneLink";
 
 export function DriversPage() {
-  const { token } = useAuth();
+  const { token, isReadOnly } = useAuth();
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -108,7 +109,7 @@ export function DriversPage() {
                 <tr key={d.id}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{d.name}</div>
-                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{d.email}{d.phone ? ` · ${d.phone}` : ""}</div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{d.email}{d.phone ? <> · <PhoneLink phone={d.phone} style={{ fontSize: 12 }} /></> : ""}</div>
                   </td>
                   <td>
                     {d.make_model ? (
@@ -134,13 +135,17 @@ export function DriversPage() {
                     <StatusPill label={d.is_online ? "Online" : "Offline"} tone={d.is_online ? "teal" : "muted"} />
                   </td>
                   <td>
-                    <button
-                      className={`btn ${d.is_verified ? "revoke" : "verify"}`}
-                      disabled={busyId === d.id}
-                      onClick={() => toggleVerify(d)}
-                    >
-                      {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
-                    </button>
+                    {isReadOnly ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>View only</span>
+                    ) : (
+                      <button
+                        className={`btn ${d.is_verified ? "revoke" : "verify"}`}
+                        disabled={busyId === d.id}
+                        onClick={() => toggleVerify(d)}
+                      >
+                        {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
+                      </button>
+                    )}
                     {d.is_verified && (
                       <button
                         className="btn"

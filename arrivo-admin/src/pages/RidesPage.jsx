@@ -14,7 +14,7 @@ const STATUS_FILTERS = [
 ];
 
 export function RidesPage() {
-  const { token } = useAuth();
+  const { token, isReadOnly } = useAuth();
   const [rides, setRides] = useState([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -142,17 +142,25 @@ export function RidesPage() {
                             value={noteDraft}
                             onChange={(e) => setNoteDraft(e.target.value)}
                             placeholder="e.g. Rider disputed the fare, refunded ₦2,000 via Paystack manually"
+                            disabled={isReadOnly}
+                            readOnly={isReadOnly}
                           />
-                          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                            <button className="btn primary" disabled={saving} onClick={() => saveNote(r)}>
-                              {saving ? "Saving…" : "Save note"}
-                            </button>
-                            {r.ride_status !== "cancelled" && r.ride_status !== "completed" ? (
-                              <button className="btn revoke" disabled={saving} onClick={() => forceCancel(r)}>
-                                Force-cancel ride
+                          {isReadOnly ? (
+                            <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 8, fontStyle: "italic" }}>
+                              Support view is read-only. Ask an admin to add notes or cancel this ride.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                              <button className="btn primary" disabled={saving} onClick={() => saveNote(r)}>
+                                {saving ? "Saving…" : "Save note"}
                               </button>
-                            ) : null}
-                          </div>
+                              {r.ride_status !== "cancelled" && r.ride_status !== "completed" ? (
+                                <button className="btn revoke" disabled={saving} onClick={() => forceCancel(r)}>
+                                  Force-cancel ride
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

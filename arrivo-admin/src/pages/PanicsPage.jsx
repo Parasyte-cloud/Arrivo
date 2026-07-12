@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { formatDateTime } from "../utils";
+import { PhoneLink } from "../components/PhoneLink";
 
 export function PanicsPage() {
-  const { token } = useAuth();
+  const { token, isReadOnly } = useAuth();
   const [panics, setPanics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -89,13 +90,13 @@ export function PanicsPage() {
                 <div>
                   <div style={{ color: "var(--text-muted)", fontSize: 11.5, marginBottom: 2 }}>RIDER</div>
                   <div style={{ fontWeight: 600 }}>{p.rider_name}</div>
-                  <div>{p.rider_phone || "No phone on file"}</div>
+                  <div>{p.rider_phone ? <PhoneLink phone={p.rider_phone} /> : "No phone on file"}</div>
                   <div style={{ color: "var(--text-muted)" }}>{p.rider_email}</div>
                 </div>
                 <div>
                   <div style={{ color: "var(--text-muted)", fontSize: 11.5, marginBottom: 2 }}>DRIVER</div>
                   <div style={{ fontWeight: 600 }}>{p.driver_name || "Unassigned"}</div>
-                  <div>{p.driver_phone || "—"}</div>
+                  <div><PhoneLink phone={p.driver_phone} /></div>
                   {p.current_lat && p.current_lng ? (
                     <a
                       href={`https://www.google.com/maps?q=${p.current_lat},${p.current_lng}`}
@@ -122,17 +123,25 @@ export function PanicsPage() {
                 </div>
               ) : null}
 
-              <textarea
-                className="notes"
-                placeholder="Resolution notes — e.g. 'Called rider, confirmed safe, driver took valid detour'"
-                value={noteDrafts[p.id] || ""}
-                onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
-              />
-              <div style={{ marginTop: 10 }}>
-                <button className="btn verify" disabled={resolvingId === p.id} onClick={() => resolve(p.id)}>
-                  {resolvingId === p.id ? "Resolving…" : "Mark as resolved"}
-                </button>
-              </div>
+              {isReadOnly ? (
+                <p style={{ color: "var(--text-muted)", fontSize: 12.5, fontStyle: "italic" }}>
+                  Support view is read-only. Call the numbers above, then ask an admin to mark this resolved.
+                </p>
+              ) : (
+                <>
+                  <textarea
+                    className="notes"
+                    placeholder="Resolution notes — e.g. 'Called rider, confirmed safe, driver took valid detour'"
+                    value={noteDrafts[p.id] || ""}
+                    onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  />
+                  <div style={{ marginTop: 10 }}>
+                    <button className="btn verify" disabled={resolvingId === p.id} onClick={() => resolve(p.id)}>
+                      {resolvingId === p.id ? "Resolving…" : "Mark as resolved"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>

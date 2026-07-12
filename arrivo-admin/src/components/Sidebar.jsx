@@ -11,7 +11,7 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar({ page, setPage }) {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, isReadOnly } = useAuth();
   const [panicCount, setPanicCount] = useState(0);
 
   useEffect(() => {
@@ -30,6 +30,15 @@ export function Sidebar({ page, setPage }) {
     <aside className="sidebar">
       <div className="brand">arrivo</div>
       <div className="brand-sub">OPS CONSOLE</div>
+      {isReadOnly ? (
+        <div style={{
+          margin: "8px 14px 4px", padding: "4px 10px", background: "rgba(255,255,255,0.1)",
+          borderRadius: 999, fontSize: 10.5, fontWeight: 700, color: "#ffb84d",
+          textAlign: "center", letterSpacing: "0.04em",
+        }}>
+          READ-ONLY · SUPPORT
+        </div>
+      ) : null}
 
       <nav>
         {NAV_ITEMS.map((item) => (
