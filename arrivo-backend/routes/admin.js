@@ -62,7 +62,8 @@ router.get("/rides", async (req, res) => {
   const { status } = req.query;
   const baseQuery = `
     SELECT rides.*, riders.name as rider_name, riders.email as rider_email,
-           driver_users.name as driver_name
+           driver_users.name as driver_name,
+           drivers.current_lat, drivers.current_lng, drivers.location_updated_at
     FROM rides
     JOIN users riders ON riders.id = rides.rider_id
     LEFT JOIN drivers ON drivers.id = rides.driver_id

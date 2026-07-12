@@ -109,6 +109,7 @@ export function RidesPage() {
                 <th>Fare</th>
                 <th>Payment</th>
                 <th>Status</th>
+                <th>Live</th>
                 <th>When</th>
               </tr>
             </thead>
@@ -128,11 +129,25 @@ export function RidesPage() {
                     <td>₦{r.fare_naira?.toLocaleString()}</td>
                     <td><StatusPill label={r.payment_status} tone={r.payment_status === "paid" ? "teal" : "muted"} /></td>
                     <td><StatusPill label={r.ride_status.replace("_", " ")} tone={rideStatusTone(r.ride_status)} /></td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {r.ride_status === "in_progress" && r.current_lat && r.current_lng ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${r.current_lat},${r.current_lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "var(--teal)", fontWeight: 600, fontSize: 12.5 }}
+                        >
+                          📍 Track live
+                        </a>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)", fontSize: 12.5 }}>—</span>
+                      )}
+                    </td>
                     <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{formatDateTime(r.created_at)}</td>
                   </tr>
                   {expandedId === r.id ? (
                     <tr>
-                      <td colSpan={7} style={{ background: "#fafafd" }}>
+                      <td colSpan={8} style={{ background: "#fafafd" }}>
                         <div style={{ padding: "8px 4px" }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
                             Admin notes / dispute log
