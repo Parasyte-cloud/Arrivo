@@ -30,6 +30,12 @@ export const getRides = (token, status) =>
 export const updateRide = (token, id, payload) =>
   request(`/api/admin/rides/${id}`, token, { method: "PATCH", body: JSON.stringify(payload) });
 
+// GET /api/admin/rides/live — every in-progress ride with the driver's last
+// known position. This existed on the backend before any frontend used it
+// (its own comment even anticipated this exact page: "no Google Maps API
+// key required here... rather than embedding a live map").
+export const getLiveRides = (token) => request("/api/admin/rides/live", token);
+
 export const getAnalytics = (token) => request("/api/admin/analytics", token);
 
 // This one isn't a JSON fetch — it returns a PNG directly, and the browser

@@ -5,6 +5,7 @@ import { PanicsPage } from "./pages/PanicsPage";
 import { RidersPage } from "./pages/RidersPage";
 import { DriversPage } from "./pages/DriversPage";
 import { RidesPage } from "./pages/RidesPage";
+import { LiveMapPage } from "./pages/LiveMapPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { Sidebar } from "./components/Sidebar";
 
@@ -22,6 +23,7 @@ function Dashboard() {
         {page === "riders" && <RidersPage />}
         {page === "drivers" && <DriversPage />}
         {page === "rides" && <RidesPage />}
+        {page === "live-map" && <LiveMapPage />}
         {page === "analytics" && <AnalyticsPage />}
       </main>
     </div>
