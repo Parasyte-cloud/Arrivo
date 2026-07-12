@@ -3,6 +3,7 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
+import { PhoneLink } from "../components/PhoneLink";
 
 export function RidersPage() {
   const { token } = useAuth();
@@ -100,7 +101,7 @@ export function RidersPage() {
                 <tr key={r.id}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.email}{r.phone ? ` · ${r.phone}` : ""}</div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.email}{r.phone ? <> · <PhoneLink phone={r.phone} style={{ fontSize: 12 }} /></> : ""}</div>
                   </td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
                     {formatDateTime(r.created_at)}
