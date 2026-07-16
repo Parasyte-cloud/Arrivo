@@ -18,7 +18,7 @@ router.post("/", requireAuth, async (req, res) => {
   const {
     pickupAddress, stops, flightNumber, vehicleType, fareNaira, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
-    distanceKm, durationMin, securityEscort, fleetSize,
+    distanceKm, durationMin, securityEscort, fleetSize, paymentMethod = "card",
   } = req.body;
 
   if (!pickupAddress || !fareNaira) {
@@ -34,6 +34,9 @@ router.post("/", requireAuth, async (req, res) => {
   if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
     return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
   }
+  if (!["card", "wallet", "membership"].includes(paymentMethod)) {
+    return res.status(400).json({ error: "paymentMethod must be 'card', 'wallet', or 'membership'" });
+  }
 
   // Client-computed fares are a convenience for showing a live estimate,
   // never a source of truth for what gets charged — a modified request
@@ -46,6 +49,71 @@ router.post("/", requireAuth, async (req, res) => {
   const expectedAddOns = (securityEscort ? SECURITY_ESCORT_PRICE : 0) + (FLEET_PRICE[fleetSize] || 0);
   if (fareNaira < expectedAddOns) {
     return res.status(400).json({ error: "fareNaira is lower than the selected add-ons alone. Rejecting as inconsistent." });
+  }
+
+  // A membership rider doesn't pay per trip at all — that's the entire
+  // point of the plan. Verified server-side against a real active
+  // membership row, never just trusted because the client asked for it.
+  if (paymentMethod === "membership") {
+    const membership = await pool.query(
+      `SELECT * FROM memberships WHERE user_id = $1 AND status = 'active' AND expires_at > now()
+       AND plan_type IN ('individual_annual', 'corporate_delegate') LIMIT 1`,
+      [req.user.id]
+    );
+    if (!membership.rows[0]) {
+      return res.status(400).json({ error: "No active membership found for this account." });
+    }
+    const inserted = await pool.query(
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid') RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
+    );
+    return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+  }
+
+  // Paying from wallet happens in the same DB transaction as creating the
+  // ride, with a row lock on the user's balance — this is what stops two
+  // simultaneous bookings from both reading "sufficient balance" and both
+  // going through, overdrawing the wallet.
+  if (paymentMethod === "wallet") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+      const balance = Number(userResult.rows[0].wallet_balance_naira);
+      if (balance < fareNaira) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Insufficient wallet balance for this ride.", balanceNaira: balance, fareNaira });
+      }
+
+      const rideResult = await client.query(
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid') RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
+      );
+      const ride = rideResult.rows[0];
+
+      const newBalanceResult = await client.query(
+        "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+        [fareNaira, req.user.id]
+      );
+      const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+
+      await client.query(
+        `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+         VALUES ($1, 'ride_charge', 'completed', $2, $3, $4, $5)`,
+        [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
+      );
+
+      await client.query("COMMIT");
+      return res.status(201).json({ ride: withParsedStops(ride) });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Wallet ride payment failed:", err.message);
+      return res.status(500).json({ error: "Could not complete payment from wallet. Please try again." });
+    } finally {
+      client.release();
+    }
   }
 
   const inserted = await pool.query(

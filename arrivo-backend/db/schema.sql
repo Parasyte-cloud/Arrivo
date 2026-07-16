@@ -118,6 +118,48 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS duration_min NUMERIC;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS security_escort BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS fleet_size INTEGER NOT NULL DEFAULT 0;
 
+-- ── Wallet ──
+-- A rider (or, later, a company on a delegate plan) can hold a balance and
+-- pay for rides directly from it, as an alternative to per-trip card
+-- payment. Every change to the balance is logged in wallet_transactions —
+-- the balance column itself is a cached total, always re-derivable from
+-- the transaction log, which is the actual source of truth.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance_naira NUMERIC NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL, -- 'topup' | 'ride_charge' | 'credit' | 'refund' | 'membership_charge'
+  status TEXT NOT NULL DEFAULT 'completed', -- 'pending' | 'completed' | 'failed'
+  amount_naira NUMERIC NOT NULL, -- positive for topup/credit, negative for charges
+  balance_after_naira NUMERIC, -- null while status = 'pending'
+  paystack_reference TEXT UNIQUE, -- set for topups; UNIQUE stops the same Paystack payment being credited twice
+  ride_id INTEGER REFERENCES rides(id),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user ON wallet_transactions(user_id, created_at DESC);
+
+-- ── Memberships ──
+-- Two tracks: an individual paying one annual subscription instead of
+-- per-trip, and a company subscribing once with multiple delegate riders
+-- underneath it. company_account_id is null for the individual plan and
+-- for the company's own membership row; delegate riders point it at the
+-- company user's id.
+CREATE TABLE IF NOT EXISTS memberships (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  plan_type TEXT NOT NULL, -- 'individual_annual' | 'corporate_delegate'
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'cancelled' | 'expired'
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  price_naira NUMERIC NOT NULL,
+  company_account_id INTEGER REFERENCES users(id), -- set on a delegate rider, pointing at the company's user row
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
+CREATE INDEX IF NOT EXISTS idx_memberships_company ON memberships(company_account_id);
+
 
 CREATE TABLE IF NOT EXISTS waitlist (
   id SERIAL PRIMARY KEY,

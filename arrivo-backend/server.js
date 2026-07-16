@@ -8,6 +8,8 @@ const authRouter = require("./routes/auth");
 const ridesRouter = require("./routes/rides");
 const flightsRouter = require("./routes/flights");
 const paymentsRouter = require("./routes/payments");
+const walletRouter = require("./routes/wallet");
+const membershipsRouter = require("./routes/memberships");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const waitlistRouter = require("./routes/waitlist");
@@ -37,6 +39,8 @@ app.use("/api/admin", adminRouter);
 app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/wallet", walletRouter);
+app.use("/api/memberships", membershipsRouter);
 
 const PORT = process.env.PORT || 4000;
 
