@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS rides (
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS agreed_cancellation_policy BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS tracking_started_at TIMESTAMPTZ;
 
+-- Added for Uber-style distance-based pricing and the security escort /
+-- fleet accompaniment add-ons. distance_km/duration_min are only populated
+-- for one-way bookings priced by real route distance — day/week/month
+-- bookings stay flat-rate and leave these null.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS distance_km NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS duration_min NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS security_escort BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS fleet_size INTEGER NOT NULL DEFAULT 0;
+
 
 CREATE TABLE IF NOT EXISTS waitlist (
   id SERIAL PRIMARY KEY,

@@ -18,6 +18,7 @@ router.post("/", requireAuth, async (req, res) => {
   const {
     pickupAddress, stops, flightNumber, vehicleType, fareNaira, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
+    distanceKm, durationMin, securityEscort, fleetSize,
   } = req.body;
 
   if (!pickupAddress || !fareNaira) {
@@ -30,11 +31,27 @@ router.post("/", requireAuth, async (req, res) => {
   if (!agreedCancellationPolicy) {
     return res.status(400).json({ error: "You must agree to the Cancellation & Refund Policy before booking" });
   }
+  if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
+    return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
+  }
+
+  // Client-computed fares are a convenience for showing a live estimate,
+  // never a source of truth for what gets charged — a modified request
+  // could otherwise claim any fareNaira it wants. Re-derive the add-on
+  // portion server-side and reject anything that doesn't add up; full
+  // distance-fare re-verification would need the same Distance Matrix
+  // call server-side, which isn't wired up yet (see README §9).
+  const SECURITY_ESCORT_PRICE = 100000;
+  const FLEET_PRICE = { 2: 70000, 3: 100000 };
+  const expectedAddOns = (securityEscort ? SECURITY_ESCORT_PRICE : 0) + (FLEET_PRICE[fleetSize] || 0);
+  if (fareNaira < expectedAddOns) {
+    return res.status(400).json({ error: "fareNaira is lower than the selected add-ons alone. Rejecting as inconsistent." });
+  }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays]
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13) RETURNING *`,
+    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
   );
 
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
