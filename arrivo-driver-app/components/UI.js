@@ -41,7 +41,7 @@ export function Field({ icon, placeholder, value, onChangeText, editable = true 
 }
 
 export function Tag({ label, tone = "teal" }) {
-  const bg = tone === "teal" ? "rgba(14,124,123,0.25)" : "rgba(244,163,0,0.2)";
+  const bg = tone === "teal" ? "rgba(46,76,140,0.25)" : "rgba(244,163,0,0.2)";
   const fg = tone === "teal" ? colors.tealBright : colors.amber;
   return (
     <View style={[styles.tag, { backgroundColor: bg }]}>

@@ -28,7 +28,7 @@ export default function TrackingScreen({ route }) {
   const shareRide = async () => {
     try {
       await Share.share({
-        message: "I'm on an Arrivo trip. Track my live location here: https://arrivo.app/track/DEMO123",
+        message: "I'm on an RideArrivo trip. Track my live location here: https://arrivo.app/track/DEMO123",
       });
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));
@@ -43,7 +43,7 @@ export default function TrackingScreen({ route }) {
   const confirmPanic = () => {
     Alert.alert(
       "Trigger safety alert?",
-      "This immediately notifies Arrivo's support team with your ride details and location. Only use this if you feel unsafe right now.",
+      "This immediately notifies RideArrivo's support team with your ride details and location. Only use this if you feel unsafe right now.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Yes, alert support", style: "destructive", onPress: sendPanic },

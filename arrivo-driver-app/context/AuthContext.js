@@ -39,7 +39,7 @@ export function AuthProvider({ children }) {
   const login = async ({ email, password }) => {
     const data = await api.login({ email, password });
     if (data.user.role !== "driver") {
-      throw new Error("This account isn't registered as a driver. Use the Arrivo rider app instead.");
+      throw new Error("This account isn't registered as a driver. Use the RideArrivo rider app instead.");
     }
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
     setToken(data.token);

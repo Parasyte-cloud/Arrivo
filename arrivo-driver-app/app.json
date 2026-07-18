@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Arrivo Driver",
+    "name": "RideArrivo Driver",
     "slug": "arrivo-driver",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,8 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.arrivo.driver",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Arrivo Driver uses your location to match you with nearby pickups.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Arrivo Driver uses your location so riders can see you en route."
+        "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location so riders can see you en route."
       }
     },
     "android": {
@@ -32,7 +32,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:4000",
+      "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "eas": {
         "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
       }

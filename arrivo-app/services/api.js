@@ -55,3 +55,21 @@ export function triggerPanic(token, rideId, note) {
     body: JSON.stringify({ note }),
   });
 }
+
+export function getWallet(token) {
+  return request("/api/wallet", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Wallet top-up reuses the same Paystack initialize/verify flow as ride
+// payment (initializePayment above) — the only wallet-specific step is
+// verifyWalletTopup, which actually credits the balance server-side once
+// Paystack confirms the charge succeeded.
+export function verifyWalletTopup(token, reference) {
+  return request("/api/wallet/topup/verify", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reference }),
+  });
+}

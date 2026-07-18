@@ -1,4 +1,4 @@
-// Central design tokens — mirrors the Arrivo brand (navy / amber / teal)
+// Central design tokens — mirrors the RideArrivo brand (navy / amber)
 // Keep every screen importing from here so the look stays consistent.
 
 export const colors = {
@@ -9,8 +9,15 @@ export const colors = {
   cream: "#F7F4EC",
   textMuted: "#9494BE",
   amber: "#F4A300",
-  teal: "#0E7C7B",
-  tealBright: "#5FE0DE",
+  // The website dropped teal entirely in favor of a navy/amber two-color
+  // system (see ridearrivo-website/styles.css --primary). Repointing the
+  // *values* here rather than renaming the keys, since teal/tealBright are
+  // referenced in ~23 places across both apps and there's no way for me to
+  // visually verify a React Native screen renders correctly after a rename
+  // — no simulator or device available in this environment, unlike the
+  // website where every change was tested in a real browser.
+  teal: "#2E4C8C",
+  tealBright: "#5B7FC7",
   coral: "#E1523D",
   fieldBg: "rgba(255,255,255,0.06)",
 };

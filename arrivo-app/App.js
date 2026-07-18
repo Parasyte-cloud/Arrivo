@@ -45,7 +45,7 @@ const stackScreenOptions = {
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} options={{ title: "Arrivo" }} />
+      <Stack.Screen name="HomeMain" component={HomeScreen} options={{ title: "RideArrivo" }} />
       <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
       <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />

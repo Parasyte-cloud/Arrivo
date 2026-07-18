@@ -55,7 +55,7 @@ export default function LoginScreen({ navigation }) {
         {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Log In" onPress={submit} />}
 
         <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
-          <Text style={styles.link}>New here? Apply to drive for Arrivo</Text>
+          <Text style={styles.link}>New here? Apply to drive for RideArrivo</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

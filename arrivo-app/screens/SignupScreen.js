@@ -205,7 +205,7 @@ export default function SignupScreen({ navigation }) {
             </View>
           </Pressable>
           <Text style={styles.agreeText}>
-            I agree to Arrivo's{" "}
+            I agree to RideArrivo's{" "}
             <Text style={styles.agreeLink} onPress={() => setPrivacyModalVisible(true)}>
               data protection and privacy policy
             </Text>
@@ -224,7 +224,7 @@ export default function SignupScreen({ navigation }) {
               </View>
               <ScrollView style={styles.modalBody}>
                 <Text style={styles.modalText}>
-                  Arrivo collects your name, contact details, and (if provided) an identification
+                  RideArrivo collects your name, contact details, and (if provided) an identification
                   number to verify your identity and provide airport pickup and ride services.
                   Your data is stored securely and is never sold to third parties.{"\n\n"}
                   For the full policy, visit ridearrivo.com/privacy.html from a browser.

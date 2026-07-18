@@ -78,7 +78,7 @@ export default function CheckoutScreen({ route, navigation }) {
 
         <Card style={{ marginBottom: spacing.lg }}>
           <Text style={styles.note}>
-            Payment is handled by Paystack's secure checkout — Arrivo never sees or stores your card details.
+            Payment is handled by Paystack's secure checkout — RideArrivo never sees or stores your card details.
           </Text>
         </Card>
 
@@ -87,7 +87,7 @@ export default function CheckoutScreen({ route, navigation }) {
             {agreedCancellation ? <Text style={styles.checkmark}>✓</Text> : null}
           </View>
           <Text style={styles.agreeText}>
-            I agree to Arrivo's Cancellation &amp; Refund Policy (48-hour free cancellation, 50% refund after).
+            I agree to RideArrivo's Cancellation &amp; Refund Policy (48-hour free cancellation, 50% refund after).
           </Text>
         </Pressable>
 

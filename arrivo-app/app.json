@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Arrivo",
+    "name": "RideArrivo",
     "slug": "arrivo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,8 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.arrivo.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Arrivo uses your location to find nearby pickups and show your live route.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Arrivo uses your location to track your ride in progress."
+        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo uses your location to track your ride in progress."
       }
     },
     "android": {
@@ -32,7 +32,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "https://api.arrivo.example.com",
+      "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY",
       "eas": {
         "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
