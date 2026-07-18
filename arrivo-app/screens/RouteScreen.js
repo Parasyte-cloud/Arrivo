@@ -1,37 +1,103 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from "react-native";
+import React, { useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, Button } from "../components/UI";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing, radius } from "../theme/tokens";
 
-const VEHICLES = [
-  { id: "sedan", label: "Sedan", price: 8500 },
-  { id: "suv", label: "SUV", price: 12500 },
-  { id: "truck", label: "Truck / Van", price: 16000 },
+// Zone/area pricing — ported from the website's booking flow (see
+// ridearrivo-website/booking.js AREA_PRICING) so mobile and web charge
+// the same fare for the same destination. Keep these two in sync if
+// pricing changes on one side.
+const AREA_PRICING = {
+  "ikeja gra": 27500, "maryland": 30000, "ogba": 30000, "magodo": 32500,
+  "surulere": 32500, "yaba": 34500, "anthony": 30000, "anthony village": 30000,
+  "ilupeju": 30000, "gbagada": 37500, "allen avenue": 30000, "alausa": 30000,
+  "ajao estate": 30000, "victoria island": 45000, "ikoyi": 50000,
+  "lekki phase 1": 45000,
+  "iyana-ipaja": 47500, "iyana ipaja": 47500, "egbeda": 47500, "akowonjo": 47500,
+  "idimu": 52500, "ipaja": 47500, "ayobo": 55000, "baruwa": 55000,
+  "alimosho": 50000, "command": 57500, "abule egba": 55000,
+  "ijaiye": 47500, "oko oba": 47500, "dopemu": 42500, "shasha": 50000,
+  "lekki": 45000, "ajah": 55000, "ikorodu": 50000, "festac": 50000,
+  "satellite town": 60000,
+};
+const DEFAULT_AREA_PRICE = 32000;
+const EXCLUDED_AREAS = [
+  { name: "Badagry", keywords: ["badagry"] },
+  { name: "Epe", keywords: ["epe"] },
+  { name: "Ibeju-Lekki", keywords: ["ibeju-lekki", "ibeju lekki"] },
+  { name: "Makoko", keywords: ["makoko"] },
 ];
 
-// Multipliers are illustrative starting points, not real pricing —
-// swap for whatever your actual full-day/week/month rates end up being.
+function findAreaPrice(address) {
+  const a = " " + (address || "").toLowerCase() + " ";
+  let best = null;
+  for (const key in AREA_PRICING) {
+    if (a.indexOf(key) !== -1 && (!best || key.length > best.length)) best = key;
+  }
+  return best ? AREA_PRICING[best] : DEFAULT_AREA_PRICE;
+}
+function findExcludedArea(address) {
+  const a = " " + (address || "").toLowerCase() + " ";
+  return EXCLUDED_AREAS.find((area) => area.keywords.some((k) => a.indexOf(k) !== -1)) || null;
+}
+
+const VEHICLE_TIER_DELTA = { sedan: 0, suv: 15000, truck: 30000 }; // "truck" id kept stable internally — label is "Executive Vehicle"
+const MAX_PASSENGERS = { sedan: 3, suv: 6, truck: 6 };
+const FLEET_PRICE = { 2: 70000, 3: 100000 };
+const SECURITY_ESCORT_PRICE = 100000;
+const VEHICLES = [
+  { id: "sedan", label: "Standard Sedan" },
+  { id: "suv", label: "Premium SUV" },
+  { id: "truck", label: "Executive Vehicle" },
+];
+
+// Multipliers for non-one-way bookings only — zone pricing above applies
+// to one-way trips, which is the overwhelming majority of airport
+// pickups. Full-day/week/month keep the older flat-rate model for now,
+// matching how the website still handles those booking types too.
 const BOOKING_TYPES = [
   { id: "one_way", label: "One-way pickup", days: 1, multiplier: 1 },
   { id: "full_day", label: "Full day", days: 1, multiplier: 6 },
   { id: "full_week", label: "Full week", days: 7, multiplier: 30 },
   { id: "full_month", label: "Full month", days: 30, multiplier: 100 },
 ];
+const FLAT_BASE_PRICE = { sedan: 8500, suv: 12500, truck: 16000 };
 
 export default function RouteScreen({ navigation }) {
   const [pickup, setPickup] = useState("Murtala Muhammed Airport, T1");
   const [stops, setStops] = useState(["Lekki Phase 1"]);
   const [vehicle, setVehicle] = useState("suv");
   const [bookingType, setBookingType] = useState("one_way");
+  const [adults, setAdults] = useState("1");
+  const [securityEscort, setSecurityEscort] = useState(false);
+  const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
 
   const addStop = () => setStops((s) => [...s, ""]);
   const updateStop = (i, val) => setStops((s) => s.map((v, idx) => (idx === i ? val : v)));
 
-  const selectedVehicle = VEHICLES.find((v) => v.id === vehicle);
+  const destination = stops[stops.length - 1] || "";
+  const excludedArea = useMemo(() => findExcludedArea(destination) || findExcludedArea(pickup), [destination, pickup]);
+  const areaPrice = useMemo(() => findAreaPrice(destination), [destination]);
   const selectedBooking = BOOKING_TYPES.find((b) => b.id === bookingType);
-  const totalFare = selectedVehicle.price * selectedBooking.multiplier;
+  const passengerCount = Math.max(1, Number(adults) || 0);
+  const maxForVehicle = MAX_PASSENGERS[vehicle];
+  const overCapacity = passengerCount > maxForVehicle;
+
+  const baseFare = useMemo(() => {
+    if (bookingType === "one_way") return areaPrice + (VEHICLE_TIER_DELTA[vehicle] || 0);
+    return (FLAT_BASE_PRICE[vehicle] || 0) * selectedBooking.multiplier;
+  }, [bookingType, areaPrice, vehicle, selectedBooking]);
+
+  const totalFare = useMemo(() => {
+    let total = baseFare;
+    if (securityEscort) total += SECURITY_ESCORT_PRICE;
+    if (fleetSize) total += FLEET_PRICE[fleetSize] || 0;
+    return total;
+  }, [baseFare, securityEscort, fleetSize]);
+
+  const canConfirm = !excludedArea && !overCapacity;
 
   return (
     <View style={styles.screen}>
@@ -77,33 +143,108 @@ export default function RouteScreen({ navigation }) {
           </Pressable>
         </Card>
 
+        {excludedArea ? (
+          <Card style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
+            <Text style={styles.warningText}>
+              We don't currently operate in {excludedArea.name}. Please choose a different pickup or destination.
+            </Text>
+          </Card>
+        ) : null}
+
         <MapPlaceholder etaLabel={`ETA ~${38 + stops.length * 6} min`} distanceLabel={`${stops.length} stop${stops.length > 1 ? "s" : ""} · ${(28 + stops.length * 6).toFixed(0)}km`} />
 
-        <Card style={{ marginTop: spacing.md }}>
+        <Card style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>Passengers</Text>
+          <View style={styles.stopRow}>
+            <Text style={styles.passengerLabel}>Adults</Text>
+            <TextInput
+              style={styles.passengerInput}
+              value={adults}
+              onChangeText={setAdults}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+          {overCapacity ? (
+            <Text style={styles.warningText}>
+              This vehicle fits up to {maxForVehicle}. Choose a larger vehicle or add fleet accompaniment below for bigger groups.
+            </Text>
+          ) : null}
+        </Card>
+
+        <Card style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
-          {VEHICLES.map((v) => (
-            <Pressable key={v.id} onPress={() => setVehicle(v.id)} style={styles.vehicleRow}>
-              <Text style={[styles.vehicleLabel, vehicle === v.id && { color: colors.amber }]}>
-                {vehicle === v.id ? "● " : "○ "}
-                {v.label}
-              </Text>
-              <Text style={styles.vehiclePrice}>₦{(v.price * selectedBooking.multiplier).toLocaleString()}</Text>
-            </Pressable>
-          ))}
+          {VEHICLES.map((v) => {
+            const price = bookingType === "one_way"
+              ? areaPrice + (VEHICLE_TIER_DELTA[v.id] || 0)
+              : (FLAT_BASE_PRICE[v.id] || 0) * selectedBooking.multiplier;
+            const tooSmall = passengerCount > MAX_PASSENGERS[v.id];
+            return (
+              <Pressable
+                key={v.id}
+                onPress={() => !tooSmall && setVehicle(v.id)}
+                style={[styles.vehicleRow, tooSmall && { opacity: 0.4 }]}
+                disabled={tooSmall}
+              >
+                <View>
+                  <Text style={[styles.vehicleLabel, vehicle === v.id && { color: colors.amber }]}>
+                    {vehicle === v.id ? "● " : "○ "}
+                    {v.label}
+                  </Text>
+                  <Text style={styles.vehicleCapacity}>Fits up to {MAX_PASSENGERS[v.id]} passengers</Text>
+                </View>
+                <Text style={styles.vehiclePrice}>₦{price.toLocaleString()}</Text>
+              </Pressable>
+            );
+          })}
+        </Card>
+
+        <Card style={{ marginBottom: spacing.md }}>
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardLabel}>Security escort</Text>
+              <Text style={styles.addonNote}>Adds a dedicated security vehicle, +₦{SECURITY_ESCORT_PRICE.toLocaleString()}</Text>
+            </View>
+            <Switch
+              value={securityEscort}
+              onValueChange={setSecurityEscort}
+              trackColor={{ false: "rgba(255,255,255,0.15)", true: colors.amber }}
+            />
+          </View>
+        </Card>
+
+        <Card style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>Fleet accompaniment</Text>
+          <View style={styles.bookingRow}>
+            {[0, 2, 3].map((n) => (
+              <Pressable
+                key={n}
+                onPress={() => setFleetSize(n)}
+                style={[styles.bookingChip, fleetSize === n && styles.bookingChipActive]}
+              >
+                <Text style={[styles.bookingChipText, fleetSize === n && styles.bookingChipTextActive]}>
+                  {n === 0 ? "None" : `${n} vehicles · +₦${FLEET_PRICE[n].toLocaleString()}`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </Card>
 
         <View style={{ height: spacing.lg }} />
         <Button
           label={`Confirm · ₦${totalFare.toLocaleString()}`}
+          disabled={!canConfirm}
           onPress={() =>
             navigation.navigate("Checkout", {
               amountNaira: totalFare,
-              label: `${selectedVehicle.label} — ${selectedBooking.label}`,
+              label: `${VEHICLES.find((v) => v.id === vehicle).label}. ${selectedBooking.label}`,
               pickupAddress: pickup,
               stops,
-              vehicleType: selectedVehicle.id,
+              vehicleType: vehicle,
               bookingType: selectedBooking.id,
               durationDays: selectedBooking.days,
+              securityEscort,
+              fleetSize,
             })
           }
         />
@@ -136,10 +277,20 @@ const styles = StyleSheet.create({
   vehicleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.08)",
   },
   vehicleLabel: { color: colors.cream, fontSize: 13 },
+  vehicleCapacity: { color: colors.textMuted, fontSize: 10.5, marginTop: 2, marginLeft: 14 },
   vehiclePrice: { color: colors.cream, fontSize: 13, fontWeight: "700" },
+  passengerLabel: { color: colors.cream, fontSize: 13, flex: 1 },
+  passengerInput: {
+    color: colors.cream, fontSize: 14, fontWeight: "700", width: 60, textAlign: "center",
+    backgroundColor: colors.fieldBg, borderRadius: 8, paddingVertical: 6,
+  },
+  toggleRow: { flexDirection: "row", alignItems: "center" },
+  addonNote: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  warningText: { color: colors.coral, fontSize: 11.5, marginTop: 6, lineHeight: 16 },
 });

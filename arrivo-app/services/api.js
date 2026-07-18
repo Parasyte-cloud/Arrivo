@@ -73,3 +73,9 @@ export function verifyWalletTopup(token, reference) {
     body: JSON.stringify({ reference }),
   });
 }
+
+export function getMembership(token) {
+  return request("/api/memberships/mine", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
