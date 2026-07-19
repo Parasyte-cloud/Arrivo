@@ -12,6 +12,11 @@ import { validatePhone } from "../utils/phoneValidation";
 const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "fr", label: "Français" },
+  { code: "zh", label: "中文" },
+  { code: "de", label: "Deutsch" },
+  { code: "hi", label: "हिन्दी" },
+  { code: "es", label: "Español" },
+  { code: "pt", label: "Português" },
 ];
 
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
@@ -286,7 +291,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   label: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 8 },
-  langRow: { flexDirection: "row", gap: 8, marginBottom: spacing.md },
+  langRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.md },
   langChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,

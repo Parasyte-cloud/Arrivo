@@ -14,8 +14,15 @@ import * as Localization from "expo-localization";
 
 import en from "./locales/en.json";
 import fr from "./locales/fr.json";
+import zh from "./locales/zh.json";
+import de from "./locales/de.json";
+import hi from "./locales/hi.json";
+import es from "./locales/es.json";
+import pt from "./locales/pt.json";
 
-const supportedLanguages = ["en", "fr"];
+// Matches the website's 7 supported languages: English, French, Chinese,
+// German, Hindi, Spanish, Portuguese.
+const supportedLanguages = ["en", "fr", "zh", "de", "hi", "es", "pt"];
 
 function detectDeviceLanguage() {
   const deviceLang = Localization.getLocales()?.[0]?.languageCode;
@@ -26,6 +33,11 @@ i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
     fr: { translation: fr },
+    zh: { translation: zh },
+    de: { translation: de },
+    hi: { translation: hi },
+    es: { translation: es },
+    pt: { translation: pt },
   },
   lng: detectDeviceLanguage(),
   fallbackLng: "en",

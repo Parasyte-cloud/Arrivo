@@ -1,0 +1,48 @@
+{
+  "home": {
+    "greeting": "Buenas tardes, {{name}}",
+    "whereTo": "¿A dónde vas, Lagos?",
+    "airportPickup": "Recogida en el aeropuerto",
+    "flightPlaceholder": "Número de vuelo, ej. BA075",
+    "track": "Rastrear",
+    "bookRide": "Reservar un viaje",
+    "chauffeurForDay": "Chófer por un día",
+    "ownVehicle": "¿Tienes un auto o SUV?",
+    "earnWeekly": "Gana semanalmente",
+    "listVehicle": "Registra tu vehículo para recogidas →",
+    "bookAirportPickup": "Reservar recogida en el aeropuerto",
+    "flightNotFound": "No se encontró ese vuelo. Verifica el número e inténtalo de nuevo.",
+    "landing": "Aterrizaje {{time}}",
+    "terminal": "Terminal {{terminal}}",
+    "arrivingAt": "Llegando a {{airport}}"
+  },
+  "auth": {
+    "login": "Iniciar sesión",
+    "signup": "Registrarse",
+    "name": "Nombre completo",
+    "email": "Correo electrónico",
+    "phone": "Número de teléfono",
+    "password": "Contraseña",
+    "createAccount": "Crear cuenta",
+    "haveAccount": "¿Ya tienes una cuenta? Inicia sesión",
+    "needAccount": "¿Nuevo aquí? Crea una cuenta",
+    "welcomeBack": "Bienvenido de nuevo",
+    "joinArrivo": "Únete a RideArrivo",
+    "invalidCredentials": "Correo electrónico o contraseña no válidos",
+    "loading": "Por favor espera…"
+  },
+  "profile": {
+    "title": "Perfil",
+    "verifiedId": "Identidad verificada",
+    "emergencyContacts": "Contactos de emergencia",
+    "rideSharingPrefs": "Preferencias para compartir viaje",
+    "support": "Soporte",
+    "language": "Idioma",
+    "logOut": "Cerrar sesión"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "back": "Atrás"
+  }
+}

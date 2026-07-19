@@ -1,0 +1,48 @@
+{
+  "home": {
+    "greeting": "Guten Abend, {{name}}",
+    "whereTo": "Wohin geht's, Lagos?",
+    "airportPickup": "Flughafenabholung",
+    "flightPlaceholder": "Flugnummer, z. B. BA075",
+    "track": "Verfolgen",
+    "bookRide": "Fahrt buchen",
+    "chauffeurForDay": "Chauffeur für einen Tag",
+    "ownVehicle": "Besitzen Sie ein Auto oder einen SUV?",
+    "earnWeekly": "Wöchentlich verdienen",
+    "listVehicle": "Fahrzeug für Abholungen registrieren →",
+    "bookAirportPickup": "Flughafenabholung buchen",
+    "flightNotFound": "Dieser Flug wurde nicht gefunden. Bitte Nummer prüfen und erneut versuchen.",
+    "landing": "Landung {{time}}",
+    "terminal": "Terminal {{terminal}}",
+    "arrivingAt": "Ankunft in {{airport}}"
+  },
+  "auth": {
+    "login": "Anmelden",
+    "signup": "Registrieren",
+    "name": "Vollständiger Name",
+    "email": "E-Mail",
+    "phone": "Telefonnummer",
+    "password": "Passwort",
+    "createAccount": "Konto erstellen",
+    "haveAccount": "Bereits ein Konto? Jetzt anmelden",
+    "needAccount": "Neu hier? Konto erstellen",
+    "welcomeBack": "Willkommen zurück",
+    "joinArrivo": "RideArrivo beitreten",
+    "invalidCredentials": "Ungültige E-Mail oder Passwort",
+    "loading": "Bitte warten…"
+  },
+  "profile": {
+    "title": "Profil",
+    "verifiedId": "Verifizierte ID",
+    "emergencyContacts": "Notfallkontakte",
+    "rideSharingPrefs": "Einstellungen für geteilte Fahrten",
+    "support": "Support",
+    "language": "Sprache",
+    "logOut": "Abmelden"
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "back": "Zurück"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "home": {
+    "greeting": "शुभ संध्या, {{name}}",
+    "whereTo": "कहाँ जाना है, लागोस?",
+    "airportPickup": "एयरपोर्ट पिकअप",
+    "flightPlaceholder": "फ़्लाइट नंबर, जैसे BA075",
+    "track": "ट्रैक करें",
+    "bookRide": "राइड बुक करें",
+    "chauffeurForDay": "पूरे दिन के लिए ड्राइवर",
+    "ownVehicle": "क्या आपके पास कार या SUV है?",
+    "earnWeekly": "साप्ताहिक कमाएं",
+    "listVehicle": "पिकअप के लिए अपना वाहन सूचीबद्ध करें →",
+    "bookAirportPickup": "एयरपोर्ट पिकअप बुक करें",
+    "flightNotFound": "वह फ़्लाइट नहीं मिली। नंबर जांचकर फिर से कोशिश करें।",
+    "landing": "लैंडिंग {{time}}",
+    "terminal": "टर्मिनल {{terminal}}",
+    "arrivingAt": "{{airport}} पर पहुंचना"
+  },
+  "auth": {
+    "login": "लॉग इन करें",
+    "signup": "साइन अप करें",
+    "name": "पूरा नाम",
+    "email": "ईमेल",
+    "phone": "फ़ोन नंबर",
+    "password": "पासवर्ड",
+    "createAccount": "खाता बनाएं",
+    "haveAccount": "पहले से खाता है? लॉग इन करें",
+    "needAccount": "नए हैं? खाता बनाएं",
+    "welcomeBack": "वापसी पर स्वागत है",
+    "joinArrivo": "RideArrivo से जुड़ें",
+    "invalidCredentials": "अमान्य ईमेल या पासवर्ड",
+    "loading": "कृपया प्रतीक्षा करें…"
+  },
+  "profile": {
+    "title": "प्रोफ़ाइल",
+    "verifiedId": "सत्यापित पहचान",
+    "emergencyContacts": "आपातकालीन संपर्क",
+    "rideSharingPrefs": "राइड-शेयरिंग प्राथमिकताएं",
+    "support": "सहायता",
+    "language": "भाषा",
+    "logOut": "लॉग आउट करें"
+  },
+  "common": {
+    "cancel": "रद्द करें",
+    "confirm": "पुष्टि करें",
+    "back": "वापस"
+  }
+}

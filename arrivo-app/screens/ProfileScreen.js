@@ -10,7 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { supportedLanguages } from "../i18n";
 import { getRideHistory } from "../services/api";
 
-const LANGUAGE_LABELS = { en: "English", fr: "Français" };
+const LANGUAGE_LABELS = { en: "English", fr: "Français", zh: "中文", de: "Deutsch", hi: "हिन्दी", es: "Español", pt: "Português" };
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 
 function RouteStrip() {
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: spacing.sm,
   },
-  langRow: { flexDirection: "row", gap: 8 },
+  langRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   langChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,

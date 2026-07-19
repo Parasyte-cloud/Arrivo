@@ -103,21 +103,6 @@ export default function HomeScreen({ navigation }) {
           </Pressable>
         </View>
 
-        <Card tone="dark" tinted style={{ marginTop: spacing.md }}>
-          <View style={styles.rowBetween}>
-            <View style={styles.row}>
-              <IconBadge size={32} tone="amber">
-                <Ionicons name="car" size={15} color={colors.ink} />
-              </IconBadge>
-              <Text style={styles.cardTitle}>{t("home.ownVehicle")}</Text>
-            </View>
-            <Tag label={t("home.earnWeekly")} tone="amber" />
-          </View>
-          <Pressable onPress={() => navigation.navigate("Owner")}>
-            <Text style={styles.linkText}>{t("home.listVehicle")} →</Text>
-          </Pressable>
-        </Card>
-
         <View style={{ height: spacing.lg }} />
         <Button
           label={t("home.bookAirportPickup")}
