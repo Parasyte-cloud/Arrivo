@@ -4,7 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone } from "../utils/phoneValidation";
@@ -37,6 +37,7 @@ export default function SignupScreen({ navigation }) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
   const [language, setLanguage] = useState(i18n.language?.startsWith("fr") ? "fr" : "en");
+  const [langModalVisible, setLangModalVisible] = useState(false);
   const [avatarUri, setAvatarUri] = useState(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState(null);
   const [avatarError, setAvatarError] = useState(null);
@@ -194,17 +195,31 @@ export default function SignupScreen({ navigation }) {
         />
 
         <Text style={styles.label}>{t("profile.language")}</Text>
-        <View style={styles.langRow}>
-          {LANGUAGES.map((l) => (
-            <Pressable
-              key={l.code}
-              onPress={() => setLanguage(l.code)}
-              style={[styles.langChip, language === l.code && styles.langChipActive]}
-            >
-              <Text style={[styles.langChipText, language === l.code && styles.langChipTextActive]}>{l.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Pressable style={styles.langSelector} onPress={() => setLangModalVisible(true)}>
+          <Text style={styles.langSelectorText}>{LANGUAGES.find((l) => l.code === language)?.label || language}</Text>
+          <Text style={styles.langSelectorChevron}>⌄</Text>
+        </Pressable>
+
+        <Modal visible={langModalVisible} animationType="slide" transparent onRequestClose={() => setLangModalVisible(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setLangModalVisible(false)}>
+            <View style={styles.langModalCard} onStartShouldSetResponder={() => true}>
+              <Text style={styles.langModalTitle}>{t("profile.language")}</Text>
+              {LANGUAGES.map((l) => (
+                <Pressable
+                  key={l.code}
+                  onPress={() => {
+                    setLanguage(l.code);
+                    setLangModalVisible(false);
+                  }}
+                  style={styles.langModalRow}
+                >
+                  <Text style={[styles.langModalRowText, language === l.code && styles.langModalRowTextActive]}>{l.label}</Text>
+                  {language === l.code ? <Text style={styles.langModalCheck}>✓</Text> : null}
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </Modal>
 
         <View style={styles.agreeRow}>
           <Pressable onPress={() => setAgreedToTerms(!agreedToTerms)} style={styles.checkboxTouch}>
@@ -291,17 +306,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   label: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 8 },
-  langRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.md },
-  langChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.2)",
+  langSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.fieldBg,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    marginBottom: spacing.md,
   },
-  langChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  langChipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },
-  langChipTextActive: { color: colors.ink },
+  langSelectorText: { color: colors.ink, fontSize: 14, fontWeight: "600" },
+  langSelectorChevron: { color: colors.textMuted, fontSize: 16, fontWeight: "700" },
+  langModalCard: { backgroundColor: colors.cream, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20, maxHeight: "75%" },
+  langModalTitle: { fontWeight: "700", fontSize: 15, color: colors.ink, padding: 20, paddingBottom: 10 },
+  langModalRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: "#e5e5e5",
+  },
+  langModalRowText: { color: colors.ink, fontSize: 14 },
+  langModalRowTextActive: { color: colors.tealBright, fontWeight: "700" },
+  langModalCheck: { color: colors.tealBright, fontSize: 15, fontWeight: "700" },
   helperText: { color: colors.textMuted, fontSize: 11, marginTop: -6, marginBottom: 10 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.sm },
   checkboxTouch: { paddingTop: 1 },

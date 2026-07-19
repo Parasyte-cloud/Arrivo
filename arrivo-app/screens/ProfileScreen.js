@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Circle, Line } from "react-native-svg";
 import { useTranslation } from "react-i18next";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { supportedLanguages } from "../i18n";
 import { getRideHistory } from "../services/api";
@@ -40,6 +40,7 @@ export default function ProfileScreen() {
   const [avatarError, setAvatarError] = useState(null);
   const [trips, setTrips] = useState(null); // null = loading
   const [tripsError, setTripsError] = useState(null);
+  const [langModalVisible, setLangModalVisible] = useState(false);
 
   useEffect(() => {
     getRideHistory(token)
@@ -158,20 +159,34 @@ export default function ProfileScreen() {
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>{t("profile.language")}</Text>
-          <View style={styles.langRow}>
-            {supportedLanguages.map((code) => (
-              <Pressable
-                key={code}
-                onPress={() => changeLanguage(code)}
-                style={[styles.langChip, i18n.language === code && styles.langChipActive]}
-              >
-                <Text style={[styles.langChipText, i18n.language === code && styles.langChipTextActive]}>
-                  {LANGUAGE_LABELS[code] || code}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Pressable style={styles.langSelector} onPress={() => setLangModalVisible(true)}>
+            <Text style={styles.langSelectorText}>{LANGUAGE_LABELS[i18n.language] || i18n.language}</Text>
+            <Text style={styles.langSelectorChevron}>⌄</Text>
+          </Pressable>
         </Card>
+
+        <Modal visible={langModalVisible} animationType="slide" transparent onRequestClose={() => setLangModalVisible(false)}>
+          <Pressable style={styles.langModalOverlay} onPress={() => setLangModalVisible(false)}>
+            <View style={styles.langModalCard} onStartShouldSetResponder={() => true}>
+              <Text style={styles.langModalTitle}>{t("profile.language")}</Text>
+              {supportedLanguages.map((code) => (
+                <Pressable
+                  key={code}
+                  onPress={() => {
+                    changeLanguage(code);
+                    setLangModalVisible(false);
+                  }}
+                  style={styles.langModalRow}
+                >
+                  <Text style={[styles.langModalRowText, i18n.language === code && styles.langModalRowTextActive]}>
+                    {LANGUAGE_LABELS[code] || code}
+                  </Text>
+                  {i18n.language === code ? <Text style={styles.langModalCheck}>✓</Text> : null}
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </Modal>
 
         <Text style={styles.sectionTitle}>Your trips</Text>
         {trips === null && !tripsError ? (
@@ -235,17 +250,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: spacing.sm,
   },
-  langRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  langChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.dark.surfaceBorder,
+  langSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.dark.fieldBg,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
   },
-  langChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  langChipText: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },
-  langChipTextActive: { color: colors.ink },
+  langSelectorText: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600" },
+  langSelectorChevron: { color: colors.dark.textMuted, fontSize: 16, fontWeight: "700" },
+  langModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  langModalCard: { backgroundColor: colors.dark.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20 },
+  langModalTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 15, padding: 20, paddingBottom: 10 },
+  langModalRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: colors.dark.hairline,
+  },
+  langModalRowText: { color: colors.dark.text, fontSize: 14 },
+  langModalRowTextActive: { color: colors.amber, fontWeight: "700" },
+  langModalCheck: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   link: { color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
   avatarCircle: {
     width: 60, height: 60, borderRadius: 30, backgroundColor: colors.dark.fieldBg,
