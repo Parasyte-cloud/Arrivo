@@ -63,14 +63,14 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
   content: { padding: spacing.lg },
-  brand: { fontSize: 34, fontWeight: "700", color: colors.cream, textAlign: "center" },
+  brand: { fontSize: 34, fontWeight: "700", color: colors.ink, textAlign: "center" },
   subBrand: { fontSize: 12, fontWeight: "700", color: colors.amber, textAlign: "center", letterSpacing: 3, marginTop: 2 },
-  title: { fontSize: 20, fontWeight: "700", color: colors.cream, marginBottom: spacing.lg, textAlign: "center" },
+  title: { fontSize: 20, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,

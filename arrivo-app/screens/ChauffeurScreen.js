@@ -4,8 +4,8 @@ import { Card, Button } from "../components/UI";
 import { colors, spacing } from "../theme/tokens";
 
 const OPTIONS = [
-  { id: "sedan", label: "Sedan — comfort", price: 45000 },
-  { id: "suv", label: "SUV — spacious", price: 65000 },
+  { id: "sedan", label: "Sedan, comfort", price: 45000 },
+  { id: "suv", label: "SUV, spacious", price: 65000 },
   { id: "luxury", label: "Luxury", price: 120000 },
 ];
 
@@ -18,7 +18,7 @@ export default function ChauffeurScreen() {
     const opt = OPTIONS.find((o) => o.id === choice);
     Alert.alert(
       "Chauffeur requested",
-      `${opt.label} for ${hours} hours${purpose ? ` — ${purpose}` : ""}. Estimated total: ₦${opt.price.toLocaleString()}.\n\n(This is a demo confirmation — wire this button to your booking API.)`
+      `${opt.label} for ${hours} hours${purpose ? ` for ${purpose}` : ""}. Estimated total: ₦${opt.price.toLocaleString()}.\n\n(This is a demo confirmation. Wire this button to your booking API.)`
     );
   };
 
@@ -83,22 +83,22 @@ function Field({ label, value }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 18, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
   rowLabel: { color: colors.textMuted, fontSize: 12.5 },
-  rowValue: { color: colors.cream, fontSize: 13 },
-  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.08)" },
-  smallInput: { color: colors.cream, fontSize: 13, textAlign: "right", minWidth: 40 },
-  purposeInput: { color: colors.cream, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  rowValue: { color: colors.ink, fontSize: 13 },
+  divider: { height: 1, backgroundColor: "rgba(18,18,59,0.08)" },
+  smallInput: { color: colors.ink, fontSize: 13, textAlign: "right", minWidth: 40 },
+  purposeInput: { color: colors.ink, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   optRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(18,18,59,0.08)",
   },
-  optLabel: { color: colors.cream, fontSize: 13 },
-  optPrice: { color: colors.cream, fontSize: 13, fontWeight: "700" },
+  optLabel: { color: colors.ink, fontSize: 13 },
+  optPrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
 });

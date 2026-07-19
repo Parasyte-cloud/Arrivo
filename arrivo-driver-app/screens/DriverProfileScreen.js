@@ -124,14 +124,14 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink },
   subtitle: { fontSize: 12, color: colors.textMuted, marginTop: 4, marginBottom: spacing.lg },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12.5, marginBottom: 10 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12.5, marginBottom: 10 },
   hint: { color: colors.textMuted, fontSize: 11, marginBottom: 10, marginTop: -4 },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 10,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
@@ -144,10 +144,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(18,18,59,0.2)",
   },
   chipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  chipText: { color: colors.cream, fontSize: 12.5, fontWeight: "600" },
+  chipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },
   chipTextActive: { color: colors.ink },
   error: { color: colors.coral, fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
 });

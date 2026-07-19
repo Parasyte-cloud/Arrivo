@@ -42,7 +42,7 @@ export default function ActivityScreen() {
         {loading && rides.length === 0 ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {!loading && !error && rides.length === 0 ? (
-          <Text style={styles.empty}>No rides yet — book your first airport pickup from Home.</Text>
+          <Text style={styles.empty}>No rides yet. Book your first airport pickup from Home.</Text>
         ) : null}
 
         {rides.map((ride) => (
@@ -64,12 +64,12 @@ export default function ActivityScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   row: { flexDirection: "row", alignItems: "center" },
-  tripTitle: { color: colors.cream, fontSize: 13, fontWeight: "600" },
+  tripTitle: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  tripPrice: { color: colors.cream, fontSize: 13, fontWeight: "700" },
+  tripPrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   error: { color: colors.coral, fontSize: 12.5, marginBottom: spacing.md },
   empty: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
 });

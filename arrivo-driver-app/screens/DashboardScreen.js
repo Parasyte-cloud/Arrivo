@@ -136,7 +136,7 @@ export default function DashboardScreen() {
             value={isOnline}
             onValueChange={toggleOnline}
             disabled={!!activeRide}
-            trackColor={{ false: "rgba(255,255,255,0.2)", true: colors.amber }}
+            trackColor={{ false: "rgba(18,18,59,0.2)", true: colors.amber }}
             thumbColor="#fff"
           />
         </View>
@@ -277,15 +277,15 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
-  greet: { fontSize: 19, fontWeight: "700", color: colors.cream },
+  greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
   sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   waitingText: { color: colors.textMuted, fontSize: 12.5, marginTop: 8 },
   offlineText: { color: colors.textMuted, fontSize: 13, textAlign: "center", paddingVertical: spacing.md },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  tripTitle: { color: colors.cream, fontSize: 14, fontWeight: "700", marginTop: 4 },
+  tripTitle: { color: colors.ink, fontSize: 14, fontWeight: "700", marginTop: 4 },
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
   error: { color: colors.coral, fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
@@ -294,5 +294,5 @@ const styles = StyleSheet.create({
   panicCountingText: { color: colors.coral, fontSize: 13, fontWeight: "700" },
   panicActiveCard: { backgroundColor: "rgba(225,82,61,0.16)", borderColor: colors.coral, borderWidth: 1 },
   panicActiveTitle: { color: colors.coral, fontSize: 14, fontWeight: "700", marginBottom: 4 },
-  panicActiveBody: { color: colors.cream, fontSize: 12, lineHeight: 17 },
+  panicActiveBody: { color: colors.ink, fontSize: 12, lineHeight: 17 },
 });

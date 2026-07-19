@@ -67,12 +67,12 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
   content: { padding: spacing.lg },
-  title: { fontSize: 24, fontWeight: "700", color: colors.cream, marginBottom: spacing.lg, textAlign: "center" },
+  title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,

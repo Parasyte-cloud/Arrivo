@@ -90,7 +90,7 @@ export default function ProfileScreen() {
       return;
     }
     if (!asset.base64) {
-      setAvatarError("Couldn't read that photo — please try another.");
+      setAvatarError("Couldn't read that photo. Please try another.");
       return;
     }
 
@@ -213,15 +213,15 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
-  name: { color: colors.cream, fontSize: 15, fontWeight: "700" },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  name: { color: colors.ink, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 10 },
-  sectionTitle: { color: colors.cream, fontWeight: "700", fontSize: 14, marginBottom: 10 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 10 },
+  sectionTitle: { color: colors.ink, fontWeight: "700", fontSize: 14, marginBottom: 10 },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 10,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
@@ -234,12 +234,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(18,18,59,0.2)",
   },
   langChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  langChipText: { color: colors.cream, fontSize: 12.5, fontWeight: "600" },
+  langChipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },
   langChipTextActive: { color: colors.ink },
-  link: { color: colors.cream, fontSize: 13, paddingVertical: 10 },
+  link: { color: colors.ink, fontSize: 13, paddingVertical: 10 },
   avatarCircle: {
     width: 60, height: 60, borderRadius: 30, backgroundColor: colors.fieldBg,
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",
@@ -254,10 +254,10 @@ const styles = StyleSheet.create({
   avatarEditBadgeText: { fontSize: 9, color: colors.ink },
   errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.md },
   tripLabel: { color: colors.textMuted, fontSize: 9.5, letterSpacing: 0.5 },
-  tripAddr: { color: colors.cream, fontSize: 12.5 },
+  tripAddr: { color: colors.ink, fontSize: 12.5 },
   tripMetaRow: {
     flexDirection: "row", justifyContent: "space-between", marginTop: 10, paddingTop: 8,
-    borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopWidth: 1, borderTopColor: "rgba(18,18,59,0.08)",
   },
   tripStatus: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
 });

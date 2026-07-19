@@ -175,26 +175,26 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   centered: { alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   balanceLabel: { color: colors.textMuted, fontSize: 12 },
   balance: { color: colors.amber, fontSize: 28, fontWeight: "700", marginTop: 4 },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   emptyText: { color: colors.textMuted, fontSize: 13 },
   input: {
     backgroundColor: colors.fieldBg,
     borderRadius: radius.sm + 2,
     paddingVertical: 12,
     paddingHorizontal: spacing.md,
-    color: colors.cream,
+    color: colors.ink,
     fontSize: 15,
     marginBottom: spacing.sm,
   },
-  statusText: { color: colors.cream, fontSize: 12.5, marginTop: 8, textAlign: "center" },
+  statusText: { color: colors.ink, fontSize: 12.5, marginTop: 8, textAlign: "center" },
   errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  txLabel: { color: colors.cream, fontSize: 13.5, fontWeight: "600" },
+  txLabel: { color: colors.ink, fontSize: 13.5, fontWeight: "600" },
   txDate: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   txAmount: { fontSize: 14, fontWeight: "700" },
 });

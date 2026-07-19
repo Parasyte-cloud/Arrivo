@@ -54,15 +54,15 @@ export default function OwnerScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.md },
-  title: { fontSize: 17, fontWeight: "700", color: colors.cream },
+  title: { fontSize: 17, fontWeight: "700", color: colors.ink },
   sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   statsRow: { flexDirection: "row", justifyContent: "space-between" },
-  statNum: { fontSize: 22, fontWeight: "700", color: colors.cream },
+  statNum: { fontSize: 22, fontWeight: "700", color: colors.ink },
   statLabel: { fontSize: 10.5, color: colors.textMuted, marginTop: 2 },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   row: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
-  rowLabel: { color: colors.cream, fontSize: 12.5 },
-  rowValue: { color: colors.cream, fontSize: 12.5 },
+  rowLabel: { color: colors.ink, fontSize: 12.5 },
+  rowValue: { color: colors.ink, fontSize: 12.5 },
 });

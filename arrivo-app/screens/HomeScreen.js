@@ -113,16 +113,16 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
-  greet: { fontSize: 19, fontWeight: "700", color: colors.cream },
+  greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
   sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   pill: { backgroundColor: colors.amber, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   pillText: { fontSize: 10, fontWeight: "700", color: colors.ink },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  cardTitle: { color: colors.cream, fontWeight: "600", fontSize: 13 },
+  cardTitle: { color: colors.ink, fontWeight: "600", fontSize: 13 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   tile: {
     flex: 1,
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  tileText: { color: colors.cream, fontWeight: "700", fontSize: 12, textAlign: "center" },
+  tileText: { color: colors.ink, fontWeight: "700", fontSize: 12, textAlign: "center" },
   linkText: { color: colors.tealBright, fontSize: 11, fontWeight: "600", marginTop: 8 },
   flightRow: {
     flexDirection: "row",
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md,
     paddingRight: 6,
   },
-  flightInput: { flex: 1, color: colors.cream, fontSize: 13, paddingVertical: 12 },
+  flightInput: { flex: 1, color: colors.ink, fontSize: 13, paddingVertical: 12 },
   trackBtn: {
     backgroundColor: colors.amber,
     borderRadius: radius.sm,
@@ -160,8 +160,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: "rgba(18,18,59,0.08)",
   },
-  flightAirline: { color: colors.cream, fontWeight: "700", fontSize: 13 },
+  flightAirline: { color: colors.ink, fontWeight: "700", fontSize: 13 },
   flightMeta: { color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
 });

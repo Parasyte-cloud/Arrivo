@@ -61,7 +61,7 @@ export default function SignupScreen({ navigation }) {
       return;
     }
     if (!asset.base64) {
-      setAvatarError("Couldn't read that photo — please try another.");
+      setAvatarError("Couldn't read that photo. Please try another.");
       return;
     }
 
@@ -141,7 +141,7 @@ export default function SignupScreen({ navigation }) {
           value={passportNumber}
           onChangeText={setPassportNumber}
         />
-        <Text style={styles.helperText}>Any government-licensed ID — passport, NIN, etc.</Text>
+        <Text style={styles.helperText}>Any government-licensed ID: passport, NIN, etc.</Text>
         <TextInput
           style={styles.input}
           placeholder={t("auth.phone")}
@@ -237,7 +237,7 @@ export default function SignupScreen({ navigation }) {
                   setPrivacyModalVisible(false);
                 }}
               >
-                <Text style={styles.modalAgreeBtnText}>I've read this — I agree</Text>
+                <Text style={styles.modalAgreeBtnText}>I've read this. I agree</Text>
               </Pressable>
             </View>
           </View>
@@ -261,20 +261,20 @@ export default function SignupScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingTop: 60, paddingBottom: 40 },
-  title: { fontSize: 24, fontWeight: "700", color: colors.cream, marginBottom: spacing.lg, textAlign: "center" },
+  title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   avatarPicker: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: colors.fieldBg,
     alignSelf: "center", alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.2)", borderStyle: "dashed", overflow: "hidden",
+    borderWidth: 1.5, borderColor: "rgba(18,18,59,0.2)", borderStyle: "dashed", overflow: "hidden",
   },
   avatarImage: { width: "100%", height: "100%" },
   avatarPlus: { fontSize: 30, color: colors.textMuted },
   avatarLabel: { color: colors.tealBright, fontSize: 12, fontWeight: "700", textAlign: "center", marginTop: 8, marginBottom: spacing.md },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,
@@ -288,16 +288,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(18,18,59,0.2)",
   },
   langChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  langChipText: { color: colors.cream, fontSize: 12.5, fontWeight: "600" },
+  langChipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },
   langChipTextActive: { color: colors.ink },
   helperText: { color: colors.textMuted, fontSize: 11, marginTop: -6, marginBottom: 10 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.sm },
   checkboxTouch: { paddingTop: 1 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
     alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },

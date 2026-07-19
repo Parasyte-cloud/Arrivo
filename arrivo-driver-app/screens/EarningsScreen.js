@@ -81,16 +81,16 @@ export default function EarningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   statsRow: { flexDirection: "row", justifyContent: "space-between" },
-  statNum: { fontSize: 18, fontWeight: "700", color: colors.cream },
+  statNum: { fontSize: 18, fontWeight: "700", color: colors.ink },
   statLabel: { fontSize: 10, color: colors.textMuted, marginTop: 2 },
   sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   row: { flexDirection: "row", alignItems: "center" },
-  tripTitle: { color: colors.cream, fontSize: 13, fontWeight: "600" },
+  tripTitle: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  tripPrice: { color: colors.cream, fontSize: 13, fontWeight: "700" },
+  tripPrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   error: { color: colors.coral, fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.lg },
 });

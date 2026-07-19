@@ -67,11 +67,11 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 19, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
-  name: { color: colors.cream, fontSize: 15, fontWeight: "700" },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  name: { color: colors.ink, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 8 },
   cardLabel: { color: colors.textMuted, fontWeight: "600", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-  row: { color: colors.cream, fontSize: 13.5 },
+  row: { color: colors.ink, fontSize: 13.5 },
   rowMuted: { color: colors.textMuted, fontSize: 11.5, marginTop: 2 },
 });

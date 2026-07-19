@@ -208,7 +208,7 @@ export default function RouteScreen({ navigation }) {
             <Switch
               value={securityEscort}
               onValueChange={setSecurityEscort}
-              trackColor={{ false: "rgba(255,255,255,0.15)", true: colors.amber }}
+              trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
             />
           </View>
         </Card>
@@ -254,25 +254,25 @@ export default function RouteScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 18, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   stopRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
   thread: { width: 2, height: 16, backgroundColor: "#4A4A78", marginLeft: 3.5 },
-  stopInput: { color: colors.cream, fontSize: 13, flex: 1, paddingVertical: 6 },
+  stopInput: { color: colors.ink, fontSize: 13, flex: 1, paddingVertical: 6 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(18,18,59,0.2)",
   },
   bookingChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  bookingChipText: { color: colors.cream, fontSize: 12, fontWeight: "600" },
+  bookingChipText: { color: colors.ink, fontSize: 12, fontWeight: "600" },
   bookingChipTextActive: { color: colors.ink },
   vehicleRow: {
     flexDirection: "row",
@@ -280,14 +280,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(18,18,59,0.08)",
   },
-  vehicleLabel: { color: colors.cream, fontSize: 13 },
+  vehicleLabel: { color: colors.ink, fontSize: 13 },
   vehicleCapacity: { color: colors.textMuted, fontSize: 10.5, marginTop: 2, marginLeft: 14 },
-  vehiclePrice: { color: colors.cream, fontSize: 13, fontWeight: "700" },
-  passengerLabel: { color: colors.cream, fontSize: 13, flex: 1 },
+  vehiclePrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  passengerLabel: { color: colors.ink, fontSize: 13, flex: 1 },
   passengerInput: {
-    color: colors.cream, fontSize: 14, fontWeight: "700", width: 60, textAlign: "center",
+    color: colors.ink, fontSize: 14, fontWeight: "700", width: 60, textAlign: "center",
     backgroundColor: colors.fieldBg, borderRadius: 8, paddingVertical: 6,
   },
   toggleRow: { flexDirection: "row", alignItems: "center" },

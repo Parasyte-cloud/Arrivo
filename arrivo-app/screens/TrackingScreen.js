@@ -81,7 +81,7 @@ export default function TrackingScreen({ route }) {
             <Text style={styles.avatarText}>KJ</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.name}>Kunle J. — Toyota Highlander</Text>
+            <Text style={styles.name}>Kunle J., Toyota Highlander</Text>
             <Text style={styles.meta}>Plate: KJA 224 XL · ★ 4.9</Text>
             <Tag label="ID Verified" tone="teal" />
           </View>
@@ -111,7 +111,7 @@ export default function TrackingScreen({ route }) {
             {panicSending ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.panicText}>🚨 I don't feel safe — alert support</Text>
+              <Text style={styles.panicText}>🚨 I don't feel safe. Alert support</Text>
             )}
           </Pressable>
         )}
@@ -121,7 +121,7 @@ export default function TrackingScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.bg },
   avatar: {
     width: 46,
     height: 46,
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: "#fff", fontWeight: "700" },
-  name: { color: colors.cream, fontWeight: "700", fontSize: 14 },
+  name: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   meta: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   shareNote: { color: colors.textMuted, fontSize: 11.5, textAlign: "center" },

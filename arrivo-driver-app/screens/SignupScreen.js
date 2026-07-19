@@ -77,13 +77,13 @@ export default function SignupScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
   content: { padding: spacing.lg },
-  title: { fontSize: 22, fontWeight: "700", color: colors.cream, textAlign: "center" },
+  title: { fontSize: 22, fontWeight: "700", color: colors.ink, textAlign: "center" },
   subtitle: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 4, marginBottom: spacing.lg },
   input: {
     backgroundColor: colors.fieldBg,
-    color: colors.cream,
+    color: colors.ink,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,

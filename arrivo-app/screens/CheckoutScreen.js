@@ -199,28 +199,28 @@ export default function CheckoutScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
-  title: { fontSize: 18, fontWeight: "700", color: colors.cream, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  label: { color: colors.cream, fontSize: 14, fontWeight: "600" },
+  label: { color: colors.ink, fontSize: 14, fontWeight: "600" },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700" },
   note: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
-  cardLabel: { color: colors.cream, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   payOption: {
     paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(18,18,59,0.15)",
   },
   payOptionActive: { borderColor: colors.amber, backgroundColor: "rgba(244,163,0,0.08)" },
-  payOptionLabel: { color: colors.cream, fontSize: 13, fontWeight: "600" },
+  payOptionLabel: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   payOptionNote: { color: colors.coral, fontSize: 10.5, marginTop: 4, marginLeft: 14 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.lg },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
     alignItems: "center", justifyContent: "center", marginTop: 1,
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   agreeText: { color: colors.textMuted, fontSize: 12, flex: 1 },
-  statusText: { color: colors.cream, fontSize: 12.5, marginTop: 8, textAlign: "center" },
+  statusText: { color: colors.ink, fontSize: 12.5, marginTop: 8, textAlign: "center" },
   errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
 });
