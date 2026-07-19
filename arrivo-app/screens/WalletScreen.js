@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getWallet, initializePayment, verifyWalletTopup } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -118,14 +119,18 @@ export default function WalletScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.screen, styles.centered]}>
-        <ActivityIndicator color={colors.amber} />
+      <View style={styles.screen}>
+        <GradientBackground variant="dark" />
+        <View style={[StyleSheet.absoluteFill, styles.centered]}>
+          <ActivityIndicator color={colors.amber} />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.amber} />}
@@ -134,19 +139,19 @@ export default function WalletScreen() {
 
         {loadError ? <Text style={styles.errorText}>{loadError}</Text> : null}
 
-        <Card tinted style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
           <Text style={styles.balanceLabel}>Balance</Text>
           <Text style={styles.balance}>{formatNaira(balance)}</Text>
         </Card>
 
         {!showTopUp ? (
-          <Button label="Top Up Wallet" onPress={() => setShowTopUp(true)} />
+          <Button label="Top Up Wallet" onPress={() => setShowTopUp(true)} trailingIcon />
         ) : (
-          <Card style={{ marginBottom: spacing.md }}>
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <TextInput
               style={styles.input}
               placeholder="Amount (₦)"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.dark.textMuted}
               keyboardType="number-pad"
               value={amountInput}
               onChangeText={setAmountInput}
@@ -161,7 +166,7 @@ export default function WalletScreen() {
                 </Text>
               </View>
             ) : (
-              <Button label="Continue to payment" onPress={topUp} />
+              <Button label="Continue to payment" onPress={topUp} trailingIcon />
             )}
           </Card>
         )}
@@ -174,13 +179,13 @@ export default function WalletScreen() {
             const amount = Number(tx.amount_naira);
             const isCredit = amount > 0;
             return (
-              <Card key={tx.id} style={{ marginBottom: spacing.sm }}>
+              <Card key={tx.id} tone="dark" style={{ marginBottom: spacing.sm }}>
                 <View style={styles.row}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.txLabel}>{transactionLabel(tx)}</Text>
                     <Text style={styles.txDate}>{formatDate(tx.created_at)}</Text>
                   </View>
-                  <Text style={[styles.txAmount, { color: isCredit ? colors.tealBright : colors.coral }]}>
+                  <Text style={[styles.txAmount, { color: isCredit ? "#8FD9C4" : "#FF9B8A" }]}>
                     {isCredit ? "+" : ""}{formatNaira(amount)}
                   </Text>
                 </View>
@@ -194,26 +199,26 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   centered: { alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
-  balanceLabel: { color: colors.textMuted, fontSize: 12 },
+  title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
+  balanceLabel: { color: colors.dark.textMuted, fontSize: 12 },
   balance: { color: colors.amber, fontSize: 28, fontWeight: "700", marginTop: 4 },
-  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
-  emptyText: { color: colors.textMuted, fontSize: 13 },
+  cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  emptyText: { color: colors.dark.textMuted, fontSize: 13 },
   input: {
-    backgroundColor: colors.fieldBg,
+    backgroundColor: colors.dark.fieldBg,
     borderRadius: radius.sm + 2,
     paddingVertical: 12,
     paddingHorizontal: spacing.md,
-    color: colors.ink,
+    color: colors.dark.text,
     fontSize: 15,
     marginBottom: spacing.sm,
   },
-  statusText: { color: colors.ink, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
+  statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
+  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  txLabel: { color: colors.ink, fontSize: 13.5, fontWeight: "600" },
-  txDate: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  txLabel: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600" },
+  txDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   txAmount: { fontSize: 14, fontWeight: "700" },
 });

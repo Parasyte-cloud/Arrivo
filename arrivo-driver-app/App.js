@@ -28,7 +28,12 @@ const navTheme = {
 
 function AuthFlow() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    // Auth screens are the one part of the app that stays light-cream
+    // (matching the website's marketing pages) while everything past login
+    // is dark-navy "Liquid Glass" — the navigator's default background
+    // otherwise falls back to navTheme's dark ink, which would flash/bleed
+    // through at screen edges and transitions on Login/Signup.
+    <AuthStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.cream } }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
     </AuthStack.Navigator>

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing, radius } from "../theme/tokens";
 
@@ -101,10 +102,11 @@ export default function RouteScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Set your route</Text>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Booking type</Text>
           <View style={styles.bookingRow}>
             {BOOKING_TYPES.map((b) => (
@@ -119,10 +121,10 @@ export default function RouteScreen({ navigation }) {
           </View>
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.stopRow}>
-            <View style={[styles.dot, { backgroundColor: colors.teal }]} />
-            <TextInput style={styles.stopInput} value={pickup} onChangeText={setPickup} placeholderTextColor={colors.textMuted} />
+            <View style={[styles.dot, { backgroundColor: colors.tealBright }]} />
+            <TextInput style={styles.stopInput} value={pickup} onChangeText={setPickup} placeholderTextColor={colors.dark.textMuted} />
           </View>
           {stops.map((stop, i) => (
             <View key={i} style={styles.stopRow}>
@@ -133,7 +135,7 @@ export default function RouteScreen({ navigation }) {
                 value={stop}
                 onChangeText={(v) => updateStop(i, v)}
                 placeholder={`Stop ${i + 1}`}
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.dark.textMuted}
               />
             </View>
           ))}
@@ -144,7 +146,7 @@ export default function RouteScreen({ navigation }) {
         </Card>
 
         {excludedArea ? (
-          <Card style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
+          <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.warningText}>
               We don't currently operate in {excludedArea.name}. Please choose a different pickup or destination.
             </Text>
@@ -153,7 +155,7 @@ export default function RouteScreen({ navigation }) {
 
         <MapPlaceholder etaLabel={`ETA ~${38 + stops.length * 6} min`} distanceLabel={`${stops.length} stop${stops.length > 1 ? "s" : ""} · ${(28 + stops.length * 6).toFixed(0)}km`} />
 
-        <Card style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Passengers</Text>
           <View style={styles.stopRow}>
             <Text style={styles.passengerLabel}>Adults</Text>
@@ -162,7 +164,7 @@ export default function RouteScreen({ navigation }) {
               value={adults}
               onChangeText={setAdults}
               keyboardType="number-pad"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.dark.textMuted}
             />
           </View>
           {overCapacity ? (
@@ -172,7 +174,7 @@ export default function RouteScreen({ navigation }) {
           ) : null}
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
           {VEHICLES.map((v) => {
             const price = bookingType === "one_way"
@@ -199,7 +201,7 @@ export default function RouteScreen({ navigation }) {
           })}
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.toggleRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardLabel}>Security escort</Text>
@@ -208,12 +210,12 @@ export default function RouteScreen({ navigation }) {
             <Switch
               value={securityEscort}
               onValueChange={setSecurityEscort}
-              trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+              trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
             />
           </View>
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Fleet accompaniment</Text>
           <View style={styles.bookingRow}>
             {[0, 2, 3].map((n) => (
@@ -234,6 +236,7 @@ export default function RouteScreen({ navigation }) {
         <Button
           label={`Confirm · ₦${totalFare.toLocaleString()}`}
           disabled={!canConfirm}
+          trailingIcon
           onPress={() =>
             navigation.navigate("Checkout", {
               amountNaira: totalFare,
@@ -254,25 +257,25 @@ export default function RouteScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   stopRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
-  thread: { width: 2, height: 16, backgroundColor: "#4A4A78", marginLeft: 3.5 },
-  stopInput: { color: colors.ink, fontSize: 13, flex: 1, paddingVertical: 6 },
+  thread: { width: 2, height: 16, backgroundColor: "rgba(255,255,255,0.25)", marginLeft: 3.5 },
+  stopInput: { color: colors.dark.text, fontSize: 13, flex: 1, paddingVertical: 6 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
-  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.2)",
+    borderColor: colors.dark.surfaceBorder,
   },
   bookingChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  bookingChipText: { color: colors.ink, fontSize: 12, fontWeight: "600" },
+  bookingChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
   bookingChipTextActive: { color: colors.ink },
   vehicleRow: {
     flexDirection: "row",
@@ -280,17 +283,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(18,18,59,0.08)",
+    borderBottomColor: colors.dark.hairline,
   },
-  vehicleLabel: { color: colors.ink, fontSize: 13 },
-  vehicleCapacity: { color: colors.textMuted, fontSize: 10.5, marginTop: 2, marginLeft: 14 },
-  vehiclePrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
-  passengerLabel: { color: colors.ink, fontSize: 13, flex: 1 },
+  vehicleLabel: { color: colors.dark.text, fontSize: 13 },
+  vehicleCapacity: { color: colors.dark.textMuted, fontSize: 10.5, marginTop: 2, marginLeft: 14 },
+  vehiclePrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  passengerLabel: { color: colors.dark.text, fontSize: 13, flex: 1 },
   passengerInput: {
-    color: colors.ink, fontSize: 14, fontWeight: "700", width: 60, textAlign: "center",
-    backgroundColor: colors.fieldBg, borderRadius: 8, paddingVertical: 6,
+    color: colors.dark.text, fontSize: 14, fontWeight: "700", width: 60, textAlign: "center",
+    backgroundColor: colors.dark.fieldBg, borderRadius: 8, paddingVertical: 6,
   },
   toggleRow: { flexDirection: "row", alignItems: "center" },
-  addonNote: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  warningText: { color: colors.coral, fontSize: 11.5, marginTop: 6, lineHeight: 16 },
+  addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
+  warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
 });

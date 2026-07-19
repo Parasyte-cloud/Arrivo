@@ -45,7 +45,14 @@ const stackScreenOptions = {
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} options={{ title: "RideArrivo" }} />
+      <Stack.Screen
+        name="HomeMain"
+        component={HomeScreen}
+        options={{
+          title: "RideArrivo",
+          headerRight: () => <Ionicons name="notifications-outline" size={20} color={colors.cream} style={{ marginRight: 4 }} />,
+        }}
+      />
       <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
       <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
@@ -83,7 +90,12 @@ function MainTabs() {
 
 function AuthFlow() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    // Auth screens are the one part of the app that stays light-cream
+    // (matching the website's marketing pages) while everything past login
+    // is dark-navy "Liquid Glass" — the navigator's default background
+    // otherwise falls back to navTheme's dark ink, which would flash/bleed
+    // through at screen edges and transitions on Login/Signup.
+    <AuthStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.cream } }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
     </AuthStack.Navigator>

@@ -116,15 +116,18 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.screen, { alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={colors.amber} size="large" />
+      <View style={styles.screen}>
+        <GradientBackground variant="dark" />
+        <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
+          <ActivityIndicator color={colors.amber} size="large" />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      <GradientBackground />
+      <GradientBackground variant="dark" />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={activeRide ? checkForActiveRide : refreshAvailable} tintColor={colors.amber} />}
@@ -138,7 +141,7 @@ export default function DashboardScreen() {
             value={isOnline}
             onValueChange={toggleOnline}
             disabled={!!activeRide}
-            trackColor={{ false: "rgba(18,18,59,0.2)", true: colors.amber }}
+            trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
             thumbColor="#fff"
           />
         </View>
@@ -151,9 +154,9 @@ export default function DashboardScreen() {
           <>
             <Text style={styles.sectionLabel}>Nearby requests</Text>
             {available.length === 0 ? (
-              <Card>
+              <Card tone="dark">
                 <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
-                  <ActivityIndicator color={colors.teal} />
+                  <ActivityIndicator color={colors.amber} />
                   <Text style={styles.waitingText}>Searching for ride requests…</Text>
                 </View>
               </Card>
@@ -164,7 +167,7 @@ export default function DashboardScreen() {
             )}
           </>
         ) : (
-          <Card>
+          <Card tone="dark">
             <Text style={styles.offlineText}>Go online to start receiving ride requests.</Text>
           </Card>
         )}
@@ -175,7 +178,7 @@ export default function DashboardScreen() {
 
 function RequestCard({ ride, busy, onAccept }) {
   return (
-    <Card style={{ marginBottom: spacing.sm }}>
+    <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
         <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
@@ -184,7 +187,7 @@ function RequestCard({ ride, busy, onAccept }) {
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
       <View style={{ height: spacing.sm }} />
-      {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} />}
+      {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} trailingIcon />}
     </Card>
   );
 }
@@ -232,7 +235,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
   return (
     <View>
       <MapPlaceholder etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"} height={170} />
-      <Card style={{ marginTop: spacing.md }}>
+      <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>
           <Tag label={ride.ride_status.replace("_", " ").toUpperCase()} tone={isInProgress ? "teal" : "amber"} />
           <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
@@ -246,19 +249,19 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
       <View style={{ height: spacing.md }} />
 
       {panicState === "active" ? (
-        <Card style={styles.panicActiveCard}>
+        <Card tone="dark" style={styles.panicActiveCard}>
           <Text style={styles.panicActiveTitle}>Emergency alert active</Text>
           <Text style={styles.panicActiveBody}>
             Our team has been notified and is monitoring this trip. This can only be cleared once resolved on our end.
           </Text>
         </Card>
       ) : panicState === "counting" ? (
-        <Card style={styles.panicCountingCard}>
+        <Card tone="dark" style={styles.panicCountingCard}>
           <Text style={styles.panicCountingText}>Sending emergency alert in {countdown}…</Text>
-          <Button label="Cancel" variant="ghost" onPress={cancelPanicCountdown} style={{ marginTop: 8 }} />
+          <Button label="Cancel" variant="ghost" tone="dark" onPress={cancelPanicCountdown} style={{ marginTop: 8 }} />
         </Card>
       ) : (
-        <Button label="Emergency SOS" variant="ghost" style={styles.sosButton} onPress={startPanicCountdown} />
+        <Button label="Emergency SOS" variant="ghost" tone="dark" style={styles.sosButton} onPress={startPanicCountdown} />
       )}
 
       <View style={{ height: spacing.sm }} />
@@ -267,34 +270,34 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
         <ActivityIndicator color={colors.amber} />
       ) : isAccepted ? (
         <>
-          <Button label="Start Trip" onPress={() => onAdvance("in_progress")} />
+          <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
           <View style={{ height: spacing.sm }} />
-          <Button label="Cancel Trip" variant="ghost" onPress={() => onAdvance("cancelled")} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
         </>
       ) : (
-        <Button label="Complete Trip" onPress={() => onAdvance("completed")} />
+        <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
-  greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
-  sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
-  waitingText: { color: colors.textMuted, fontSize: 12.5, marginTop: 8 },
-  offlineText: { color: colors.textMuted, fontSize: 13, textAlign: "center", paddingVertical: spacing.md },
+  greet: { fontSize: 19, fontWeight: "700", color: colors.dark.text },
+  sub: { fontSize: 12, color: colors.dark.textMuted, marginTop: 2 },
+  sectionLabel: { color: colors.dark.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
+  waitingText: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 8 },
+  offlineText: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", paddingVertical: spacing.md },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  tripTitle: { color: colors.ink, fontSize: 14, fontWeight: "700", marginTop: 4 },
+  tripTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700", marginTop: 4 },
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
-  meta: { color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
-  error: { color: colors.coral, fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
+  error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
-  panicCountingCard: { backgroundColor: "rgba(225,82,61,0.12)", borderColor: colors.coral, borderWidth: 1, alignItems: "center" },
-  panicCountingText: { color: colors.coral, fontSize: 13, fontWeight: "700" },
-  panicActiveCard: { backgroundColor: "rgba(225,82,61,0.16)", borderColor: colors.coral, borderWidth: 1 },
-  panicActiveTitle: { color: colors.coral, fontSize: 14, fontWeight: "700", marginBottom: 4 },
-  panicActiveBody: { color: colors.ink, fontSize: 12, lineHeight: 17 },
+  panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },
+  panicCountingText: { color: "#FF9B8A", fontSize: 13, fontWeight: "700" },
+  panicActiveCard: { backgroundColor: "rgba(225,82,61,0.22)", borderColor: colors.coral, borderWidth: 1 },
+  panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
 });

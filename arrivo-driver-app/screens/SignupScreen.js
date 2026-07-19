@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform } from "react-native";
 import { Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 
@@ -31,7 +32,9 @@ export default function SignupScreen({ navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={{ flex: 1 }}>
+      <GradientBackground />
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
         <Text style={styles.title}>Drive with RideArrivo</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
@@ -72,12 +75,13 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.link}>Already have an account? Log in</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: "transparent", justifyContent: "center" },
   content: { padding: spacing.lg },
   title: { fontSize: 22, fontWeight: "700", color: colors.ink, textAlign: "center" },
   subtitle: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 4, marginBottom: spacing.lg },

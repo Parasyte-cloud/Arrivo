@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, Keyboa
 import * as ImagePicker from "expo-image-picker";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
@@ -109,7 +110,9 @@ export default function SignupScreen({ navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={{ flex: 1 }}>
+      <GradientBackground />
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>{t("auth.joinArrivo")}</Text>
 
@@ -256,12 +259,13 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.link}>{t("auth.haveAccount")}</Text>
         </Pressable>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   content: { padding: spacing.lg, paddingTop: 60, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   avatarPicker: {

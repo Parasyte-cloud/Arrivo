@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { saveDriverProfile } from "../services/api";
@@ -55,6 +56,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Complete your driver profile</Text>
         <Text style={styles.subtitle}>Step 2 of 2. This is what riders will see before their pickup</Text>
@@ -124,7 +126,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   title: { fontSize: 19, fontWeight: "700", color: colors.ink },
   subtitle: { fontSize: 12, color: colors.textMuted, marginTop: 4, marginBottom: spacing.lg },
   cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12.5, marginBottom: 10 },

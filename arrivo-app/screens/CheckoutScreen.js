@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { initializePayment, verifyPayment, createRide, getWallet, getMembership } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -134,17 +135,18 @@ export default function CheckoutScreen({ route, navigation }) {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Confirm &amp; Pay</Text>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.row}>
             <Text style={styles.label}>{label}</Text>
             <Text style={styles.amount}>{formatNaira(amountNaira)}</Text>
           </View>
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>How would you like to pay?</Text>
           {loadingOptions ? (
             <ActivityIndicator color={colors.amber} style={{ marginVertical: spacing.sm }} />
@@ -181,7 +183,7 @@ export default function CheckoutScreen({ route, navigation }) {
         </Card>
 
         {paymentMethod === "card" ? (
-          <Card style={{ marginBottom: spacing.lg }}>
+          <Card tone="dark" style={{ marginBottom: spacing.lg }}>
             <Text style={styles.note}>
               Payment is handled by Paystack's secure checkout. RideArrivo never sees or stores your card details.
             </Text>
@@ -206,13 +208,14 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {status === "success" ? <Text style={[styles.statusText, { color: colors.tealBright }]}>Confirmed ✓</Text> : null}
+        {status === "success" ? <Text style={[styles.statusText, { color: "#8FD9C4" }]}>Confirmed ✓</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
           label={isBusy ? "Please wait…" : `Pay ${formatNaira(amountNaira)}`}
           onPress={pay}
           disabled={isBusy}
+          trailingIcon
         />
       </ScrollView>
     </View>
@@ -220,28 +223,28 @@ export default function CheckoutScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  label: { color: colors.ink, fontSize: 14, fontWeight: "600" },
+  label: { color: colors.dark.text, fontSize: 14, fontWeight: "600" },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700" },
-  note: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
-  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
+  cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   payOption: {
     paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
-    borderWidth: 1, borderColor: "rgba(18,18,59,0.15)",
+    borderWidth: 1, borderColor: colors.dark.surfaceBorder,
   },
-  payOptionActive: { borderColor: colors.amber, backgroundColor: "rgba(244,163,0,0.08)" },
-  payOptionLabel: { color: colors.ink, fontSize: 13, fontWeight: "600" },
-  payOptionNote: { color: colors.coral, fontSize: 10.5, marginTop: 4, marginLeft: 14 },
+  payOptionActive: { borderColor: colors.amber, backgroundColor: "rgba(244,163,0,0.12)" },
+  payOptionLabel: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
+  payOptionNote: { color: "#FF9B8A", fontSize: 10.5, marginTop: 4, marginLeft: 14 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.lg },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.dark.surfaceBorder,
     alignItems: "center", justifyContent: "center", marginTop: 1,
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
-  agreeText: { color: colors.textMuted, fontSize: 12, flex: 1 },
-  statusText: { color: colors.ink, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  agreeText: { color: colors.dark.textMuted, fontSize: 12, flex: 1 },
+  statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
+  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
 });

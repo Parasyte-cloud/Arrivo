@@ -16,6 +16,27 @@ export const colors = {
   tealBright: "#5B7FC7",
   coral: "#E1523D",
   fieldBg: "rgba(18,18,59,0.05)", // subtle dark tint for input fields on a light background
+  card: "rgba(18,18,59,0.04)",       // light-surface tile fill (was previously referenced but undefined)
+  cardBorder: "rgba(18,18,59,0.12)",
+
+  // Dark "Liquid Glass" surface — used by every main (post-login) app
+  // screen per the approved direction: light cream stays reserved for
+  // Login/Signup only. Deliberately NOT a flat navy — bg0/bg1/glow give
+  // GradientBackground's dark variant real tonal variation, because
+  // blurring a flat color is visually identical to not blurring it at all.
+  dark: {
+    bg0: "#0D0D2E",
+    bg1: "#1B1B4D",
+    glow: "rgba(244,163,0,0.35)",       // amber glow blob
+    glow2: "rgba(91,127,199,0.40)",     // cool blue-navy glow blob
+    text: "#F7F4EC",
+    textMuted: "rgba(247,244,236,0.62)",
+    surface: "rgba(255,255,255,0.10)",       // translucent glass fill over BlurView (dark tint)
+    surfaceBorder: "rgba(255,255,255,0.18)",
+    surfaceHighlight: "rgba(255,255,255,0.30)", // glossy top-edge highlight sliver
+    hairline: "rgba(255,255,255,0.12)",
+    fieldBg: "rgba(255,255,255,0.08)",
+  },
 };
 
 export const spacing = { xs: 6, sm: 10, md: 16, lg: 24, xl: 32 };

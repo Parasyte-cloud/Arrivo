@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getDriverProfile } from "../services/api";
@@ -30,10 +31,11 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Profile</Text>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.name}>{user?.name}</Text>
           <Text style={styles.meta}>{user?.email}{user?.phone ? ` · ${user.phone}` : ""}</Text>
           {profile?.is_verified ? <Tag label="ID Verified" tone="teal" /> : <Tag label="Verification pending" tone="amber" />}
@@ -42,7 +44,7 @@ export default function ProfileScreen() {
         {loading ? (
           <ActivityIndicator color={colors.amber} />
         ) : profile ? (
-          <Card style={{ marginBottom: spacing.md }}>
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <Text style={styles.cardLabel}>Vehicle</Text>
             <Text style={styles.row}>{profile.make_model} · {profile.plate_number}</Text>
             <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
@@ -60,18 +62,18 @@ export default function ProfileScreen() {
           </Card>
         ) : null}
 
-        <Button label="Log Out" variant="ghost" onPress={logout} />
+        <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
-  name: { color: colors.ink, fontSize: 15, fontWeight: "700" },
-  meta: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 8 },
-  cardLabel: { color: colors.textMuted, fontWeight: "600", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-  row: { color: colors.ink, fontSize: 13.5 },
-  rowMuted: { color: colors.textMuted, fontSize: 11.5, marginTop: 2 },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
+  name: { color: colors.dark.text, fontSize: 15, fontWeight: "700" },
+  meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 4, marginBottom: 8 },
+  cardLabel: { color: colors.dark.textMuted, fontWeight: "600", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  row: { color: colors.dark.text, fontSize: 13.5 },
+  rowMuted: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 2 },
 });

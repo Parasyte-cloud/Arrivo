@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import Svg, { Circle, Line } from "react-native-svg";
 import { useTranslation } from "react-i18next";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { supportedLanguages } from "../i18n";
@@ -16,16 +17,16 @@ function RouteStrip() {
   return (
     <Svg width={14} height={46} viewBox="0 0 14 46">
       <Circle cx={7} cy={6} r={5} fill={colors.tealBright} />
-      <Line x1={7} y1={12} x2={7} y2={34} stroke="#555" strokeWidth={2} strokeDasharray="3,3" />
+      <Line x1={7} y1={12} x2={7} y2={34} stroke="rgba(255,255,255,0.35)" strokeWidth={2} strokeDasharray="3,3" />
       <Circle cx={7} cy={40} r={5} fill="none" stroke={colors.coral} strokeWidth={2} />
     </Svg>
   );
 }
 
 function statusStyle(status) {
-  if (status === "completed") return { color: colors.tealBright };
-  if (status === "cancelled") return { color: colors.coral };
-  return { color: colors.textMuted };
+  if (status === "completed") return { color: "#8FD9C4" };
+  if (status === "cancelled") return { color: "#FF9B8A" };
+  return { color: colors.dark.textMuted };
 }
 
 export default function ProfileScreen() {
@@ -106,10 +107,11 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>{t("profile.title")}</Text>
 
-        <Card style={{ marginBottom: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
           <Pressable onPress={pickAvatar} style={styles.avatarCircle}>
             {avatarUri ? (
               <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
@@ -125,12 +127,12 @@ export default function ProfileScreen() {
         </Card>
         {avatarError ? <Text style={styles.errorText}>{avatarError}</Text> : null}
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Contact details</Text>
           <TextInput
             style={styles.input}
             placeholder="WhatsApp number"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.dark.textMuted}
             value={whatsapp}
             onChangeText={setWhatsapp}
             keyboardType="phone-pad"
@@ -138,18 +140,18 @@ export default function ProfileScreen() {
           <TextInput
             style={styles.input}
             placeholder="Country of residence"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.dark.textMuted}
             value={country}
             onChangeText={setCountry}
           />
           {saving ? (
             <ActivityIndicator color={colors.amber} />
           ) : (
-            <Button label={saved ? "Saved ✓" : "Save"} variant="ghost" onPress={saveContactDetails} />
+            <Button label={saved ? "Saved ✓" : "Save"} variant="ghost" tone="dark" onPress={saveContactDetails} />
           )}
         </Card>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>{t("profile.language")}</Text>
           <View style={styles.langRow}>
             {supportedLanguages.map((code) => (
@@ -179,7 +181,7 @@ export default function ProfileScreen() {
             const dropoff = stops.length ? stops[stops.length - 1] : "—";
             const date = new Date(ride.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
             return (
-              <Card key={ride.id} style={{ marginBottom: spacing.sm }}>
+              <Card key={ride.id} tone="dark" style={{ marginBottom: spacing.sm }}>
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <RouteStrip />
                   <View style={{ flex: 1 }}>
@@ -199,29 +201,29 @@ export default function ProfileScreen() {
           })
         )}
 
-        <Card style={{ marginBottom: spacing.md, marginTop: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md, marginTop: spacing.md }}>
           <Text style={styles.link}>{t("profile.verifiedId")}</Text>
           <Text style={styles.link}>{t("profile.emergencyContacts")}</Text>
           <Text style={styles.link}>{t("profile.rideSharingPrefs")}</Text>
           <Text style={styles.link}>{t("profile.support")}</Text>
         </Card>
 
-        <Button label={t("profile.logOut")} variant="ghost" onPress={logout} />
+        <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
-  name: { color: colors.ink, fontSize: 15, fontWeight: "700" },
-  meta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 10 },
-  sectionTitle: { color: colors.ink, fontWeight: "700", fontSize: 14, marginBottom: 10 },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
+  name: { color: colors.dark.text, fontSize: 15, fontWeight: "700" },
+  meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 4 },
+  cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
+  sectionTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 14, marginBottom: 10 },
   input: {
-    backgroundColor: colors.fieldBg,
-    color: colors.ink,
+    backgroundColor: colors.dark.fieldBg,
+    color: colors.dark.text,
     borderRadius: 10,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
@@ -234,30 +236,30 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.2)",
+    borderColor: colors.dark.surfaceBorder,
   },
   langChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
-  langChipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },
+  langChipText: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },
   langChipTextActive: { color: colors.ink },
-  link: { color: colors.ink, fontSize: 13, paddingVertical: 10 },
+  link: { color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
   avatarCircle: {
-    width: 60, height: 60, borderRadius: 30, backgroundColor: colors.fieldBg,
+    width: 60, height: 60, borderRadius: 30, backgroundColor: colors.dark.fieldBg,
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",
   },
   avatarImage: { width: "100%", height: "100%" },
-  avatarInitial: { fontSize: 22, fontWeight: "700", color: colors.textMuted },
+  avatarInitial: { fontSize: 22, fontWeight: "700", color: colors.dark.textMuted },
   avatarEditBadge: {
     position: "absolute", bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
     backgroundColor: colors.amber, alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: colors.ink,
+    borderWidth: 2, borderColor: colors.dark.bg0,
   },
   avatarEditBadgeText: { fontSize: 9, color: colors.ink },
-  errorText: { color: colors.coral, fontSize: 12, marginBottom: spacing.md },
-  tripLabel: { color: colors.textMuted, fontSize: 9.5, letterSpacing: 0.5 },
-  tripAddr: { color: colors.ink, fontSize: 12.5 },
+  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md },
+  tripLabel: { color: colors.dark.textMuted, fontSize: 9.5, letterSpacing: 0.5 },
+  tripAddr: { color: colors.dark.text, fontSize: 12.5 },
   tripMetaRow: {
     flexDirection: "row", justifyContent: "space-between", marginTop: 10, paddingTop: 8,
-    borderTopWidth: 1, borderTopColor: "rgba(18,18,59,0.08)",
+    borderTopWidth: 1, borderTopColor: colors.dark.hairline,
   },
   tripStatus: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
 });

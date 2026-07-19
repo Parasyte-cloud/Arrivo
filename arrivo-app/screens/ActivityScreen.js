@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideHistory } from "../services/api";
@@ -33,6 +34,7 @@ export default function ActivityScreen() {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
@@ -46,7 +48,7 @@ export default function ActivityScreen() {
         ) : null}
 
         {rides.map((ride) => (
-          <Card key={ride.id} style={{ marginBottom: spacing.sm }}>
+          <Card key={ride.id} tone="dark" style={{ marginBottom: spacing.sm }}>
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
@@ -64,12 +66,12 @@ export default function ActivityScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 19, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   row: { flexDirection: "row", alignItems: "center" },
-  tripTitle: { color: colors.ink, fontSize: 13, fontWeight: "600" },
-  tripDate: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  tripPrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
-  error: { color: colors.coral, fontSize: 12.5, marginBottom: spacing.md },
-  empty: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
+  tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
+  tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
+  tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md },
+  empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
 });

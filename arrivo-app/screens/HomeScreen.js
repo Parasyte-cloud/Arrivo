@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { Card, Button, Tag } from "../components/UI";
+import { Card, Button, Tag, IconBadge } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getFlightStatus } from "../services/api";
@@ -33,7 +33,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <GradientBackground />
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <View style={styles.header}>
           <View>
@@ -45,19 +45,21 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.row}>
-            <View style={[styles.dot, { backgroundColor: colors.teal }]} />
+            <IconBadge size={32} tone="dark">
+              <Ionicons name="airplane" size={16} color={colors.amber} />
+            </IconBadge>
             <Text style={styles.cardTitle}>{t("home.airportPickup")}</Text>
           </View>
           <View style={{ height: spacing.sm }} />
 
           <View style={styles.flightRow}>
-            <Ionicons name="airplane-outline" size={16} color={colors.textMuted} />
+            <Ionicons name="airplane-outline" size={16} color={colors.dark.textMuted} />
             <TextInput
               style={styles.flightInput}
               placeholder={t("home.flightPlaceholder")}
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.dark.textMuted}
               value={flightNumber}
               onChangeText={setFlightNumber}
               autoCapitalize="characters"
@@ -87,67 +89,79 @@ export default function HomeScreen({ navigation }) {
         </Card>
 
         <View style={styles.grid2}>
-          <Pressable style={[styles.tile]} onPress={() => navigation.navigate("Route")}>
-            <Ionicons name="car-sport-outline" size={22} color={colors.cream} />
+          <Pressable style={styles.tile} onPress={() => navigation.navigate("Route")}>
+            <IconBadge tone="dark">
+              <Ionicons name="car-sport" size={18} color={colors.dark.text} />
+            </IconBadge>
             <Text style={styles.tileText}>{t("home.bookRide")}</Text>
           </Pressable>
-          <Pressable style={[styles.tile]} onPress={() => navigation.navigate("Chauffeur")}>
-            <Ionicons name="person-outline" size={22} color={colors.cream} />
+          <Pressable style={styles.tile} onPress={() => navigation.navigate("Chauffeur")}>
+            <IconBadge tone="dark">
+              <Ionicons name="person" size={18} color={colors.dark.text} />
+            </IconBadge>
             <Text style={styles.tileText}>{t("home.chauffeurForDay")}</Text>
           </Pressable>
         </View>
 
-        <Card tinted style={{ marginTop: spacing.md }}>
+        <Card tone="dark" tinted style={{ marginTop: spacing.md }}>
           <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>{t("home.ownVehicle")}</Text>
+            <View style={styles.row}>
+              <IconBadge size={32} tone="amber">
+                <Ionicons name="car" size={15} color={colors.ink} />
+              </IconBadge>
+              <Text style={styles.cardTitle}>{t("home.ownVehicle")}</Text>
+            </View>
             <Tag label={t("home.earnWeekly")} tone="amber" />
           </View>
           <Pressable onPress={() => navigation.navigate("Owner")}>
-            <Text style={styles.linkText}>{t("home.listVehicle")}</Text>
+            <Text style={styles.linkText}>{t("home.listVehicle")} →</Text>
           </Pressable>
         </Card>
 
         <View style={{ height: spacing.lg }} />
-        <Button label={t("home.bookAirportPickup")} onPress={() => navigation.navigate("Route")} />
+        <Button
+          label={t("home.bookAirportPickup")}
+          onPress={() => navigation.navigate("Route")}
+          trailingIcon
+        />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
-  greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
-  sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  greet: { fontSize: 19, fontWeight: "700", color: colors.dark.text },
+  sub: { fontSize: 12, color: colors.dark.textMuted, marginTop: 2 },
   pill: { backgroundColor: colors.amber, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   pillText: { fontSize: 10, fontWeight: "700", color: colors.ink },
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
+  row: { flexDirection: "row", alignItems: "center", gap: 10 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  cardTitle: { color: colors.ink, fontWeight: "600", fontSize: 13 },
+  cardTitle: { color: colors.dark.text, fontWeight: "600", fontSize: 13 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   tile: {
     flex: 1,
-    backgroundColor: colors.card,
-    borderColor: colors.cardBorder,
+    backgroundColor: colors.dark.surface,
+    borderColor: colors.dark.surfaceBorder,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md,
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
-  tileText: { color: colors.ink, fontWeight: "700", fontSize: 12, textAlign: "center" },
-  linkText: { color: colors.tealBright, fontSize: 11, fontWeight: "600", marginTop: 8 },
+  tileText: { color: colors.dark.text, fontWeight: "700", fontSize: 12, textAlign: "center" },
+  linkText: { color: "#9FBBEF", fontSize: 11, fontWeight: "600", marginTop: 8 },
   flightRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: colors.fieldBg,
+    backgroundColor: colors.dark.fieldBg,
     borderRadius: radius.sm + 2,
     paddingLeft: spacing.md,
     paddingRight: 6,
   },
-  flightInput: { flex: 1, color: colors.ink, fontSize: 13, paddingVertical: 12 },
+  flightInput: { flex: 1, color: colors.dark.text, fontSize: 13, paddingVertical: 12 },
   trackBtn: {
     backgroundColor: colors.amber,
     borderRadius: radius.sm,
@@ -157,13 +171,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   trackBtnText: { color: colors.ink, fontWeight: "700", fontSize: 12 },
-  errorText: { color: colors.coral, fontSize: 11.5, marginTop: 8 },
+  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 8 },
   flightResult: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "rgba(18,18,59,0.08)",
+    borderTopColor: colors.dark.hairline,
   },
-  flightAirline: { color: colors.ink, fontWeight: "700", fontSize: 13 },
-  flightMeta: { color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
+  flightAirline: { color: colors.dark.text, fontWeight: "700", fontSize: 13 },
+  flightMeta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
@@ -73,10 +74,11 @@ export default function TrackingScreen({ route }) {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <MapPlaceholder etaLabel={`🚗 ${minsAway} min away`} height={220} />
 
-        <Card style={{ marginTop: spacing.md, flexDirection: "row", gap: 12, alignItems: "center" }}>
+        <Card tone="dark" style={{ marginTop: spacing.md, flexDirection: "row", gap: 12, alignItems: "center" }}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>KJ</Text>
           </View>
@@ -89,17 +91,17 @@ export default function TrackingScreen({ route }) {
 
         <View style={styles.grid2}>
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
-          <Button label="☎ Call driver" variant="ghost" onPress={callDriver} style={{ flex: 1 }} />
+          <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriver} style={{ flex: 1 }} />
         </View>
 
-        <Card style={{ marginTop: spacing.md }}>
+        <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>
             Sharing live location with <Text style={{ fontWeight: "700" }}>Bimpe A.</Text>
           </Text>
         </Card>
 
         {panicActive ? (
-          <Card style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.panicActiveText}>🚨 Support has been alerted about this ride.</Text>
           </Card>
         ) : (
@@ -121,7 +123,7 @@ export default function TrackingScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   avatar: {
     width: 46,
     height: 46,
@@ -131,10 +133,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: "#fff", fontWeight: "700" },
-  name: { color: colors.ink, fontWeight: "700", fontSize: 14 },
-  meta: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  name: { color: colors.dark.text, fontWeight: "700", fontSize: 14 },
+  meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
-  shareNote: { color: colors.textMuted, fontSize: 11.5, textAlign: "center" },
+  shareNote: { color: colors.dark.textMuted, fontSize: 11.5, textAlign: "center" },
   panicBtn: {
     marginTop: spacing.lg,
     backgroundColor: colors.coral,
@@ -143,5 +145,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   panicText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
-  panicActiveText: { color: colors.coral, fontWeight: "700", fontSize: 13, textAlign: "center" },
+  panicActiveText: { color: "#FF9B8A", fontWeight: "700", fontSize: 13, textAlign: "center" },
 });

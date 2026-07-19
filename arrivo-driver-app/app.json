@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F7F4EC"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -39,6 +34,19 @@
     "extra": {
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com"
     },
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F4EC"
+        }
+      ]
+    ]
   }
 }

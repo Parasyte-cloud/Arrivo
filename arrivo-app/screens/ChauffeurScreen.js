@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert } from "react-native";
 import { Card, Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 
 const OPTIONS = [
@@ -24,10 +25,11 @@ export default function ChauffeurScreen() {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Chauffeur for the day</Text>
 
-        <Card style={{ marginBottom: spacing.md }}>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Field label="📅 Date & time" value="Sat, 12 Jul · 10:00am" />
           <View style={styles.divider} />
           <View style={styles.row}>
@@ -37,7 +39,7 @@ export default function ChauffeurScreen() {
               value={hours}
               onChangeText={setHours}
               keyboardType="number-pad"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.dark.textMuted}
             />
           </View>
           <View style={styles.divider} />
@@ -48,12 +50,12 @@ export default function ChauffeurScreen() {
               value={purpose}
               onChangeText={setPurpose}
               placeholder="e.g. Wedding run"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.dark.textMuted}
             />
           </View>
         </Card>
 
-        <Card>
+        <Card tone="dark">
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
           {OPTIONS.map((o) => (
             <Pressable key={o.id} onPress={() => setChoice(o.id)} style={styles.optRow}>
@@ -67,7 +69,7 @@ export default function ChauffeurScreen() {
         </Card>
 
         <View style={{ height: spacing.lg }} />
-        <Button label="Request Chauffeur" onPress={request} />
+        <Button label="Request Chauffeur" onPress={request} trailingIcon />
       </ScrollView>
     </View>
   );
@@ -83,22 +85,22 @@ function Field({ label, value }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 18, fontWeight: "700", color: colors.ink, marginBottom: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.dark.bg0 },
+  title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
-  rowLabel: { color: colors.textMuted, fontSize: 12.5 },
-  rowValue: { color: colors.ink, fontSize: 13 },
-  divider: { height: 1, backgroundColor: "rgba(18,18,59,0.08)" },
-  smallInput: { color: colors.ink, fontSize: 13, textAlign: "right", minWidth: 40 },
-  purposeInput: { color: colors.ink, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
-  cardLabel: { color: colors.ink, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  rowLabel: { color: colors.dark.textMuted, fontSize: 12.5 },
+  rowValue: { color: colors.dark.text, fontSize: 13 },
+  divider: { height: 1, backgroundColor: colors.dark.hairline },
+  smallInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", minWidth: 40 },
+  purposeInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
+  cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   optRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(18,18,59,0.08)",
+    borderBottomColor: colors.dark.hairline,
   },
-  optLabel: { color: colors.ink, fontSize: 13 },
-  optPrice: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  optLabel: { color: colors.dark.text, fontSize: 13 },
+  optPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
 });

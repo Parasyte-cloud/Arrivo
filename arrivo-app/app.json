@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F7F4EC"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -40,6 +35,20 @@
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY"
     },
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-font",
+      "expo-localization",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F4EC"
+        }
+      ]
+    ]
   }
 }
