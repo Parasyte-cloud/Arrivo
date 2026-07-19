@@ -27,9 +27,11 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const signup = async ({ name, email, phone, password }) => {
+  const signup = async ({ firstName, lastName, email, phone, password, agreedToTerms }) => {
     // Always signs up as role "driver" — this is the driver app, not the rider app.
-    const data = await api.signup({ name, email, phone, password, role: "driver" });
+    // The backend's /api/auth/signup expects firstName/lastName (it derives the
+    // combined `name` server-side) and requires agreedToTerms to be true.
+    const data = await api.signup({ firstName, lastName, email, phone, password, agreedToTerms, role: "driver" });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
     setToken(data.token);
     setUser(data.user);
