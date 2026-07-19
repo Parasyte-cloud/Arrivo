@@ -38,6 +38,9 @@
     },
     "extra": {
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com"
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }
