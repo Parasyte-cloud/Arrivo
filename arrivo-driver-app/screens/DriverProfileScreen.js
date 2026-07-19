@@ -6,12 +6,6 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { saveDriverProfile } from "../services/api";
 
-const VEHICLE_TYPES = [
-  { id: "sedan", label: "Sedan" },
-  { id: "suv", label: "SUV" },
-  { id: "truck", label: "Truck / Van" },
-];
-
 const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "fr", label: "Français" },
@@ -21,9 +15,6 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
   const { token } = useAuth();
   const [licenseNumber, setLicenseNumber] = useState("");
   const [lasdriNumber, setLasdriNumber] = useState("");
-  const [makeModel, setMakeModel] = useState("");
-  const [plateNumber, setPlateNumber] = useState("");
-  const [vehicleType, setVehicleType] = useState("sedan");
   const [languages, setLanguages] = useState(["en"]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -34,17 +25,22 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
 
   const submit = async () => {
     setError(null);
-    if (!licenseNumber || !makeModel || !plateNumber) {
-      setError("License number, vehicle, and plate number are required.");
+    if (!licenseNumber) {
+      setError("License number is required.");
       return;
     }
     setLoading(true);
     try {
+      // No vehicle info collected here on purpose — drivers drive company
+      // vehicles, assigned separately by an admin/dispatcher, not a vehicle
+      // they bring themselves. The backend already treats `vehicle` as
+      // optional (it only creates a vehicles row when makeModel+plateNumber
+      // are both present, and drivers.vehicle_id is nullable), so simply
+      // omitting it here leaves the driver unassigned until dispatch sets it.
       await saveDriverProfile(token, {
         licenseNumber,
         lasdriNumber,
         spokenLanguages: languages.join(","),
-        vehicle: { makeModel, plateNumber, vehicleType, seats: vehicleType === "truck" ? 3 : vehicleType === "suv" ? 6 : 4 },
       });
       // App.js renders this screen directly (no navigation prop passed) while a new
       // driver hasn't completed their profile yet, so `navigation` is normally
@@ -66,7 +62,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
       <GradientBackground />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Complete your driver profile</Text>
-        <Text style={styles.subtitle}>Step 2 of 2. This is what riders will see before their pickup</Text>
+        <Text style={styles.subtitle}>Step 2 of 2. A few details so we can verify you to drive — your vehicle is assigned separately by RideArrivo</Text>
 
         <Card style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>License & verification</Text>
@@ -84,32 +80,6 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
             value={lasdriNumber}
             onChangeText={setLasdriNumber}
           />
-        </Card>
-
-        <Card style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Vehicle</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Make & model, e.g. Toyota Highlander"
-            placeholderTextColor={colors.textMuted}
-            value={makeModel}
-            onChangeText={setMakeModel}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Plate number"
-            placeholderTextColor={colors.textMuted}
-            value={plateNumber}
-            onChangeText={setPlateNumber}
-            autoCapitalize="characters"
-          />
-          <View style={styles.chipRow}>
-            {VEHICLE_TYPES.map((v) => (
-              <Pressable key={v.id} onPress={() => setVehicleType(v.id)} style={[styles.chip, vehicleType === v.id && styles.chipActive]}>
-                <Text style={[styles.chipText, vehicleType === v.id && styles.chipTextActive]}>{v.label}</Text>
-              </Pressable>
-            ))}
-          </View>
         </Card>
 
         <Card style={{ marginBottom: spacing.lg }}>

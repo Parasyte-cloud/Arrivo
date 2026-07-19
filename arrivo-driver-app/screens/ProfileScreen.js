@@ -46,8 +46,14 @@ export default function ProfileScreen() {
         ) : profile ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <Text style={styles.cardLabel}>Vehicle</Text>
-            <Text style={styles.row}>{profile.make_model} · {profile.plate_number}</Text>
-            <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
+            {profile.make_model && profile.plate_number ? (
+              <>
+                <Text style={styles.row}>{profile.make_model} · {profile.plate_number}</Text>
+                <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
+              </>
+            ) : (
+              <Text style={styles.rowMuted}>No vehicle assigned yet — RideArrivo will assign you one before your first ride.</Text>
+            )}
             <View style={{ height: spacing.sm }} />
             <Text style={styles.cardLabel}>Languages</Text>
             <Text style={styles.row}>
