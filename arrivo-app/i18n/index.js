@@ -2,6 +2,18 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import * as Localization from "expo-localization";
 
+// Hermes (React Native's default JS engine) doesn't always ship a full
+// Intl.PluralRules implementation, which i18next needs to pick correct
+// plural forms per language. Without this polyfill, i18next logs a
+// warning on startup and falls back to a less accurate default —
+// harmless for simple strings, but worth closing properly rather than
+// leaving a startup warning visible on every launch.
+if (!Intl.PluralRules) {
+  require("@formatjs/intl-pluralrules/polyfill");
+  require("@formatjs/intl-pluralrules/locale-data/en");
+  require("@formatjs/intl-pluralrules/locale-data/fr");
+}
+
 import en from "./locales/en.json";
 import fr from "./locales/fr.json";
 
