@@ -40,10 +40,6 @@
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY"
     },
-    "plugins": [
-      "expo-localization",
-      "expo-secure-store",
-      "expo-font"
-    ]
+    "newArchEnabled": true
   }
 }
