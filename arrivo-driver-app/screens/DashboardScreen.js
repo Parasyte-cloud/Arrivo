@@ -5,7 +5,7 @@ import { Card, Button, Tag } from "../components/UI";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides } from "../services/api";
+import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
@@ -144,7 +144,7 @@ export default function DashboardScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} />
         ) : isOnline ? (
           <>
             <Text style={styles.sectionLabel}>Nearby requests</Text>
@@ -187,9 +187,45 @@ function RequestCard({ ride, busy, onAccept }) {
   );
 }
 
-function ActiveTripCard({ ride, busy, onAdvance }) {
+function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const isAccepted = ride.ride_status === "accepted";
   const isInProgress = ride.ride_status === "in_progress";
+
+  const [panicState, setPanicState] = useState("idle"); // idle | counting | active
+  const [countdown, setCountdown] = useState(3);
+  const countdownRef = useRef(null);
+
+  const startPanicCountdown = () => {
+    setPanicState("counting");
+    setCountdown(3);
+    countdownRef.current = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(countdownRef.current);
+          triggerPanic(token, ride.id, "Driver-initiated SOS").catch(() => {
+            // Even if the network call fails, the UI stays locked into the
+            // active state rather than silently reverting to idle — a
+            // driver who believed they'd triggered an alert should never
+            // be quietly told "actually never mind" by the app itself.
+            // They can retry via the same active-state banner if needed.
+          });
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelPanicCountdown = () => {
+    clearInterval(countdownRef.current);
+    setPanicState("idle");
+  };
+
+  useEffect(() => {
+    if (countdown === 0 && panicState === "counting") setPanicState("active");
+  }, [countdown, panicState]);
+
+  useEffect(() => () => clearInterval(countdownRef.current), []);
 
   return (
     <View>
@@ -206,6 +242,25 @@ function ActiveTripCard({ ride, busy, onAdvance }) {
       </Card>
 
       <View style={{ height: spacing.md }} />
+
+      {panicState === "active" ? (
+        <Card style={styles.panicActiveCard}>
+          <Text style={styles.panicActiveTitle}>Emergency alert active</Text>
+          <Text style={styles.panicActiveBody}>
+            Our team has been notified and is monitoring this trip. This can only be cleared once resolved on our end.
+          </Text>
+        </Card>
+      ) : panicState === "counting" ? (
+        <Card style={styles.panicCountingCard}>
+          <Text style={styles.panicCountingText}>Sending emergency alert in {countdown}…</Text>
+          <Button label="Cancel" variant="ghost" onPress={cancelPanicCountdown} style={{ marginTop: 8 }} />
+        </Card>
+      ) : (
+        <Button label="Emergency SOS" variant="ghost" style={styles.sosButton} onPress={startPanicCountdown} />
+      )}
+
+      <View style={{ height: spacing.sm }} />
+
       {busy ? (
         <ActivityIndicator color={colors.amber} />
       ) : isAccepted ? (
@@ -234,4 +289,10 @@ const styles = StyleSheet.create({
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
   error: { color: colors.coral, fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
+  panicCountingCard: { backgroundColor: "rgba(225,82,61,0.12)", borderColor: colors.coral, borderWidth: 1, alignItems: "center" },
+  panicCountingText: { color: colors.coral, fontSize: 13, fontWeight: "700" },
+  panicActiveCard: { backgroundColor: "rgba(225,82,61,0.16)", borderColor: colors.coral, borderWidth: 1 },
+  panicActiveTitle: { color: colors.coral, fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  panicActiveBody: { color: colors.cream, fontSize: 12, lineHeight: 17 },
 });

@@ -34,7 +34,7 @@ export default function SignupScreen({ navigation }) {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
         <Text style={styles.title}>Drive with RideArrivo</Text>
-        <Text style={styles.subtitle}>Step 1 of 2 — your account</Text>
+        <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 
         <TextInput style={styles.input} placeholder="Full name" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} />
         <TextInput

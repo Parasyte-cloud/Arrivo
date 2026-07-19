@@ -60,3 +60,6 @@ export function updateRideStatus(token, rideId, status) {
 export function getMyDriverRides(token) {
   return request("/api/rides/driver/mine", authed(token));
 }
+export function triggerPanic(token, rideId, note) {
+  return request(`/api/rides/${rideId}/panic`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
+}

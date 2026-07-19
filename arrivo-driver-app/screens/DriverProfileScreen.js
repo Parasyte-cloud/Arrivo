@@ -57,7 +57,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Complete your driver profile</Text>
-        <Text style={styles.subtitle}>Step 2 of 2 — this is what riders will see before their pickup</Text>
+        <Text style={styles.subtitle}>Step 2 of 2. This is what riders will see before their pickup</Text>
 
         <Card style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>License & verification</Text>
