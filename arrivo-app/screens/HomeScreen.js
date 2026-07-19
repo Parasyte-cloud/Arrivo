@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndic
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { Card, Button, Tag } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getFlightStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -32,6 +33,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <View style={styles.header}>
           <View>
@@ -113,7 +115,7 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
   greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
   sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },

@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl } from "react-native";
-import * as WebBrowser from "expo-web-browser";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getWallet, initializePayment, verifyWalletTopup } from "../services/api";
@@ -60,6 +59,42 @@ export default function WalletScreen() {
     setRefreshing(false);
   };
 
+  const pendingTopUpRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
+
+  // Same approach as CheckoutScreen: Linking.openURL (core React Native,
+  // no Expo config-plugin step) can't tell us directly when the browser
+  // closes the way expo-web-browser's openAuthSessionAsync did, so we
+  // watch for the app itself returning to the foreground instead.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && pendingTopUpRef.current) {
+        const reference = pendingTopUpRef.current;
+        pendingTopUpRef.current = null;
+        verifyTopUp(reference);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const verifyTopUp = async (reference) => {
+    setTopUpStatus("verifying");
+    try {
+      const verification = await verifyWalletTopup(token, reference);
+      if (verification.success) {
+        setAmountInput("");
+        setShowTopUp(false);
+        setTopUpStatus("idle");
+        await load();
+      } else {
+        setTopUpStatus("error");
+        setTopUpError("Couldn't confirm the top-up. If you were charged, contact support with reference " + reference + ".");
+      }
+    } catch (e) {
+      setTopUpStatus("error");
+      setTopUpError(e.message || "Something went wrong confirming your top-up.");
+    }
+  };
+
   const topUp = async () => {
     const amount = Number(amountInput);
     setTopUpError(null);
@@ -72,25 +107,9 @@ export default function WalletScreen() {
     setTopUpStatus("opening");
     try {
       const { authorizationUrl, reference } = await initializePayment(user.email, amount);
-      const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, undefined);
-
-      if (result.type !== "success" && result.type !== "dismiss") {
-        setTopUpStatus("idle");
-        return;
-      }
-
-      setTopUpStatus("verifying");
-      const verification = await verifyWalletTopup(token, reference);
-
-      if (verification.success) {
-        setAmountInput("");
-        setShowTopUp(false);
-        setTopUpStatus("idle");
-        await load();
-      } else {
-        setTopUpStatus("error");
-        setTopUpError("Couldn't confirm the top-up. If you were charged, contact support with reference " + reference + ".");
-      }
+      pendingTopUpRef.current = reference;
+      await Linking.openURL(authorizationUrl);
+      // Verification now happens automatically via the AppState listener above.
     } catch (e) {
       setTopUpStatus("error");
       setTopUpError(e.message || "Something went wrong starting the top-up.");

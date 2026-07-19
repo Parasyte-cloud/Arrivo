@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView } from "react-native";
-import * as WebBrowser from "expo-web-browser";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
 import { colors, spacing } from "../theme/tokens";
 import { initializePayment, verifyPayment, createRide, getWallet, getMembership } from "../services/api";
@@ -49,21 +48,29 @@ export default function CheckoutScreen({ route, navigation }) {
   }, [token, amountNaira]);
 
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
+  const pendingPaymentRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
 
-  const payWithCard = async () => {
-    setStatus("opening");
-    try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amountNaira);
-      const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, undefined);
-
-      if (result.type !== "success" && result.type !== "dismiss") {
-        setStatus("idle");
-        return;
+  // expo-web-browser's openAuthSessionAsync would normally tell us the
+  // moment the browser closes. Using Linking.openURL (a core React Native
+  // API with no Expo config-plugin step at all) instead means we can't get
+  // that same signal directly — so we watch for the app itself coming back
+  // to the foreground, which happens right when someone switches back from
+  // completing (or abandoning) the Paystack checkout in their browser.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && pendingPaymentRef.current) {
+        const reference = pendingPaymentRef.current;
+        pendingPaymentRef.current = null;
+        verifyAndCreateRide(reference);
       }
+    });
+    return () => subscription.remove();
+  }, []);
 
-      setStatus("verifying");
+  const verifyAndCreateRide = async (reference) => {
+    setStatus("verifying");
+    try {
       const verification = await verifyPayment(reference);
-
       if (verification.success) {
         const { ride } = await createRide(token, {
           pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
@@ -76,6 +83,20 @@ export default function CheckoutScreen({ route, navigation }) {
         setStatus("error");
         setMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
       }
+    } catch (e) {
+      setStatus("error");
+      setMessage(e.message || "Something went wrong confirming your payment.");
+    }
+  };
+
+  const payWithCard = async () => {
+    setStatus("opening");
+    try {
+      const { authorizationUrl, reference } = await initializePayment(user.email, amountNaira);
+      pendingPaymentRef.current = reference;
+      await Linking.openURL(authorizationUrl);
+      // Verification now happens automatically via the AppState listener
+      // above once the user switches back to this app from the browser.
     } catch (e) {
       setStatus("error");
       setMessage(e.message || "Something went wrong starting the payment.");

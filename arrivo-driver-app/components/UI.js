@@ -12,7 +12,7 @@ import { colors, radius, spacing } from "../theme/tokens";
 export function Card({ children, style, tinted }) {
   return (
     <View style={[styles.cardWrap, style]}>
-      <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={65} tint="light" style={StyleSheet.absoluteFill} />
       <View
         style={[
           styles.cardOverlay,
@@ -37,7 +37,7 @@ export function Button({ label, onPress, variant = "primary", style, disabled })
         disabled={disabled}
         style={({ pressed }) => [styles.ghostWrap, style, (pressed || disabled) && { opacity: 0.7 }]}
       >
-        <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
         <View style={styles.ghostOverlay}>
           <Text style={[styles.btnText, { color: colors.ink }]}>{label}</Text>
         </View>

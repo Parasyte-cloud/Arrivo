@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 
@@ -27,7 +28,9 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={{ flex: 1 }}>
+      <GradientBackground />
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
         <Text style={styles.brand}>
           <Text style={{ color: colors.ink }}>Ride</Text>
@@ -68,11 +71,12 @@ export default function LoginScreen({ navigation }) {
         </Pressable>
       </View>
     </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: "transparent", justifyContent: "center" },
   content: { padding: spacing.lg },
   brand: { fontSize: 34, fontWeight: "700", textAlign: "center" },
   title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },

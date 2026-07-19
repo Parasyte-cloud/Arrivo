@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
+import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
@@ -123,6 +124,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.screen}>
+      <GradientBackground />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={activeRide ? checkForActiveRide : refreshAvailable} tintColor={colors.amber} />}
@@ -277,7 +279,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
   greet: { fontSize: 19, fontWeight: "700", color: colors.ink },
   sub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
