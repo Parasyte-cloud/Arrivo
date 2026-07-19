@@ -78,14 +78,19 @@ export default function TrackingScreen({ route }) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <MapPlaceholder etaLabel={`🚗 ${minsAway} min away`} height={220} />
 
-        <Card tone="dark" style={{ marginTop: spacing.md, flexDirection: "row", gap: 12, alignItems: "center" }}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>KJ</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>Kunle J., Toyota Highlander</Text>
-            <Text style={styles.meta}>Plate: KJA 224 XL · ★ 4.9</Text>
-            <Tag label="ID Verified" tone="teal" />
+        <Card tone="dark" style={{ marginTop: spacing.md }}>
+          {/* Card's own style prop only affects the outer clipping wrapper (needed for
+              the BlurView), not the inner content area, so row layout has to be applied
+              to a real child view here rather than passed into Card's style. */}
+          <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>KJ</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>Kunle J., Toyota Highlander</Text>
+              <Text style={styles.meta}>Plate: KJA 224 XL · ★ 4.9</Text>
+              <Tag label="ID Verified" tone="teal" />
+            </View>
           </View>
         </Card>
 

@@ -46,7 +46,14 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
         spokenLanguages: languages.join(","),
         vehicle: { makeModel, plateNumber, vehicleType, seats: vehicleType === "truck" ? 3 : vehicleType === "suv" ? 6 : 4 },
       });
-      navigation.replace ? navigation.replace("Dashboard") : onComplete?.();
+      // App.js renders this screen directly (no navigation prop passed) while a new
+      // driver hasn't completed their profile yet, so `navigation` is normally
+      // undefined here — `navigation.replace` would throw on that undefined access,
+      // get swallowed by the catch block below, and show the new driver a confusing
+      // "Cannot read properties of undefined" error instead of moving them into the
+      // app, even though the profile save itself succeeded. Optional chaining makes
+      // the undefined case safe and falls through to onComplete as intended.
+      navigation?.replace ? navigation.replace("Dashboard") : onComplete?.();
     } catch (e) {
       setError(e.message || "Couldn't save your profile. Please try again.");
     } finally {

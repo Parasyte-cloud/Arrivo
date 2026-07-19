@@ -58,9 +58,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.fieldBg, borderRadius: 12, paddingHorizontal: 12,
     justifyContent: "center", minWidth: 90,
   },
-  dialText: { color: colors.cream, fontSize: 13, fontWeight: "600" },
+  dialText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   numberInput: {
-    flex: 1, backgroundColor: colors.fieldBg, color: colors.cream, borderRadius: 12,
+    flex: 1, backgroundColor: colors.fieldBg, color: colors.ink, borderRadius: 12,
     paddingHorizontal: spacing.md, paddingVertical: 14, fontSize: 14,
   },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },

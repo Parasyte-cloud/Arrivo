@@ -111,18 +111,23 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>{t("profile.title")}</Text>
 
-        <Card tone="dark" style={{ marginBottom: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-          <Pressable onPress={pickAvatar} style={styles.avatarCircle}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-            ) : (
-              <Text style={styles.avatarInitial}>{(user?.name || "?").charAt(0).toUpperCase()}</Text>
-            )}
-            <View style={styles.avatarEditBadge}><Text style={styles.avatarEditBadgeText}>✎</Text></View>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{user?.name || "—"}</Text>
-            <Text style={styles.meta}>{user?.email}{user?.phone ? ` · ${user.phone}` : ""}</Text>
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          {/* Card's own style prop only affects the outer clipping wrapper (needed for
+              the BlurView), not the inner content area, so row layout has to be applied
+              to a real child view here rather than passed into Card's style. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <Pressable onPress={pickAvatar} style={styles.avatarCircle}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitial}>{(user?.name || "?").charAt(0).toUpperCase()}</Text>
+              )}
+              <View style={styles.avatarEditBadge}><Text style={styles.avatarEditBadgeText}>✎</Text></View>
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{user?.name || "—"}</Text>
+              <Text style={styles.meta}>{user?.email}{user?.phone ? ` · ${user.phone}` : ""}</Text>
+            </View>
           </View>
         </Card>
         {avatarError ? <Text style={styles.errorText}>{avatarError}</Text> : null}
