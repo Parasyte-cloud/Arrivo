@@ -26,7 +26,10 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
-        <Text style={styles.brand}>arrivo</Text>
+        <Text style={styles.brand}>
+          <Text style={{ color: colors.ink }}>Ride</Text>
+          <Text style={{ color: colors.amber }}>Arrivo</Text>
+        </Text>
         <Text style={styles.subBrand}>DRIVER</Text>
         <View style={{ height: spacing.lg }} />
         <Text style={styles.title}>Welcome back</Text>

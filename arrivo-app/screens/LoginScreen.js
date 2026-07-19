@@ -29,6 +29,11 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
+        <Text style={styles.brand}>
+          <Text style={{ color: colors.ink }}>Ride</Text>
+          <Text style={{ color: colors.amber }}>Arrivo</Text>
+        </Text>
+        <View style={{ height: spacing.lg }} />
         <Text style={styles.title}>{t("auth.welcomeBack")}</Text>
 
         <TextInput
@@ -69,6 +74,7 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg, justifyContent: "center" },
   content: { padding: spacing.lg },
+  brand: { fontSize: 34, fontWeight: "700", textAlign: "center" },
   title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   input: {
     backgroundColor: colors.fieldBg,
