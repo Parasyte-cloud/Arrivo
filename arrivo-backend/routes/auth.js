@@ -83,32 +83,78 @@ router.post("/signup", async (req, res) => {
   const user = inserted.rows[0];
   const token = signToken(user);
 
-  const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || "https://ridearrivo.com/verify-email.html"}?token=${verificationToken}`;
+  // Points at this backend's own GET /api/auth/verify-email route (below),
+  // not the marketing website — ridearrivo.com never had a working
+  // verify-email.html, so links to it silently did nothing. Set
+  // EMAIL_VERIFY_BASE_URL in production to your deployed backend's public
+  // URL + /api/auth/verify-email, e.g. https://api.ridearrivo.com/api/auth/verify-email
+  const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || `http://localhost:${process.env.PORT || 4000}/api/auth/verify-email`}?token=${verificationToken}`;
   sendVerificationEmail(user.email, verifyUrl).catch((e) => console.error("Verification email failed:", e.message));
   sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
 
   res.status(201).json({ token, user: publicUser(user) });
 });
 
-// POST /api/auth/verify-email
-// body: { token }
-router.post("/verify-email", async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error: "token is required" });
+// Shared by both the POST (JSON, for API/app callers) and GET (HTML, for
+// the link people actually click in their inbox) verify-email routes below.
+async function verifyEmailToken(token) {
+  if (!token) return { ok: false, message: "This verification link is missing its token." };
 
   const result = await pool.query(
     "SELECT * FROM users WHERE email_verification_token = $1 AND email_verification_expires > now()",
     [token]
   );
   const user = result.rows[0];
-  if (!user) return res.status(400).json({ error: "This verification link is invalid or has expired." });
+  if (!user) return { ok: false, message: "This verification link is invalid or has expired." };
 
   await pool.query(
     "UPDATE users SET email_verified = true, email_verification_token = NULL, email_verification_expires = NULL WHERE id = $1",
     [user.id]
   );
 
-  res.json({ message: "Email verified. Thanks for confirming your account." });
+  return { ok: true, message: "Your email has been verified. Thanks for confirming your account.", user };
+}
+
+function verifyEmailPage({ ok, message }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${ok ? "Email verified" : "Verification failed"} — RideArrivo</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #12123B; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .card { max-width: 420px; margin: 24px; padding: 32px 28px; background: #1B1B4D; border-radius: 16px;
+          text-align: center; color: #F5F2EA; }
+  .icon { font-size: 40px; margin-bottom: 12px; }
+  h1 { font-size: 19px; margin: 0 0 10px; }
+  p { font-size: 14px; line-height: 1.5; color: #B9B6D6; margin: 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${ok ? "✅" : "⚠️"}</div>
+    <h1>${ok ? "Email verified" : "Verification failed"}</h1>
+    <p>${message} You can close this page and return to the RideArrivo app.</p>
+  </div>
+</body>
+</html>`;
+}
+
+// GET /api/auth/verify-email?token=...
+// The link riders/drivers actually click from the verification email —
+// renders a simple confirmation page rather than a bare JSON response.
+router.get("/verify-email", async (req, res) => {
+  const { ok, message } = await verifyEmailToken(req.query.token);
+  res.status(ok ? 200 : 400).send(verifyEmailPage({ ok, message }));
+});
+
+// POST /api/auth/verify-email
+// body: { token } — kept for API/app callers that want a JSON response.
+router.post("/verify-email", async (req, res) => {
+  const { ok, message } = await verifyEmailToken(req.body.token);
+  res.status(ok ? 200 : 400).json(ok ? { message } : { error: message });
 });
 
 // POST /api/auth/login
