@@ -32,7 +32,10 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com"
+      "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
+      "eas": {
+        "projectId": "322115da-a006-439d-b70d-81945e02420b"
+      }
     },
     "newArchEnabled": true,
     "plugins": [

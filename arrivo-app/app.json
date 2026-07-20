@@ -25,7 +25,8 @@
       "package": "com.arrivo.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -33,7 +34,10 @@
     },
     "extra": {
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
-      "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY"
+      "googleMapsApiKey": "REPLACE_WITH_YOUR_KEY",
+      "eas": {
+        "projectId": "2ac1ed4e-98a9-4efc-8db4-1bab621da448"
+      }
     },
     "newArchEnabled": true,
     "plugins": [
@@ -43,7 +47,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "RideArrivo needs camera access to scan your driver's QR code and start live tracking."
+          "cameraPermission": "RideArrivo needs camera access to scan your driver's QR code and start live tracking.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       [
