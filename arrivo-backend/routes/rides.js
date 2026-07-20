@@ -19,6 +19,7 @@ router.post("/", requireAuth, async (req, res) => {
     pickupAddress, stops, flightNumber, vehicleType, fareNaira, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
     distanceKm, durationMin, securityEscort, fleetSize, paymentMethod = "card",
+    emergencyContactName, emergencyContactPhone, dashCamConsent,
   } = req.body;
 
   if (!pickupAddress || !fareNaira) {
@@ -64,9 +65,9 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
     const inserted = await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid') RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, emergency_contact_name, emergency_contact_phone, dash_cam_consent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', $14, $15, $16) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent]
     );
     return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   }
@@ -87,9 +88,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid') RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, emergency_contact_name, emergency_contact_phone, dash_cam_consent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', $14, $15, $16) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent]
       );
       const ride = rideResult.rows[0];
 
@@ -117,9 +118,9 @@ router.post("/", requireAuth, async (req, res) => {
   }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0]
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, emergency_contact_name, emergency_contact_phone, dash_cam_consent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent]
   );
 
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
@@ -237,11 +238,14 @@ router.get("/:id", requireAuth, async (req, res) => {
     `SELECT rides.*,
             riders.name as rider_name, riders.phone as rider_phone,
             driver_users.name as driver_name, driver_users.phone as driver_phone,
-            drivers.current_lat, drivers.current_lng, drivers.location_updated_at
+            drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            drivers.rating as driver_rating, drivers.is_verified as driver_is_verified,
+            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type as assigned_vehicle_type
      FROM rides
      JOIN users riders ON riders.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
      LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
      WHERE rides.id = $1`,
     [req.params.id]
   );

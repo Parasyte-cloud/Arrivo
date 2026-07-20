@@ -118,6 +118,13 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS duration_min NUMERIC;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS security_escort BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS fleet_size INTEGER NOT NULL DEFAULT 0;
 
+-- Per-ride safety fields, matching the website's booking form: a contact
+-- RideArrivo can reach if the rider can't be reached during the trip, and
+-- consent for the in-vehicle dash cam (footage kept 30 days, then deleted).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS dash_cam_consent BOOLEAN NOT NULL DEFAULT false;
+
 -- ── Wallet ──
 -- A rider (or, later, a company on a delegate plan) can hold a balance and
 -- pay for rides directly from it, as an alternative to per-trip card

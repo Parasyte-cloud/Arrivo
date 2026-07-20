@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator } from "react-native";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
@@ -7,29 +7,62 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideDetails, triggerPanic } from "../services/api";
 
+const POLL_INTERVAL_MS = 10000;
+
+const STATUS_LABEL = {
+  requested: "Looking for a driver…",
+  accepted: "Driver is heading to pickup",
+  in_progress: "Trip in progress",
+  completed: "Trip completed",
+  cancelled: "Trip cancelled",
+};
+
+function initials(name) {
+  if (!name) return "?";
+  return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() || "").join("");
+}
+
 export default function TrackingScreen({ route }) {
   const { rideId } = route?.params || {};
   const { token } = useAuth();
-  const [minsAway, setMinsAway] = useState(12);
+  const [ride, setRide] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
+  const pollRef = useRef(null);
 
-  // Mock "live" countdown so the screen feels real without a full GPS hookup
-  // on this screen specifically — the driver's ACTUAL location (sent from
-  // the driver app via PATCH /api/drivers/location) is real; this countdown
-  // is just a placeholder for ETA math, which needs a mapping/routing
-  // service to compute properly.
+  const fetchRide = useCallback(async () => {
+    if (!rideId) return;
+    try {
+      const { ride: data } = await getRideDetails(token, rideId);
+      setRide(data);
+      setPanicActive(!!data.panic_triggered_at);
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e.message || "Couldn't load this ride.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, rideId]);
+
+  // Poll for updates (driver location, status changes) while the trip is
+  // still active — no point polling once it's completed/cancelled.
   useEffect(() => {
-    const id = setInterval(() => {
-      setMinsAway((m) => (m > 1 ? m - 1 : m));
-    }, 15000);
-    return () => clearInterval(id);
-  }, []);
+    fetchRide();
+    pollRef.current = setInterval(() => {
+      if (ride && ["completed", "cancelled"].includes(ride.ride_status)) return;
+      fetchRide();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(pollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchRide]);
 
   const shareRide = async () => {
     try {
+      const driverPart = ride?.driver_name ? ` with ${ride.driver_name}` : "";
       await Share.share({
-        message: "I'm on an RideArrivo trip. Track my live location here: https://arrivo.app/track/DEMO123",
+        message: `I'm on a RideArrivo trip${driverPart}, heading to ${ride?.stops?.[ride.stops.length - 1] || "my destination"}. Pickup was ${ride?.pickup_address || "—"}.`,
       });
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));
@@ -37,8 +70,13 @@ export default function TrackingScreen({ route }) {
   };
 
   const callDriver = () => {
-    // Wire this up to Linking.openURL(`tel:${driverPhone}`) once real driver data exists.
-    Alert.alert("Calling driver", "This would open your phone dialer with the driver's masked number.");
+    if (!ride?.driver_phone) {
+      Alert.alert("Not available yet", "Your driver's number will appear here once they've accepted your ride.");
+      return;
+    }
+    Linking.openURL(`tel:${ride.driver_phone}`).catch(() =>
+      Alert.alert("Couldn't open dialer", "Please dial the number manually: " + ride.driver_phone)
+    );
   };
 
   const confirmPanic = () => {
@@ -72,11 +110,32 @@ export default function TrackingScreen({ route }) {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={styles.screen}>
+        <GradientBackground variant="dark" />
+        <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
+          <ActivityIndicator color={colors.amber} size="large" />
+        </View>
+      </View>
+    );
+  }
+
+  const statusLabel = STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
+  const hasDriver = !!ride?.driver_name;
+  const hasVehicle = !!(ride?.make_model && ride?.plate_number);
+
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
-        <MapPlaceholder etaLabel={`🚗 ${minsAway} min away`} height={220} />
+        <MapPlaceholder etaLabel={`🚗 ${statusLabel}`} height={220} />
+
+        {loadError ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
+            <Text style={styles.warningText}>{loadError}</Text>
+          </Card>
+        ) : null}
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           {/* Card's own style prop only affects the outer clipping wrapper (needed for
@@ -84,12 +143,23 @@ export default function TrackingScreen({ route }) {
               to a real child view here rather than passed into Card's style. */}
           <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>KJ</Text>
+              <Text style={styles.avatarText}>{hasDriver ? initials(ride.driver_name) : "…"}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>Kunle J., Toyota Highlander</Text>
-              <Text style={styles.meta}>Plate: KJA 224 XL · ★ 4.9</Text>
-              <Tag label="ID Verified" tone="teal" />
+              {hasDriver ? (
+                <>
+                  <Text style={styles.name}>
+                    {ride.driver_name}{hasVehicle ? `, ${ride.make_model}` : ""}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {hasVehicle ? `Plate: ${ride.plate_number}` : "Vehicle will be assigned before pickup"}
+                    {ride.driver_rating ? ` · ★ ${Number(ride.driver_rating).toFixed(1)}` : ""}
+                  </Text>
+                  {ride.driver_is_verified ? <Tag label="ID Verified" tone="teal" /> : null}
+                </>
+              ) : (
+                <Text style={styles.meta}>{statusLabel}</Text>
+              )}
             </View>
           </View>
         </Card>
@@ -101,7 +171,9 @@ export default function TrackingScreen({ route }) {
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>
-            Sharing live location with <Text style={{ fontWeight: "700" }}>Bimpe A.</Text>
+            {ride?.emergency_contact_name
+              ? <>Sharing live location with <Text style={{ fontWeight: "700" }}>{ride.emergency_contact_name}</Text></>
+              : "No emergency contact was added for this ride."}
           </Text>
         </Card>
 
@@ -142,6 +214,7 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   shareNote: { color: colors.dark.textMuted, fontSize: 11.5, textAlign: "center" },
+  warningText: { color: "#FF9B8A", fontSize: 12, textAlign: "center" },
   panicBtn: {
     marginTop: spacing.lg,
     backgroundColor: colors.coral,

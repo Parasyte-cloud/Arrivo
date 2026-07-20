@@ -66,7 +66,7 @@ const BOOKING_TYPES = [
 ];
 const FLAT_BASE_PRICE = { sedan: 8500, suv: 12500, truck: 16000 };
 
-export default function RouteScreen({ navigation }) {
+export default function RouteScreen({ navigation, route }) {
   const [pickup, setPickup] = useState("Murtala Muhammed Airport, T1");
   const [stops, setStops] = useState(["Lekki Phase 1"]);
   const [vehicle, setVehicle] = useState("suv");
@@ -74,6 +74,14 @@ export default function RouteScreen({ navigation }) {
   const [adults, setAdults] = useState("1");
   const [securityEscort, setSecurityEscort] = useState(false);
   const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
+  // Pre-filled if the rider already looked up a flight on Home — still
+  // editable here since that's the one field the backend actually stores
+  // on the ride (rides.flight_number).
+  const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
+  // "Someone we can reach if we can't reach you during this ride" — matches
+  // the website's booking form. Optional: not every rider wants to add one.
+  const [emergencyContactName, setEmergencyContactName] = useState("");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
 
   const addStop = () => setStops((s) => [...s, ""]);
   const updateStop = (i, val) => setStops((s) => s.map((v, idx) => (idx === i ? val : v)));
@@ -143,6 +151,18 @@ export default function RouteScreen({ navigation }) {
             <Ionicons name="add-circle-outline" size={16} color={colors.tealBright} />
             <Text style={styles.addStopText}>Add destination</Text>
           </Pressable>
+        </Card>
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>Flight number (optional)</Text>
+          <TextInput
+            style={styles.flightInput}
+            value={flightNumber}
+            onChangeText={(v) => setFlightNumber(v.toUpperCase())}
+            placeholder="e.g. BA075"
+            placeholderTextColor={colors.dark.textMuted}
+            autoCapitalize="characters"
+          />
         </Card>
 
         {excludedArea ? (
@@ -232,6 +252,28 @@ export default function RouteScreen({ navigation }) {
           </View>
         </Card>
 
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>Emergency contact (optional)</Text>
+          <Text style={styles.addonNote}>Someone we can reach if we can't reach you during this ride.</Text>
+          <View style={{ height: 6 }} />
+          <TextInput
+            style={styles.flightInput}
+            value={emergencyContactName}
+            onChangeText={setEmergencyContactName}
+            placeholder="Contact name"
+            placeholderTextColor={colors.dark.textMuted}
+          />
+          <View style={{ height: 8 }} />
+          <TextInput
+            style={styles.flightInput}
+            value={emergencyContactPhone}
+            onChangeText={setEmergencyContactPhone}
+            placeholder="Contact phone number"
+            placeholderTextColor={colors.dark.textMuted}
+            keyboardType="phone-pad"
+          />
+        </Card>
+
         <View style={{ height: spacing.lg }} />
         <Button
           label={`Confirm · ₦${totalFare.toLocaleString()}`}
@@ -243,11 +285,14 @@ export default function RouteScreen({ navigation }) {
               label: `${VEHICLES.find((v) => v.id === vehicle).label}. ${selectedBooking.label}`,
               pickupAddress: pickup,
               stops,
+              flightNumber: flightNumber.trim() || undefined,
               vehicleType: vehicle,
               bookingType: selectedBooking.id,
               durationDays: selectedBooking.days,
               securityEscort,
               fleetSize,
+              emergencyContactName: emergencyContactName.trim() || undefined,
+              emergencyContactPhone: emergencyContactPhone.trim() || undefined,
             })
           }
         />
@@ -266,6 +311,14 @@ const styles = StyleSheet.create({
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  flightInput: {
+    backgroundColor: colors.dark.fieldBg,
+    color: colors.dark.text,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 13,
+  },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
     paddingHorizontal: 12,

@@ -89,7 +89,7 @@ export default function HomeScreen({ navigation }) {
         </Card>
 
         <View style={styles.grid2}>
-          <Pressable style={styles.tile} onPress={() => navigation.navigate("Route")}>
+          <Pressable style={styles.tile} onPress={() => navigation.navigate("Route", flightNumber.trim() ? { flightNumber: flightNumber.trim().toUpperCase() } : undefined)}>
             <IconBadge tone="dark">
               <Ionicons name="car-sport" size={18} color={colors.dark.text} />
             </IconBadge>
@@ -106,7 +106,7 @@ export default function HomeScreen({ navigation }) {
         <View style={{ height: spacing.lg }} />
         <Button
           label={t("home.bookAirportPickup")}
-          onPress={() => navigation.navigate("Route")}
+          onPress={() => navigation.navigate("Route", flightNumber.trim() ? { flightNumber: flightNumber.trim().toUpperCase() } : undefined)}
           trailingIcon
         />
       </ScrollView>

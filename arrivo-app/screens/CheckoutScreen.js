@@ -14,7 +14,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const {
     amountNaira = 12500, label = "Airport Pickup", pickupAddress = "Murtala Muhammed Airport",
     stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
-    securityEscort = false, fleetSize = 0,
+    securityEscort = false, fleetSize = 0, emergencyContactName, emergencyContactPhone,
   } = route?.params || {};
   const { user, token } = useAuth();
 
@@ -26,6 +26,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [message, setMessage] = useState(null);
   const [agreedCancellation, setAgreedCancellation] = useState(false);
+  const [dashCamConsent, setDashCamConsent] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -77,6 +78,7 @@ export default function CheckoutScreen({ route, navigation }) {
           pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
           paymentReference: reference, bookingType, durationDays,
           agreedCancellationPolicy: true, securityEscort, fleetSize, paymentMethod: "card",
+          emergencyContactName, emergencyContactPhone, dashCamConsent,
         });
         setStatus("success");
         setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
@@ -111,6 +113,7 @@ export default function CheckoutScreen({ route, navigation }) {
         pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
         securityEscort, fleetSize, paymentMethod,
+        emergencyContactName, emergencyContactPhone, dashCamConsent,
       });
       setStatus("success");
       setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
@@ -123,6 +126,11 @@ export default function CheckoutScreen({ route, navigation }) {
   const pay = () => {
     if (!agreedCancellation) {
       setMessage("Please agree to the Cancellation & Refund Policy before paying.");
+      setStatus("error");
+      return;
+    }
+    if (!dashCamConsent) {
+      setMessage("Please agree to the dash cam recording notice before paying.");
       setStatus("error");
       return;
     }
@@ -196,6 +204,15 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
           <Text style={styles.agreeText}>
             I agree to RideArrivo's Cancellation &amp; Refund Policy (48-hour free cancellation, 50% refund after).
+          </Text>
+        </Pressable>
+
+        <Pressable onPress={() => setDashCamConsent(!dashCamConsent)} style={styles.agreeRow}>
+          <View style={[styles.checkbox, dashCamConsent && styles.checkboxChecked]}>
+            {dashCamConsent ? <Text style={styles.checkmark}>✓</Text> : null}
+          </View>
+          <Text style={styles.agreeText}>
+            I agree that this ride may be recorded by an in-vehicle dash cam for safety, and that footage is stored for 30 days and then automatically deleted.
           </Text>
         </Pressable>
 
