@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
@@ -12,6 +13,7 @@ const LANGUAGES = [
 ];
 
 export default function DriverProfileScreen({ navigation, onComplete }) {
+  const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [licenseNumber, setLicenseNumber] = useState("");
   const [lasdriNumber, setLasdriNumber] = useState("");
@@ -60,7 +62,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
   return (
     <View style={styles.screen}>
       <GradientBackground />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Complete your driver profile</Text>
         <Text style={styles.subtitle}>Step 2 of 2. A few details so we can verify you to drive — your vehicle is assigned separately by RideArrivo</Text>
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, ScrollView, Modal, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -22,6 +23,7 @@ const LANGUAGES = [
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 
 export default function SignupScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
   const { signup } = useAuth();
   const [firstName, setFirstName] = useState("");
@@ -119,7 +121,7 @@ export default function SignupScreen({ navigation }) {
     <View style={{ flex: 1 }}>
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
         <Text style={styles.title}>{t("auth.joinArrivo")}</Text>
 
         <Pressable onPress={pickAvatar} style={styles.avatarPicker}>

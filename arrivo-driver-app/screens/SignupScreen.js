@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, ScrollView, Modal } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 
 export default function SignupScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { signup } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -45,7 +47,7 @@ export default function SignupScreen({ navigation }) {
     <View style={{ flex: 1 }}>
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
         <Text style={styles.title}>Drive with RideArrivo</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 

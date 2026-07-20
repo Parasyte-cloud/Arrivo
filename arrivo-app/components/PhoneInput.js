@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, Modal, FlatList, StyleSheet } from "react-native";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing } from "../theme/tokens";
 import { COUNTRY_CODES } from "../utils/phoneValidation";
 
 export default function PhoneInput({ dial, national, onChangeDial, onChangeNational, placeholder }) {
