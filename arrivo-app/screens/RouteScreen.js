@@ -67,8 +67,10 @@ const BOOKING_TYPES = [
 const FLAT_BASE_PRICE = { sedan: 8500, suv: 12500, truck: 16000 };
 
 export default function RouteScreen({ navigation, route }) {
-  const [pickup, setPickup] = useState("Murtala Muhammed Airport, T1");
-  const [stops, setStops] = useState(["Lekki Phase 1"]);
+  // Empty by default — the rider types their own pickup and destination,
+  // matching the website's booking form (no pre-filled locations).
+  const [pickup, setPickup] = useState("");
+  const [stops, setStops] = useState([""]);
   const [vehicle, setVehicle] = useState("suv");
   const [bookingType, setBookingType] = useState("one_way");
   const [adults, setAdults] = useState("1");
@@ -106,7 +108,7 @@ export default function RouteScreen({ navigation, route }) {
     return total;
   }, [baseFare, securityEscort, fleetSize]);
 
-  const canConfirm = !excludedArea && !overCapacity;
+  const canConfirm = !excludedArea && !overCapacity && pickup.trim().length > 0 && destination.trim().length > 0;
 
   return (
     <View style={styles.screen}>
@@ -132,7 +134,13 @@ export default function RouteScreen({ navigation, route }) {
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.stopRow}>
             <View style={[styles.dot, { backgroundColor: colors.tealBright }]} />
-            <TextInput style={styles.stopInput} value={pickup} onChangeText={setPickup} placeholderTextColor={colors.dark.textMuted} />
+            <TextInput
+              style={styles.stopInput}
+              value={pickup}
+              onChangeText={setPickup}
+              placeholder="Pickup address"
+              placeholderTextColor={colors.dark.textMuted}
+            />
           </View>
           {stops.map((stop, i) => (
             <View key={i} style={styles.stopRow}>
@@ -142,7 +150,7 @@ export default function RouteScreen({ navigation, route }) {
                 style={styles.stopInput}
                 value={stop}
                 onChangeText={(v) => updateStop(i, v)}
-                placeholder={`Stop ${i + 1}`}
+                placeholder={i === stops.length - 1 ? "Destination" : `Stop ${i + 1}`}
                 placeholderTextColor={colors.dark.textMuted}
               />
             </View>
@@ -273,6 +281,10 @@ export default function RouteScreen({ navigation, route }) {
             keyboardType="phone-pad"
           />
         </Card>
+
+        {!pickup.trim() || !destination.trim() ? (
+          <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
+        ) : null}
 
         <View style={{ height: spacing.lg }} />
         <Button

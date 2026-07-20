@@ -10,6 +10,17 @@ const OPTIONS = [
   { id: "luxury", label: "Luxury", price: 120000 },
 ];
 
+// Multipliers relative to a single day's price, discounted for longer
+// commitments — mirrors the ratio RouteScreen uses for its own
+// full_day(6)/full_week(30)/full_month(100) multipliers (30/6=5, 100/6≈16.7),
+// so a week/month chauffeur booking is priced consistently with the rest
+// of the app rather than a separately invented number.
+const DURATIONS = [
+  { id: "full_day", label: "Single day", days: 1, multiplier: 1 },
+  { id: "full_week", label: "Full week", days: 7, multiplier: 5 },
+  { id: "full_month", label: "Full month", days: 30, multiplier: 16 },
+];
+
 export default function ChauffeurScreen({ navigation }) {
   const [pickupAddress, setPickupAddress] = useState("");
   const [date, setDate] = useState("");
@@ -17,19 +28,22 @@ export default function ChauffeurScreen({ navigation }) {
   const [purpose, setPurpose] = useState("");
   const [hours, setHours] = useState("6");
   const [choice, setChoice] = useState("suv");
+  const [duration, setDuration] = useState("full_day");
 
   const opt = OPTIONS.find((o) => o.id === choice);
+  const selectedDuration = DURATIONS.find((d) => d.id === duration);
+  const totalPrice = opt.price * selectedDuration.multiplier;
   const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0;
 
   const confirm = () => {
     navigation.navigate("Checkout", {
-      amountNaira: opt.price,
-      label: `Chauffeur — ${opt.label} · ${date} ${time} · ${hours}h${purpose ? ` (${purpose})` : ""}`,
+      amountNaira: totalPrice,
+      label: `Chauffeur — ${opt.label} · ${selectedDuration.label} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,
-      bookingType: "full_day",
-      durationDays: 1,
+      bookingType: duration,
+      durationDays: selectedDuration.days,
     });
   };
 
@@ -37,7 +51,22 @@ export default function ChauffeurScreen({ navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
-        <Text style={styles.title}>Chauffeur for the day</Text>
+        <Text style={styles.title}>Chauffeur</Text>
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>How long do you need a chauffeur?</Text>
+          <View style={styles.bookingRow}>
+            {DURATIONS.map((d) => (
+              <Pressable
+                key={d.id}
+                onPress={() => setDuration(d.id)}
+                style={[styles.bookingChip, duration === d.id && styles.bookingChipActive]}
+              >
+                <Text style={[styles.bookingChipText, duration === d.id && styles.bookingChipTextActive]}>{d.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Pickup address</Text>
@@ -72,17 +101,21 @@ export default function ChauffeurScreen({ navigation }) {
               placeholderTextColor={colors.dark.textMuted}
             />
           </View>
-          <View style={styles.divider} />
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>⏱ Duration (hours)</Text>
-            <TextInput
-              style={styles.smallInput}
-              value={hours}
-              onChangeText={setHours}
-              keyboardType="number-pad"
-              placeholderTextColor={colors.dark.textMuted}
-            />
-          </View>
+          {duration === "full_day" ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>⏱ Hours that day</Text>
+                <TextInput
+                  style={styles.smallInput}
+                  value={hours}
+                  onChangeText={setHours}
+                  keyboardType="number-pad"
+                  placeholderTextColor={colors.dark.textMuted}
+                />
+              </View>
+            </>
+          ) : null}
           <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.rowLabel}>🎯 Purpose</Text>
@@ -104,7 +137,7 @@ export default function ChauffeurScreen({ navigation }) {
                 {choice === o.id ? "● " : "○ "}
                 {o.label}
               </Text>
-              <Text style={styles.optPrice}>₦{o.price.toLocaleString()}</Text>
+              <Text style={styles.optPrice}>₦{(o.price * selectedDuration.multiplier).toLocaleString()}</Text>
             </Pressable>
           ))}
         </Card>
@@ -114,7 +147,7 @@ export default function ChauffeurScreen({ navigation }) {
         ) : null}
 
         <View style={{ height: spacing.lg }} />
-        <Button label={`Continue · ₦${opt.price.toLocaleString()}`} onPress={confirm} disabled={!canConfirm} trailingIcon />
+        <Button label={`Continue · ₦${totalPrice.toLocaleString()}`} onPress={confirm} disabled={!canConfirm} trailingIcon />
       </ScrollView>
     </View>
   );
@@ -129,6 +162,17 @@ const styles = StyleSheet.create({
   smallInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", minWidth: 100 },
   purposeInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  bookingChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.dark.surfaceBorder,
+  },
+  bookingChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
+  bookingChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
+  bookingChipTextActive: { color: colors.ink },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,
