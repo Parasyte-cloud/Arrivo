@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -8,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { getEarnings, getMyDriverRides } from "../services/api";
 
 export default function EarningsScreen() {
+  const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [summary, setSummary] = useState(null);
   const [rides, setRides] = useState([]);
@@ -37,7 +39,7 @@ export default function EarningsScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
         <Text style={styles.title}>Earnings</Text>

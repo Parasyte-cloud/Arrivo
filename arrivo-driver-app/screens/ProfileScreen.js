@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -10,6 +11,7 @@ import { getDriverProfile } from "../services/api";
 const LANGUAGE_LABELS = { en: "English", fr: "Français" };
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Profile</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>

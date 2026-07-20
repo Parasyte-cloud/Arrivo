@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -8,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { getRideHistory } from "../services/api";
 
 export default function ActivityScreen() {
+  const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export default function ActivityScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
         <Text style={styles.title}>Activity</Text>

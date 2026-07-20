@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -12,6 +13,7 @@ import { useLocationReporting } from "../hooks/useLocationReporting";
 const POLL_INTERVAL_MS = 8000;
 
 export default function DashboardScreen() {
+  const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
@@ -129,7 +131,7 @@ export default function DashboardScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={activeRide ? checkForActiveRide : refreshAvailable} tintColor={colors.amber} />}
       >
         <View style={styles.header}>

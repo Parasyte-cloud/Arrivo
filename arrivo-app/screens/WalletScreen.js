@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl, Linking, AppState } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
@@ -23,6 +24,7 @@ function transactionLabel(tx) {
 }
 
 export default function WalletScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -132,7 +134,7 @@ export default function WalletScreen({ navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.amber} />}
       >
         <Text style={styles.title}>Wallet</Text>

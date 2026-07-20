@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Circle, Line } from "react-native-svg";
 import { useTranslation } from "react-i18next";
@@ -30,6 +31,7 @@ function statusStyle(status) {
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
   const { user, token, logout, updateProfile } = useAuth();
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
@@ -109,7 +111,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>{t("profile.title")}</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
