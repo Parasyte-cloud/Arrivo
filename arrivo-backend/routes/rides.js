@@ -3,6 +3,7 @@ const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
 const { sendBookingConfirmationEmail } = require("../services/email");
+const { sendPushNotification } = require("../services/pushNotifications");
 
 const router = express.Router();
 
@@ -162,14 +163,28 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
 
   const ride = (
     await pool.query(
-      `SELECT rides.*, users.name as rider_name, users.phone as rider_phone
+      `SELECT rides.*, users.name as rider_name, users.phone as rider_phone, users.push_token as rider_push_token
        FROM rides JOIN users ON users.id = rides.rider_id WHERE rides.id = $1`,
       [req.params.id]
     )
   ).rows[0];
 
+  const driverUser = await pool.query("SELECT name FROM users WHERE id = $1", [req.user.id]);
+  sendPushNotification(
+    ride.rider_push_token,
+    "Driver on the way",
+    `${driverUser.rows[0]?.name || "Your driver"} accepted your ride and is heading your way.`,
+    { rideId: ride.id, type: "ride_accepted" }
+  ).catch(() => {});
+
   res.json({ ride: withParsedStops(ride) });
 });
+
+const STATUS_NOTIFICATION = {
+  in_progress: { title: "Trip started", body: "Your trip is now in progress. Track it live in the app." },
+  completed: { title: "Trip completed", body: "You've arrived! Tap to rate your driver." },
+  cancelled: { title: "Trip cancelled", body: "Your driver cancelled this trip." },
+};
 
 // PATCH /api/rides/:id/status — driver updates trip progress
 router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res) => {
@@ -187,7 +202,18 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     "UPDATE rides SET ride_status = $1, updated_at = now() WHERE id = $2 RETURNING *",
     [status, req.params.id]
   );
-  res.json({ ride: withParsedStops(updated.rows[0]) });
+  const ride = updated.rows[0];
+
+  const notification = STATUS_NOTIFICATION[status];
+  if (notification) {
+    const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [ride.rider_id]);
+    sendPushNotification(rider.rows[0]?.push_token, notification.title, notification.body, {
+      rideId: ride.id,
+      type: `ride_${status}`,
+    }).catch(() => {});
+  }
+
+  res.json({ ride: withParsedStops(ride) });
 });
 
 // GET /api/rides/driver/mine — this driver's accepted/active/completed rides
@@ -260,6 +286,46 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ride: withParsedStops(ride) });
+});
+
+// POST /api/rides/:id/rate — the rider rates their driver after a
+// completed trip ("Rate & Relax" on the website). One rating per trip;
+// drivers.rating is recomputed as the average across all their rated
+// completed trips whenever a new rating comes in.
+// body: { rating: 1-5, comment? }
+router.post("/:id/rate", requireAuth, async (req, res) => {
+  const { rating, comment } = req.body;
+  const numRating = Number(rating);
+  if (!Number.isInteger(numRating) || numRating < 1 || numRating > 5) {
+    return res.status(400).json({ error: "rating must be an integer from 1 to 5" });
+  }
+
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND rider_id = $2", [req.params.id, req.user.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status !== "completed") {
+    return res.status(400).json({ error: "You can only rate a completed trip" });
+  }
+  if (ride.rider_rating != null) {
+    return res.status(400).json({ error: "You've already rated this trip" });
+  }
+  if (!ride.driver_id) {
+    return res.status(400).json({ error: "This trip has no assigned driver to rate" });
+  }
+
+  const updated = await pool.query(
+    "UPDATE rides SET rider_rating = $1, rider_rating_comment = $2, updated_at = now() WHERE id = $3 RETURNING *",
+    [numRating, comment || null, ride.id]
+  );
+
+  await pool.query(
+    `UPDATE drivers SET rating = (
+       SELECT ROUND(AVG(rider_rating)::numeric, 2) FROM rides WHERE driver_id = drivers.id AND rider_rating IS NOT NULL
+     ) WHERE id = $1`,
+    [ride.driver_id]
+  );
+
+  res.json({ ride: withParsedStops(updated.rows[0]) });
 });
 
 // POST /api/rides/:id/panic — safety button. Either the rider who booked

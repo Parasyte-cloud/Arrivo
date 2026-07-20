@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideDetails, triggerPanic } from "../services/api";
+import { getRideDetails, triggerPanic, rateRide } from "../services/api";
 
 const POLL_INTERVAL_MS = 10000;
 
@@ -30,6 +30,10 @@ export default function TrackingScreen({ route, navigation }) {
   const [loadError, setLoadError] = useState(null);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
+  const [starsSelected, setStarsSelected] = useState(0);
+  const [ratingComment, setRatingComment] = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingError, setRatingError] = useState(null);
   const pollRef = useRef(null);
 
   const fetchRide = useCallback(async () => {
@@ -110,6 +114,23 @@ export default function TrackingScreen({ route, navigation }) {
     }
   };
 
+  const submitRating = async () => {
+    if (!starsSelected) {
+      setRatingError("Tap a star to rate your trip.");
+      return;
+    }
+    setSubmittingRating(true);
+    setRatingError(null);
+    try {
+      await rateRide(token, rideId, starsSelected, ratingComment.trim() || undefined);
+      await fetchRide();
+    } catch (e) {
+      setRatingError(e.message || "Couldn't submit your rating. Please try again.");
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.screen}>
@@ -163,6 +184,43 @@ export default function TrackingScreen({ route, navigation }) {
             </View>
           </View>
         </Card>
+
+        {ride?.ride_status === "completed" && hasDriver ? (
+          <Card tone="dark" tinted style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>Rate & Relax</Text>
+            {ride.rider_rating ? (
+              <Text style={styles.meta}>
+                You rated this trip {"★".repeat(ride.rider_rating)}{"☆".repeat(5 - ride.rider_rating)}
+                {ride.rider_rating_comment ? ` — "${ride.rider_rating_comment}"` : ""}
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.meta}>How was your trip with {ride.driver_name}?</Text>
+                <View style={styles.starRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable key={n} onPress={() => setStarsSelected(n)} hitSlop={6}>
+                      <Text style={styles.starChar}>{n <= starsSelected ? "★" : "☆"}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.input}
+                  value={ratingComment}
+                  onChangeText={setRatingComment}
+                  placeholder="Add a comment (optional)"
+                  placeholderTextColor={colors.dark.textMuted}
+                />
+                {ratingError ? <Text style={styles.warningText}>{ratingError}</Text> : null}
+                <View style={{ height: spacing.sm }} />
+                {submittingRating ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : (
+                  <Button label="Submit rating" variant="ghost" tone="dark" onPress={submitRating} />
+                )}
+              </>
+            )}
+          </Card>
+        ) : null}
 
         <View style={styles.grid2}>
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
@@ -221,6 +279,17 @@ const styles = StyleSheet.create({
   avatarText: { color: "#fff", fontWeight: "700" },
   name: { color: colors.dark.text, fontWeight: "700", fontSize: 14 },
   meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
+  cardLabel: { color: colors.dark.text, fontWeight: "700", fontSize: 13, marginBottom: 4 },
+  starRow: { flexDirection: "row", gap: 6, marginTop: spacing.sm, marginBottom: spacing.sm },
+  starChar: { fontSize: 28, color: colors.amber },
+  input: {
+    backgroundColor: colors.dark.fieldBg,
+    color: colors.dark.text,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 13,
+  },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   shareNote: { color: colors.dark.textMuted, fontSize: 11.5, textAlign: "center" },
   warningText: { color: "#FF9B8A", fontSize: 12, textAlign: "center" },

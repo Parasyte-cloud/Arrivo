@@ -3,6 +3,7 @@ import "./i18n"; // side-effect: initializes i18next before anything renders
 import React from "react";
 import { View, ActivityIndicator } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -10,6 +11,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { usePushNotifications } from "./hooks/usePushNotifications";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -30,6 +32,16 @@ import { colors } from "./theme/tokens";
 const Stack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Foreground behavior — show trip-update alerts even while the app is
+// already open, not just when backgrounded.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const navTheme = {
   ...DarkTheme,
@@ -101,7 +113,8 @@ function AuthFlow() {
 }
 
 function RootNavigator() {
-  const { isAuthenticated, initializing } = useAuth();
+  const { isAuthenticated, initializing, token } = useAuth();
+  usePushNotifications(token);
 
   if (initializing) {
     // Restoring a saved session token — brief splash-like loading state.

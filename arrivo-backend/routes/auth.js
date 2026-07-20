@@ -138,7 +138,10 @@ router.get("/me", requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me
 router.patch("/me", requireAuth, async (req, res) => {
-  const { name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber, avatarDataUrl } = req.body;
+  const {
+    name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber, avatarDataUrl,
+    audioRecordingEnabled,
+  } = req.body;
   const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
   if (!current) return res.status(404).json({ error: "User not found" });
 
@@ -150,8 +153,8 @@ router.patch("/me", requireAuth, async (req, res) => {
   const updated = await pool.query(
     `UPDATE users SET name = $1, phone = $2, preferred_language = $3,
                        whatsapp_number = $4, country_of_residence = $5, passport_number = $6,
-                       avatar_url = $7
-     WHERE id = $8 RETURNING *`,
+                       avatar_url = $7, audio_recording_enabled = $8
+     WHERE id = $9 RETURNING *`,
     [
       name ?? current.name,
       phone ?? current.phone,
@@ -160,11 +163,25 @@ router.patch("/me", requireAuth, async (req, res) => {
       countryOfResidence ?? current.country_of_residence,
       passportNumber ?? current.passport_number,
       avatarDataUrl !== undefined ? avatarDataUrl : current.avatar_url,
+      audioRecordingEnabled ?? current.audio_recording_enabled,
       req.user.id,
     ]
   );
 
   res.json({ user: publicUser(updated.rows[0]) });
+});
+
+// POST /api/auth/push-token — register this device's Expo push token so
+// the backend can send trip status notifications (driver accepted, trip
+// started/completed). One token per user; each new registration replaces
+// the last (simple last-device-wins, no multi-device fan-out).
+// body: { pushToken }
+router.post("/push-token", requireAuth, async (req, res) => {
+  const { pushToken } = req.body;
+  if (!pushToken) return res.status(400).json({ error: "pushToken is required" });
+
+  await pool.query("UPDATE users SET push_token = $1 WHERE id = $2", [pushToken, req.user.id]);
+  res.json({ ok: true });
 });
 
 // POST /api/auth/guest — lightweight checkout for the website's booking flow.

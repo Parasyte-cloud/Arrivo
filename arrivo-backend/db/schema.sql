@@ -131,6 +131,22 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS dash_cam_consent BOOLEAN NOT NULL DEFAULT false;
 
+-- The rider's post-trip rating of their driver ("Rate & Relax" on the
+-- website). Stored on the ride itself rather than a separate ratings
+-- table, since it's one rating per completed trip. drivers.rating is
+-- recomputed as the average of these whenever a new one comes in.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS rider_rating INTEGER;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS rider_rating_comment TEXT;
+
+-- Expo push token for this user's device, so the backend can send trip
+-- status notifications (driver accepted, trip started, trip completed).
+-- One token per user — simple last-device-wins, no multi-device fan-out.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;
+
+-- "Listening device" toggle — matches the same setting shown on
+-- ridearrivo.com's account page. Off by default; a rider opts in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS audio_recording_enabled BOOLEAN NOT NULL DEFAULT false;
+
 -- ── Wallet ──
 -- A rider (or, later, a company on a delegate plan) can hold a balance and
 -- pay for rides directly from it, as an alternative to per-trip card

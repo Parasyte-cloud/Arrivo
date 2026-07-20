@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card } from "../components/UI";
@@ -8,7 +8,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideHistory } from "../services/api";
 
-export default function ActivityScreen() {
+export default function ActivityScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [rides, setRides] = useState([]);
@@ -50,17 +50,23 @@ export default function ActivityScreen() {
         ) : null}
 
         {rides.map((ride) => (
-          <Card key={ride.id} tone="dark" style={{ marginBottom: spacing.sm }}>
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
-                <Text style={styles.tripDate}>
-                  {new Date(ride.created_at).toLocaleDateString()} · {ride.ride_status} · {ride.payment_status}
-                </Text>
+          <Pressable
+            key={ride.id}
+            onPress={() => navigation.navigate("Home", { screen: "Tracking", params: { rideId: ride.id } })}
+          >
+            <Card tone="dark" style={{ marginBottom: spacing.sm }}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+                  <Text style={styles.tripDate}>
+                    {new Date(ride.created_at).toLocaleDateString()} · {ride.ride_status} · {ride.payment_status}
+                    {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
+                  </Text>
+                </View>
+                <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
               </View>
-              <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
-            </View>
-          </Card>
+            </Card>
+          </Pressable>
         ))}
       </ScrollView>
     </View>

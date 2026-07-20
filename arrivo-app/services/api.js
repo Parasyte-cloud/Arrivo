@@ -76,6 +76,22 @@ export function getOwnerDashboard(token) {
   });
 }
 
+export function rateRide(token, rideId, rating, comment) {
+  return request(`/api/rides/${rideId}/rate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ rating, comment }),
+  });
+}
+
+export function registerPushToken(token, pushToken) {
+  return request("/api/auth/push-token", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ pushToken }),
+  });
+}
+
 export function scanRideQr(token, scanToken) {
   return request("/api/rides/scan", {
     method: "POST",
