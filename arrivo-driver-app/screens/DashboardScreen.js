@@ -74,6 +74,18 @@ export default function DashboardScreen() {
     return () => clearInterval(pollRef.current);
   }, [isOnline, activeRide, refreshAvailable]);
 
+  // Keep the active-trip card's data fresh while on a trip — status changes,
+  // fare adjustments, or a listening-device activation from another path
+  // previously only showed up on tab refocus or a manual pull-to-refresh,
+  // which could leave a driver acting on stale trip data for a long time.
+  const activeRidePollRef = useRef(null);
+  useEffect(() => {
+    if (activeRide) {
+      activeRidePollRef.current = setInterval(checkForActiveRide, POLL_INTERVAL_MS);
+    }
+    return () => clearInterval(activeRidePollRef.current);
+  }, [activeRide, checkForActiveRide]);
+
   const toggleOnline = async (value) => {
     setIsOnline(value); // optimistic — feels instant
     try {
@@ -201,10 +213,31 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const [panicState, setPanicState] = useState("idle"); // idle | counting | active
   const [countdown, setCountdown] = useState(3);
   const countdownRef = useRef(null);
+  // True once the panic POST has actually been confirmed by the server —
+  // separate from panicState so the UI can distinguish "we think this
+  // fired but haven't confirmed it" from "confirmed." Was previously
+  // implicit/assumed the moment the countdown hit zero, which meant a
+  // failed network call still showed full "alert active, help is coming"
+  // confidence to the driver with nobody actually notified.
+  const [panicConfirmed, setPanicConfirmed] = useState(false);
+  const [panicError, setPanicError] = useState(false);
   // One-way, matches ridearrivo.com — starts "on" if the ride already shows
   // an activation (e.g. app reopened mid-trip), otherwise idle. No control
   // to turn it back off, same as panic.
   const [listeningOn, setListeningOn] = useState(!!ride.listening_device_activated_at);
+  const [listeningError, setListeningError] = useState(false);
+
+  const sendPanicRequest = () => {
+    setPanicError(false);
+    triggerPanic(token, ride.id, "Driver-initiated SOS")
+      .then(() => setPanicConfirmed(true))
+      .catch(() => setPanicError(true));
+    // "One trigger, full response" — panic already activates the listening
+    // device server-side in the same write on success, so reflect that in
+    // the UI optimistically; if the panic call itself fails, activateListening
+    // below still gives an independent way to confirm/retry it.
+    setListeningOn(true);
+  };
 
   const startPanicCountdown = () => {
     setPanicState("counting");
@@ -213,17 +246,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
       setCountdown((c) => {
         if (c <= 1) {
           clearInterval(countdownRef.current);
-          triggerPanic(token, ride.id, "Driver-initiated SOS").catch(() => {
-            // Even if the network call fails, the UI stays locked into the
-            // active state rather than silently reverting to idle — a
-            // driver who believed they'd triggered an alert should never
-            // be quietly told "actually never mind" by the app itself.
-            // They can retry via the same active-state banner if needed.
-          });
-          // "One trigger, full response" — panic already activates the
-          // listening device server-side in the same write, so reflect
-          // that in the UI immediately rather than waiting on a refetch.
-          setListeningOn(true);
+          sendPanicRequest();
           return 0;
         }
         return c - 1;
@@ -237,13 +260,25 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
   };
 
   const activateListening = () => {
-    setListeningOn(true); // one-way, optimistic — same reasoning as panic above
-    activateListeningDevice(token, ride.id).catch(() => {});
+    setListeningOn(true); // optimistic, but listeningError below keeps this honest
+    setListeningError(false);
+    activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
   };
 
   useEffect(() => {
     if (countdown === 0 && panicState === "counting") setPanicState("active");
   }, [countdown, panicState]);
+
+  // ActiveTripCard isn't remounted while a trip stays active (no `key` prop
+  // and `ride` only ever changes via re-render), so listeningOn previously
+  // only reflected whatever ride.listening_device_activated_at was at the
+  // very first render. Now that the parent polls the active ride (see
+  // DashboardScreen above), this keeps it in sync with the server — e.g. if
+  // it was activated from another device/session. One-way only, matching
+  // the rest of this feature: never flips back to false.
+  useEffect(() => {
+    if (ride.listening_device_activated_at) setListeningOn(true);
+  }, [ride.listening_device_activated_at]);
 
   useEffect(() => () => clearInterval(countdownRef.current), []);
 
@@ -267,8 +302,18 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
         <Card tone="dark" style={styles.panicActiveCard}>
           <Text style={styles.panicActiveTitle}>Emergency alert active</Text>
           <Text style={styles.panicActiveBody}>
-            Our team has been notified and is monitoring this trip. This can only be cleared once resolved on our end.
+            {panicConfirmed
+              ? "Our team has been notified and is monitoring this trip. This can only be cleared once resolved on our end."
+              : "Sending to RideArrivo's team…"}
           </Text>
+          {panicError ? (
+            <>
+              <Text style={styles.panicErrorText}>
+                Couldn't confirm this reached RideArrivo's servers. Please also call support directly if you're in danger.
+              </Text>
+              <Button label="Retry sending alert" variant="ghost" tone="dark" onPress={sendPanicRequest} style={{ marginTop: 8 }} />
+            </>
+          ) : null}
         </Card>
       ) : panicState === "counting" ? (
         <Card tone="dark" style={styles.panicCountingCard}>
@@ -282,7 +327,12 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
       <View style={{ height: spacing.sm }} />
 
       {listeningOn ? (
-        <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
+        <>
+          <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
+          {listeningError ? (
+            <Button label="Couldn't confirm — tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
+          ) : null}
+        </>
       ) : (
         <Button label="🎙️ Activate listening device" variant="ghost" tone="dark" onPress={activateListening} />
       )}
@@ -323,5 +373,6 @@ const styles = StyleSheet.create({
   panicActiveCard: { backgroundColor: "rgba(225,82,61,0.22)", borderColor: colors.coral, borderWidth: 1 },
   panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
+  panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
 });

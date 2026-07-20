@@ -51,17 +51,23 @@ export default function TrackingScreen({ route, navigation }) {
     }
   }, [token, rideId]);
 
-  // Poll for updates (driver location, status changes) while the trip is
-  // still active — no point polling once it's completed/cancelled.
   useEffect(() => {
     fetchRide();
-    pollRef.current = setInterval(() => {
-      if (ride && ["completed", "cancelled"].includes(ride.ride_status)) return;
-      fetchRide();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(pollRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchRide]);
+
+  // Poll for updates (driver location, status changes) while the trip is
+  // still active — no point polling once it's completed/cancelled. Keyed on
+  // ride?.ride_status so this effect re-runs (clearing the old interval)
+  // the moment the status actually changes, instead of a single interval
+  // whose closure only ever sees the `ride` value from when it was created
+  // (which was always null) and so never actually stopped polling.
+  useEffect(() => {
+    if (ride && ["completed", "cancelled"].includes(ride.ride_status)) {
+      return;
+    }
+    pollRef.current = setInterval(fetchRide, POLL_INTERVAL_MS);
+    return () => clearInterval(pollRef.current);
+  }, [fetchRide, ride?.ride_status]);
 
   const shareRide = async () => {
     try {

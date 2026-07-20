@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
 const { sendBookingConfirmationEmail } = require("../services/email");
 const { sendPushNotification } = require("../services/pushNotifications");
+const { verifyPaystackTransaction } = require("./payments");
 
 const router = express.Router();
 
@@ -150,6 +151,12 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
 router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
+  // Same gate as PATCH /api/drivers/status's "go online" check — accepting a
+  // ride directly was a way around it, since nothing here confirmed the
+  // driver had actually been approved by an admin.
+  if (!driver.is_verified) {
+    return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can accept rides." });
+  }
 
   const result = await pool.query(
     `UPDATE rides SET driver_id = $1, ride_status = 'accepted', updated_at = now()
@@ -186,6 +193,16 @@ const STATUS_NOTIFICATION = {
   cancelled: { title: "Trip cancelled", body: "Your driver cancelled this trip." },
 };
 
+// Valid ride-status transitions a driver can make via the route below.
+// 'requested' isn't listed as a starting point — a ride only gets a
+// driver_id (required to reach this route at all) once /accept has already
+// moved it to 'accepted'. completed/cancelled are terminal: nothing can
+// leave those states from here.
+const VALID_STATUS_TRANSITIONS = {
+  accepted: ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+};
+
 // PATCH /api/rides/:id/status — driver updates trip progress
 router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res) => {
   const { status } = req.body;
@@ -197,6 +214,12 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   const driver = await getDriverForUser(req.user.id);
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND driver_id = $2", [req.params.id, driver?.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: "Ride not found or not assigned to you" });
+
+  const currentStatus = existing.rows[0].ride_status;
+  const nextAllowed = VALID_STATUS_TRANSITIONS[currentStatus] || [];
+  if (!nextAllowed.includes(status)) {
+    return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
+  }
 
   const updated = await pool.query(
     "UPDATE rides SET ride_status = $1, updated_at = now() WHERE id = $2 RETURNING *",
@@ -230,26 +253,56 @@ router.get("/driver/mine", requireAuth, requireRole("driver"), async (req, res) 
   res.json({ rides: result.rows.map(withParsedStops) });
 });
 
-// PATCH /api/rides/:id/payment — mark a ride's payment status
+// PATCH /api/rides/:id/payment — re-check this ride's own payment_reference
+// against Paystack and sync payment_status if it's actually settled.
+// Previously this trusted a client-supplied paymentStatus directly, which
+// meant any rider could PATCH their own ride to "paid" for a free trip —
+// nothing in either app actually calls this endpoint that way, so this
+// closes the hole without touching any real flow. There's no client input
+// here at all now beyond which ride to check: the reference used is always
+// the one already stored on the ride, and "paid" is only ever set after a
+// real Paystack lookup confirms success AND the amount matches the fare —
+// same rule the webhook (routes/payments.js) enforces.
 router.patch("/:id/payment", requireAuth, async (req, res) => {
-  const { paymentStatus, paymentReference } = req.body;
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND rider_id = $2", [req.params.id, req.user.id]);
   const ride = existing.rows[0];
   if (!ride) return res.status(404).json({ error: "Ride not found" });
 
-  const updated = await pool.query(
-    "UPDATE rides SET payment_status = $1, payment_reference = $2, updated_at = now() WHERE id = $3 RETURNING *",
-    [paymentStatus || ride.payment_status, paymentReference || ride.payment_reference, ride.id]
-  );
+  if (ride.payment_status === "paid") {
+    return res.json({ ride: withParsedStops(ride) });
+  }
+  if (!ride.payment_reference) {
+    return res.status(400).json({ error: "This ride has no payment reference to verify." });
+  }
 
+  let verification;
+  try {
+    verification = await verifyPaystackTransaction(ride.payment_reference);
+  } catch (err) {
+    console.error("Paystack verify failed during payment sync:", err.response?.data || err.message);
+    return res.status(502).json({ error: "Could not verify payment with Paystack. Please try again." });
+  }
+
+  const expectedNaira = Number(ride.fare_naira);
+  if (!verification.success) {
+    return res.status(400).json({ error: `Payment not yet confirmed (status: ${verification.status}).`, ride: withParsedStops(ride) });
+  }
+  if (Math.round(verification.amountNaira) !== Math.round(expectedNaira)) {
+    console.error(`Payment amount mismatch for ride #${ride.id}: paid ₦${verification.amountNaira}, expected ₦${expectedNaira}`);
+    return res.status(400).json({ error: "The amount paid doesn't match this ride's fare. Contact support." });
+  }
+
+  const updated = await pool.query(
+    "UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
+    [ride.id]
+  );
   const newRide = updated.rows[0];
-  if (newRide.payment_status === "paid" && ride.payment_status !== "paid") {
-    const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
-    if (rider.rows[0]) {
-      sendBookingConfirmationEmail(rider.rows[0].email, newRide).catch((e) =>
-        console.error("Booking confirmation email failed:", e.message)
-      );
-    }
+
+  const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
+  if (rider.rows[0]) {
+    sendBookingConfirmationEmail(rider.rows[0].email, newRide).catch((e) =>
+      console.error("Booking confirmation email failed:", e.message)
+    );
   }
 
   res.json({ ride: withParsedStops(newRide) });

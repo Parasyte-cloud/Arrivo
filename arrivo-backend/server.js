@@ -1,5 +1,12 @@
 require("dotenv").config();
 const express = require("express");
+// Patches express.Router so a rejected promise inside any async route
+// handler is forwarded to Express's error handling instead of becoming an
+// unhandled rejection. Before this, something as simple as GET /api/rides/abc
+// (a non-numeric id, which makes the Postgres query throw) would crash the
+// entire process — one bad request taking the whole API down for everyone.
+// Must be required before any routes/*.js files below, per its own docs.
+require("express-async-errors");
 const cors = require("cors");
 
 const { ready } = require("./db/db"); // resolves once the Postgres schema is initialized
@@ -43,6 +50,17 @@ app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
+
+// Catches anything express-async-errors forwards (thrown/rejected errors
+// from any route above), plus body-parser errors like malformed JSON.
+// Must be registered last, after every other app.use()/route. Without this,
+// forwarded errors would fall through to Express's default HTML error page
+// instead of the JSON error shape every client in this codebase expects.
+app.use((err, req, res, next) => {
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
+});
 
 const PORT = process.env.PORT || 4000;
 

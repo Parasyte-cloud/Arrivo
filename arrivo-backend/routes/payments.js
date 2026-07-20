@@ -10,6 +10,24 @@ function paystackHeaders() {
   return { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` };
 }
 
+// Shared by GET /verify/:reference below and PATCH /api/rides/:id/payment
+// (routes/rides.js) — the one place that actually calls Paystack to find
+// out whether a transaction really succeeded. Never trust a client's word
+// for this; always ask Paystack.
+async function verifyPaystackTransaction(reference) {
+  const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${reference}`, {
+    headers: paystackHeaders(),
+  });
+  const data = response.data.data;
+  return {
+    success: data.status === "success",
+    status: data.status,
+    amountNaira: data.amount / 100,
+    currency: data.currency,
+    paidAt: data.paid_at,
+  };
+}
+
 // POST /api/payments/initialize
 // body: { email, amountNaira, reference? }
 // Call this from the app right before showing checkout. Returns an
@@ -48,25 +66,9 @@ router.post("/initialize", async (req, res) => {
 // actually succeeded before marking a ride as paid. Never trust the
 // frontend's word alone that a payment succeeded.
 router.get("/verify/:reference", async (req, res) => {
-  const { reference } = req.params;
-
   try {
-    const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${reference}`, {
-      headers: paystackHeaders(),
-    });
-
-    const data = response.data.data;
-    const success = data.status === "success";
-
-    res.json({
-      success,
-      status: data.status,
-      amountNaira: data.amount / 100,
-      currency: data.currency,
-      paidAt: data.paid_at,
-      // TODO: once you have a database, look up the expected fare for this
-      // reference here and compare against data.amount before marking paid.
-    });
+    const result = await verifyPaystackTransaction(req.params.reference);
+    res.json(result);
   } catch (err) {
     console.error("Paystack verify failed:", err.response?.data || err.message);
     res.status(502).json({ error: "Could not verify payment." });
@@ -108,21 +110,33 @@ router.post(
       // that needs rides to be created as "pending" before redirecting to
       // Paystack, which is a bigger flow change than this webhook alone.
       try {
-        const updated = await pool.query(
-          `UPDATE rides SET payment_status = 'paid', updated_at = now()
-           WHERE payment_reference = $1 AND payment_status != 'paid'
-           RETURNING id, fare_naira`,
+        // Check the amount BEFORE writing anything — an underpaid or
+        // wrong-amount transaction must never flip a ride to "paid", not
+        // just get logged after the fact. SELECT first (no write yet).
+        const existing = await pool.query(
+          "SELECT id, fare_naira, payment_status FROM rides WHERE payment_reference = $1",
           [reference]
         );
-        if (updated.rowCount > 0) {
-          const ride = updated.rows[0];
+        const ride = existing.rows[0];
+        if (!ride) {
+          console.log(`Payment confirmed via webhook for ref ${reference}, but no matching ride found yet.`);
+        } else if (ride.payment_status === "paid") {
+          // Already marked paid (e.g. by a previous webhook delivery) — Paystack
+          // retries webhooks, so this must be a safe no-op, not an error.
+        } else {
           const expectedKobo = Math.round(Number(ride.fare_naira) * 100);
           if (Number(amount) !== expectedKobo) {
-            console.warn(`Webhook amount mismatch for ride #${ride.id}: paid ${amount} kobo, expected ${expectedKobo} kobo`);
+            console.error(
+              `Webhook amount mismatch for ride #${ride.id}: paid ${amount} kobo, expected ${expectedKobo} kobo — NOT marking paid.`
+            );
+          } else {
+            await pool.query(
+              `UPDATE rides SET payment_status = 'paid', updated_at = now()
+               WHERE id = $1 AND payment_status != 'paid'`,
+              [ride.id]
+            );
+            console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference} - NGN ${amount / 100} - ${customer.email}`);
           }
-          console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference} - NGN ${amount / 100} - ${customer.email}`);
-        } else {
-          console.log(`Payment confirmed via webhook for ref ${reference}, but no matching unpaid ride found yet.`);
         }
       } catch (e) {
         console.error("Webhook DB update failed:", e.message);
@@ -134,3 +148,4 @@ router.post(
 );
 
 module.exports = router;
+module.exports.verifyPaystackTransaction = verifyPaystackTransaction;
