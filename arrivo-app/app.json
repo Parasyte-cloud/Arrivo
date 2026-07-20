@@ -41,6 +41,12 @@
       "expo-localization",
       "expo-secure-store",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "RideArrivo needs camera access to scan your driver's QR code and start live tracking."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",

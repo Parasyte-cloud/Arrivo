@@ -29,7 +29,7 @@ function statusStyle(status) {
   return { color: colors.dark.textMuted };
 }
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { t, i18n } = useTranslation();
   const { user, token, logout, updateProfile } = useAuth();
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
@@ -226,6 +226,12 @@ export default function ProfileScreen() {
           <Text style={styles.link}>{t("profile.emergencyContacts")}</Text>
           <Text style={styles.link}>{t("profile.rideSharingPrefs")}</Text>
           <Text style={styles.link}>{t("profile.support")}</Text>
+        </Card>
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Pressable onPress={() => navigation.navigate("Home", { screen: "Owner" })}>
+            <Text style={styles.link}>Have a car? List a vehicle with RideArrivo</Text>
+          </Pressable>
         </Card>
 
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />

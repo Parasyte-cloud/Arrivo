@@ -22,7 +22,7 @@ function initials(name) {
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() || "").join("");
 }
 
-export default function TrackingScreen({ route }) {
+export default function TrackingScreen({ route, navigation }) {
   const { rideId } = route?.params || {};
   const { token } = useAuth();
   const [ride, setRide] = useState(null);
@@ -168,6 +168,15 @@ export default function TrackingScreen({ route }) {
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
           <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriver} style={{ flex: 1 }} />
         </View>
+
+        {ride?.ride_status === "accepted" ? (
+          <Button
+            label="📷 Scan driver's QR to start tracking"
+            onPress={() => navigation.navigate("Scan")}
+            style={{ marginTop: spacing.md }}
+            trailingIcon
+          />
+        ) : null}
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>

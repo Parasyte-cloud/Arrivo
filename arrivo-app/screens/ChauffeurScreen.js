@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from "react-native";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
@@ -10,17 +10,27 @@ const OPTIONS = [
   { id: "luxury", label: "Luxury", price: 120000 },
 ];
 
-export default function ChauffeurScreen() {
+export default function ChauffeurScreen({ navigation }) {
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [purpose, setPurpose] = useState("");
   const [hours, setHours] = useState("6");
   const [choice, setChoice] = useState("suv");
 
-  const request = () => {
-    const opt = OPTIONS.find((o) => o.id === choice);
-    Alert.alert(
-      "Chauffeur requested",
-      `${opt.label} for ${hours} hours${purpose ? ` for ${purpose}` : ""}. Estimated total: ₦${opt.price.toLocaleString()}.\n\n(This is a demo confirmation. Wire this button to your booking API.)`
-    );
+  const opt = OPTIONS.find((o) => o.id === choice);
+  const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0;
+
+  const confirm = () => {
+    navigation.navigate("Checkout", {
+      amountNaira: opt.price,
+      label: `Chauffeur — ${opt.label} · ${date} ${time} · ${hours}h${purpose ? ` (${purpose})` : ""}`,
+      pickupAddress: pickupAddress.trim(),
+      stops: [],
+      vehicleType: choice,
+      bookingType: "full_day",
+      durationDays: 1,
+    });
   };
 
   return (
@@ -30,7 +40,38 @@ export default function ChauffeurScreen() {
         <Text style={styles.title}>Chauffeur for the day</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Field label="📅 Date & time" value="Sat, 12 Jul · 10:00am" />
+          <Text style={styles.cardLabel}>Pickup address</Text>
+          <TextInput
+            style={styles.input}
+            value={pickupAddress}
+            onChangeText={setPickupAddress}
+            placeholder="Where should your chauffeur meet you?"
+            placeholderTextColor={colors.dark.textMuted}
+          />
+        </Card>
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>📅 Date</Text>
+            <TextInput
+              style={styles.smallInput}
+              value={date}
+              onChangeText={setDate}
+              placeholder="e.g. Sat 25 Jul"
+              placeholderTextColor={colors.dark.textMuted}
+            />
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>🕘 Time</Text>
+            <TextInput
+              style={styles.smallInput}
+              value={time}
+              onChangeText={setTime}
+              placeholder="e.g. 10:00am"
+              placeholderTextColor={colors.dark.textMuted}
+            />
+          </View>
           <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.rowLabel}>⏱ Duration (hours)</Text>
@@ -68,18 +109,13 @@ export default function ChauffeurScreen() {
           ))}
         </Card>
 
-        <View style={{ height: spacing.lg }} />
-        <Button label="Request Chauffeur" onPress={request} trailingIcon />
-      </ScrollView>
-    </View>
-  );
-}
+        {!canConfirm ? (
+          <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>
+        ) : null}
 
-function Field({ label, value }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+        <View style={{ height: spacing.lg }} />
+        <Button label={`Continue · ₦${opt.price.toLocaleString()}`} onPress={confirm} disabled={!canConfirm} trailingIcon />
+      </ScrollView>
     </View>
   );
 }
@@ -89,11 +125,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
   rowLabel: { color: colors.dark.textMuted, fontSize: 12.5 },
-  rowValue: { color: colors.dark.text, fontSize: 13 },
   divider: { height: 1, backgroundColor: colors.dark.hairline },
-  smallInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", minWidth: 40 },
+  smallInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", minWidth: 100 },
   purposeInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  input: {
+    backgroundColor: colors.dark.fieldBg,
+    color: colors.dark.text,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 13,
+  },
   optRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -103,4 +146,5 @@ const styles = StyleSheet.create({
   },
   optLabel: { color: colors.dark.text, fontSize: 13 },
   optPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: spacing.sm, textAlign: "center" },
 });

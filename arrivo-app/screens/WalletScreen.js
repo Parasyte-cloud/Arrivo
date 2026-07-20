@@ -22,7 +22,7 @@ function transactionLabel(tx) {
   return tx.description || tx.type;
 }
 
-export default function WalletScreen() {
+export default function WalletScreen({ navigation }) {
   const { user, token } = useAuth();
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -143,6 +143,14 @@ export default function WalletScreen() {
           <Text style={styles.balanceLabel}>Balance</Text>
           <Text style={styles.balance}>{formatNaira(balance)}</Text>
         </Card>
+
+        <Button
+          label="Membership"
+          variant="ghost"
+          tone="dark"
+          onPress={() => navigation.navigate("Home", { screen: "Membership" })}
+          style={{ marginBottom: spacing.md }}
+        />
 
         {!showTopUp ? (
           <Button label="Top Up Wallet" onPress={() => setShowTopUp(true)} trailingIcon />

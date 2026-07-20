@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS vehicles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Free-text availability set by the owner (e.g. "Mon-Fri 6am-9pm, weekends
+-- blackout") — a simple note rather than a full scheduling table, since
+-- there's no dispatcher/booking-by-availability logic built yet to consume
+-- anything more structured.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS availability_note TEXT;
+
 CREATE TABLE IF NOT EXISTS drivers (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),

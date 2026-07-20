@@ -48,6 +48,42 @@ export function getRideDetails(token, rideId) {
   });
 }
 
+export function addVehicle(token, vehicleData) {
+  return request("/api/owners/vehicles", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(vehicleData),
+  });
+}
+
+export function getMyVehicles(token) {
+  return request("/api/owners/vehicles/mine", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function updateVehicleAvailability(token, vehicleId, availabilityNote) {
+  return request(`/api/owners/vehicles/${vehicleId}/availability`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ availabilityNote }),
+  });
+}
+
+export function getOwnerDashboard(token) {
+  return request("/api/owners/dashboard", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function scanRideQr(token, scanToken) {
+  return request("/api/rides/scan", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ scanToken }),
+  });
+}
+
 export function triggerPanic(token, rideId, note) {
   return request(`/api/rides/${rideId}/panic`, {
     method: "POST",
@@ -77,5 +113,27 @@ export function verifyWalletTopup(token, reference) {
 export function getMembership(token) {
   return request("/api/memberships/mine", {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function subscribeIndividualMembership(token) {
+  return request("/api/memberships/individual/subscribe", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function subscribeCorporateMembership(token) {
+  return request("/api/memberships/corporate/subscribe", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function linkCorporateDelegate(token, delegateEmail) {
+  return request("/api/memberships/corporate/link-delegate", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ delegateEmail }),
   });
 }

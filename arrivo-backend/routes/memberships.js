@@ -5,6 +5,7 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 const INDIVIDUAL_ANNUAL_PRICE = 250000; // NGN — flat annual price, adjust as the real pricing is decided
+const CORPORATE_ANNUAL_PRICE = 1500000; // NGN — flat annual price for the company account itself, adjust as the real pricing is decided
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 // GET /api/memberships/mine — the signed-in user's own active membership,
@@ -75,6 +76,64 @@ router.post("/individual/subscribe", requireAuth, async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Membership subscribe failed:", err.message);
     res.status(500).json({ error: "Could not process the membership subscription. Please try again." });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/memberships/corporate/subscribe — a company account's OWN
+// membership. This has to exist before that company can link any delegates
+// (see link-delegate below) — without it there was no way for a company to
+// ever get its first corporate_delegate row created in the first place.
+router.post("/corporate/subscribe", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      `SELECT * FROM memberships WHERE user_id = $1 AND plan_type = 'corporate_delegate' AND company_account_id IS NULL AND status = 'active' AND expires_at > now()`,
+      [req.user.id]
+    );
+    if (existing.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "This account already has an active corporate membership.", membership: existing.rows[0] });
+    }
+
+    const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+    const balance = Number(userResult.rows[0].wallet_balance_naira);
+    if (balance < CORPORATE_ANNUAL_PRICE) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Insufficient wallet balance for the corporate plan.", balanceNaira: balance, priceNaira: CORPORATE_ANNUAL_PRICE });
+    }
+
+    const newBalanceResult = await client.query(
+      "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+      [CORPORATE_ANNUAL_PRICE, req.user.id]
+    );
+    const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+
+    const expiresAt = new Date(Date.now() + ONE_YEAR_MS);
+    // company_account_id is left NULL here — it's only ever set on a
+    // DELEGATE's row, pointing back at the company. The company's own row
+    // just needs plan_type = 'corporate_delegate' and no company_account_id.
+    const membershipResult = await client.query(
+      `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira)
+       VALUES ($1, 'corporate_delegate', 'active', $2, $3) RETURNING *`,
+      [req.user.id, expiresAt, CORPORATE_ANNUAL_PRICE]
+    );
+
+    await client.query(
+      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, description)
+       VALUES ($1, 'membership_charge', 'completed', $2, $3, 'Corporate annual membership')`,
+      [req.user.id, -CORPORATE_ANNUAL_PRICE, newBalance]
+    );
+
+    await client.query("COMMIT");
+    res.status(201).json({ membership: membershipResult.rows[0], walletBalanceNaira: newBalance });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Corporate membership subscribe failed:", err.message);
+    res.status(500).json({ error: "Could not process the corporate subscription. Please try again." });
   } finally {
     client.release();
   }

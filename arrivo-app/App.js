@@ -18,6 +18,8 @@ import CheckoutScreen from "./screens/CheckoutScreen";
 import TrackingScreen from "./screens/TrackingScreen";
 import ChauffeurScreen from "./screens/ChauffeurScreen";
 import OwnerScreen from "./screens/OwnerScreen";
+import MembershipScreen from "./screens/MembershipScreen";
+import ScanScreen from "./screens/ScanScreen";
 import ActivityScreen from "./screens/ActivityScreen";
 import WalletScreen from "./screens/WalletScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -51,6 +53,8 @@ function HomeStack() {
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
       <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
+      <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: "Membership" }} />
+      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />
     </Stack.Navigator>
   );
 }
