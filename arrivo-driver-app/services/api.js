@@ -63,3 +63,8 @@ export function getMyDriverRides(token) {
 export function triggerPanic(token, rideId, note) {
   return request(`/api/rides/${rideId}/panic`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }
+// One-way activation, no deactivate call — matches ridearrivo.com. Panic
+// (above) already activates this automatically server-side too.
+export function activateListeningDevice(token, rideId) {
+  return request(`/api/rides/${rideId}/listening-device`, authed(token, { method: "POST" }));
+}

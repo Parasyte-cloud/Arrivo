@@ -5,7 +5,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideDetails, triggerPanic, rateRide } from "../services/api";
+import { getRideDetails, triggerPanic, activateListeningDevice, rateRide } from "../services/api";
 
 const POLL_INTERVAL_MS = 10000;
 
@@ -30,6 +30,7 @@ export default function TrackingScreen({ route, navigation }) {
   const [loadError, setLoadError] = useState(null);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
+  const [listeningSending, setListeningSending] = useState(false);
   const [starsSelected, setStarsSelected] = useState(0);
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
@@ -111,6 +112,22 @@ export default function TrackingScreen({ route, navigation }) {
       Alert.alert("Couldn't send alert", e.message || "Please try again, or call support directly.");
     } finally {
       setPanicSending(false);
+    }
+  };
+
+  // One-way — matches ridearrivo.com's design. Triggering panic (above)
+  // already activates this server-side too, so this is only needed when
+  // someone wants to turn it on independent of a panic alert.
+  const activateListening = async () => {
+    if (!rideId) return;
+    setListeningSending(true);
+    try {
+      await activateListeningDevice(token, rideId);
+      await fetchRide();
+    } catch (e) {
+      Alert.alert("Couldn't activate", e.message || "Please try again.");
+    } finally {
+      setListeningSending(false);
     }
   };
 
@@ -261,6 +278,27 @@ export default function TrackingScreen({ route, navigation }) {
             )}
           </Pressable>
         )}
+
+        {/* One-way, matches ridearrivo.com: once on, stays on for this ride —
+            no toggle-off control, by design. Alerting support above turns
+            this on automatically too. */}
+        <Pressable
+          onPress={activateListening}
+          disabled={!!ride?.listening_device_activated_at || listeningSending}
+          style={({ pressed }) => [
+            styles.listeningBtn,
+            !!ride?.listening_device_activated_at && styles.listeningBtnActive,
+            (pressed || listeningSending) && { opacity: 0.7 },
+          ]}
+        >
+          {listeningSending ? (
+            <ActivityIndicator color={colors.dark.text} />
+          ) : (
+            <Text style={styles.listeningText}>
+              {ride?.listening_device_activated_at ? "🎙️ Listening device: on" : "🎙️ Activate listening device"}
+            </Text>
+          )}
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -302,4 +340,13 @@ const styles = StyleSheet.create({
   },
   panicText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
   panicActiveText: { color: "#FF9B8A", fontWeight: "700", fontSize: 13, textAlign: "center" },
+  listeningBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.dark.fieldBg,
+    borderRadius: radius.sm + 2,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  listeningBtnActive: { backgroundColor: "rgba(244,163,0,0.18)" },
+  listeningText: { color: colors.dark.text, fontWeight: "700", fontSize: 13 },
 });

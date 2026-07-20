@@ -7,7 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { MapPlaceholder } from "../components/MapPlaceholder";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic } from "../services/api";
+import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
@@ -201,6 +201,10 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const [panicState, setPanicState] = useState("idle"); // idle | counting | active
   const [countdown, setCountdown] = useState(3);
   const countdownRef = useRef(null);
+  // One-way, matches ridearrivo.com — starts "on" if the ride already shows
+  // an activation (e.g. app reopened mid-trip), otherwise idle. No control
+  // to turn it back off, same as panic.
+  const [listeningOn, setListeningOn] = useState(!!ride.listening_device_activated_at);
 
   const startPanicCountdown = () => {
     setPanicState("counting");
@@ -216,6 +220,10 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
             // be quietly told "actually never mind" by the app itself.
             // They can retry via the same active-state banner if needed.
           });
+          // "One trigger, full response" — panic already activates the
+          // listening device server-side in the same write, so reflect
+          // that in the UI immediately rather than waiting on a refetch.
+          setListeningOn(true);
           return 0;
         }
         return c - 1;
@@ -226,6 +234,11 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const cancelPanicCountdown = () => {
     clearInterval(countdownRef.current);
     setPanicState("idle");
+  };
+
+  const activateListening = () => {
+    setListeningOn(true); // one-way, optimistic — same reasoning as panic above
+    activateListeningDevice(token, ride.id).catch(() => {});
   };
 
   useEffect(() => {
@@ -268,6 +281,14 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 
       <View style={{ height: spacing.sm }} />
 
+      {listeningOn ? (
+        <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
+      ) : (
+        <Button label="🎙️ Activate listening device" variant="ghost" tone="dark" onPress={activateListening} />
+      )}
+
+      <View style={{ height: spacing.sm }} />
+
       {busy ? (
         <ActivityIndicator color={colors.amber} />
       ) : isAccepted ? (
@@ -302,4 +323,5 @@ const styles = StyleSheet.create({
   panicActiveCard: { backgroundColor: "rgba(225,82,61,0.22)", borderColor: colors.coral, borderWidth: 1 },
   panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
+  listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
 });

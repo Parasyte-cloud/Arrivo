@@ -343,8 +343,14 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
   );
   if (!existing.rows[0]) return res.status(404).json({ error: "Ride not found" });
 
+  // "One trigger, full response" — panic bundles in activating the
+  // listening device in the same write, rather than requiring a second
+  // client call. listening_device_activated_at only gets set here if it
+  // isn't already (one-way activation, never overwritten/reset).
   const updated = await pool.query(
-    `UPDATE rides SET panic_triggered_at = now(), panic_notes = $1, updated_at = now()
+    `UPDATE rides SET panic_triggered_at = now(), panic_notes = $1, updated_at = now(),
+       listening_device_activated_at = COALESCE(listening_device_activated_at, now()),
+       listening_device_via_panic = true
      WHERE id = $2 RETURNING *`,
     [note || null, req.params.id]
   );
@@ -354,6 +360,30 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
   // ops phone, a Slack webhook, or a push notification to the admin
   // dashboard. Right now it's logged server-side and visible in the admin
   // dashboard's ride list, but nothing pages anyone in real time.
+
+  res.status(201).json({ ride: withParsedStops(updated.rows[0]) });
+});
+
+// POST /api/rides/:id/listening-device — standalone activation, independent
+// of panic (either the rider or the driver on this ride can trigger it).
+// Matches ridearrivo.com's real design: one-way only, no deactivate route.
+// If panic already activated it, this is a harmless no-op (idempotent).
+router.post("/:id/listening-device", requireAuth, async (req, res) => {
+  const existing = await pool.query(
+    `SELECT rides.* FROM rides
+     LEFT JOIN drivers ON drivers.id = rides.driver_id
+     WHERE rides.id = $1 AND (rides.rider_id = $2 OR drivers.user_id = $2)`,
+    [req.params.id, req.user.id]
+  );
+  if (!existing.rows[0]) return res.status(404).json({ error: "Ride not found" });
+
+  const updated = await pool.query(
+    `UPDATE rides SET
+       listening_device_activated_at = COALESCE(listening_device_activated_at, now()),
+       updated_at = now()
+     WHERE id = $1 RETURNING *`,
+    [req.params.id]
+  );
 
   res.status(201).json({ ride: withParsedStops(updated.rows[0]) });
 });

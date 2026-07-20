@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal, Switch } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Circle, Line } from "react-native-svg";
@@ -43,22 +43,12 @@ export default function ProfileScreen() {
   const [trips, setTrips] = useState(null); // null = loading
   const [tripsError, setTripsError] = useState(null);
   const [langModalVisible, setLangModalVisible] = useState(false);
-  const [audioRecording, setAudioRecording] = useState(!!user?.audio_recording_enabled);
 
   useEffect(() => {
     getRideHistory(token)
       .then((data) => setTrips(data.rides || []))
       .catch(() => setTripsError("Couldn't load your trips."));
   }, []);
-
-  const toggleAudioRecording = async (value) => {
-    setAudioRecording(value); // optimistic — feels instant
-    try {
-      await updateProfile({ audioRecordingEnabled: value });
-    } catch (e) {
-      setAudioRecording(!value); // revert on failure
-    }
-  };
 
   const changeLanguage = async (code) => {
     try {
@@ -177,22 +167,6 @@ export default function ProfileScreen() {
           </Pressable>
         </Card>
 
-        <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.toggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardLabel}>Listening device</Text>
-              <Text style={styles.toggleNote}>
-                When enabled, RideArrivo may capture in-vehicle audio during your rides for safety — matches the same setting on ridearrivo.com.
-              </Text>
-            </View>
-            <Switch
-              value={audioRecording}
-              onValueChange={toggleAudioRecording}
-              trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
-            />
-          </View>
-        </Card>
-
         <Modal visible={langModalVisible} animationType="slide" transparent onRequestClose={() => setLangModalVisible(false)}>
           <Pressable style={styles.langModalOverlay} onPress={() => setLangModalVisible(false)}>
             <View style={styles.langModalCard} onStartShouldSetResponder={() => true}>
@@ -268,8 +242,6 @@ const styles = StyleSheet.create({
   name: { color: colors.dark.text, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 4 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
-  toggleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  toggleNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
   sectionTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 14, marginBottom: 10 },
   input: {
     backgroundColor: colors.dark.fieldBg,

@@ -145,7 +145,20 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;
 
 -- "Listening device" toggle — matches the same setting shown on
 -- ridearrivo.com's account page. Off by default; a rider opts in.
+-- Superseded by the ride-scoped listening_device_* columns below, which
+-- match what the website actually does (a one-way safety activation, not
+-- a reversible preference). Left in place unused rather than dropped.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS audio_recording_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- "Listening device" — a one-way safety activation per ride, matching
+-- ridearrivo.com's real design: either the rider or the driver on a ride
+-- can activate it directly, and triggering the panic button activates it
+-- automatically too ("one trigger, full response"). There is deliberately
+-- no deactivate path from the client — same "no manual reset" rule as
+-- panic_triggered_at above; only an admin-cleared flag would close it out,
+-- and that doesn't exist yet either.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS listening_device_activated_at TIMESTAMPTZ;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS listening_device_via_panic BOOLEAN NOT NULL DEFAULT false;
 
 -- ── Wallet ──
 -- A rider (or, later, a company on a delegate plan) can hold a balance and

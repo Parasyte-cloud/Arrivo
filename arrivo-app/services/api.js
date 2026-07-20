@@ -108,6 +108,15 @@ export function triggerPanic(token, rideId, note) {
   });
 }
 
+// One-way activation, no deactivate call — matches ridearrivo.com's design.
+// Triggering panic (above) activates this automatically server-side too.
+export function activateListeningDevice(token, rideId) {
+  return request(`/api/rides/${rideId}/listening-device`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export function getWallet(token) {
   return request("/api/wallet", {
     headers: { Authorization: `Bearer ${token}` },
