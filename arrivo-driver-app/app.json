@@ -14,7 +14,8 @@
       "bundleIdentifier": "com.arrivo.driver",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location so riders can see you en route."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+        "UIBackgroundModes": ["location"]
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
@@ -28,7 +29,10 @@
       "package": "com.arrivo.driver",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ],
       "config": {
         "googleMaps": {
@@ -57,6 +61,16 @@
           "imageWidth": 220,
           "resizeMode": "contain",
           "backgroundColor": "#F7F4EC"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RideArrivo Driver uses your location to match you with nearby pickups.",
+          "locationAlwaysAndWhenInUsePermission": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ]

@@ -1,8 +1,25 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
+import * as Location from "expo-location";
 import * as api from "../services/api";
+import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
 
 const TOKEN_KEY = "arrivo_driver_token";
+
+// Stops the background location task (see hooks/useLocationReporting.js)
+// if it's running. Without this, logging out would leave a background
+// task silently reporting GPS forever — updateLocation would just start
+// failing with 401s once the token is gone, but the OS-level location
+// tracking (and its persistent notification on Android) would keep
+// running until the app was force-quit.
+async function stopBackgroundLocation() {
+  try {
+    const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    if (started) await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+  } catch {
+    // Task was never started this session — nothing to stop.
+  }
+}
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -56,6 +73,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    await stopBackgroundLocation();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);
