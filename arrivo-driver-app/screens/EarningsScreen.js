@@ -2,11 +2,27 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { Card } from "../components/UI";
+import { Card, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getEarnings, getMyDriverRides } from "../services/api";
+
+function tripTypeLabel(bookingType) {
+  if (bookingType === "dropoff") return "Airport Drop-off";
+  if (bookingType === "one_way") return "Airport Pickup";
+  return "Chauffeur";
+}
+function scheduledLabel(ride) {
+  if (!ride.scheduled_pickup_at) return null;
+  return new Date(ride.scheduled_pickup_at).toLocaleString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function EarningsScreen() {
   const insets = useSafeAreaInsets();
@@ -63,6 +79,11 @@ export default function EarningsScreen() {
                 <Text style={styles.statLabel}>All-time</Text>
               </View>
             </View>
+            {summary.totalTipsNaira > 0 ? (
+              <Text style={styles.tipsNote}>
+                Includes ₦{summary.totalTipsNaira.toLocaleString()} in tips (₦{(summary.thisMonthTipsNaira || 0).toLocaleString()} this month) — 100% goes to you.
+              </Text>
+            ) : null}
           </Card>
         ) : null}
 
@@ -72,10 +93,21 @@ export default function EarningsScreen() {
           <Card key={ride.id} tone="dark" style={{ marginBottom: spacing.sm }}>
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
+                  <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+                </View>
                 <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
                 <Text style={styles.tripDate}>{new Date(ride.created_at).toLocaleDateString()} · {ride.rider_name}</Text>
+                {scheduledLabel(ride) ? (
+                  <Text style={styles.scheduledText}>📅 Scheduled: {scheduledLabel(ride)}</Text>
+                ) : null}
               </View>
-              <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
+                {Number(ride.tip_naira) > 0 ? (
+                  <Text style={styles.tipLine}>+₦{Number(ride.tip_naira).toLocaleString()} tip</Text>
+                ) : null}
+              </View>
             </View>
           </Card>
         ))}
@@ -95,6 +127,9 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  tipLine: { color: colors.amber, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  scheduledText: { color: colors.amber, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  tipsNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: spacing.sm, lineHeight: 16 },
   error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.lg },
 });

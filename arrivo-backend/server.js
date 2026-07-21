@@ -22,6 +22,7 @@ const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
+const { startScheduler } = require("./services/scheduler");
 
 const app = express();
 
@@ -70,4 +71,9 @@ ready.then(() => {
   app.listen(PORT, () => {
     console.log(`Arrivo backend running on http://localhost:${PORT}`);
   });
+  // Reminders (5h/3h/1h/now before pickup), flight cancellation/reschedule
+  // detection, and preferred-driver claim-window expiry — see
+  // services/scheduler.js. Started once, after the schema is ready, same
+  // as the HTTP listener above.
+  startScheduler();
 });

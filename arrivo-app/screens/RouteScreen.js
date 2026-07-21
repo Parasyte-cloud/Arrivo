@@ -34,18 +34,60 @@ function findExcludedArea(address) {
   return EXCLUDED_AREAS.find((area) => area.keywords.some((k) => a.indexOf(k) !== -1)) || null;
 }
 
-const MAX_PASSENGERS = { sedan: 3, suv: 5, truck: 5 };
+// "pickup" (Pickup Truck) is a later addition for heavy/bulky cargo —
+// distinct from "truck" (which is actually the Executive Vehicle premium
+// tier, an existing internal naming choice kept as-is). It seats fewer
+// passengers than SUV/Executive since the bed is for cargo, not people —
+// mirrors arrivo-backend/services/fare.js exactly.
+const MAX_PASSENGERS = { sedan: 3, suv: 5, truck: 5, pickup: 3 };
 const VEHICLES = [
   { id: "sedan", label: "Standard Sedan" },
   { id: "suv", label: "Premium SUV" },
   { id: "truck", label: "Executive Vehicle" },
+  { id: "pickup", label: "Pickup Truck" },
 ];
+
+// Auto-recommends a vehicle from luggage + passenger count, same as the
+// website's recommendVehicle() — heavy/oversized or a large checked-bag
+// count points at the cargo-focused Pickup Truck, a big passenger count
+// with normal luggage points at the bigger-seat Executive tier. Only a
+// recommendation: riders can always tap a different vehicle manually (see
+// the vehicleManuallyPicked-style override below).
+function recommendVehicle(checkedBags, bulky, passengers) {
+  if (bulky || checkedBags >= 5) return "pickup";
+  if (passengers >= 5) return "truck";
+  if (checkedBags >= 3 || passengers >= 4) return "suv";
+  return "sedan";
+}
+// "dropoff" (Airport Drop-off) is the mirror image of "one_way" — taking a
+// departing rider FROM their location TO the airport, instead of an
+// arriving rider FROM the airport. Priced identically server-side (see
+// arrivo-backend/services/fare.js) since the per-location formula already
+// prices off whichever leg isn't the airport, regardless of direction.
+// Unlike "one_way" (whose timing comes from the flight-landing event), a
+// drop-off has no such trigger, so it requires an explicit scheduled
+// date/time instead (see the "Pickup time" card below).
 const BOOKING_TYPES = [
-  { id: "one_way", label: "One-way pickup", days: 1 },
+  { id: "one_way", label: "Airport Pickup", days: 1 },
+  { id: "dropoff", label: "Airport Drop-off", days: 1 },
   { id: "full_day", label: "Full day", days: 1 },
   { id: "full_week", label: "Full week", days: 7 },
   { id: "full_month", label: "Full month", days: 30 },
 ];
+
+// Quarter-hour granularity is plenty precise for an airport transfer and
+// keeps the picker to simple chips rather than a native date/time picker
+// component (none is installed in this project, and adding one means a new
+// native dependency + a rebuild before it could ship).
+const SCHEDULE_MINUTES = ["00", "15", "30", "45"];
+
+function scheduleDayLabel(offset) {
+  if (offset === 0) return "Today";
+  if (offset === 1) return "Tomorrow";
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+}
 
 const QUOTE_DEBOUNCE_MS = 400;
 
@@ -55,12 +97,29 @@ export default function RouteScreen({ navigation, route }) {
 
   // Empty by default — the rider types their own pickup and destination,
   // matching the website's booking form (no pre-filled locations).
-  const [pickup, setPickup] = useState("");
-  const [pickupCoords, setPickupCoords] = useState(null); // { lat, lng, placeId } | null — set only when a real suggestion is picked
-  const [stops, setStops] = useState([""]);
-  const [destinationCoords, setDestinationCoords] = useState(null); // coords for the LAST stop only — fare is priced pickup-to-final-destination
+  // presetPickupAddress/presetDestinationAddress/presetBookingType/
+  // linkedRideId arrive when this screen is opened from the "book your
+  // return drop-off" prompt right after paying for an arrival pickup (see
+  // CheckoutScreen) — pre-filling the reversed route so the rider doesn't
+  // have to retype their own address or the airport.
+  const [pickup, setPickup] = useState(route?.params?.presetPickupAddress || "");
+  // Pre-filled from the just-completed ride's own resolved coordinates when
+  // arriving via the "book your return drop-off" prompt, so the rider isn't
+  // forced to re-search an address they already searched once — otherwise
+  // identical to a normal blank start (coords null until a suggestion is picked).
+  const [pickupCoords, setPickupCoords] = useState(
+    route?.params?.presetPickupLat != null && route?.params?.presetPickupLng != null
+      ? { lat: route.params.presetPickupLat, lng: route.params.presetPickupLng }
+      : null
+  );
+  const [stops, setStops] = useState([route?.params?.presetDestinationAddress || ""]);
+  const [destinationCoords, setDestinationCoords] = useState(
+    route?.params?.presetDestinationLat != null && route?.params?.presetDestinationLng != null
+      ? { lat: route.params.presetDestinationLat, lng: route.params.presetDestinationLng }
+      : null
+  ); // coords for the LAST stop only — fare is priced pickup-to-final-destination
   const [vehicle, setVehicle] = useState("suv");
-  const [bookingType, setBookingType] = useState("one_way");
+  const [bookingType, setBookingType] = useState(route?.params?.presetBookingType || "one_way");
   const [adults, setAdults] = useState("1");
   const [securityEscort, setSecurityEscort] = useState(false);
   const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
@@ -68,6 +127,30 @@ export default function RouteScreen({ navigation, route }) {
   const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
   const [emergencyContactName, setEmergencyContactName] = useState("");
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const linkedRideId = route?.params?.linkedRideId || null;
+
+  // Airport Drop-off has no flight-landing event to anchor timing on, so
+  // the rider tells us directly when they want picking up. Defaults to
+  // tomorrow morning — a sensible starting point for a next-day departure,
+  // never left ambiguous the way charter bookings' free-text date/time
+  // fields are (see ChauffeurScreen) since this one is actually validated
+  // and stored as a real timestamp server-side.
+  const [scheduleDayOffset, setScheduleDayOffset] = useState(1); // 0 = today, 1 = tomorrow, ...
+  const [scheduleHour, setScheduleHour] = useState("9"); // 0-23
+  const [scheduleMinute, setScheduleMinute] = useState("00");
+
+  // Airline-style luggage entry: carry-on stays with the rider and never
+  // affects vehicle choice; checked bags + the heavy/oversized flag are
+  // what drive the auto-recommendation below (same convention as the
+  // website's booking.js). Never sent to the backend or billed — this is
+  // purely a UX helper for picking a vehicle, same as before.
+  const [carryOnBags, setCarryOnBags] = useState("1");
+  const [checkedBags, setCheckedBags] = useState("1");
+  const [bulkyLuggage, setBulkyLuggage] = useState(false);
+  // Once the rider taps a vehicle themselves, stop silently overriding
+  // their choice — except if it becomes genuinely invalid (over capacity),
+  // same rule the website already uses.
+  const [vehicleManuallyPicked, setVehicleManuallyPicked] = useState(false);
 
   // The live server-computed quote — this, not any local math, is what
   // actually gets charged (the backend re-verifies it against this same
@@ -89,8 +172,42 @@ export default function RouteScreen({ navigation, route }) {
   const passengerCount = Math.max(1, Number(adults) || 0);
   const maxForVehicle = MAX_PASSENGERS[vehicle];
   const overCapacity = passengerCount > maxForVehicle;
-  const needsCoords = bookingType === "one_way";
+  // Both "one_way" (arrival pickup) and "dropoff" (airport drop-off) are
+  // location-priced trips needing real coordinates — only the multi-day
+  // charter types (full_day/week/month) skip this.
+  const needsCoords = bookingType === "one_way" || bookingType === "dropoff";
   const coordsResolved = !needsCoords || (!!pickupCoords && !!destinationCoords);
+  const recommendedVehicle = recommendVehicle(Number(checkedBags) || 0, bulkyLuggage, passengerCount);
+
+  // Only "dropoff" needs an explicit scheduled time — "one_way" pickups are
+  // driven by the flight-landing event instead (see needsFlightNumber
+  // below), and charter bookings collect their own date/time separately.
+  const needsScheduledTime = bookingType === "dropoff";
+  const scheduledDateObj = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + scheduleDayOffset);
+    d.setHours(Number(scheduleHour) || 0, Number(scheduleMinute) || 0, 0, 0);
+    return d;
+  }, [scheduleDayOffset, scheduleHour, scheduleMinute]);
+  const scheduledTimeValid = !needsScheduledTime || scheduledDateObj.getTime() > Date.now();
+
+  // Auto-select the recommended vehicle until the rider manually picks one
+  // themselves — and if their manual pick later becomes too small for a
+  // growing passenger count, fall back to the recommendation again rather
+  // than leave an invalid selection standing. Same rule as booking.js.
+  useEffect(() => {
+    if (!vehicleManuallyPicked) {
+      if (vehicle !== recommendedVehicle && passengerCount <= MAX_PASSENGERS[recommendedVehicle]) {
+        setVehicle(recommendedVehicle);
+      }
+      return;
+    }
+    if (passengerCount > MAX_PASSENGERS[vehicle]) {
+      setVehicleManuallyPicked(false);
+      setVehicle(recommendedVehicle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedVehicle, passengerCount, vehicleManuallyPicked]);
 
   // Re-fetch a fare quote whenever anything that affects price changes.
   // Debounced so switching vehicle/add-ons rapidly doesn't fire a request
@@ -108,7 +225,7 @@ export default function RouteScreen({ navigation, route }) {
     setQuoteLoading(true);
     quoteDebounceRef.current = setTimeout(async () => {
       try {
-        const payload = { bookingType, vehicleType: vehicle, securityEscort, fleetSize, luxury: luxury && vehicle !== "truck" };
+        const payload = { bookingType, vehicleType: vehicle, securityEscort, fleetSize, luxury: luxury && (vehicle === "sedan" || vehicle === "suv") };
         if (needsCoords) {
           // pickupAddress/destinationAddress are what actually price a
           // one-way trip now (flat per-location fare, see
@@ -143,6 +260,7 @@ export default function RouteScreen({ navigation, route }) {
   const canConfirm =
     !excludedArea && !overCapacity && pickup.trim().length > 0 && destination.trim().length > 0 &&
     (!needsFlightNumber || flightNumber.trim().length > 0) &&
+    scheduledTimeValid &&
     coordsResolved && !!quote && !quoteLoading;
 
   const confirm = () => {
@@ -160,13 +278,15 @@ export default function RouteScreen({ navigation, route }) {
       durationDays: selectedBooking.days,
       securityEscort,
       fleetSize,
-      luxury: luxury && vehicle !== "truck",
+      luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
       emergencyContactName: emergencyContactName.trim() || undefined,
       emergencyContactPhone: emergencyContactPhone.trim() || undefined,
       pickupLat: pickupCoords?.lat,
       pickupLng: pickupCoords?.lng,
       destinationLat: destinationCoords?.lat,
       destinationLng: destinationCoords?.lng,
+      scheduledPickupAt: needsScheduledTime ? scheduledDateObj.toISOString() : undefined,
+      linkedRideId: linkedRideId || undefined,
     });
   };
 
@@ -253,6 +373,10 @@ export default function RouteScreen({ navigation, route }) {
             <Text style={styles.addonNote}>
               Required — this is how we track your flight and know your real arrival time.
             </Text>
+          ) : bookingType === "dropoff" ? (
+            <Text style={styles.addonNote}>
+              Lets us keep an eye on delays that might affect your pickup time.
+            </Text>
           ) : null}
           <TextInput
             style={styles.flightInput}
@@ -263,6 +387,60 @@ export default function RouteScreen({ navigation, route }) {
             autoCapitalize="characters"
           />
         </Card>
+
+        {needsScheduledTime ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
+            <Text style={styles.cardLabel}>Pickup time</Text>
+            <Text style={styles.addonNote}>
+              When should we pick you up for the airport? There's no flight to track here, so we go by the time you set.
+            </Text>
+            <View style={{ height: 8 }} />
+            <View style={styles.bookingRow}>
+              {[0, 1, 2, 3, 4, 5, 6].map((offset) => (
+                <Pressable
+                  key={offset}
+                  onPress={() => setScheduleDayOffset(offset)}
+                  style={[styles.bookingChip, scheduleDayOffset === offset && styles.bookingChipActive]}
+                >
+                  <Text style={[styles.bookingChipText, scheduleDayOffset === offset && styles.bookingChipTextActive]}>
+                    {scheduleDayLabel(offset)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ height: 10 }} />
+            <View style={styles.stopRow}>
+              <Text style={styles.passengerLabel}>Hour (0-23)</Text>
+              <TextInput
+                style={styles.passengerInput}
+                value={scheduleHour}
+                onChangeText={setScheduleHour}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholderTextColor={colors.dark.textMuted}
+              />
+            </View>
+            <View style={{ height: 6 }} />
+            <Text style={styles.passengerLabel}>Minute</Text>
+            <View style={[styles.bookingRow, { marginTop: 6 }]}>
+              {SCHEDULE_MINUTES.map((m) => (
+                <Pressable
+                  key={m}
+                  onPress={() => setScheduleMinute(m)}
+                  style={[styles.bookingChip, scheduleMinute === m && styles.bookingChipActive]}
+                >
+                  <Text style={[styles.bookingChipText, scheduleMinute === m && styles.bookingChipTextActive]}>:{m}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={[styles.addonNote, { marginTop: 8 }]}>
+              Pickup: {scheduleDayLabel(scheduleDayOffset)} at {String(Number(scheduleHour) || 0).padStart(2, "0")}:{scheduleMinute}
+            </Text>
+            {!scheduledTimeValid ? (
+              <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+            ) : null}
+          </Card>
+        ) : null}
 
         {excludedArea ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
@@ -303,13 +481,53 @@ export default function RouteScreen({ navigation, route }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>Luggage</Text>
+          <View style={styles.stopRow}>
+            <Text style={styles.passengerLabel}>Carry-on bags</Text>
+            <TextInput
+              style={styles.passengerInput}
+              value={carryOnBags}
+              onChangeText={setCarryOnBags}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.dark.textMuted}
+            />
+          </View>
+          <View style={styles.stopRow}>
+            <Text style={styles.passengerLabel}>Checked bags</Text>
+            <TextInput
+              style={styles.passengerInput}
+              value={checkedBags}
+              onChangeText={setCheckedBags}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.dark.textMuted}
+            />
+          </View>
+          <View style={[styles.toggleRow, { marginTop: 6 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addonNote}>
+                One or more checked bags is heavy or oversized (over 32kg, a large duffel, cooler, sports or musical equipment, etc.)
+              </Text>
+            </View>
+            <Switch
+              value={bulkyLuggage}
+              onValueChange={setBulkyLuggage}
+              trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+            />
+          </View>
+        </Card>
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
           {VEHICLES.map((v) => {
             const tooSmall = passengerCount > MAX_PASSENGERS[v.id];
             return (
               <Pressable
                 key={v.id}
-                onPress={() => !tooSmall && setVehicle(v.id)}
+                onPress={() => {
+                  if (tooSmall) return;
+                  setVehicleManuallyPicked(true);
+                  setVehicle(v.id);
+                }}
                 style={[styles.vehicleRow, tooSmall && { opacity: 0.4 }]}
                 disabled={tooSmall}
               >
@@ -318,7 +536,11 @@ export default function RouteScreen({ navigation, route }) {
                     {vehicle === v.id ? "● " : "○ "}
                     {v.label}
                   </Text>
-                  <Text style={styles.vehicleCapacity}>Fits up to {MAX_PASSENGERS[v.id]} passengers</Text>
+                  <Text style={styles.vehicleCapacity}>
+                    Fits up to {MAX_PASSENGERS[v.id]} passengers
+                    {v.id === "pickup" ? " · best for heavy or bulky luggage" : ""}
+                    {!tooSmall && recommendedVehicle === v.id ? " · Recommended for your luggage" : ""}
+                  </Text>
                 </View>
               </Pressable>
             );
@@ -397,6 +619,8 @@ export default function RouteScreen({ navigation, route }) {
           <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
         ) : needsFlightNumber && !flightNumber.trim() ? (
           <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
+        ) : !scheduledTimeValid ? (
+          <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : quoteError ? (
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}

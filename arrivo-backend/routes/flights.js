@@ -15,6 +15,50 @@ const NIGERIA_AIRPORTS = {
   KAD: "Kaduna",
 };
 
+// Shared lookup used by both the GET /status route below (rider-facing,
+// on-demand refresh) and services/scheduler.js (background reminder +
+// flight-issue sweep, no HTTP request/response involved) — kept in one
+// place so both callers get the exact same shape and the exact same
+// "not configured" / "not found" handling instead of two copies drifting
+// apart over time. Returns null (never throws for the "not configured" or
+// "not found" cases) so the scheduler can just skip a ride it can't check
+// this pass rather than needing its own try/catch around every call site.
+async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
+  if (!flightNumber) return null;
+  if (!process.env.AVIATIONSTACK_KEY || process.env.AVIATIONSTACK_KEY === "replace_me") return null;
+
+  const response = await axios.get("http://api.aviationstack.com/v1/flights", {
+    params: {
+      access_key: process.env.AVIATIONSTACK_KEY,
+      flight_iata: flightNumber,
+      arr_iata: arrIata,
+    },
+  });
+
+  const flight = response.data?.data?.[0];
+  if (!flight) return null;
+
+  // Shape the response into exactly what callers need — keeps both the
+  // frontend and the scheduler simple, and means you can swap providers
+  // later without touching either.
+  return {
+    flightNumber: flight.flight?.iata,
+    airline: flight.airline?.name,
+    status: flight.flight_status, // scheduled | active | landed | cancelled | incident | diverted
+    departure: {
+      airport: flight.departure?.airport,
+      scheduled: flight.departure?.scheduled,
+    },
+    arrival: {
+      airport: flight.arrival?.airport || NIGERIA_AIRPORTS[arrIata] || arrIata,
+      scheduled: flight.arrival?.scheduled,
+      estimated: flight.arrival?.estimated,
+      terminal: flight.arrival?.terminal,
+      gate: flight.arrival?.gate,
+    },
+  };
+}
+
 // GET /api/flights/status?flightNumber=BA075&arrIata=LOS
 router.get("/status", async (req, res) => {
   const { flightNumber, arrIata = "LOS" } = req.query;
@@ -27,38 +71,11 @@ router.get("/status", async (req, res) => {
   }
 
   try {
-    const response = await axios.get("http://api.aviationstack.com/v1/flights", {
-      params: {
-        access_key: process.env.AVIATIONSTACK_KEY,
-        flight_iata: flightNumber,
-        arr_iata: arrIata,
-      },
-    });
-
-    const flight = response.data?.data?.[0];
-    if (!flight) {
+    const result = await lookupFlightStatus(flightNumber, arrIata);
+    if (!result) {
       return res.status(404).json({ error: "No matching flight found for that number/airport/date" });
     }
-
-    // Shape the response into exactly what the app needs — keeps the
-    // frontend simple and means you can swap providers later without
-    // touching the mobile app at all.
-    res.json({
-      flightNumber: flight.flight?.iata,
-      airline: flight.airline?.name,
-      status: flight.flight_status, // scheduled | active | landed | cancelled | incident | diverted
-      departure: {
-        airport: flight.departure?.airport,
-        scheduled: flight.departure?.scheduled,
-      },
-      arrival: {
-        airport: flight.arrival?.airport || NIGERIA_AIRPORTS[arrIata] || arrIata,
-        scheduled: flight.arrival?.scheduled,
-        estimated: flight.arrival?.estimated,
-        terminal: flight.arrival?.terminal,
-        gate: flight.arrival?.gate,
-      },
-    });
+    res.json(result);
   } catch (err) {
     console.error("Flight lookup failed:", err.response?.data || err.message);
     res.status(502).json({ error: "Flight lookup failed. Please try again." });
@@ -66,3 +83,4 @@ router.get("/status", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.lookupFlightStatus = lookupFlightStatus;

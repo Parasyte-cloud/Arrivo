@@ -17,6 +17,7 @@ export default function CheckoutScreen({ route, navigation }) {
     stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
     securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
+    scheduledPickupAt, linkedRideId,
   } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
@@ -38,13 +39,12 @@ export default function CheckoutScreen({ route, navigation }) {
   const [message, setMessage] = useState(null);
   const [agreedCancellation, setAgreedCancellation] = useState(false);
   const [dashCamConsent, setDashCamConsent] = useState(false);
-
-  // "Reserve now, pay at pickup" — only offered for one-way airport
-  // pickups (there's a real "landing and scanning the driver" moment to
-  // hook the charge to). Only wallet/membership can defer this way; card
-  // always pays at booking, same as before this existed (see rides.js).
-  const canDeferPayment = bookingType === "one_way";
-  const [payAtPickup, setPayAtPickup] = useState(false);
+  // Shown after paying for an arrival pickup ("one_way") — a chance to
+  // book the return airport drop-off right away if the rider already knows
+  // when they're flying back, instead of making them come find "Book a
+  // Ride" again later. Never shown for a drop-off or charter booking.
+  const [completedRide, setCompletedRide] = useState(null);
+  const [showReturnPrompt, setShowReturnPrompt] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -83,16 +83,6 @@ export default function CheckoutScreen({ route, navigation }) {
 
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
 
-  // Switching into "reserve, pay at pickup" mode: card isn't a valid
-  // choice there, so bump off it onto whichever of membership/wallet is
-  // actually usable rather than leaving the rider on a hidden option.
-  const togglePayAtPickup = (next) => {
-    setPayAtPickup(next);
-    if (next && paymentMethod === "card") {
-      setPaymentMethod(hasMembership ? "membership" : "wallet");
-    }
-  };
-
   const pendingPaymentRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
 
   // expo-web-browser's openAuthSessionAsync would normally tell us the
@@ -123,9 +113,10 @@ export default function CheckoutScreen({ route, navigation }) {
           agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
           emergencyContactName, emergencyContactPhone, dashCamConsent,
           distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
+          scheduledPickupAt, linkedRideId,
         });
         setStatus("success");
-        setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
+        onRideCreated(ride);
       } else {
         setStatus("error");
         setMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
@@ -134,6 +125,44 @@ export default function CheckoutScreen({ route, navigation }) {
       setStatus("error");
       setMessage(e.message || "Something went wrong confirming your payment.");
     }
+  };
+
+  // Every arrival-pickup ("one_way") booking gets offered the return
+  // drop-off right here, right after paying — the whole point of "if they
+  // know their expected time and day of return, we can have it at once"
+  // rather than making them come back and find "Book a Ride" again later.
+  // Drop-off and charter bookings skip straight to Tracking as before.
+  const onRideCreated = (ride) => {
+    if (bookingType === "one_way") {
+      setCompletedRide(ride);
+      setShowReturnPrompt(true);
+    } else {
+      setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
+    }
+  };
+
+  const goToTrackingNow = () => {
+    setShowReturnPrompt(false);
+    navigation.navigate("Tracking", { rideId: completedRide.id });
+  };
+
+  const bookReturnDropoff = () => {
+    setShowReturnPrompt(false);
+    // Reversed: the just-completed ride's destination (where the rider is
+    // staying) becomes the return trip's pickup, and its own pickup (the
+    // airport) becomes the return trip's destination — same coordinates
+    // already resolved once, so the rider doesn't have to re-search either
+    // address.
+    navigation.navigate("Route", {
+      presetBookingType: "dropoff",
+      presetPickupAddress: stops[stops.length - 1] || "",
+      presetDestinationAddress: pickupAddress,
+      presetPickupLat: destinationLat,
+      presetPickupLng: destinationLng,
+      presetDestinationLat: pickupLat,
+      presetDestinationLng: pickupLng,
+      linkedRideId: completedRide.id,
+    });
   };
 
   const payWithCard = async () => {
@@ -157,12 +186,12 @@ export default function CheckoutScreen({ route, navigation }) {
         pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
         securityEscort, fleetSize, luxury, paymentMethod,
-        payAtPickup: canDeferPayment && payAtPickup && paymentMethod !== "card",
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
+        scheduledPickupAt, linkedRideId,
       });
       setStatus("success");
-      setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
+      onRideCreated(ride);
     } catch (e) {
       setStatus("error");
       setMessage(e.message || "Something went wrong confirming your ride.");
@@ -188,11 +217,33 @@ export default function CheckoutScreen({ route, navigation }) {
       return;
     }
     setMessage(null);
-    if (paymentMethod === "card" && !payAtPickup) payWithCard();
+    if (paymentMethod === "card") payWithCard();
     else payWithWalletOrMembership();
   };
 
   const isBusy = status === "opening" || status === "verifying";
+
+  if (showReturnPrompt && completedRide) {
+    return (
+      <View style={styles.screen}>
+        <GradientBackground variant="dark" />
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, flexGrow: 1, justifyContent: "center" }}>
+          <Text style={[styles.title, { textAlign: "center" }]}>You're booked! ✓</Text>
+          <Card tone="dark" tinted style={{ marginTop: spacing.md, marginBottom: spacing.lg }}>
+            <Text style={styles.cardLabel}>Know when you're flying back?</Text>
+            <Text style={styles.note}>
+              Book your airport drop-off now and we'll have it all set — or come back and book it any time under "Book a Ride" once you know your return date and time.
+            </Text>
+          </Card>
+          <Button label="Add my return drop-off" onPress={bookReturnDropoff} trailingIcon />
+          <View style={{ height: 10 }} />
+          <Pressable onPress={goToTrackingNow} style={{ alignItems: "center", paddingVertical: 10 }}>
+            <Text style={styles.note}>Not yet, maybe later</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -225,56 +276,32 @@ export default function CheckoutScreen({ route, navigation }) {
           </Card>
         ) : null}
 
-        {canDeferPayment ? (
-          <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.cardLabel}>When would you like to pay?</Text>
-            <View style={styles.bookingRow}>
-              <Pressable
-                onPress={() => togglePayAtPickup(false)}
-                style={[styles.bookingChip, !payAtPickup && styles.bookingChipActive]}
-              >
-                <Text style={[styles.bookingChipText, !payAtPickup && styles.bookingChipTextActive]}>Pay now</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => togglePayAtPickup(true)}
-                style={[styles.bookingChip, payAtPickup && styles.bookingChipActive]}
-              >
-                <Text style={[styles.bookingChipText, payAtPickup && styles.bookingChipTextActive]}>Reserve, pay at pickup</Text>
-              </Pressable>
-            </View>
-            {payAtPickup ? (
-              <Text style={styles.note}>
-                Your ride is reserved now. The fare is charged from your wallet automatically when you scan your
-                driver's QR code at pickup — make sure your balance covers it by then.
-              </Text>
-            ) : null}
-          </Card>
-        ) : null}
-
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>How would you like to pay?</Text>
+          <Text style={styles.note}>
+            Every ride is paid in full now, like a plane ticket — never cash, and never at the end of the trip. You
+            can still tip your driver afterwards if you'd like.
+          </Text>
+          <View style={{ height: 8 }} />
           {loadingOptions ? (
             <ActivityIndicator color={colors.amber} style={{ marginVertical: spacing.sm }} />
           ) : (
             <View style={{ gap: 8 }}>
-              {!payAtPickup ? (
-                <Pressable
-                  onPress={() => setPaymentMethod("card")}
-                  style={[styles.payOption, paymentMethod === "card" && styles.payOptionActive]}
-                >
-                  <Text style={styles.payOptionLabel}>{paymentMethod === "card" ? "● " : "○ "}Card (Paystack)</Text>
-                </Pressable>
-              ) : null}
               <Pressable
-                onPress={() => (payAtPickup || walletSufficient) && setPaymentMethod("wallet")}
-                disabled={!payAtPickup && !walletSufficient}
-                style={[styles.payOption, paymentMethod === "wallet" && styles.payOptionActive, !payAtPickup && !walletSufficient && { opacity: 0.4 }]}
+                onPress={() => setPaymentMethod("card")}
+                style={[styles.payOption, paymentMethod === "card" && styles.payOptionActive]}
+              >
+                <Text style={styles.payOptionLabel}>{paymentMethod === "card" ? "● " : "○ "}Card (Paystack)</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => walletSufficient && setPaymentMethod("wallet")}
+                disabled={!walletSufficient}
+                style={[styles.payOption, paymentMethod === "wallet" && styles.payOptionActive, !walletSufficient && { opacity: 0.4 }]}
               >
                 <Text style={styles.payOptionLabel}>
                   {paymentMethod === "wallet" ? "● " : "○ "}Wallet{walletBalance != null ? ` (${formatNaira(walletBalance)})` : ""}
-                  {payAtPickup ? " — charged at pickup" : ""}
                 </Text>
-                {!payAtPickup && !walletSufficient && walletBalance != null ? (
+                {!walletSufficient && walletBalance != null ? (
                   <Text style={styles.payOptionNote}>Not enough balance for this fare</Text>
                 ) : null}
               </Pressable>
@@ -290,7 +317,7 @@ export default function CheckoutScreen({ route, navigation }) {
           )}
         </Card>
 
-        {paymentMethod === "card" && !payAtPickup ? (
+        {paymentMethod === "card" ? (
           <Card tone="dark" style={{ marginBottom: spacing.lg }}>
             <Text style={styles.note}>
               Payment is handled by Paystack's secure checkout. RideArrivo never sees or stores your card details.
@@ -329,13 +356,7 @@ export default function CheckoutScreen({ route, navigation }) {
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
-          label={
-            isBusy
-              ? "Please wait…"
-              : payAtPickup
-              ? `Reserve · ${formatFare(amountNaira)} at pickup`
-              : `Pay ${formatFare(amountNaira)}`
-          }
+          label={isBusy ? "Please wait…" : `Pay ${formatFare(amountNaira)}`}
           onPress={pay}
           disabled={isBusy || (walletMinimum && !walletMinimum.meetsMinimum)}
           trailingIcon

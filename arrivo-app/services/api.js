@@ -125,11 +125,26 @@ export function getOwnerDashboard(token) {
   });
 }
 
-export function rateRide(token, rideId, rating, comment) {
+// keepSameDriver: "keep the same driver and vehicle for my return trip" —
+// stored on this (arrival) ride and copied onto a later linked drop-off
+// booking automatically. See db/schema.sql's keep_same_driver_for_return.
+export function rateRide(token, rideId, rating, comment, keepSameDriver) {
   return request(`/api/rides/${rideId}/rate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ rating, comment }),
+    body: JSON.stringify({ rating, comment, keepSameDriver }),
+  });
+}
+
+// Optional post-trip tip — wallet debits immediately server-side; a card
+// tip requires paymentReference from a Paystack charge that's already been
+// verified client-side first (see verifyPayment), same two-step pattern
+// CheckoutScreen uses for the fare itself. Never cash.
+export function tipRide(token, rideId, amountNaira, paymentMethod, paymentReference) {
+  return request(`/api/rides/${rideId}/tip`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ amountNaira, paymentMethod, paymentReference }),
   });
 }
 

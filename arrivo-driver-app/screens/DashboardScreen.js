@@ -190,13 +190,56 @@ export default function DashboardScreen() {
   );
 }
 
+// "dropoff" (Airport Drop-off — taking a departing rider TO the airport) is
+// the mirror image of "one_way" (Airport Pickup — an arriving rider FROM
+// the airport) — surfaced here so a driver can immediately tell which
+// direction a request runs, since the pickup_address/stops alone don't
+// make that obvious at a glance.
+function tripTypeLabel(bookingType) {
+  if (bookingType === "dropoff") return "Airport Drop-off";
+  if (bookingType === "one_way") return "Airport Pickup";
+  return "Chauffeur";
+}
+
+// A "dropoff" ride has no flight-landing event to anchor timing on (unlike
+// an arrival pickup), so the rider scheduled an explicit pickup date/time
+// instead — shown here so a driver doesn't mistake a next-week booking for
+// something needing immediate response. Null for anything not scheduled.
+function scheduledLabel(ride) {
+  if (!ride.scheduled_pickup_at) return null;
+  return new Date(ride.scheduled_pickup_at).toLocaleString([], {
+    weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+// "The driver has to be there latest 30 minutes to the time" — there's no
+// live GPS geofencing in this build to actually enforce that, so this is a
+// clear on-screen instruction (backed up by the scheduler's push reminders
+// at the 1h/now thresholds — see services/scheduler.js) rather than a hard
+// block.
+function arriveByLabel(ride) {
+  if (!ride.scheduled_pickup_at) return null;
+  const arriveBy = new Date(new Date(ride.scheduled_pickup_at).getTime() - 30 * 60 * 1000);
+  return arriveBy.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function RequestCard({ ride, busy, onAccept }) {
+  const scheduled = scheduledLabel(ride);
+  const arriveBy = arriveByLabel(ride);
   return (
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
-        <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+        <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
       </View>
+      {/* is_preferred_for_you comes from GET /available — set when this
+          rider asked to keep the same driver for their return trip and this
+          ride is currently held exclusively for this driver (see
+          routes/rides.js and services/scheduler.js's claim-window expiry). */}
+      {ride.is_preferred_for_you ? <Tag label="⭐ Your regular rider" tone="amber" /> : null}
+      <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+      {scheduled ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduled}</Text> : null}
+      {arriveBy ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveBy} (30 min early)</Text> : null}
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
@@ -209,11 +252,13 @@ function RequestCard({ ride, busy, onAccept }) {
 function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const isAccepted = ride.ride_status === "accepted";
   const isInProgress = ride.ride_status === "in_progress";
-  // This rider chose "reserve now, pay at pickup" — the fare is only
-  // actually charged (from their wallet) the moment THEY scan your QR
-  // placard, not when you tap Start Trip. Until that happens, there's
-  // nothing to start yet — the backend rejects it too, this just avoids
-  // showing a button that would fail.
+  // "Reserve now, pay at pickup" was removed as a product decision — every
+  // ride is now paid in full at booking, so no ride created going forward
+  // will ever match this. Left in place only so any ride that was already
+  // reserved-unpaid before that change shipped still shows a clear message
+  // here instead of a raw rejection error when Start Trip is tapped (the
+  // backend independently blocks the transition either way — see
+  // arrivo-backend/routes/rides.js PATCH /:id/status).
   const awaitingRiderPayment =
     isAccepted && !!ride.pay_at_pickup && ride.payment_method === "wallet" && ride.payment_status !== "paid";
 
@@ -303,6 +348,11 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
           <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
         </View>
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+        <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
+          <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+        </View>
+        {scheduledLabel(ride) ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduledLabel(ride)}</Text> : null}
+        {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
         <Text style={styles.meta}>Rider: {ride.rider_name}{ride.rider_phone ? ` · ${ride.rider_phone}` : ""}</Text>
@@ -386,6 +436,7 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700", marginTop: 4 },
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
+  scheduledText: { color: colors.amber, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
   error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
   panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },

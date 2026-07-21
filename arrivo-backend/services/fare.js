@@ -103,7 +103,14 @@ function findAreaPrice(address) {
 // for Standard Sedan / Premium SUV / Executive Vehicle — a flat +15k / +30k
 // rather than re-deriving a per-area number for every vehicle type across
 // 30+ areas.
-const VEHICLE_TIER_DELTA_NAIRA = { sedan: 0, suv: 15000, truck: 30000 };
+//
+// "pickup" (Pickup Truck) is a separate, later addition for heavy/bulky
+// cargo — distinct from "truck" (which is actually the Executive Vehicle
+// premium tier, a historical naming choice kept as-is to avoid a wider
+// rename). Priced between Sedan and Premium SUV rather than at/above
+// Executive: it's a working cargo vehicle, not a luxury one, so it
+// shouldn't cost more than the passenger-comfort tiers above it.
+const VEHICLE_TIER_DELTA_NAIRA = { sedan: 0, suv: 15000, truck: 30000, pickup: 10000 };
 
 // Higher all-in night price, 8pm–5am — NOT a separate itemized surcharge
 // line (the product decision here was explicitly "one fee per location,
@@ -132,7 +139,7 @@ function roundUpToNearest(amount, step) {
 // at all — a week-long booking is a flat day-rate times duration, same
 // model the app already used. Untouched by the one-way pricing change
 // above.
-const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000 };
+const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000, pickup: 11000 };
 const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
 
 // Priced in USD so it doesn't silently drift in real terms as the
@@ -147,6 +154,8 @@ const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
 // business decision behind it ("luxurious suv's $100"), converted to naira
 // at whatever the current FX rate is (services/fx.js) at quote/booking
 // time. Executive/truck has no luxury option: it's already the premium tier.
+// Pickup Truck has no luxury option either: it's a cargo vehicle, not a
+// comfort tier.
 const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
 
 // pickupAddress/destinationAddress are the free-text addresses the rider
@@ -188,8 +197,12 @@ function computeCharterFare({ vehicleType, bookingType }) {
 // easy to unit-test and to call from a request handler that already has
 // the rate cached.
 async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd }) {
+  // 'dropoff' (Airport Drop-off — departing rider, pickup → airport) is
+  // priced with the exact same per-location formula as 'one_way' (arriving
+  // rider, airport → destination) — computeOneWayFare already prices off
+  // whichever leg ISN'T the airport, so it's direction-agnostic by design.
   const base =
-    bookingType === "one_way"
+    bookingType === "one_way" || bookingType === "dropoff"
       ? computeOneWayFare({ pickupAddress, destinationAddress, vehicleType })
       : computeCharterFare({ vehicleType, bookingType });
 

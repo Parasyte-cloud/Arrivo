@@ -23,6 +23,7 @@ const VEHICLES = [
   { id: "sedan", label: "Standard Sedan" },
   { id: "suv", label: "Premium SUV" },
   { id: "truck", label: "Executive Vehicle" },
+  { id: "pickup", label: "Pickup Truck" },
 ];
 const DURATIONS = [
   { id: "full_day", label: "Single day", days: 1 },
@@ -62,7 +63,7 @@ export default function ChauffeurScreen({ navigation }) {
         const result = await getFareQuote(token, {
           bookingType: duration,
           vehicleType: choice,
-          luxury: luxury && choice !== "truck",
+          luxury: luxury && (choice === "sedan" || choice === "suv"),
         });
         setQuote(result);
       } catch (e) {
@@ -84,7 +85,7 @@ export default function ChauffeurScreen({ navigation }) {
       vehicleType: choice,
       bookingType: duration,
       durationDays: selectedDuration.days,
-      luxury: luxury && choice !== "truck",
+      luxury: luxury && (choice === "sedan" || choice === "suv"),
     });
   };
 

@@ -108,4 +108,60 @@ function sendVerificationEmail(to, verifyUrl) {
   });
 }
 
-module.exports = { sendPasswordResetEmail, sendBookingConfirmationEmail, sendWelcomeEmail, sendVerificationEmail };
+function sendDriverAssignedEmail(to, ride, driverName, vehicleLabel) {
+  return sendEmail({
+    to,
+    subject: "Your RideArrivo driver is confirmed",
+    html: wrapper(`
+      <p>Good news — a driver has been matched to your ride.</p>
+      <p><strong>Driver:</strong> ${driverName}</p>
+      <p><strong>Vehicle:</strong> ${vehicleLabel || "Details coming shortly"}</p>
+      <p><strong>Pickup:</strong> ${ride.pickup_address}</p>
+      ${ride.scheduled_pickup_at ? `<p><strong>Scheduled:</strong> ${new Date(ride.scheduled_pickup_at).toLocaleString()}</p>` : ""}
+      <p style="color:#6b6b85;font-size:13px;">Track your ride live in the RideArrivo app, or at <a href="https://ridearrivo.com/track.html?ride=${ride.id}">ridearrivo.com/track.html</a>.</p>
+    `),
+  });
+}
+
+// Sent when the scheduler (services/scheduler.js) detects that a tracked
+// flight tied to a ride has been cancelled or rescheduled — see the
+// original_flight_scheduled_at/flight_issue columns in db/schema.sql for
+// the detection logic, and the wallet-refund + $100-minimum + charge-at-
+// completion flow in routes/rides.js.
+function sendFlightIssueEmail(to, ride, reason) {
+  const reasonText = reason === "cancelled" ? "has been cancelled" : "has been rescheduled";
+  return sendEmail({
+    to,
+    subject: `Your flight ${ride.flight_number || ""} ${reasonText} — quick update on your RideArrivo booking`,
+    html: wrapper(`
+      <p>We noticed flight <strong>${ride.flight_number || "—"}</strong> ${reasonText}.</p>
+      <p>Your original fare has been refunded to your RideArrivo wallet. To keep your ride booked, please make sure you have at least <strong>$100</strong> (or its naira equivalent) in your wallet — this covers the trip, which will now be charged when you're dropped off instead of upfront.</p>
+      <p style="color:#6b6b85;font-size:13px;">Once your new travel time is confirmed, you can update it from the app or ridearrivo.com. Questions? Just reply to this email.</p>
+    `),
+  });
+}
+
+// Sent when a ride's preferred driver (set via "keep the same driver for my
+// return trip" at Rate & Relax) couldn't be retained — the claim window
+// elapsed unaccepted, or the driver went offline — so the change never
+// arrives as a silent surprise. See driver_change_reason in db/schema.sql.
+function sendDriverChangedEmail(to, ride, reason) {
+  return sendEmail({
+    to,
+    subject: "A quick update on your RideArrivo driver",
+    html: wrapper(`
+      <p>We tried to keep the same driver for your return trip, but couldn't: ${reason || "they weren't available in time for this pickup."}</p>
+      <p>Don't worry — we've opened this ride up to our other verified drivers, and you'll get their details as soon as one accepts.</p>
+    `),
+  });
+}
+
+module.exports = {
+  sendPasswordResetEmail,
+  sendBookingConfirmationEmail,
+  sendWelcomeEmail,
+  sendVerificationEmail,
+  sendDriverAssignedEmail,
+  sendFlightIssueEmail,
+  sendDriverChangedEmail,
+};

@@ -11,6 +11,7 @@ const VEHICLE_TYPES = [
   { id: "sedan", label: "Sedan" },
   { id: "suv", label: "SUV" },
   { id: "truck", label: "Truck / Van" },
+  { id: "pickup", label: "Pickup Truck" },
 ];
 
 function formatNaira(amount) {

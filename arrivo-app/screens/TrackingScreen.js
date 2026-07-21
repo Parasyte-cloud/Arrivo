@@ -1,11 +1,19 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput, AppState } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus } from "../services/api";
+import { useCurrency } from "../hooks/useCurrency";
+import {
+  getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
+  tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum,
+} from "../services/api";
+
+// Preset tip percentages, applied against the ride's fare — plus a custom
+// amount option for anyone who wants a specific number instead.
+const TIP_PERCENTS = [15, 20, 25];
 
 const POLL_INTERVAL_MS = 10000;
 // Flight status is refreshed far less often than driver location/ride
@@ -28,7 +36,8 @@ function initials(name) {
 
 export default function TrackingScreen({ route, navigation }) {
   const { rideId } = route?.params || {};
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  const { formatFare } = useCurrency(token);
   const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -39,11 +48,30 @@ export default function TrackingScreen({ route, navigation }) {
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingError, setRatingError] = useState(null);
+  // "Same driver, same vehicle, unless you say otherwise" — defaults to
+  // true to match that framing; only relevant for an arrival pickup, since
+  // that's the leg a return drop-off gets linked back to (see
+  // CheckoutScreen's bookReturnDropoff / keep_same_driver_for_return).
+  const [keepSameDriver, setKeepSameDriver] = useState(true);
+  const [flightIssueWalletMinimum, setFlightIssueWalletMinimum] = useState(null);
   const [flightStatus, setFlightStatus] = useState(null);
   const [flightLoading, setFlightLoading] = useState(false);
   const [flightError, setFlightError] = useState(null);
   const pollRef = useRef(null);
   const flightPollRef = useRef(null);
+
+  // Tipping — optional, offered once the trip is completed, alongside the
+  // rating above. Riders never tip in cash: wallet debits immediately,
+  // card goes through the same Paystack initialize/verify flow as the fare
+  // itself (see CheckoutScreen).
+  const [tipPercent, setTipPercent] = useState(15);
+  const [customTipInput, setCustomTipInput] = useState("");
+  const [useCustomTip, setUseCustomTip] = useState(false);
+  const [tipPaymentMethod, setTipPaymentMethod] = useState("wallet");
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [tipStatus, setTipStatus] = useState("idle"); // idle | opening | verifying | success | error
+  const [tipMessage, setTipMessage] = useState(null);
+  const pendingTipRef = useRef(null);
 
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
@@ -183,12 +211,99 @@ export default function TrackingScreen({ route, navigation }) {
     setSubmittingRating(true);
     setRatingError(null);
     try {
-      await rateRide(token, rideId, starsSelected, ratingComment.trim() || undefined);
+      await rateRide(token, rideId, starsSelected, ratingComment.trim() || undefined, ride?.booking_type === "one_way" ? keepSameDriver : undefined);
       await fetchRide();
     } catch (e) {
       setRatingError(e.message || "Couldn't submit your rating. Please try again.");
     } finally {
       setSubmittingRating(false);
+    }
+  };
+
+  // Only worth fetching once there's actually a tip prompt to show — a
+  // completed trip, with a driver, that hasn't been tipped yet.
+  const canTip = ride?.ride_status === "completed" && !!ride?.driver_id && !(Number(ride?.tip_naira) > 0);
+  useEffect(() => {
+    if (!canTip) return;
+    getWallet(token).then((w) => setWalletBalance(w.balanceNaira)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canTip, token]);
+
+  // Flight cancelled/rescheduled (services/scheduler.js flags ride.flight_issue
+  // and refunds the original fare to the wallet) — check whether the rider
+  // still meets the $100-equivalent standing minimum before the trip can
+  // start again (re-enforced server-side too, in PATCH /:id/status).
+  const hasFlightIssue = !!ride?.flight_issue && ride?.payment_status !== "paid";
+  useEffect(() => {
+    if (!hasFlightIssue) return;
+    getWalletMinimum(token).then(setFlightIssueWalletMinimum).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFlightIssue, token]);
+
+  const tipAmount = useCustomTip
+    ? Math.max(0, Math.round(Number(customTipInput) || 0))
+    : Math.round((Number(ride?.fare_naira) || 0) * (tipPercent / 100));
+
+  // Same "app comes back to foreground after the Paystack browser closes"
+  // signal CheckoutScreen/WalletScreen use — Linking.openURL doesn't give a
+  // direct close callback the way expo-web-browser's auth session would.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && pendingTipRef.current) {
+        const reference = pendingTipRef.current;
+        pendingTipRef.current = null;
+        verifyAndApplyCardTip(reference);
+      }
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipAmount]);
+
+  const verifyAndApplyCardTip = async (reference) => {
+    setTipStatus("verifying");
+    try {
+      const verification = await verifyPayment(reference);
+      if (!verification.success) {
+        setTipStatus("error");
+        setTipMessage(`Tip payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        return;
+      }
+      await tipRide(token, rideId, tipAmount, "card", reference);
+      await fetchRide();
+      setTipStatus("success");
+    } catch (e) {
+      setTipStatus("error");
+      setTipMessage(e.message || "Something went wrong confirming your tip.");
+    }
+  };
+
+  const submitTip = async () => {
+    if (!(tipAmount > 0)) {
+      setTipMessage("Choose an amount to tip.");
+      setTipStatus("error");
+      return;
+    }
+    setTipMessage(null);
+    if (tipPaymentMethod === "wallet") {
+      setTipStatus("verifying");
+      try {
+        await tipRide(token, rideId, tipAmount, "wallet");
+        await fetchRide();
+        setTipStatus("success");
+      } catch (e) {
+        setTipStatus("error");
+        setTipMessage(e.message || "Couldn't complete your tip. Please try again.");
+      }
+      return;
+    }
+    setTipStatus("opening");
+    try {
+      const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount);
+      pendingTipRef.current = reference;
+      await Linking.openURL(authorizationUrl);
+    } catch (e) {
+      setTipStatus("error");
+      setTipMessage(e.message || "Something went wrong starting the tip payment.");
     }
   };
 
@@ -222,6 +337,20 @@ export default function TrackingScreen({ route, navigation }) {
         {loadError ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.warningText}>{loadError}</Text>
+          </Card>
+        ) : null}
+
+        {hasFlightIssue ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>✈️ Flight {ride.flight_issue === "cancelled" ? "cancelled" : "rescheduled"}</Text>
+            <Text style={styles.meta}>
+              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet —
+              top up to at least{" "}
+              {flightIssueWalletMinimum ? formatFare(flightIssueWalletMinimum.minWalletBalanceNaira) : "$100"} to keep this
+              ride booked. You'll be charged the fare again at drop-off.
+            </Text>
+            <View style={{ height: spacing.sm }} />
+            <Button label="Top up wallet" variant="ghost" tone="dark" onPress={() => navigation.navigate("Wallet")} />
           </Card>
         ) : null}
 
@@ -314,6 +443,25 @@ export default function TrackingScreen({ route, navigation }) {
                   placeholder="Add a comment (optional)"
                   placeholderTextColor={colors.dark.textMuted}
                 />
+                {ride.booking_type === "one_way" ? (
+                  <View style={{ marginTop: spacing.sm }}>
+                    <Text style={styles.meta}>Keep the same driver &amp; vehicle for your return trip?</Text>
+                    <View style={[styles.bookingRow, { marginTop: 6 }]}>
+                      <Pressable
+                        onPress={() => setKeepSameDriver(true)}
+                        style={[styles.bookingChip, keepSameDriver && styles.bookingChipActive]}
+                      >
+                        <Text style={[styles.bookingChipText, keepSameDriver && styles.bookingChipTextActive]}>Yes, same driver</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setKeepSameDriver(false)}
+                        style={[styles.bookingChip, !keepSameDriver && styles.bookingChipActive]}
+                      >
+                        <Text style={[styles.bookingChipText, !keepSameDriver && styles.bookingChipTextActive]}>No, don't need to</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
                 {ratingError ? <Text style={styles.warningText}>{ratingError}</Text> : null}
                 <View style={{ height: spacing.sm }} />
                 {submittingRating ? (
@@ -321,6 +469,84 @@ export default function TrackingScreen({ route, navigation }) {
                 ) : (
                   <Button label="Submit rating" variant="ghost" tone="dark" onPress={submitRating} />
                 )}
+              </>
+            )}
+          </Card>
+        ) : null}
+
+        {ride?.ride_status === "completed" && hasDriver ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>Tip your driver</Text>
+            {Number(ride.tip_naira) > 0 ? (
+              <Text style={styles.meta}>You tipped {formatFare(ride.tip_naira)}. Thank you!</Text>
+            ) : (
+              <>
+                <Text style={styles.meta}>
+                  Entirely optional — 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
+                </Text>
+                <View style={{ height: spacing.sm }} />
+                <View style={styles.bookingRow}>
+                  {TIP_PERCENTS.map((p) => (
+                    <Pressable
+                      key={p}
+                      onPress={() => { setUseCustomTip(false); setTipPercent(p); }}
+                      style={[styles.bookingChip, !useCustomTip && tipPercent === p && styles.bookingChipActive]}
+                    >
+                      <Text style={[styles.bookingChipText, !useCustomTip && tipPercent === p && styles.bookingChipTextActive]}>
+                        {p}% ({formatFare(Math.round((Number(ride.fare_naira) || 0) * (p / 100)))})
+                      </Text>
+                    </Pressable>
+                  ))}
+                  <Pressable
+                    onPress={() => setUseCustomTip(true)}
+                    style={[styles.bookingChip, useCustomTip && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, useCustomTip && styles.bookingChipTextActive]}>Custom</Text>
+                  </Pressable>
+                </View>
+                {useCustomTip ? (
+                  <TextInput
+                    style={styles.input}
+                    value={customTipInput}
+                    onChangeText={setCustomTipInput}
+                    placeholder="Amount (₦)"
+                    placeholderTextColor={colors.dark.textMuted}
+                    keyboardType="number-pad"
+                  />
+                ) : null}
+
+                <View style={{ height: spacing.sm }} />
+                <View style={styles.bookingRow}>
+                  <Pressable
+                    onPress={() => setTipPaymentMethod("wallet")}
+                    style={[styles.bookingChip, tipPaymentMethod === "wallet" && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, tipPaymentMethod === "wallet" && styles.bookingChipTextActive]}>
+                      Wallet{walletBalance != null ? ` (₦${Number(walletBalance).toLocaleString()})` : ""}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setTipPaymentMethod("card")}
+                    style={[styles.bookingChip, tipPaymentMethod === "card" && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, tipPaymentMethod === "card" && styles.bookingChipTextActive]}>Card</Text>
+                  </Pressable>
+                </View>
+
+                {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent — thank you!</Text> : null}
+
+                <View style={{ height: spacing.sm }} />
+                {tipStatus === "opening" || tipStatus === "verifying" ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : tipStatus !== "success" ? (
+                  <Button
+                    label={tipAmount > 0 ? `Send ${formatFare(tipAmount)} tip` : "Send tip"}
+                    variant="ghost"
+                    tone="dark"
+                    onPress={submitTip}
+                  />
+                ) : null}
               </>
             )}
           </Card>
@@ -408,6 +634,17 @@ const styles = StyleSheet.create({
   flightRefresh: { color: colors.tealBright, fontSize: 11.5, fontWeight: "600" },
   starRow: { flexDirection: "row", gap: 6, marginTop: spacing.sm, marginBottom: spacing.sm },
   starChar: { fontSize: 28, color: colors.amber },
+  bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  bookingChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.dark.surfaceBorder,
+  },
+  bookingChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
+  bookingChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
+  bookingChipTextActive: { color: colors.ink },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

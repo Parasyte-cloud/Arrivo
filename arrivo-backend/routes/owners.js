@@ -16,8 +16,8 @@ router.post("/vehicles", requireAuth, async (req, res) => {
   if (!makeModel || !plateNumber) {
     return res.status(400).json({ error: "makeModel and plateNumber are required" });
   }
-  if (!["sedan", "suv", "truck"].includes(vehicleType)) {
-    return res.status(400).json({ error: "vehicleType must be one of: sedan, suv, truck" });
+  if (!["sedan", "suv", "truck", "pickup"].includes(vehicleType)) {
+    return res.status(400).json({ error: "vehicleType must be one of: sedan, suv, truck, pickup" });
   }
 
   const inserted = await pool.query(

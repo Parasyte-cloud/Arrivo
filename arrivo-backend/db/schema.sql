@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   owner_user_id INTEGER NOT NULL REFERENCES users(id),
   make_model TEXT NOT NULL,
   plate_number TEXT NOT NULL,
-  vehicle_type TEXT NOT NULL DEFAULT 'sedan', -- 'sedan' | 'suv' | 'truck'
+  vehicle_type TEXT NOT NULL DEFAULT 'sedan', -- 'sedan' | 'suv' | 'truck' (Executive Vehicle) | 'pickup' (Pickup Truck, cargo)
   seats INTEGER DEFAULT 4,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -184,7 +184,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance_naira NUMERIC NOT NULL
 CREATE TABLE IF NOT EXISTS wallet_transactions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  type TEXT NOT NULL, -- 'topup' | 'ride_charge' | 'credit' | 'refund' | 'membership_charge'
+  type TEXT NOT NULL, -- 'topup' | 'ride_charge' | 'credit' | 'refund' | 'membership_charge' | 'tip'
   status TEXT NOT NULL DEFAULT 'completed', -- 'pending' | 'completed' | 'failed'
   amount_naira NUMERIC NOT NULL, -- positive for topup/credit, negative for charges
   balance_after_naira NUMERIC, -- null while status = 'pending'
@@ -227,18 +227,88 @@ CREATE INDEX IF NOT EXISTS idx_rides_panic_active
   ON rides (panic_triggered_at)
   WHERE panic_triggered_at IS NOT NULL AND panic_resolved_at IS NULL;
 
--- "Reserve now, pay at pickup" — a one-way-only alternative to paying in
--- full at booking. Only a wallet charge can actually be deferred this way
--- (see routes/rides.js): the rider reserves the ride now, and the fare is
--- debited from their wallet automatically when they scan their driver's
--- placard QR at pickup (POST /api/rides/scan), rather than at booking time.
--- Membership never charges per trip either way, so pay_at_pickup is a
--- no-op for it beyond being recorded here. Card is not allowed to defer —
--- there's no good way to prompt for card details mid-pickup, so card
--- payment always happens at booking, same as before this feature existed.
--- payment_method is now stored on every ride (previously only implicit in
--- which code path created it) so a pending pay-at-pickup ride knows how
--- it'll eventually be settled, and so this is visible in the admin
--- dashboard/reporting.
+-- "Reserve now, pay at pickup" — DEPRECATED. This used to let a rider
+-- reserve a one-way ride and pay the fare later (debited from wallet at
+-- the pickup QR scan) instead of at booking. Removed as a product
+-- decision: every ride is now paid in full at booking, like a plane
+-- ticket, never at the end of the trip. routes/rides.js POST / rejects any
+-- new attempt to set pay_at_pickup. The column (and the routes/rides.js
+-- scan-time-charge code that reads it) is kept only so any ride that was
+-- already reserved-unpaid before this change shipped still settles
+-- correctly — it should always be false for anything created afterward.
+-- payment_method is still stored on every ride (independent of
+-- pay_at_pickup) so it's visible which rail actually settled the fare.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS pay_at_pickup BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS payment_method TEXT;
+
+-- Driver tipping — optional, prompted after a ride is marked 'completed'
+-- (alongside the rider-rating prompt). Riders never tip in cash, so this
+-- goes through the same rails as the fare itself (wallet debit or a fresh
+-- card charge — see POST /api/rides/:id/tip). One tip per ride; tip_naira
+-- stays 0 until (and unless) the rider adds one.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS tip_naira NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS tip_payment_method TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS tip_payment_reference TEXT;
+
+-- Airport Drop-off — RideArrivo taking a departing rider FROM their
+-- location TO the airport, the mirror image of the existing 'one_way'
+-- arrival pickup. booking_type = 'dropoff' is priced with the exact same
+-- per-location formula as 'one_way' (see services/fare.js), just kept as
+-- its own value so ride history/driver instructions/reporting can tell the
+-- two apart. scheduled_pickup_at is required for 'dropoff' bookings (there's
+-- no flight-landing event to anchor timing the way an arrival pickup has —
+-- the rider tells us directly when they need picking up) and optional for
+-- everything else. linked_ride_id optionally pairs a drop-off with the
+-- arrival pickup it was booked alongside in the same session (a
+-- round-trip-style booking, "if they know their expected time and day of
+-- return, book it at once") — display/reporting only, doesn't affect
+-- pricing or dispatch.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS scheduled_pickup_at TIMESTAMPTZ;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS linked_ride_id INTEGER REFERENCES rides(id);
+
+-- ── Driver/vehicle continuity for return trips ──
+-- At "Rate & Relax" after a completed arrival pickup, a rider can say
+-- "keep the same driver and vehicle for my return trip." That preference is
+-- stored on the RATED ride (keep_same_driver_for_return); when a 'dropoff'
+-- ride later gets created with linked_ride_id pointing at this one, the
+-- backend copies driver_id/vehicle info across as preferred_driver_id +
+-- preferred_vehicle_snapshot (a plain text snapshot like "Toyota Camry —
+-- ABC123XY", not a live FK to vehicles, since the driver's assigned vehicle
+-- could change between now and then and the snapshot is just informational
+-- context for the rider/driver, not something dispatch re-resolves).
+-- preferred_driver_id references drivers(id) (not users(id)) to match
+-- rides.driver_id's own convention.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS keep_same_driver_for_return BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS preferred_driver_id INTEGER REFERENCES drivers(id);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS preferred_vehicle_snapshot TEXT;
+-- Set (and shown to the rider) if a preferred driver couldn't be retained —
+-- e.g. the claim window elapsed with no response, or they went offline —
+-- so "your driver changed" never arrives as a silent surprise.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS driver_change_reason TEXT;
+
+-- ── Flight cancellation/reschedule handling ──
+-- original_flight_scheduled_at captures the flight's scheduled time AT
+-- BOOKING TIME (best-effort, from GET /api/flights/status) purely so a
+-- later background check can tell "rescheduled" (the time drifted a lot)
+-- apart from "always been like this." flight_issue is null until the
+-- scheduler (services/scheduler.js) detects a real cancellation/reschedule;
+-- once set, PATCH /:id/status re-applies the existing $100-equivalent
+-- standing-wallet-balance rule (see MIN_WALLET_BALANCE_USD in routes/rides.js)
+-- as a gate on starting the trip, and — since the original upfront charge
+-- gets refunded back to the wallet the moment the issue is detected — the
+-- actual fare is charged from the wallet again at trip completion instead
+-- of having already been settled at booking.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS original_flight_scheduled_at TIMESTAMPTZ;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_issue TEXT; -- null | 'cancelled' | 'rescheduled'
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_issue_notified_at TIMESTAMPTZ;
+
+-- ── Pickup/drop-off reminders ──
+-- One boolean per threshold so the scheduler's periodic sweep (every few
+-- minutes) never double-sends a reminder it already fired for a given ride.
+-- Applies to both 'dropoff' rides (anchored on scheduled_pickup_at) and
+-- 'one_way' rides (anchored on the flight's live estimated/scheduled
+-- arrival time, refreshed by the same sweep).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_5h_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_now_sent BOOLEAN NOT NULL DEFAULT false;

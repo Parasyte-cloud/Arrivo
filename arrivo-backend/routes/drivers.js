@@ -194,7 +194,9 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
 
   const summary = (
     await pool.query(
-      `SELECT COUNT(*) as "completedTrips", COALESCE(SUM(fare_naira), 0) as "totalNaira"
+      `SELECT COUNT(*) as "completedTrips",
+              COALESCE(SUM(fare_naira), 0) as "totalNaira",
+              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'`,
       [driver.id]
     )
@@ -202,7 +204,8 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
 
   const thisMonth = (
     await pool.query(
-      `SELECT COALESCE(SUM(fare_naira), 0) as "totalNaira"
+      `SELECT COALESCE(SUM(fare_naira), 0) as "totalNaira",
+              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'
        AND date_trunc('month', created_at) = date_trunc('month', now())`,
       [driver.id]
@@ -211,8 +214,14 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
 
   res.json({
     completedTrips: Number(summary.completedTrips),
-    totalNaira: Number(summary.totalNaira),
-    thisMonthNaira: Number(thisMonth.totalNaira),
+    // totalNaira/thisMonthNaira include tips (what the driver actually
+    // earned in total); totalTipsNaira/thisMonthTipsNaira break that out
+    // separately so the app can show "of which ₦X was tips" rather than
+    // hiding it inside one lump sum.
+    totalNaira: Number(summary.totalNaira) + Number(summary.totalTipsNaira),
+    totalTipsNaira: Number(summary.totalTipsNaira),
+    thisMonthNaira: Number(thisMonth.totalNaira) + Number(thisMonth.totalTipsNaira),
+    thisMonthTipsNaira: Number(thisMonth.totalTipsNaira),
   });
 });
 
