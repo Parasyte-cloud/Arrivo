@@ -1,79 +1,173 @@
 // Fare calculation — the one and only place fare math happens server-side.
-// Replaces the old approach (a hardcoded keyword-matching price table
-// against whatever address text the rider typed) with a real formula
-// driven by actual driving distance/duration from Google's Distance
-// Matrix API. Every rate below is a business decision, not a technical
-// one — these are reasonable starting points, not researched-and-proven
-// numbers. Tune them to your actual unit economics (driver payout %,
-// fuel, vehicle upkeep) once you have real trip data to look at.
 //
-// Positioning: RideArrivo is a premium airport-transfer service, not a
-// commodity ride-hailing app, so fares lean a little higher than a plain
-// per-km taxi rate would — that's the "stylishly spendy" part. The
-// ROUND_TO_NAIRA step rounds every quote up to a clean number (nearest
-// 500) so prices read as deliberate rather than an odd calculated total.
+// One-way (airport transfer) pricing is a flat, per-location price — NOT a
+// distance/time formula. This replaced an earlier distance+duration formula
+// (which used placeholder starting rates, never validated against real
+// data) after real-world feedback: riders and partners wanted "a fee per
+// location, that's it" rather than a metered fare that's hard to quote
+// upfront. The AREA_PRICING table below is the same data originally sourced
+// from the product's "Recommended Fixed Pricing" table (previously lived
+// only in the website's local JS, disconnected from what actually got
+// charged) — this is now the one real source both the website and apps
+// price from.
+//
+// Multi-day charter bookings (Chauffeur/day-week-month) are unaffected —
+// still a flat day-rate × duration, unrelated to this per-location system.
 
-const ONE_WAY = {
-  BASE_FARE_NAIRA: 15000, // covers dispatch + airport meet-and-greet, charged regardless of distance
-  PER_KM_NAIRA: 600, // real driving distance, from Google Distance Matrix
-  PER_MINUTE_NAIRA: 60, // accounts for Lagos traffic — a slow 10km trip costs more than a fast one
-  ROUND_TO_NAIRA: 500,
+// Green zone — close to the airport, best roads, operate freely.
+// Yellow zone — further out / heavier traffic corridors, priced higher per
+// the PRD's "Recommended Fixed Pricing" table (which supersedes the
+// earlier general range for these areas).
+// Prices are the Standard Sedan base for that area; SUV/Executive add
+// VEHICLE_TIER_DELTA_NAIRA on top (see below).
+const AREA_PRICING = {
+  // Green zone
+  "ikeja gra": 27500, "maryland": 30000, "ogba": 30000, "magodo": 32500,
+  "surulere": 32500, "yaba": 34500, "anthony": 30000, "anthony village": 30000,
+  "ilupeju": 30000, "gbagada": 37500, "allen avenue": 30000, "alausa": 30000,
+  "ajao estate": 30000, "victoria island": 45000, "ikoyi": 50000,
+  "lekki phase 1": 45000,
+
+  // Yellow zone — traffic corridors, Recommended Fixed Pricing table
+  "iyana-ipaja": 47500, "iyana ipaja": 47500, "egbeda": 47500, "akowonjo": 47500,
+  "idimu": 52500, "ipaja": 47500, "ayobo": 55000, "baruwa": 55000,
+  "alimosho": 50000, "command": 57500, "abule egba": 55000,
+  "ijaiye": 47500, "oko oba": 47500, "dopemu": 42500, "shasha": 50000,
+
+  // Yellow zone — premium/distance pricing
+  "lekki": 45000, "ajah": 55000, "ikorodu": 50000, "festac": 50000,
+  "satellite town": 60000,
 };
 
-// Vehicle tier delta — added on top of the distance-based fare above, so
-// an SUV/Executive vehicle still costs progressively more than a Sedan on
-// longer trips, not just at the floor.
+// Areas not explicitly listed above still need *some* price — rather than
+// silently defaulting to the cheapest tier (which would underprice a
+// genuinely far, just-not-yet-catalogued area), unmatched addresses fall
+// back to this mid-range green-zone figure. If a specific area keeps
+// hitting this fallback, it probably needs its own AREA_PRICING entry.
+const DEFAULT_AREA_PRICE_NAIRA = 32000;
+
+// Red zone — no operations, for now. Same list the apps/website already
+// used client-side as a UX check; now also enforced here so it can't be
+// bypassed by skipping the client-side check.
+const EXCLUDED_AREAS = [
+  { name: "Badagry", keywords: ["badagry"] },
+  { name: "Epe", keywords: ["epe"] },
+  { name: "Ibeju-Lekki", keywords: ["ibeju-lekki", "ibeju lekki"] },
+  { name: "Makoko", keywords: ["makoko"] },
+];
+
+// RideArrivo one-way trips always involve the airport on one end — riders
+// can book either "airport → their area" (the common case) or "their area →
+// airport" (return trip), and pickup/destination are free text either way.
+// The per-location price should always be about the NON-airport leg, so
+// this detects which side is the airport and prices off the other one. If
+// neither side matches (a pure point-to-point trip not involving the
+// airport at all — not really this product's use case, but the fields
+// don't hard-enforce it), destination is used, same convention as before.
+const AIRPORT_KEYWORDS = ["airport", "murtala", "mmia", "mm2", "muhammed international"];
+
+function matchesAny(address, keywords) {
+  const a = " " + (address || "").toLowerCase() + " ";
+  return keywords.some((k) => a.indexOf(k) !== -1);
+}
+
+function isAirportAddress(address) {
+  return matchesAny(address, AIRPORT_KEYWORDS);
+}
+
+// Returns the matching EXCLUDED_AREAS entry, or null.
+function findExcludedArea(address) {
+  const a = " " + (address || "").toLowerCase() + " ";
+  for (const area of EXCLUDED_AREAS) {
+    if (area.keywords.some((k) => a.indexOf(k) !== -1)) return area;
+  }
+  return null;
+}
+
+function findAreaPrice(address) {
+  const a = " " + (address || "").toLowerCase() + " ";
+  let bestMatch = null;
+  for (const key in AREA_PRICING) {
+    if (a.indexOf(key) !== -1) {
+      // Prefer the longest/most specific keyword match (e.g. "lekki phase
+      // 1" over the more general "lekki") over whichever happens to be
+      // checked first in object iteration order.
+      if (!bestMatch || key.length > bestMatch.length) bestMatch = key;
+    }
+  }
+  return bestMatch ? AREA_PRICING[bestMatch] : DEFAULT_AREA_PRICE_NAIRA;
+}
+
+// Vehicle tier delta — the area's base (Standard Sedan) price plus a fixed
+// delta per tier, matching the "from ₦X / ₦X+15k / ₦X+30k" spacing given
+// for Standard Sedan / Premium SUV / Executive Vehicle — a flat +15k / +30k
+// rather than re-deriving a per-area number for every vehicle type across
+// 30+ areas.
 const VEHICLE_TIER_DELTA_NAIRA = { sedan: 0, suv: 15000, truck: 30000 };
 
-// Per-vehicle floor for a one-way trip, even a very short one — explicit
-// business numbers ("leave the suv's at 35,000.00 and sedan at 25,000").
-// These only bite on short trips — a long enough trip will naturally price
-// above its vehicle's floor from the distance/time math + delta alone.
-const VEHICLE_MIN_FARE_NAIRA = { sedan: 25000, suv: 35000, truck: 50000 };
+// Higher all-in night price, 8pm–5am — NOT a separate itemized surcharge
+// line (the product decision here was explicitly "one fee per location,
+// no more fees"), just a higher total for the same location during those
+// hours. Computed in Africa/Lagos time (UTC+1) regardless of what timezone
+// the server itself runs in, so this doesn't silently shift if Render's
+// underlying host clock is UTC.
+const NIGHT_MULTIPLIER = 1.2;
+const NIGHT_START_HOUR = 20; // 8pm
+const NIGHT_END_HOUR = 5; // 5am
 
-// Multi-day charter bookings (Chauffeur screen) aren't priced by distance
-// at all — a week-long booking isn't "one big trip," it's a flat day-rate
-// times duration, same model the app already used. Left untouched here,
-// just centralized server-side so it can be verified rather than trusted
-// from the client.
-const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000 };
-const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
+function isLagosNightTime(date = new Date()) {
+  // Africa/Lagos is a fixed UTC+1 offset (no DST), so this is safe without
+  // pulling in a timezone library.
+  const lagosHour = (date.getUTCHours() + 1) % 24;
+  return lagosHour >= NIGHT_START_HOUR || lagosHour < NIGHT_END_HOUR;
+}
 
-// Priced in USD, like the luxury surcharge above, so it doesn't silently
-// drift in real terms as the naira/dollar rate moves — converted at
-// quote/booking time using whatever services/fx.js currently reports.
-const SECURITY_ESCORT_PRICE_USD = 100;
-const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
-
-// "Luxury" toggle — a flat surcharge on top of the normal distance-based
-// (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
-// Sedan/SUV without switching to the Executive tier. Priced in USD per the
-// business decision behind it ("luxurious suv's $100"), converted to naira
-// at whatever the current FX rate is (services/fx.js) at quote/booking
-// time — never hardcoded in naira, since a fixed-naira surcharge would
-// silently drift in real dollar terms as the exchange rate moves.
-// Executive/truck has no luxury option: it's already the premium tier.
-const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
+const ROUND_TO_NAIRA = 500;
 
 function roundUpToNearest(amount, step) {
   return Math.ceil(amount / step) * step;
 }
 
-// distanceKm/durationMin should come from Google's Distance Matrix API
-// (see services/googleMaps.js) — never from the client.
-function computeOneWayFare({ distanceKm, durationMin, vehicleType }) {
-  if (!(distanceKm >= 0) || !(durationMin >= 0)) {
-    throw new Error("computeOneWayFare requires a real distanceKm and durationMin");
+// Multi-day charter bookings (Chauffeur screen) aren't priced per-location
+// at all — a week-long booking is a flat day-rate times duration, same
+// model the app already used. Untouched by the one-way pricing change
+// above.
+const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000 };
+const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
+
+// Priced in USD so it doesn't silently drift in real terms as the
+// naira/dollar rate moves — converted at quote/booking time using whatever
+// services/fx.js currently reports.
+const SECURITY_ESCORT_PRICE_USD = 100;
+const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
+
+// "Luxury" toggle — a flat surcharge on top of the normal per-location
+// (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
+// Sedan/SUV without switching to the Executive tier. Priced in USD per the
+// business decision behind it ("luxurious suv's $100"), converted to naira
+// at whatever the current FX rate is (services/fx.js) at quote/booking
+// time. Executive/truck has no luxury option: it's already the premium tier.
+const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
+
+// pickupAddress/destinationAddress are the free-text addresses the rider
+// entered (or picked via autocomplete) — these, not lat/lng, are what
+// determine price now. lat/lng are still collected by the apps/website for
+// maps and live tracking, but no longer feed the fare calculation.
+function computeOneWayFare({ pickupAddress, destinationAddress, vehicleType }) {
+  const excluded = findExcludedArea(destinationAddress) || findExcludedArea(pickupAddress);
+  if (excluded) {
+    throw new Error(`RideArrivo doesn't currently operate in ${excluded.name}.`);
   }
+
+  const zoneAddress = isAirportAddress(destinationAddress) ? pickupAddress : destinationAddress;
   const vehicleDelta = VEHICLE_TIER_DELTA_NAIRA[vehicleType] || 0;
-  const raw =
-    ONE_WAY.BASE_FARE_NAIRA +
-    ONE_WAY.PER_KM_NAIRA * distanceKm +
-    ONE_WAY.PER_MINUTE_NAIRA * durationMin +
-    vehicleDelta;
-  const minFare = VEHICLE_MIN_FARE_NAIRA[vehicleType] || VEHICLE_MIN_FARE_NAIRA.sedan;
-  const floored = Math.max(raw, minFare);
-  return roundUpToNearest(floored, ONE_WAY.ROUND_TO_NAIRA);
+  let total = findAreaPrice(zoneAddress) + vehicleDelta;
+
+  if (isLagosNightTime()) {
+    total = total * NIGHT_MULTIPLIER;
+  }
+
+  return roundUpToNearest(total, ROUND_TO_NAIRA);
 }
 
 function computeCharterFare({ vehicleType, bookingType }) {
@@ -93,10 +187,10 @@ function computeCharterFare({ vehicleType, bookingType }) {
 // than fetched in here, so this function stays a pure/sync calculation —
 // easy to unit-test and to call from a request handler that already has
 // the rate cached.
-async function computeFare({ bookingType, distanceKm, durationMin, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd }) {
+async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd }) {
   const base =
     bookingType === "one_way"
-      ? computeOneWayFare({ distanceKm, durationMin, vehicleType })
+      ? computeOneWayFare({ pickupAddress, destinationAddress, vehicleType })
       : computeCharterFare({ vehicleType, bookingType });
 
   let total = base;
@@ -112,9 +206,16 @@ module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
+  findExcludedArea,
+  findAreaPrice,
+  isAirportAddress,
+  isLagosNightTime,
   SECURITY_ESCORT_PRICE_USD,
   FLEET_PRICE_NAIRA,
   VEHICLE_TIER_DELTA_NAIRA,
-  VEHICLE_MIN_FARE_NAIRA,
   LUXURY_SURCHARGE_USD,
+  AREA_PRICING,
+  DEFAULT_AREA_PRICE_NAIRA,
+  EXCLUDED_AREAS,
+  NIGHT_MULTIPLIER,
 };

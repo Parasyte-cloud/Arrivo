@@ -34,7 +34,7 @@ function findExcludedArea(address) {
   return EXCLUDED_AREAS.find((area) => area.keywords.some((k) => a.indexOf(k) !== -1)) || null;
 }
 
-const MAX_PASSENGERS = { sedan: 3, suv: 6, truck: 6 };
+const MAX_PASSENGERS = { sedan: 3, suv: 5, truck: 5 };
 const VEHICLES = [
   { id: "sedan", label: "Standard Sedan" },
   { id: "suv", label: "Premium SUV" },
@@ -110,6 +110,13 @@ export default function RouteScreen({ navigation, route }) {
       try {
         const payload = { bookingType, vehicleType: vehicle, securityEscort, fleetSize, luxury: luxury && vehicle !== "truck" };
         if (needsCoords) {
+          // pickupAddress/destinationAddress are what actually price a
+          // one-way trip now (flat per-location fare, see
+          // arrivo-backend/services/fare.js) — lat/lng are sent too, but
+          // only used server-side for an informational distance/duration
+          // display, never for the fare itself.
+          payload.pickupAddress = pickup;
+          payload.destinationAddress = destination;
           payload.pickupLat = pickupCoords.lat;
           payload.pickupLng = pickupCoords.lng;
           payload.destinationLat = destinationCoords.lat;

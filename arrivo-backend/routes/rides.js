@@ -6,7 +6,7 @@ const { sendBookingConfirmationEmail } = require("../services/email");
 const { sendPushNotification } = require("../services/pushNotifications");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare } = require("../services/fare");
+const { computeFare, findExcludedArea } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 
 // Minimum standing wallet balance every rider must hold before ANY ride can
@@ -35,19 +35,24 @@ function withParsedStops(ride) {
 // rider) from POST /api/rides/quote first.
 router.post("/", requireAuth, async (req, res) => {
   const {
-    pickupAddress, stops, flightNumber, vehicleType, fareNaira, paymentReference,
+    pickupAddress, stops, flightNumber, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
     distanceKm: clientDistanceKm, durationMin: clientDurationMin, securityEscort, fleetSize, paymentMethod = "card",
     emergencyContactName, emergencyContactPhone, dashCamConsent, luxury, payAtPickup,
     pickupLat, pickupLng, destinationLat, destinationLng,
   } = req.body;
 
-  if (!pickupAddress || !fareNaira) {
-    return res.status(400).json({ error: "pickupAddress and fareNaira are required" });
+  if (!pickupAddress) {
+    return res.status(400).json({ error: "pickupAddress is required" });
   }
   const allowedTypes = ["one_way", "full_day", "full_week", "full_month"];
   if (!allowedTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: ${allowedTypes.join(", ")}` });
+  }
+  // One-way fares are priced off the destination address (see
+  // services/fare.js) — without it there's nothing to price against.
+  if (bookingType === "one_way" && !(Array.isArray(stops) && stops.length && stops[stops.length - 1])) {
+    return res.status(400).json({ error: "A destination address is required for one-way bookings." });
   }
   if (!agreedCancellationPolicy) {
     return res.status(400).json({ error: "You must agree to the Cancellation & Refund Policy before booking" });
@@ -78,46 +83,46 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Reserve now, pay at pickup is only available for one-way airport pickups." });
   }
 
-  // Client-computed fares are a convenience for showing a live estimate,
-  // never a source of truth for what gets charged. This used to only
-  // check the add-on portion (security escort / fleet); now the whole
-  // fare is re-derived server-side, including real driving distance for
-  // one-way trips, and the request is rejected if fareNaira doesn't match
-  // — same principle as the payment-verification fix, applied to the fare
-  // itself. A small tolerance accounts for live traffic conditions
-  // shifting slightly between the quote and this request.
+  // Whatever fare the client showed the rider is a convenience for display
+  // only — the real charge always comes from a fresh server-side
+  // computation, never from a client-submitted number. This used to accept
+  // a client fareNaira and reject the request if it didn't match the
+  // server's own recomputation, but that meant a rider could be legitimately
+  // rejected for stale-but-honest reasons entirely outside their control
+  // (e.g. the FX rate — used for luxury/security-escort USD surcharges —
+  // refreshing between quote and booking). Simplest fix: don't compare at
+  // all, just always charge the fresh number.
   const ngnPerUsd = await getNgnPerUsd();
+  const destinationAddress = Array.isArray(stops) && stops.length ? stops[stops.length - 1] : null;
 
-  let distanceKm = null;
-  let durationMin = null;
-  let expectedFare;
+  let distanceKm = clientDistanceKm ?? null;
+  let durationMin = clientDurationMin ?? null;
+  let fareNaira;
   if (bookingType === "one_way") {
-    if (pickupLat == null || pickupLng == null || destinationLat == null || destinationLng == null) {
-      return res.status(400).json({ error: "pickupLat, pickupLng, destinationLat, and destinationLng are required for one-way bookings. Get a fresh quote from POST /api/rides/quote." });
-    }
     try {
-      const distance = await getDistanceDuration(pickupLat, pickupLng, destinationLat, destinationLng);
-      distanceKm = distance.distanceKm;
-      durationMin = distance.durationMin;
+      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
     } catch (err) {
-      console.error("Distance lookup failed during ride creation:", err.message);
-      return res.status(502).json({ error: "Couldn't verify the route distance right now. Please try again." });
+      // Thrown by computeOneWayFare when pickup/destination matches a red
+      // (excluded) zone — surfaced as a normal validation error, not a 500.
+      return res.status(400).json({ error: err.message });
     }
-    expectedFare = await computeFare({ bookingType, distanceKm, durationMin, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
+    // Distance/duration are no longer used for pricing, but still useful
+    // to store for the map/tracking screens — fetched best-effort here if
+    // real coordinates were sent, but never blocks booking if this fails.
+    if (pickupLat != null && pickupLng != null && destinationLat != null && destinationLng != null) {
+      try {
+        const distance = await getDistanceDuration(pickupLat, pickupLng, destinationLat, destinationLng);
+        distanceKm = distance.distanceKm;
+        durationMin = distance.durationMin;
+      } catch (err) {
+        console.error("Distance lookup failed during ride creation (informational only, not blocking):", err.message);
+      }
+    }
   } else {
-    // Charter bookings (full_day/week/month) aren't distance-based —
-    // fall back to whatever distance/duration the client sent along for
-    // display purposes only (not used in the fare calc).
-    distanceKm = clientDistanceKm ?? null;
-    durationMin = clientDurationMin ?? null;
-    expectedFare = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
-  }
-
-  const FARE_TOLERANCE = 0.05; // 5%
-  if (Math.abs(fareNaira - expectedFare) > expectedFare * FARE_TOLERANCE) {
-    return res.status(400).json({
-      error: `fareNaira doesn't match the expected fare for this trip (expected around ₦${Math.round(expectedFare).toLocaleString()}). Please get a fresh quote and try again.`,
-    });
+    // Charter bookings (full_day/week/month) aren't distance- or
+    // location-based — flat day-rate × duration, unaffected by any of the
+    // above.
+    fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
   }
 
   // Standing wallet-balance floor — applies before ANY payment method,
@@ -229,15 +234,22 @@ router.post("/", requireAuth, async (req, res) => {
 // POST /api/rides/quote — a live fare estimate, before any payment happens.
 // Uses the exact same formula (services/fare.js) that ride creation above
 // re-verifies against, so what a rider sees here is what they'll be
-// charged, barring live traffic shifting slightly in the few minutes
-// between getting a quote and actually paying.
+// charged. One-way fares are a flat per-location price (see
+// services/fare.js) — deterministic, not distance-based — so the only way
+// this quote differs from the eventual charge is if the 8pm–5am night rate
+// boundary is crossed between quoting and booking.
 // body: { bookingType?, vehicleType, securityEscort?, fleetSize?, luxury?,
+//         pickupAddress?, destinationAddress?,
 //         pickupLat?, pickupLng?, destinationLat?, destinationLng? }
+// pickupAddress/destinationAddress are required for one-way (that's what
+// prices it); lat/lng are optional and, if sent, are used only to return an
+// informational distanceKm/durationMin for display — never for pricing.
 // Returns fareUsd alongside fareNaira purely for display — naira is always
 // the real, charged amount (see services/fx.js for why).
 router.post("/quote", requireAuth, async (req, res) => {
   const {
     bookingType = "one_way", vehicleType, securityEscort, fleetSize, luxury,
+    pickupAddress, destinationAddress,
     pickupLat, pickupLng, destinationLat, destinationLng,
   } = req.body;
 
@@ -249,17 +261,30 @@ router.post("/quote", requireAuth, async (req, res) => {
   const ngnPerUsd = await getNgnPerUsd();
 
   if (bookingType === "one_way") {
-    if (pickupLat == null || pickupLng == null || destinationLat == null || destinationLng == null) {
-      return res.status(400).json({ error: "pickupLat, pickupLng, destinationLat, and destinationLng are required to quote a one-way fare" });
+    if (!destinationAddress) {
+      return res.status(400).json({ error: "destinationAddress is required to quote a one-way fare" });
     }
+    let fareNaira;
     try {
-      const { distanceKm, durationMin } = await getDistanceDuration(pickupLat, pickupLng, destinationLat, destinationLng);
-      const fareNaira = await computeFare({ bookingType, distanceKm, durationMin, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
-      return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin });
+      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
     } catch (err) {
-      console.error("Fare quote failed:", err.message);
-      return res.status(502).json({ error: "Couldn't calculate a fare for this route right now. Please try again." });
+      // e.g. pickup/destination is in a red (excluded) zone — a normal
+      // validation error, not a server failure.
+      return res.status(400).json({ error: err.message });
     }
+
+    let distanceKm = null;
+    let durationMin = null;
+    if (pickupLat != null && pickupLng != null && destinationLat != null && destinationLng != null) {
+      try {
+        const distance = await getDistanceDuration(pickupLat, pickupLng, destinationLat, destinationLng);
+        distanceKm = distance.distanceKm;
+        durationMin = distance.durationMin;
+      } catch (err) {
+        console.error("Distance lookup failed during quote (informational only, not blocking):", err.message);
+      }
+    }
+    return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin });
   }
 
   const allowedCharterTypes = ["full_day", "full_week", "full_month"];
