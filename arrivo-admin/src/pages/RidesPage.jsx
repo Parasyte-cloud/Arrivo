@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
-import { formatDateTime } from "../utils";
+import { formatDateTime, downloadCsv } from "../utils";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -13,20 +13,62 @@ const STATUS_FILTERS = [
   { id: "cancelled", label: "Cancelled" },
 ];
 
+// Debounces the search box so every keystroke doesn't fire its own request —
+// the date/status filters below are discrete clicks so they don't need this.
+function useDebounced(value, delayMs) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+function exportRidesCsv(rides) {
+  downloadCsv(
+    `arrivo-rides-${new Date().toISOString().slice(0, 10)}.csv`,
+    rides,
+    [
+      { label: "Ride ID", value: (r) => r.id },
+      { label: "Rider", value: (r) => r.rider_name },
+      { label: "Rider email", value: (r) => r.rider_email },
+      { label: "Rider phone", value: (r) => r.rider_phone || "" },
+      { label: "Pickup", value: (r) => r.pickup_address },
+      { label: "Flight number", value: (r) => r.flight_number || "" },
+      { label: "Driver", value: (r) => r.driver_name || "" },
+      { label: "Vehicle type", value: (r) => r.vehicle_type },
+      { label: "Fare (NGN)", value: (r) => r.fare_naira },
+      { label: "Payment status", value: (r) => r.payment_status },
+      { label: "Ride status", value: (r) => r.ride_status },
+      { label: "Created at", value: (r) => r.created_at },
+    ]
+  );
+}
+
 export function RidesPage() {
   const { token, isReadOnly } = useAuth();
   const [rides, setRides] = useState([]);
   const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const debouncedSearch = useDebounced(search, 350);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { rides } = await api.getRides(token, filter || undefined);
+      const { rides } = await api.getRides(token, {
+        status: filter || undefined,
+        search: debouncedSearch || undefined,
+        from: fromDate || undefined,
+        to: toDate || undefined,
+      });
       setRides(rides);
       setError(null);
     } catch (e) {
@@ -34,7 +76,7 @@ export function RidesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, filter]);
+  }, [token, filter, debouncedSearch, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -78,9 +120,10 @@ export function RidesPage() {
           <span className="eyebrow">Fleet oversight</span>
           <h1>Rides</h1>
         </div>
+        <button className="btn ghost" onClick={() => exportRidesCsv(rides)}>Export CSV</button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.id}
@@ -90,6 +133,30 @@ export function RidesPage() {
             {f.label}
           </button>
         ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Search rider, driver, phone, or pickup address…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="field"
+          style={{ flex: 1, minWidth: 240, maxWidth: 340 }}
+        />
+        <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+          From
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="field" />
+        </label>
+        <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+          To
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="field" />
+        </label>
+        {(search || fromDate || toDate) ? (
+          <button className="btn ghost" onClick={() => { setSearch(""); setFromDate(""); setToDate(""); }}>
+            Clear
+          </button>
+        ) : null}
       </div>
 
       {error ? <div className="error-text">{error}</div> : null}

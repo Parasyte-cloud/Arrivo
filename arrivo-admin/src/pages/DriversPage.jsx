@@ -2,8 +2,29 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
-import { formatDateTime } from "../utils";
+import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
+
+function exportDriversCsv(drivers) {
+  downloadCsv(
+    `arrivo-drivers-${new Date().toISOString().slice(0, 10)}.csv`,
+    drivers,
+    [
+      { label: "Name", value: (d) => d.name },
+      { label: "Email", value: (d) => d.email },
+      { label: "Phone", value: (d) => d.phone || "" },
+      { label: "Vehicle", value: (d) => d.make_model || "" },
+      { label: "Plate number", value: (d) => d.plate_number || "" },
+      { label: "Vehicle type", value: (d) => d.vehicle_type || "" },
+      { label: "License number", value: (d) => d.license_number || "" },
+      { label: "LASDRI number", value: (d) => d.lasdri_number || "" },
+      { label: "Joined", value: (d) => d.created_at || "" },
+      { label: "Verified", value: (d) => (d.is_verified ? "Yes" : "No") },
+      { label: "Online", value: (d) => (d.is_online ? "Yes" : "No") },
+      { label: "Rating", value: (d) => d.rating ?? "" },
+    ]
+  );
+}
 
 export function DriversPage() {
   const { token, isReadOnly } = useAuth();
@@ -67,6 +88,7 @@ export function DriversPage() {
           <span className="eyebrow">Driver management</span>
           <h1>Drivers</h1>
         </div>
+        <button className="btn ghost" onClick={() => exportDriversCsv(drivers)}>Export CSV</button>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 24 }}>

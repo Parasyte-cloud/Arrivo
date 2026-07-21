@@ -25,8 +25,18 @@ export const getDrivers = (token) => request("/api/admin/drivers", token);
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
 
-export const getRides = (token, status) =>
-  request(`/api/admin/rides${status ? `?status=${status}` : ""}`, token);
+// Accepts { status, search, from, to } — all optional, combined server-side
+// with AND (see routes/admin.js GET /rides). Kept as one options object
+// rather than positional args since this now has four independent filters.
+export const getRides = (token, { status, search, from, to } = {}) => {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (search) params.set("search", search);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  return request(`/api/admin/rides${qs ? `?${qs}` : ""}`, token);
+};
 export const updateRide = (token, id, payload) =>
   request(`/api/admin/rides/${id}`, token, { method: "PATCH", body: JSON.stringify(payload) });
 

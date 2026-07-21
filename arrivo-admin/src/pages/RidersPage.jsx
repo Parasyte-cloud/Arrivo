@@ -2,8 +2,26 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
-import { formatDateTime } from "../utils";
+import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
+
+function exportRidersCsv(riders) {
+  downloadCsv(
+    `arrivo-riders-${new Date().toISOString().slice(0, 10)}.csv`,
+    riders,
+    [
+      { label: "Name", value: (r) => r.name },
+      { label: "Email", value: (r) => r.email },
+      { label: "Phone", value: (r) => r.phone || "" },
+      { label: "Signed up", value: (r) => r.created_at },
+      { label: "Rides", value: (r) => r.ride_count },
+      { label: "Total spent (NGN)", value: (r) => r.total_spent_naira },
+      { label: "Wallet balance (NGN)", value: (r) => r.wallet_balance_naira },
+      { label: "Last activity", value: (r) => r.last_ride_at || "" },
+      { label: "ID verification", value: (r) => r.id_verification_status },
+    ]
+  );
+}
 
 // Maps the users.id_verification_status column (see db/schema.sql /
 // routes/auth.js POST /submit-id-verification) to a StatusPill tone.
@@ -87,7 +105,10 @@ export function RidersPage() {
           <span className="eyebrow">Rider accounts</span>
           <h1>Riders</h1>
         </div>
-        <button className="btn ghost" onClick={() => exportWaitlistCsv(token)}>Export Waitlist CSV</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn ghost" onClick={() => exportRidersCsv(filtered)}>Export CSV</button>
+          <button className="btn ghost" onClick={() => exportWaitlistCsv(token)}>Export Waitlist CSV</button>
+        </div>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 24 }}>

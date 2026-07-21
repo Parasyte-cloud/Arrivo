@@ -58,10 +58,17 @@ router.get("/drivers/:id/qr", async (req, res) => {
 
 // ── Rides ────────────────────────────────────────────────────────────────
 
+// GET /api/admin/rides — supports the same ?status= filter as before, plus:
+//   ?search=   matches rider name/email/phone, driver name, or pickup address (case-insensitive)
+//   ?from=     rides created on/after this ISO date
+//   ?to=       rides created on/before this ISO date
+// All are optional and combine with AND. Query stays fully parameterized —
+// search is never string-concatenated into the SQL itself — to rule out
+// injection via the admin search box.
 router.get("/rides", async (req, res) => {
-  const { status } = req.query;
+  const { status, search, from, to } = req.query;
   const baseQuery = `
-    SELECT rides.*, riders.name as rider_name, riders.email as rider_email,
+    SELECT rides.*, riders.name as rider_name, riders.email as rider_email, riders.phone as rider_phone,
            driver_users.name as driver_name,
            drivers.current_lat, drivers.current_lng, drivers.location_updated_at
     FROM rides
@@ -69,9 +76,33 @@ router.get("/rides", async (req, res) => {
     LEFT JOIN drivers ON drivers.id = rides.driver_id
     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
   `;
-  const result = status
-    ? await pool.query(baseQuery + ` WHERE rides.ride_status = $1 ORDER BY rides.created_at DESC LIMIT 100`, [status])
-    : await pool.query(baseQuery + ` ORDER BY rides.created_at DESC LIMIT 100`);
+
+  const conditions = [];
+  const params = [];
+
+  if (status) {
+    params.push(status);
+    conditions.push(`rides.ride_status = $${params.length}`);
+  }
+  if (search) {
+    params.push(`%${search.toLowerCase()}%`);
+    const idx = params.length;
+    conditions.push(
+      `(LOWER(riders.name) LIKE $${idx} OR LOWER(riders.email) LIKE $${idx} OR LOWER(COALESCE(riders.phone, '')) LIKE $${idx}
+        OR LOWER(COALESCE(driver_users.name, '')) LIKE $${idx} OR LOWER(rides.pickup_address) LIKE $${idx})`
+    );
+  }
+  if (from) {
+    params.push(from);
+    conditions.push(`rides.created_at >= $${params.length}`);
+  }
+  if (to) {
+    params.push(to);
+    conditions.push(`rides.created_at <= $${params.length}::date + interval '1 day'`);
+  }
+
+  const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pool.query(baseQuery + whereClause + ` ORDER BY rides.created_at DESC LIMIT 200`, params);
 
   res.json({ rides: result.rows.map((r) => ({ ...r, stops: JSON.parse(r.stops || "[]") })) });
 });
