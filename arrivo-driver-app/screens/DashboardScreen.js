@@ -209,6 +209,13 @@ function RequestCard({ ride, busy, onAccept }) {
 function ActiveTripCard({ ride, busy, onAdvance, token }) {
   const isAccepted = ride.ride_status === "accepted";
   const isInProgress = ride.ride_status === "in_progress";
+  // This rider chose "reserve now, pay at pickup" — the fare is only
+  // actually charged (from their wallet) the moment THEY scan your QR
+  // placard, not when you tap Start Trip. Until that happens, there's
+  // nothing to start yet — the backend rejects it too, this just avoids
+  // showing a button that would fail.
+  const awaitingRiderPayment =
+    isAccepted && !!ride.pay_at_pickup && ride.payment_method === "wallet" && ride.payment_status !== "paid";
 
   const [panicState, setPanicState] = useState("idle"); // idle | counting | active
   const [countdown, setCountdown] = useState(3);
@@ -346,6 +353,14 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 
       {busy ? (
         <ActivityIndicator color={colors.amber} />
+      ) : awaitingRiderPayment ? (
+        <>
+          <Text style={styles.awaitingPaymentText}>
+            ⏳ This rider reserved and pays at pickup. Ask them to scan your QR placard to pay and start the trip.
+          </Text>
+          <View style={{ height: spacing.sm }} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
+        </>
       ) : isAccepted ? (
         <>
           <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
@@ -380,4 +395,5 @@ const styles = StyleSheet.create({
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
   panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
+  awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
 });

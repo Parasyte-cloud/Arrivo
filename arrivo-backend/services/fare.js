@@ -39,7 +39,10 @@ const VEHICLE_MIN_FARE_NAIRA = { sedan: 25000, suv: 35000, truck: 50000 };
 const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000 };
 const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
 
-const SECURITY_ESCORT_PRICE_NAIRA = 100000;
+// Priced in USD, like the luxury surcharge above, so it doesn't silently
+// drift in real terms as the naira/dollar rate moves — converted at
+// quote/booking time using whatever services/fx.js currently reports.
+const SECURITY_ESCORT_PRICE_USD = 100;
 const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
 
 // "Luxury" toggle — a flat surcharge on top of the normal distance-based
@@ -100,7 +103,7 @@ async function computeFare({ bookingType, distanceKm, durationMin, vehicleType, 
   if (luxury && LUXURY_SURCHARGE_USD[vehicleType]) {
     total += LUXURY_SURCHARGE_USD[vehicleType] * ngnPerUsd;
   }
-  if (securityEscort) total += SECURITY_ESCORT_PRICE_NAIRA;
+  if (securityEscort) total += SECURITY_ESCORT_PRICE_USD * ngnPerUsd;
   if (fleetSize) total += FLEET_PRICE_NAIRA[fleetSize] || 0;
   return Math.round(total);
 }
@@ -109,7 +112,7 @@ module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
-  SECURITY_ESCORT_PRICE_NAIRA,
+  SECURITY_ESCORT_PRICE_USD,
   FLEET_PRICE_NAIRA,
   VEHICLE_TIER_DELTA_NAIRA,
   VEHICLE_MIN_FARE_NAIRA,

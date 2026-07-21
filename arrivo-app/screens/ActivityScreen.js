@@ -7,10 +7,12 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideHistory } from "../services/api";
+import { useCurrency } from "../hooks/useCurrency";
 
 export default function ActivityScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
+  const { formatFare } = useCurrency(token);
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -63,7 +65,7 @@ export default function ActivityScreen({ navigation }) {
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
                   </Text>
                 </View>
-                <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
+                <Text style={styles.tripPrice}>{formatFare(ride.fare_naira)}</Text>
               </View>
             </Card>
           </Pressable>

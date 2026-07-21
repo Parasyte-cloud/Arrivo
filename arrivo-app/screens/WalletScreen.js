@@ -6,10 +6,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getWallet, initializePayment, verifyWalletTopup } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-
-function formatNaira(amount) {
-  return "₦" + Number(amount || 0).toLocaleString();
-}
+import { useCurrency } from "../hooks/useCurrency";
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -26,6 +23,7 @@ function transactionLabel(tx) {
 export default function WalletScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
+  const { formatFare } = useCurrency(token);
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -143,7 +141,7 @@ export default function WalletScreen({ navigation }) {
 
         <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
           <Text style={styles.balanceLabel}>Balance</Text>
-          <Text style={styles.balance}>{formatNaira(balance)}</Text>
+          <Text style={styles.balance}>{formatFare(balance)}</Text>
         </Card>
 
         <Button
@@ -196,7 +194,7 @@ export default function WalletScreen({ navigation }) {
                     <Text style={styles.txDate}>{formatDate(tx.created_at)}</Text>
                   </View>
                   <Text style={[styles.txAmount, { color: isCredit ? "#8FD9C4" : "#FF9B8A" }]}>
-                    {isCredit ? "+" : ""}{formatNaira(amount)}
+                    {isCredit ? "+" : ""}{formatFare(amount)}
                   </Text>
                 </View>
               </Card>

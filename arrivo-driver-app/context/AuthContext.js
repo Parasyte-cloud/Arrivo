@@ -20,7 +20,13 @@ export function AuthProvider({ children }) {
           setUser(me);
         }
       } catch (e) {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        // Only clear a stored token when the server actually says it's
+        // invalid/expired (401) — a transient network failure (very real
+        // for a driver waiting at the airport with spotty signal) used to
+        // wipe a perfectly good session and force a re-login for no reason.
+        if (e?.status === 401) {
+          await SecureStore.deleteItemAsync(TOKEN_KEY);
+        }
       } finally {
         setInitializing(false);
       }

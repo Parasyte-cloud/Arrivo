@@ -7,7 +7,9 @@ async function request(path, options = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
+    throw err;
   }
   return data;
 }

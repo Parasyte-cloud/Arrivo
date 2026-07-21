@@ -52,6 +52,14 @@ router.post("/", requireAuth, async (req, res) => {
   if (!agreedCancellationPolicy) {
     return res.status(400).json({ error: "You must agree to the Cancellation & Refund Policy before booking" });
   }
+  // Flight number is required for one-way airport pickups — it's the only
+  // way to actually track a rider's flight and show a real ETA (see
+  // GET /api/flights/status and TrackingScreen). Enforced client-side in
+  // the apps and on the website too, but re-checked here since every other
+  // booking rule in this route is verified server-side, not just trusted.
+  if (bookingType === "one_way" && !flightNumber) {
+    return res.status(400).json({ error: "flightNumber is required for one-way bookings" });
+  }
   if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
     return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
   }
@@ -382,6 +390,25 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   const nextAllowed = VALID_STATUS_TRANSITIONS[currentStatus] || [];
   if (!nextAllowed.includes(status)) {
     return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
+  }
+
+  // Closes a real payment-bypass hole: a "reserve now, pay at pickup"
+  // wallet ride (see POST / and POST /scan above) is only ever actually
+  // charged when the RIDER scans the driver's QR code — this route is the
+  // driver's own independent "Start Trip" control, which used to have no
+  // idea a ride could still be unpaid. Without this check, a driver could
+  // just tap Start Trip and skip the rider ever paying at all. Every other
+  // ride (paid up front, or membership, which never charges per trip) is
+  // unaffected — this only blocks the specific unpaid-wallet-reservation case.
+  if (
+    status === "in_progress" &&
+    existing.rows[0].pay_at_pickup &&
+    existing.rows[0].payment_method === "wallet" &&
+    existing.rows[0].payment_status !== "paid"
+  ) {
+    return res.status(400).json({
+      error: "This rider reserved their ride and hasn't paid yet. Ask them to scan your QR placard to confirm pickup and complete payment before starting the trip.",
+    });
   }
 
   const updated = await pool.query(

@@ -5,9 +5,13 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideDetails, triggerPanic, activateListeningDevice, rateRide } from "../services/api";
+import { getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus } from "../services/api";
 
 const POLL_INTERVAL_MS = 10000;
+// Flight status is refreshed far less often than driver location/ride
+// status — it's a paid third-party lookup (aviationstack), not something
+// that needs 10-second freshness the way "where's my driver" does.
+const FLIGHT_POLL_INTERVAL_MS = 120000;
 
 const STATUS_LABEL = {
   requested: "Looking for a driver…",
@@ -35,7 +39,11 @@ export default function TrackingScreen({ route, navigation }) {
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingError, setRatingError] = useState(null);
+  const [flightStatus, setFlightStatus] = useState(null);
+  const [flightLoading, setFlightLoading] = useState(false);
+  const [flightError, setFlightError] = useState(null);
   const pollRef = useRef(null);
+  const flightPollRef = useRef(null);
 
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
@@ -68,6 +76,36 @@ export default function TrackingScreen({ route, navigation }) {
     pollRef.current = setInterval(fetchRide, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
   }, [fetchRide, ride?.ride_status]);
+
+  // This ride's actual flight status — the whole point of requiring a
+  // flight number for one-way bookings (see RouteScreen). Only fetched
+  // once we know the ride's real flight_number, and only for the pickup
+  // airport (LOS), same as HomeScreen's manual "Track" preview uses.
+  const fetchFlightStatus = useCallback(async () => {
+    if (!ride?.flight_number) return;
+    setFlightLoading(true);
+    try {
+      const data = await getFlightStatus(ride.flight_number, "LOS");
+      setFlightStatus(data);
+      setFlightError(null);
+    } catch (e) {
+      setFlightError(e.message || "Couldn't look up your flight right now.");
+    } finally {
+      setFlightLoading(false);
+    }
+  }, [ride?.flight_number]);
+
+  useEffect(() => {
+    if (!ride?.flight_number) return;
+    fetchFlightStatus();
+  }, [ride?.flight_number, fetchFlightStatus]);
+
+  useEffect(() => {
+    if (!ride?.flight_number) return;
+    if (["completed", "cancelled"].includes(ride?.ride_status)) return;
+    flightPollRef.current = setInterval(fetchFlightStatus, FLIGHT_POLL_INTERVAL_MS);
+    return () => clearInterval(flightPollRef.current);
+  }, [ride?.flight_number, ride?.ride_status, fetchFlightStatus]);
 
   const shareRide = async () => {
     try {
@@ -184,6 +222,43 @@ export default function TrackingScreen({ route, navigation }) {
         {loadError ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.warningText}>{loadError}</Text>
+          </Card>
+        ) : null}
+
+        {ride?.flight_number ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={styles.cardLabel}>✈️ Flight {ride.flight_number}</Text>
+              {flightLoading ? (
+                <ActivityIndicator size="small" color={colors.amber} />
+              ) : (
+                <Pressable onPress={fetchFlightStatus} hitSlop={8}>
+                  <Text style={styles.flightRefresh}>Refresh</Text>
+                </Pressable>
+              )}
+            </View>
+            {flightStatus ? (
+              <>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                  <Text style={styles.meta}>{flightStatus.airline || "—"}</Text>
+                  <Tag
+                    label={(flightStatus.status || "unknown").toUpperCase()}
+                    tone={flightStatus.status === "landed" ? "teal" : "amber"}
+                  />
+                </View>
+                <Text style={styles.meta}>
+                  Estimated landing:{" "}
+                  {flightStatus.arrival?.estimated
+                    ? new Date(flightStatus.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "—"}
+                  {flightStatus.arrival?.terminal ? ` · Terminal ${flightStatus.arrival.terminal}` : ""}
+                </Text>
+              </>
+            ) : flightError ? (
+              <Text style={styles.warningText}>{flightError}</Text>
+            ) : (
+              <Text style={styles.meta}>Looking up your flight…</Text>
+            )}
           </Card>
         ) : null}
 
@@ -330,6 +405,7 @@ const styles = StyleSheet.create({
   name: { color: colors.dark.text, fontWeight: "700", fontSize: 14 },
   meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   cardLabel: { color: colors.dark.text, fontWeight: "700", fontSize: 13, marginBottom: 4 },
+  flightRefresh: { color: colors.tealBright, fontSize: 11.5, fontWeight: "600" },
   starRow: { flexDirection: "row", gap: 6, marginTop: spacing.sm, marginBottom: spacing.sm },
   starChar: { fontSize: 28, color: colors.amber },
   input: {

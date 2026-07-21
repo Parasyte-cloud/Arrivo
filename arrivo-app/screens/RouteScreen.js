@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -127,8 +127,15 @@ export default function RouteScreen({ navigation, route }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingType, vehicle, securityEscort, fleetSize, luxury, pickupCoords, destinationCoords, excludedArea, overCapacity]);
 
+  // Flight number is required for one-way airport pickups — it's the only
+  // way to actually track the rider's flight and get a real ETA (see
+  // TrackingScreen, which fetches live flight status from it). Not
+  // required for charter/Chauffeur bookings, which aren't tied to a flight.
+  const needsFlightNumber = bookingType === "one_way";
+
   const canConfirm =
     !excludedArea && !overCapacity && pickup.trim().length > 0 && destination.trim().length > 0 &&
+    (!needsFlightNumber || flightNumber.trim().length > 0) &&
     coordsResolved && !!quote && !quoteLoading;
 
   const confirm = () => {
@@ -159,7 +166,12 @@ export default function RouteScreen({ navigation, route }) {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Set your route</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -217,13 +229,24 @@ export default function RouteScreen({ navigation, route }) {
             <Ionicons name="add-circle-outline" size={16} color={colors.tealBright} />
             <Text style={styles.addStopText}>Add destination</Text>
           </Pressable>
-          {needsCoords && pickup.trim() && destination.trim() && !coordsResolved ? (
-            <Text style={styles.hintText}>Select a suggested address for pickup and destination so we can calculate your fare.</Text>
-          ) : null}
         </Card>
 
+        {needsCoords && pickup.trim() && destination.trim() && !coordsResolved ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.hintText}>
+              Tap one of the suggested addresses that appears under pickup/destination as you type — typing an
+              address without selecting a suggestion won't let us calculate your fare or confirm the booking.
+            </Text>
+          </Card>
+        ) : null}
+
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Flight number (optional)</Text>
+          <Text style={styles.cardLabel}>Flight number{needsFlightNumber ? "" : " (optional)"}</Text>
+          {needsFlightNumber ? (
+            <Text style={styles.addonNote}>
+              Required — this is how we track your flight and know your real arrival time.
+            </Text>
+          ) : null}
           <TextInput
             style={styles.flightInput}
             value={flightNumber}
@@ -246,7 +269,11 @@ export default function RouteScreen({ navigation, route }) {
           pickup={pickupCoords ? { ...pickupCoords, label: "Pickup" } : null}
           destination={destinationCoords ? { ...destinationCoords, label: "Destination" } : null}
           etaLabel={quote ? `ETA ~${Math.round(quote.durationMin)} min` : "ETA —"}
-          distanceLabel={quote ? `${stops.length} stop${stops.length > 1 ? "s" : ""} · ${quote.distanceKm.toFixed(1)}km` : undefined}
+          distanceLabel={
+            quote && quote.distanceKm != null
+              ? `${stops.length} stop${stops.length > 1 ? "s" : ""} · ${quote.distanceKm.toFixed(1)}km`
+              : undefined
+          }
         />
 
         <Card tone="dark" style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
@@ -361,6 +388,8 @@ export default function RouteScreen({ navigation, route }) {
 
         {!pickup.trim() || !destination.trim() ? (
           <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
+        ) : needsFlightNumber && !flightNumber.trim() ? (
+          <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
         ) : quoteError ? (
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}
@@ -380,6 +409,7 @@ export default function RouteScreen({ navigation, route }) {
           />
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
