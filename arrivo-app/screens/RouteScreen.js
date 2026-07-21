@@ -40,6 +40,13 @@ function findExcludedArea(address) {
 // passengers than SUV/Executive since the bed is for cargo, not people —
 // mirrors arrivo-backend/services/fare.js exactly.
 const MAX_PASSENGERS = { sedan: 3, suv: 5, truck: 5, pickup: 3 };
+// A group bigger than one vehicle's seats no longer blocks booking — it
+// books enough of the SAME vehicle type to fit everyone instead (see
+// vehicleCount below), same idea as arrivo-backend/services/fare.js's
+// computeVehicleCount, which is what actually prices this. Mirrored here
+// purely for instant UI feedback before the quote round-trip comes back;
+// the backend independently re-derives and enforces the real cap.
+const MAX_AUTO_VEHICLE_COUNT = 6;
 const VEHICLES = [
   { id: "sedan", label: "Standard Sedan" },
   { id: "suv", label: "Premium SUV" },
@@ -121,6 +128,7 @@ export default function RouteScreen({ navigation, route }) {
   const [vehicle, setVehicle] = useState("suv");
   const [bookingType, setBookingType] = useState(route?.params?.presetBookingType || "one_way");
   const [adults, setAdults] = useState("1");
+  const [children, setChildren] = useState("0");
   const [securityEscort, setSecurityEscort] = useState(false);
   const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
@@ -139,20 +147,19 @@ export default function RouteScreen({ navigation, route }) {
   const [scheduleHour, setScheduleHour] = useState("9"); // 0-23
   const [scheduleMinute, setScheduleMinute] = useState("00");
 
-  // "Full Day" can be booked for more than a single day now — a dropdown of
-  // 2-6 days, or type a number directly, either updates the same value.
-  // Capped at 6 to match arrivo-backend/services/fare.js's
-  // MAX_FULL_DAY_COUNT: past 6 days, "Full week" is already the cheaper way
-  // to book that much time, so Full Day intentionally doesn't compete with
-  // it past that point. Defaults to 1 — "leave it as it is" needs no
-  // interaction at all. Irrelevant for every other booking type.
-  const MAX_FULL_DAY_COUNT = 6;
+  // "Full Day" can be booked for any number of days — just type a number
+  // and the fare is calculated on checkout accordingly. No chip picker, no
+  // preset ceiling here; arrivo-backend/services/fare.js still enforces a
+  // generous sanity-check upper bound server-side (see MAX_FULL_DAY_COUNT
+  // there) purely to reject garbage input, not to steer riders elsewhere.
+  // Defaults to 1 — "leave it as it is" needs no interaction at all.
+  // Irrelevant for every other booking type.
   const [fullDayCount, setFullDayCount] = useState(1);
   const [fullDayCountInput, setFullDayCountInput] = useState("1");
   const setFullDayCountClamped = (n) => {
-    const clamped = Math.min(Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1), MAX_FULL_DAY_COUNT);
-    setFullDayCount(clamped);
-    setFullDayCountInput(String(clamped));
+    const normalized = Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1);
+    setFullDayCount(normalized);
+    setFullDayCountInput(String(normalized));
   };
 
   // Airline-style luggage entry: carry-on stays with the rider and never
@@ -175,6 +182,8 @@ export default function RouteScreen({ navigation, route }) {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState(null);
   const quoteDebounceRef = useRef(null);
+  // See the quote-fetch effect below for what this guards against.
+  const quoteRequestIdRef = useRef(0);
 
   const addStop = () => setStops((s) => [...s, ""]);
   const updateStop = (i, val) => {
@@ -185,9 +194,22 @@ export default function RouteScreen({ navigation, route }) {
   const destination = stops[stops.length - 1] || "";
   const excludedArea = useMemo(() => findExcludedArea(destination) || findExcludedArea(pickup), [destination, pickup]);
   const selectedBooking = BOOKING_TYPES.find((b) => b.id === bookingType);
-  const passengerCount = Math.max(1, Number(adults) || 0);
+  // Children take up a seat same as an adult does for capacity purposes —
+  // matches the website's booking.js (passengers = adults + children
+  // against MAX_PASSENGERS). Only adults has ever been collected here
+  // until now; children was silently missing from the app entirely.
+  const passengerCount = Math.max(1, (Number(adults) || 0) + (Number(children) || 0));
   const maxForVehicle = MAX_PASSENGERS[vehicle];
-  const overCapacity = passengerCount > maxForVehicle;
+  // How many of the selected vehicle it actually takes to fit everyone —
+  // e.g. 8 passengers in a 5-seat SUV needs 2 SUVs. No longer a hard stop;
+  // the fare (see the quote effect below, and computeFare server-side)
+  // scales with this instead of the booking being blocked outright.
+  const vehicleCount = Math.max(1, Math.ceil(passengerCount / maxForVehicle));
+  const needsMultipleVehicles = vehicleCount > 1;
+  // Past MAX_AUTO_VEHICLE_COUNT vehicles, no driver pool can realistically
+  // be matched for a single trip automatically — this is the one case that
+  // still blocks booking, same as an excluded-area address.
+  const groupTooLarge = vehicleCount > MAX_AUTO_VEHICLE_COUNT;
   // Both "one_way" (arrival pickup) and "dropoff" (airport drop-off) are
   // location-priced trips needing real coordinates — only the multi-day
   // charter types (full_day/week/month) skip this.
@@ -208,9 +230,12 @@ export default function RouteScreen({ navigation, route }) {
   const scheduledTimeValid = !needsScheduledTime || scheduledDateObj.getTime() > Date.now();
 
   // Auto-select the recommended vehicle until the rider manually picks one
-  // themselves — and if their manual pick later becomes too small for a
-  // growing passenger count, fall back to the recommendation again rather
-  // than leave an invalid selection standing. Same rule as booking.js.
+  // themselves. A manual pick is no longer abandoned just because the
+  // passenger count exceeds THAT vehicle's single-vehicle capacity — it now
+  // just books more than one of it (see vehicleCount above). Only bail back
+  // to the recommendation if the manually-picked vehicle would need more
+  // than MAX_AUTO_VEHICLE_COUNT of itself to fit everyone, since at that
+  // point a bigger-capacity vehicle type genuinely means fewer vehicles.
   useEffect(() => {
     if (!vehicleManuallyPicked) {
       if (vehicle !== recommendedVehicle && passengerCount <= MAX_PASSENGERS[recommendedVehicle]) {
@@ -218,25 +243,43 @@ export default function RouteScreen({ navigation, route }) {
       }
       return;
     }
-    if (passengerCount > MAX_PASSENGERS[vehicle]) {
+    if (Math.ceil(passengerCount / MAX_PASSENGERS[vehicle]) > MAX_AUTO_VEHICLE_COUNT) {
       setVehicleManuallyPicked(false);
       setVehicle(recommendedVehicle);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommendedVehicle, passengerCount, vehicleManuallyPicked]);
+  }, [recommendedVehicle, passengerCount, vehicleManuallyPicked, vehicle]);
 
   // Re-fetch a fare quote whenever anything that affects price changes.
   // Debounced so switching vehicle/add-ons rapidly doesn't fire a request
   // per click, and — for one-way trips — only fires once both addresses
   // have resolved real coordinates (typing alone never triggers billed
   // Distance Matrix calls, only picking a suggestion does).
+  //
+  // quoteRequestIdRef guards against a real race condition: clearTimeout
+  // above only cancels a request that hasn't fired its network call yet —
+  // if an OLDER request is already in flight (awaiting getFareQuote) when
+  // something changes again, nothing stops it from resolving AFTER the
+  // newer request and overwriting a fresh, correct quote with its own
+  // stale result (or a stale error, e.g. "vehicleType is required" from a
+  // moment before the vehicle had actually settled — reported as the quote
+  // error sticking around even after picking a valid vehicle). Each
+  // request captures the id current when IT started; only the response
+  // whose id still matches the ref when it resolves is allowed to touch
+  // state, so a late-arriving stale response is simply discarded.
   useEffect(() => {
     clearTimeout(quoteDebounceRef.current);
+    quoteRequestIdRef.current += 1;
+    const requestId = quoteRequestIdRef.current;
     setQuote(null);
     setQuoteError(null);
 
     if (needsCoords && !coordsResolved) return; // nothing to quote yet
-    if (excludedArea || overCapacity) return;
+    // overCapacity no longer blocks the quote — a bigger group just prices
+    // as multiple vehicles (see vehicleCount/adults/children in payload
+    // below). groupTooLarge is the one passenger-related case that still
+    // blocks, same as an excluded-area address.
+    if (excludedArea || groupTooLarge) return;
 
     setQuoteLoading(true);
     quoteDebounceRef.current = setTimeout(async () => {
@@ -245,6 +288,11 @@ export default function RouteScreen({ navigation, route }) {
           bookingType, vehicleType: vehicle, securityEscort, fleetSize,
           luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
           durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
+          // The backend re-derives vehicleCount from these two (never
+          // trusts a client-sent count) and scales the fare accordingly —
+          // see arrivo-backend/services/fare.js computeVehicleCount.
+          adults: Number(adults) || 1,
+          children: Number(children) || 0,
         };
         if (needsCoords) {
           // pickupAddress/destinationAddress are what actually price a
@@ -260,16 +308,18 @@ export default function RouteScreen({ navigation, route }) {
           payload.destinationLng = destinationCoords.lng;
         }
         const result = await getFareQuote(token, payload);
+        if (quoteRequestIdRef.current !== requestId) return; // a newer request has already superseded this one
         setQuote(result);
       } catch (e) {
+        if (quoteRequestIdRef.current !== requestId) return;
         setQuoteError(e.message || "Couldn't calculate a fare for this trip. Please try again.");
       } finally {
-        setQuoteLoading(false);
+        if (quoteRequestIdRef.current === requestId) setQuoteLoading(false);
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(quoteDebounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, overCapacity]);
+  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, groupTooLarge, adults, children]);
 
   // Flight number is required for one-way airport pickups — it's the only
   // way to actually track the rider's flight and get a real ETA (see
@@ -278,7 +328,7 @@ export default function RouteScreen({ navigation, route }) {
   const needsFlightNumber = bookingType === "one_way";
 
   const canConfirm =
-    !excludedArea && !overCapacity && pickup.trim().length > 0 && destination.trim().length > 0 &&
+    !excludedArea && !groupTooLarge && pickup.trim().length > 0 && destination.trim().length > 0 &&
     (!needsFlightNumber || flightNumber.trim().length > 0) &&
     scheduledTimeValid &&
     coordsResolved && !!quote && !quoteLoading;
@@ -289,13 +339,15 @@ export default function RouteScreen({ navigation, route }) {
       amountNaira: quote.fareNaira,
       distanceKm: quote.distanceKm,
       durationMin: quote.durationMin,
-      label: `${VEHICLES.find((v) => v.id === vehicle).label}. ${selectedBooking.label}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""}`,
+      label: `${VEHICLES.find((v) => v.id === vehicle).label}${needsMultipleVehicles ? ` × ${vehicleCount}` : ""}. ${selectedBooking.label}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""}`,
       pickupAddress: pickup,
       stops,
       flightNumber: flightNumber.trim() || undefined,
       vehicleType: vehicle,
       bookingType: selectedBooking.id,
       durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
+      adults: Number(adults) || 1,
+      children: Number(children) || 0,
       securityEscort,
       fleetSize,
       luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
@@ -336,31 +388,18 @@ export default function RouteScreen({ navigation, route }) {
           </View>
           {bookingType === "full_day" ? (
             <View style={{ marginTop: spacing.sm }}>
-              <Text style={styles.meta}>How many full days? (leave at 1 if it's just the one)</Text>
-              <View style={[styles.bookingRow, { marginTop: 6 }]}>
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <Pressable
-                    key={n}
-                    onPress={() => setFullDayCountClamped(n)}
-                    style={[styles.bookingChip, fullDayCount === n && styles.bookingChipActive]}
-                  >
-                    <Text style={[styles.bookingChipText, fullDayCount === n && styles.bookingChipTextActive]}>{n} day{n > 1 ? "s" : ""}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: spacing.sm }}>
-                <Text style={styles.meta}>Or type a number (1–{MAX_FULL_DAY_COUNT}):</Text>
-                <TextInput
-                  style={[styles.input, { width: 60, marginLeft: 8, marginBottom: 0, textAlign: "center" }]}
-                  value={fullDayCountInput}
-                  onChangeText={(text) => {
-                    setFullDayCountInput(text.replace(/[^0-9]/g, ""));
-                  }}
-                  onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              </View>
+              <Text style={styles.meta}>Number of days</Text>
+              <TextInput
+                style={[styles.input, { marginTop: 6 }]}
+                value={fullDayCountInput}
+                onChangeText={(text) => {
+                  setFullDayCountInput(text.replace(/[^0-9]/g, ""));
+                }}
+                onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
+                placeholder="1"
+                placeholderTextColor={colors.dark.textMuted}
+                keyboardType="number-pad"
+              />
             </View>
           ) : null}
         </Card>
@@ -522,9 +561,23 @@ export default function RouteScreen({ navigation, route }) {
               placeholderTextColor={colors.dark.textMuted}
             />
           </View>
-          {overCapacity ? (
+          <View style={styles.stopRow}>
+            <Text style={styles.passengerLabel}>Children</Text>
+            <TextInput
+              style={styles.passengerInput}
+              value={children}
+              onChangeText={setChildren}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.dark.textMuted}
+            />
+          </View>
+          {groupTooLarge ? (
             <Text style={styles.warningText}>
-              This vehicle fits up to {maxForVehicle}. Choose a larger vehicle or add fleet accompaniment below for bigger groups.
+              {passengerCount} passengers is more than we can automatically match to vehicles (up to {MAX_AUTO_VEHICLE_COUNT * maxForVehicle} in {VEHICLES.find((v) => v.id === vehicle).label}s). Please contact RideArrivo directly to arrange a larger group booking.
+            </Text>
+          ) : needsMultipleVehicles ? (
+            <Text style={styles.hintText}>
+              This vehicle fits up to {maxForVehicle} — we'll book {vehicleCount} × {VEHICLES.find((v) => v.id === vehicle).label} to fit all {passengerCount} passengers, and the fare covers all {vehicleCount}.
             </Text>
           ) : null}
         </Card>
@@ -568,7 +621,12 @@ export default function RouteScreen({ navigation, route }) {
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
           {VEHICLES.map((v) => {
-            const tooSmall = passengerCount > MAX_PASSENGERS[v.id];
+            // A vehicle is only actually unselectable if even multiplying it
+            // (see vehicleCount above) can't realistically fit the group —
+            // otherwise it just books more than one, so every vehicle stays
+            // tappable regardless of passenger count.
+            const neededForThisVehicle = Math.max(1, Math.ceil(passengerCount / MAX_PASSENGERS[v.id]));
+            const tooSmall = neededForThisVehicle > MAX_AUTO_VEHICLE_COUNT;
             return (
               <Pressable
                 key={v.id}
@@ -587,8 +645,9 @@ export default function RouteScreen({ navigation, route }) {
                   </Text>
                   <Text style={styles.vehicleCapacity}>
                     Fits up to {MAX_PASSENGERS[v.id]} passengers
+                    {neededForThisVehicle > 1 ? ` · needs ${neededForThisVehicle} for your group` : ""}
                     {v.id === "pickup" ? " · best for heavy or bulky luggage" : ""}
-                    {!tooSmall && recommendedVehicle === v.id ? " · Recommended for your luggage" : ""}
+                    {!tooSmall && neededForThisVehicle === 1 && recommendedVehicle === v.id ? " · Recommended for your luggage" : ""}
                   </Text>
                 </View>
               </Pressable>

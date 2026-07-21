@@ -11,6 +11,7 @@
     "earnWeekly": "每周赚钱",
     "listVehicle": "登记您的车辆接单 →",
     "bookAirportPickup": "预订机场接送",
+    "bookAirportDropoff": "预订机场送机",
     "flightNotFound": "未找到该航班。请检查航班号后重试。",
     "landing": "降落时间 {{time}}",
     "terminal": "航站楼 {{terminal}}",

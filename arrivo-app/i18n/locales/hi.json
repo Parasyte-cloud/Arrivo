@@ -11,6 +11,7 @@
     "earnWeekly": "साप्ताहिक कमाएं",
     "listVehicle": "पिकअप के लिए अपना वाहन सूचीबद्ध करें →",
     "bookAirportPickup": "एयरपोर्ट पिकअप बुक करें",
+    "bookAirportDropoff": "एयरपोर्ट ड्रॉप-ऑफ बुक करें",
     "flightNotFound": "वह फ़्लाइट नहीं मिली। नंबर जांचकर फिर से कोशिश करें।",
     "landing": "लैंडिंग {{time}}",
     "terminal": "टर्मिनल {{terminal}}",

@@ -11,6 +11,7 @@
     "earnWeekly": "Wöchentlich verdienen",
     "listVehicle": "Fahrzeug für Abholungen registrieren →",
     "bookAirportPickup": "Flughafenabholung buchen",
+    "bookAirportDropoff": "Flughafen-Abgabe buchen",
     "flightNotFound": "Dieser Flug wurde nicht gefunden. Bitte Nummer prüfen und erneut versuchen.",
     "landing": "Landung {{time}}",
     "terminal": "Terminal {{terminal}}",

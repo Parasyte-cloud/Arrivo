@@ -11,6 +11,7 @@
     "earnWeekly": "Ganhe semanalmente",
     "listVehicle": "Cadastre seu veículo para buscas →",
     "bookAirportPickup": "Reservar busca no aeroporto",
+    "bookAirportDropoff": "Reservar saída para o aeroporto",
     "flightNotFound": "Voo não encontrado. Verifique o número e tente novamente.",
     "landing": "Pouso {{time}}",
     "terminal": "Terminal {{terminal}}",

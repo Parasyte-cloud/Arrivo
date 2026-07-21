@@ -11,6 +11,7 @@
     "earnWeekly": "Earn weekly",
     "listVehicle": "List your vehicle for pickups →",
     "bookAirportPickup": "Book Airport Pickup",
+    "bookAirportDropoff": "Book Airport Drop-off",
     "flightNotFound": "Couldn't find that flight. Check the number and try again.",
     "landing": "Landing {{time}}",
     "terminal": "Terminal {{terminal}}",

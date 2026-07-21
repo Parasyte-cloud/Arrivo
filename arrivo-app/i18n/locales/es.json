@@ -11,6 +11,7 @@
     "earnWeekly": "Gana semanalmente",
     "listVehicle": "Registra tu vehículo para recogidas →",
     "bookAirportPickup": "Reservar recogida en el aeropuerto",
+    "bookAirportDropoff": "Reservar salida al aeropuerto",
     "flightNotFound": "No se encontró ese vuelo. Verifica el número e inténtalo de nuevo.",
     "landing": "Aterrizaje {{time}}",
     "terminal": "Terminal {{terminal}}",

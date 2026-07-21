@@ -31,6 +31,17 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  // Editing the flight number after a failed lookup left the old "No
+  // matching flight found" error on screen indefinitely (only Track re-firing
+  // the request would clear it) — clear both the stale error and any
+  // previously tracked flight result as soon as the rider starts typing a
+  // different number, same as every other flight-input field in the app.
+  const onFlightNumberChange = (text) => {
+    setFlightNumber(text);
+    setError(null);
+    setFlight(null);
+  };
+
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
@@ -40,9 +51,19 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.greet}>{t("home.greeting", { name: user?.name?.split(" ")[0] || "there" })}</Text>
             <Text style={styles.sub}>{t("home.whereTo")}</Text>
           </View>
-          <View style={styles.pill}>
-            <Text style={styles.pillText}>MMIA · 6:40pm</Text>
-          </View>
+          {/* Was a hardcoded "MMIA · 6:40pm" placeholder — always showing the
+              same fake airport/time regardless of what the rider actually
+              searched, which reads as a real upcoming trip when there isn't
+              one. Now only appears once a real flight has been tracked
+              below, built from that flight's own arrival airport/ETA. */}
+          {flight?.arrival?.estimated ? (
+            <View style={styles.pill}>
+              <Text style={styles.pillText}>
+                {flight.arrival.airport || "MMIA"} ·{" "}
+                {new Date(flight.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -61,7 +82,7 @@ export default function HomeScreen({ navigation }) {
               placeholder={t("home.flightPlaceholder")}
               placeholderTextColor={colors.dark.textMuted}
               value={flightNumber}
-              onChangeText={setFlightNumber}
+              onChangeText={onFlightNumberChange}
               autoCapitalize="characters"
               onSubmitEditing={trackFlight}
               returnKeyType="search"
@@ -107,6 +128,18 @@ export default function HomeScreen({ navigation }) {
         <Button
           label={t("home.bookAirportPickup")}
           onPress={() => navigation.navigate("Route", flightNumber.trim() ? { flightNumber: flightNumber.trim().toUpperCase() } : undefined)}
+          trailingIcon
+        />
+        {/* Airport Drop-off was only reachable indirectly (switching the
+            booking-type chip inside "Book a ride") — not obvious it existed
+            at all from Home. Same weight as Airport Pickup's CTA above, just
+            ghost-styled to keep Pickup as the primary action. */}
+        <View style={{ height: spacing.sm }} />
+        <Button
+          label={t("home.bookAirportDropoff")}
+          onPress={() => navigation.navigate("Route", { presetBookingType: "dropoff" })}
+          variant="ghost"
+          tone="dark"
           trailingIcon
         />
       </ScrollView>

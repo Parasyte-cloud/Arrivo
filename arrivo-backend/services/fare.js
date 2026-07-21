@@ -142,22 +142,58 @@ function roundUpToNearest(amount, step) {
 const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000, pickup: 11000 };
 const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
 
-// A rider booking 'full_day' can now ask for more than one consecutive full
-// day (e.g. a 3-day chauffeur booking) instead of only ever a single day —
-// "someone spotted" that the day count was collected (duration_days on the
-// ride) but never actually multiplied into the charge. Capped at 6: past
-// that, 'full_week' (7 days for 30 multiplier-units, vs. 6 days of
-// full_day at 6 units/day = 36 units) is already the cheaper way to book
-// the same length of time, so full_day intentionally doesn't compete with
-// it past 6 days. full_week/full_month stay flat packages, unaffected —
-// they aren't priced "per day" the same way full_day is.
-const MAX_FULL_DAY_COUNT = 6;
+// A rider booking 'full_day' can ask for any number of consecutive full
+// days (e.g. a 3-day, an 18-day, or a 78-day chauffeur booking) instead of
+// only ever a single day — the day count (duration_days on the ride) is
+// multiplied straight into the charge, uncapped from the rider's
+// perspective. MAX_FULL_DAY_COUNT below is not a pricing ceiling, just a
+// server-side sanity bound to reject obviously-bad input (typos, abuse),
+// set generously high so it never gets in the way of a real booking.
+// full_week/full_month stay flat packages, unaffected — they aren't priced
+// "per day" the same way full_day is.
+const MAX_FULL_DAY_COUNT = 365;
 
 // Priced in USD so it doesn't silently drift in real terms as the
 // naira/dollar rate moves — converted at quote/booking time using whatever
 // services/fx.js currently reports.
 const SECURITY_ESCORT_PRICE_USD = 100;
 const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
+
+// How many passengers each vehicle type actually seats — mirrors the
+// identical MAX_PASSENGERS map kept client-side in both apps' booking
+// screens and the website's booking.js. Duplicated here (not imported from
+// anywhere shared) so vehicleCount below is independently re-derived
+// server-side from passengerCount, never trusted from whatever a client
+// sends — same "never trust the client with money-relevant numbers"
+// principle as every other number in this file. "pickup" (Pickup Truck)
+// seats fewer than SUV/Executive since the bed is for cargo, not people.
+const MAX_PASSENGERS = { sedan: 3, suv: 5, truck: 5, pickup: 3 };
+
+// A group bigger than a single vehicle holds no longer blocks the booking —
+// it books enough of the SAME vehicle type to fit everyone instead, and the
+// fare below scales with that count. Capped well short of "no driver could
+// realistically staff this many vehicles for one trip at once": past
+// MAX_AUTO_VEHICLE_COUNT vehicles, riders are asked to contact RideArrivo
+// directly to arrange a larger group/convoy booking rather than the app
+// silently promising an arbitrarily large one.
+const MAX_AUTO_VEHICLE_COUNT = 6;
+
+// Given how many people are riding and which vehicle type they picked,
+// works out how many of that vehicle are actually needed to fit everyone —
+// e.g. 8 passengers in a 5-seat SUV needs 2 SUVs. Throws (same pattern as
+// findExcludedArea's caller) if that would take more vehicles than
+// MAX_AUTO_VEHICLE_COUNT, so a huge, unrealistic group gets a clear message
+// instead of a silently-accepted booking nobody can actually fulfill.
+function computeVehicleCount(passengerCount, vehicleType) {
+  const capacity = MAX_PASSENGERS[vehicleType] || 1;
+  const count = Math.max(1, Math.ceil((Number(passengerCount) || 1) / capacity));
+  if (count > MAX_AUTO_VEHICLE_COUNT) {
+    throw new Error(
+      `${passengerCount} passengers is more than we can automatically match to vehicles (up to ${MAX_AUTO_VEHICLE_COUNT} × ${vehicleType}, ${MAX_AUTO_VEHICLE_COUNT * capacity} people max). Please contact RideArrivo directly to arrange a larger group booking.`
+    );
+  }
+  return count;
+}
 
 // "Luxury" toggle — a flat surcharge on top of the normal per-location
 // (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
@@ -194,9 +230,10 @@ function computeCharterFare({ vehicleType, bookingType, durationDays }) {
   const multiplier = CHARTER_MULTIPLIER[bookingType];
   if (!multiplier) throw new Error(`computeCharterFare: unknown bookingType '${bookingType}'`);
   // Only 'full_day' scales linearly with an explicit day count — a rider
-  // picking "3 days" pays exactly 3x a single full day. full_week/full_month
-  // are already fixed multi-day packages (see MAX_FULL_DAY_COUNT above), so
-  // durationDays is ignored for those regardless of what a client sends.
+  // entering "18 days" pays exactly 18x a single full day, any value up to
+  // the sanity bound (MAX_FULL_DAY_COUNT above). full_week/full_month are
+  // already fixed multi-day packages, so durationDays is ignored for those
+  // regardless of what a client sends.
   const dayCount = bookingType === "full_day" ? Math.min(Math.max(Number(durationDays) || 1, 1), MAX_FULL_DAY_COUNT) : 1;
   return (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * multiplier * dayCount;
 }
@@ -208,11 +245,18 @@ function computeCharterFare({ vehicleType, bookingType, durationDays }) {
 // LUXURY_SURCHARGE_USD above) — silently ignored for any other vehicle
 // type rather than erroring, since the client just wouldn't offer the
 // toggle for those.
+// passengerCount drives vehicleCount (see computeVehicleCount above) — a
+// group too big for one vehicle is charged for as many of that same
+// vehicle type as it takes to fit everyone (base fare AND luxury surcharge
+// scale with vehicleCount; securityEscort/fleetSize don't, since those are
+// a flat escort/convoy arrangement, not per transport vehicle). Defaults to
+// 1 so every existing caller that doesn't pass it (charter bookings that
+// never collected a passenger count) is unaffected.
 // ngnPerUsd must be passed in by the caller (from services/fx.js) rather
 // than fetched in here, so this function stays a pure/sync calculation —
 // easy to unit-test and to call from a request handler that already has
 // the rate cached.
-async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays }) {
+async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays, passengerCount = 1 }) {
   // 'dropoff' (Airport Drop-off — departing rider, pickup → airport) is
   // priced with the exact same per-location formula as 'one_way' (arriving
   // rider, airport → destination) — computeOneWayFare already prices off
@@ -222,9 +266,11 @@ async function computeFare({ bookingType, pickupAddress, destinationAddress, veh
       ? computeOneWayFare({ pickupAddress, destinationAddress, vehicleType })
       : computeCharterFare({ vehicleType, bookingType, durationDays });
 
-  let total = base;
+  const vehicleCount = computeVehicleCount(passengerCount, vehicleType);
+
+  let total = base * vehicleCount;
   if (luxury && LUXURY_SURCHARGE_USD[vehicleType]) {
-    total += LUXURY_SURCHARGE_USD[vehicleType] * ngnPerUsd;
+    total += LUXURY_SURCHARGE_USD[vehicleType] * ngnPerUsd * vehicleCount;
   }
   if (securityEscort) total += SECURITY_ESCORT_PRICE_USD * ngnPerUsd;
   if (fleetSize) total += FLEET_PRICE_NAIRA[fleetSize] || 0;
@@ -235,6 +281,7 @@ module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
+  computeVehicleCount,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,
@@ -248,4 +295,6 @@ module.exports = {
   EXCLUDED_AREAS,
   NIGHT_MULTIPLIER,
   MAX_FULL_DAY_COUNT,
+  MAX_PASSENGERS,
+  MAX_AUTO_VEHICLE_COUNT,
 };

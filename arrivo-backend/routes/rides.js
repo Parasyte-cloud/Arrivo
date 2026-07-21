@@ -7,7 +7,7 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT } = require("../services/fare");
+const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 
@@ -54,8 +54,26 @@ router.post("/", requireAuth, async (req, res) => {
     distanceKm: clientDistanceKm, durationMin: clientDurationMin, securityEscort, fleetSize, paymentMethod = "card",
     emergencyContactName, emergencyContactPhone, dashCamConsent, luxury, payAtPickup,
     pickupLat, pickupLng, destinationLat, destinationLng,
-    scheduledPickupAt, linkedRideId,
+    scheduledPickupAt, linkedRideId, adults = 1, children = 0,
   } = req.body;
+  // Validated as whole numbers in a sane range BEFORE anything downstream
+  // touches them — adults/children end up written straight into INTEGER
+  // columns below, and an un-validated fractional value (e.g. 2.5) would
+  // otherwise reach Postgres and throw an uncaught type error (a 500, not a
+  // clean 400), while a huge or negative value could produce nonsensical
+  // stored data even though computeVehicleCount's own MAX_AUTO_VEHICLE_COUNT
+  // check only guards the derived passengerCount sum, not these individually.
+  if (!Number.isInteger(Number(adults)) || Number(adults) < 1 || Number(adults) > 100) {
+    return res.status(400).json({ error: "adults must be a whole number from 1 to 100." });
+  }
+  if (!Number.isInteger(Number(children)) || Number(children) < 0 || Number(children) > 100) {
+    return res.status(400).json({ error: "children must be a whole number from 0 to 100." });
+  }
+  // Children take up a seat same as an adult for capacity purposes — see
+  // computeVehicleCount in services/fare.js, which this passengerCount feeds
+  // into. Recomputed from adults/children here rather than trusted as a
+  // single client-sent number, same principle as every other fare input.
+  const passengerCount = Math.max(1, Number(adults) + Number(children));
 
   if (!pickupAddress) {
     return res.status(400).json({ error: "pickupAddress is required" });
@@ -64,12 +82,12 @@ router.post("/", requireAuth, async (req, res) => {
   if (!allowedTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: ${allowedTypes.join(", ")}` });
   }
-  // "Full Day" can now be booked for more than a single day (e.g. 3
-  // consecutive full days) instead of only ever one — computeCharterFare
-  // multiplies the flat day-rate by this. Capped at MAX_FULL_DAY_COUNT
-  // (past that, 'full_week' is already the cheaper way to book that much
-  // time — see services/fare.js). Only meaningful for 'full_day'; ignored
-  // (and not validated) for every other bookingType.
+  // "Full Day" can be booked for any number of consecutive days (3, 18, 78,
+  // whatever the rider enters) — computeCharterFare multiplies the flat
+  // day-rate by this. MAX_FULL_DAY_COUNT is just a generous server-side
+  // sanity bound to reject garbage input, not a pricing/product ceiling
+  // (see services/fare.js). Only meaningful for 'full_day'; ignored (and
+  // not validated) for every other bookingType.
   if (bookingType === "full_day" && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > MAX_FULL_DAY_COUNT)) {
     return res.status(400).json({ error: `durationDays must be a whole number from 1 to ${MAX_FULL_DAY_COUNT} for a Full Day booking.` });
   }
@@ -173,9 +191,20 @@ router.post("/", requireAuth, async (req, res) => {
   let distanceKm = clientDistanceKm ?? null;
   let durationMin = clientDurationMin ?? null;
   let fareNaira;
+  let vehicleCount;
+  // Recomputed independently of computeFare below (same passengerCount +
+  // vehicleType inputs) purely so it can be stored on the ride and returned
+  // to the rider — computeFare already applies this same number internally.
+  try {
+    vehicleCount = computeVehicleCount(passengerCount, vehicleType);
+  } catch (err) {
+    // Thrown when the group is bigger than MAX_AUTO_VEHICLE_COUNT vehicles
+    // can realistically cover — a normal validation error, not a 500.
+    return res.status(400).json({ error: err.message });
+  }
   if (isOneWayStyle) {
     try {
-      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
+      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, passengerCount });
     } catch (err) {
       // Thrown by computeOneWayFare when pickup/destination matches a red
       // (excluded) zone — surfaced as a normal validation error, not a 500.
@@ -198,7 +227,13 @@ router.post("/", requireAuth, async (req, res) => {
     // location-based — flat day-rate × duration, unaffected by any of the
     // above. durationDays only actually scales the fare for 'full_day' (see
     // services/fare.js computeCharterFare) — harmless to always pass it.
-    fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays });
+    // Chauffeur bookings don't currently collect a passenger count, so
+    // passengerCount stays the default of 1 (vehicleCount 1) for those.
+    try {
+      fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays, passengerCount });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
   }
 
   // Best-effort capture of the flight's scheduled time AT BOOKING, purely
@@ -248,9 +283,9 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
     const inserted = await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
     );
     return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   }
@@ -271,9 +306,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
       );
       const ride = rideResult.rows[0];
 
@@ -301,9 +336,9 @@ router.post("/", requireAuth, async (req, res) => {
   }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt]
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
+    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
   );
 
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
@@ -329,6 +364,7 @@ router.post("/quote", requireAuth, async (req, res) => {
     bookingType = "one_way", vehicleType, securityEscort, fleetSize, luxury,
     pickupAddress, destinationAddress, durationDays = 1,
     pickupLat, pickupLng, destinationLat, destinationLng,
+    adults = 1, children = 0,
   } = req.body;
 
   if (!vehicleType) return res.status(400).json({ error: "vehicleType is required" });
@@ -337,6 +373,20 @@ router.post("/quote", requireAuth, async (req, res) => {
   }
   if (bookingType === "full_day" && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > MAX_FULL_DAY_COUNT)) {
     return res.status(400).json({ error: `durationDays must be a whole number from 1 to ${MAX_FULL_DAY_COUNT} for a Full Day booking.` });
+  }
+  // See the identical validation + comment in POST / above.
+  if (!Number.isInteger(Number(adults)) || Number(adults) < 1 || Number(adults) > 100) {
+    return res.status(400).json({ error: "adults must be a whole number from 1 to 100." });
+  }
+  if (!Number.isInteger(Number(children)) || Number(children) < 0 || Number(children) > 100) {
+    return res.status(400).json({ error: "children must be a whole number from 0 to 100." });
+  }
+  const passengerCount = Math.max(1, Number(adults) + Number(children));
+  let vehicleCount;
+  try {
+    vehicleCount = computeVehicleCount(passengerCount, vehicleType);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 
   const ngnPerUsd = await getNgnPerUsd();
@@ -347,7 +397,7 @@ router.post("/quote", requireAuth, async (req, res) => {
     }
     let fareNaira;
     try {
-      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
+      fareNaira = await computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, passengerCount });
     } catch (err) {
       // e.g. pickup/destination is in a red (excluded) zone — a normal
       // validation error, not a server failure.
@@ -365,15 +415,20 @@ router.post("/quote", requireAuth, async (req, res) => {
         console.error("Distance lookup failed during quote (informational only, not blocking):", err.message);
       }
     }
-    return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin });
+    return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin, vehicleCount });
   }
 
   const allowedCharterTypes = ["full_day", "full_week", "full_month"];
   if (!allowedCharterTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: one_way, dropoff, ${allowedCharterTypes.join(", ")}` });
   }
-  const fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays });
-  res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm: null, durationMin: null });
+  let fareNaira;
+  try {
+    fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays, passengerCount });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm: null, durationMin: null, vehicleCount });
 });
 
 // GET /api/rides/fx-rate — the current naira-per-dollar rate, for apps to

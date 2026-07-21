@@ -45,29 +45,35 @@ export default function ChauffeurScreen({ navigation }) {
   const [duration, setDuration] = useState("full_day");
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
 
-  // "Single day" can now be booked for more than one consecutive full day —
-  // mirrors RouteScreen's identical picker + arrivo-backend/services/fare.js's
-  // MAX_FULL_DAY_COUNT cap (past 6 days, "Full week" is already cheaper for
-  // the same length of time). Irrelevant for full_week/full_month.
-  const MAX_FULL_DAY_COUNT = 6;
+  // "Single day" can be booked for any number of consecutive days — just
+  // type a number, the fare is calculated on checkout. Mirrors RouteScreen's
+  // identical field; arrivo-backend/services/fare.js still enforces a
+  // generous sanity-check upper bound server-side (MAX_FULL_DAY_COUNT
+  // there), purely to reject garbage input. Irrelevant for full_week/full_month.
   const [fullDayCount, setFullDayCount] = useState(1);
   const [fullDayCountInput, setFullDayCountInput] = useState("1");
   const setFullDayCountClamped = (n) => {
-    const clamped = Math.min(Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1), MAX_FULL_DAY_COUNT);
-    setFullDayCount(clamped);
-    setFullDayCountInput(String(clamped));
+    const normalized = Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1);
+    setFullDayCount(normalized);
+    setFullDayCountInput(String(normalized));
   };
 
   const [quote, setQuote] = useState(null); // { fareNaira } | null
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [quoteError, setQuoteError] = useState(null);
   const debounceRef = useRef(null);
+  // Guards against an older in-flight request resolving after a newer one
+  // and overwriting a fresh quote/error with a stale result — see the
+  // identical guard (and fuller explanation) in RouteScreen.js's quote effect.
+  const requestIdRef = useRef(0);
 
   const selectedDuration = DURATIONS.find((d) => d.id === duration);
   const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0 && !!quote && !quoteLoading;
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
     setQuote(null);
     setQuoteLoading(true);
     setQuoteError(null);
@@ -79,11 +85,13 @@ export default function ChauffeurScreen({ navigation }) {
           luxury: luxury && (choice === "sedan" || choice === "suv"),
           durationDays: duration === "full_day" ? fullDayCount : selectedDuration.days,
         });
+        if (requestIdRef.current !== requestId) return;
         setQuote(result);
       } catch (e) {
+        if (requestIdRef.current !== requestId) return;
         setQuoteError(e.message || "Couldn't calculate a price for this booking. Please try again.");
       } finally {
-        setQuoteLoading(false);
+        if (requestIdRef.current === requestId) setQuoteLoading(false);
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(debounceRef.current);
@@ -124,30 +132,16 @@ export default function ChauffeurScreen({ navigation }) {
           </View>
           {duration === "full_day" ? (
             <View style={{ marginTop: spacing.sm }}>
-              <Text style={styles.addonNote}>How many full days? (leave at 1 if it's just the one)</Text>
-              <View style={[styles.bookingRow, { marginTop: 6 }]}>
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <Pressable
-                    key={n}
-                    onPress={() => setFullDayCountClamped(n)}
-                    style={[styles.bookingChip, fullDayCount === n && styles.bookingChipActive]}
-                  >
-                    <Text style={[styles.bookingChipText, fullDayCount === n && styles.bookingChipTextActive]}>{n} day{n > 1 ? "s" : ""}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: spacing.sm }}>
-                <Text style={styles.addonNote}>Or type a number (1–{MAX_FULL_DAY_COUNT}):</Text>
-                <TextInput
-                  style={[styles.smallInput, { marginLeft: 8, minWidth: 40 }]}
-                  value={fullDayCountInput}
-                  onChangeText={(text) => setFullDayCountInput(text.replace(/[^0-9]/g, ""))}
-                  onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholderTextColor={colors.dark.textMuted}
-                />
-              </View>
+              <Text style={styles.addonNote}>Number of days</Text>
+              <TextInput
+                style={[styles.smallInput, { marginTop: 6 }]}
+                value={fullDayCountInput}
+                onChangeText={(text) => setFullDayCountInput(text.replace(/[^0-9]/g, ""))}
+                onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
+                placeholder="1"
+                keyboardType="number-pad"
+                placeholderTextColor={colors.dark.textMuted}
+              />
             </View>
           ) : null}
         </Card>

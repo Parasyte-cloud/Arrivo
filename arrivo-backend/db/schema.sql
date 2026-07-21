@@ -312,3 +312,14 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_5h_sent BOOLEAN NOT NULL DEF
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_now_sent BOOLEAN NOT NULL DEFAULT false;
+
+-- Passenger count (adults/children) and the vehicleCount that was actually
+-- charged for (see services/fare.js computeVehicleCount) — a group bigger
+-- than one vehicle's seats books multiple of the same vehicle type instead
+-- of being blocked, and vehicle_count is what the fare above was multiplied
+-- by. Defaults keep every existing/charter ride (which never collected a
+-- passenger count) reading as "1 adult, 0 children, 1 vehicle" — accurate
+-- for all of them.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS adults INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS children INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS vehicle_count INTEGER NOT NULL DEFAULT 1;

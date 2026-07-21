@@ -11,6 +11,7 @@
     "earnWeekly": "Gagnez chaque semaine",
     "listVehicle": "Inscrivez votre véhicule →",
     "bookAirportPickup": "Réserver la prise en charge",
+    "bookAirportDropoff": "Réserver la dépose à l'aéroport",
     "flightNotFound": "Vol introuvable. Vérifiez le numéro et réessayez.",
     "landing": "Atterrissage à {{time}}",
     "terminal": "Terminal {{terminal}}",
