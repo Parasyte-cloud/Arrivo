@@ -52,6 +52,11 @@ export function RidersPage() {
   const [filter, setFilter] = useState("all"); // 'all' | 'never_booked' | 'booked'
   const [busyId, setBusyId] = useState(null);
   const [idModal, setIdModal] = useState(null); // rider row | null — for viewing/reviewing a submitted ID photo
+  const [adjustModal, setAdjustModal] = useState(null); // rider row | null — for the wallet credit/debit form
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustDescription, setAdjustDescription] = useState("");
+  const [adjustError, setAdjustError] = useState(null);
+  const [adjustSaving, setAdjustSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +87,36 @@ export function RidersPage() {
       setError(e.message);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const openAdjustModal = (rider) => {
+    setAdjustModal(rider);
+    setAdjustAmount("");
+    setAdjustDescription("");
+    setAdjustError(null);
+  };
+
+  const submitAdjustment = async () => {
+    const amount = Number(adjustAmount);
+    if (!Number.isFinite(amount) || amount === 0) {
+      setAdjustError("Enter a non-zero amount — positive to credit, negative to debit.");
+      return;
+    }
+    if (!adjustDescription.trim()) {
+      setAdjustError("A description is required so this stays traceable.");
+      return;
+    }
+    setAdjustSaving(true);
+    setAdjustError(null);
+    try {
+      await api.adjustRiderWallet(token, adjustModal.id, amount, adjustDescription.trim());
+      await load();
+      setAdjustModal(null);
+    } catch (e) {
+      setAdjustError(e.message);
+    } finally {
+      setAdjustSaving(false);
     }
   };
 
@@ -182,7 +217,14 @@ export function RidersPage() {
                     )}
                   </td>
                   <td>₦{r.total_spent_naira.toLocaleString()}</td>
-                  <td>₦{r.wallet_balance_naira.toLocaleString()}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span>₦{r.wallet_balance_naira.toLocaleString()}</span>
+                      {!isReadOnly ? (
+                        <button className="btn" onClick={() => openAdjustModal(r)}>Adjust</button>
+                      ) : null}
+                    </div>
+                  </td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
                     {r.last_ride_at ? formatDateTime(r.last_ride_at) : "—"}
                   </td>
@@ -260,6 +302,60 @@ export function RidersPage() {
             <button className="btn" style={{ marginTop: 10, width: "100%" }} onClick={() => setIdModal(null)}>
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {adjustModal && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+          }}
+          onClick={() => setAdjustModal(null)}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: 4 }}>Adjust {adjustModal.name}'s wallet</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 16 }}>
+              Current balance: ₦{adjustModal.wallet_balance_naira.toLocaleString()}. Use a positive amount to credit
+              (e.g. a refund) or a negative amount to debit (e.g. correcting an overcredit). This is logged in the
+              Wallet ledger with your account attached to the description.
+            </p>
+
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+              Amount (₦) — negative to debit
+            </label>
+            <input
+              type="number"
+              className="field"
+              style={{ width: "100%", marginBottom: 12 }}
+              placeholder="e.g. 2000 or -2000"
+              value={adjustAmount}
+              onChange={(e) => setAdjustAmount(e.target.value)}
+            />
+
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+              Description (required, shown in the ledger)
+            </label>
+            <textarea
+              className="notes"
+              style={{ marginBottom: 12 }}
+              placeholder="e.g. Refunded fare dispute on ride #482 — driver took a wrong detour"
+              value={adjustDescription}
+              onChange={(e) => setAdjustDescription(e.target.value)}
+            />
+
+            {adjustError ? <div className="error-text" style={{ marginBottom: 12 }}>{adjustError}</div> : null}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn primary" style={{ flex: 1 }} disabled={adjustSaving} onClick={submitAdjustment}>
+                {adjustSaving ? "Applying…" : "Apply adjustment"}
+              </button>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setAdjustModal(null)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}

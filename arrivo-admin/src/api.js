@@ -74,7 +74,17 @@ export const verifyRiderId = (token, id, status, rejectionReason) =>
 export const getWalletTransactions = (token, userId) =>
   request(`/api/admin/wallet-transactions${userId ? `?userId=${userId}` : ""}`, token);
 
+export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
+  request(`/api/admin/riders/${riderId}/wallet-adjust`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ amountNaira, description }),
+  });
+
 export const getMemberships = (token) => request("/api/admin/memberships", token);
+
+export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+
+export const getVehicles = (token) => request("/api/admin/vehicles", token);
 
 export const getWaitlist = (token) => request("/api/admin/waitlist", token);
 

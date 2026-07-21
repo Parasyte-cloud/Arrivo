@@ -184,6 +184,53 @@ router.patch("/panics/:rideId/resolve", requireRole("admin"), async (req, res) =
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
 });
 
+// ── Flight issues ────────────────────────────────────────────────────────
+
+// GET /api/admin/flight-issues — every ride the scheduler (services/scheduler.js)
+// has flagged with a flight_issue ('cancelled' | 'rescheduled') that hasn't
+// already finished or been cancelled outright. Mirrors the Panics queue's
+// shape (a "needs attention" feed, not a raw table) since flight-issue rides
+// are the other case where ops needs to proactively check on a rider rather
+// than wait for them to complain — before this route, the only trace of a
+// flight issue was columns on the ride row with no dedicated view.
+router.get("/flight-issues", async (req, res) => {
+  const result = await pool.query(
+    `SELECT rides.id, rides.flight_number, rides.flight_issue, rides.flight_issue_notified_at,
+            rides.original_flight_scheduled_at, rides.ride_status, rides.pickup_address,
+            rides.scheduled_pickup_at, rides.created_at,
+            riders.name as rider_name, riders.phone as rider_phone, riders.email as rider_email,
+            driver_users.name as driver_name, driver_users.phone as driver_phone
+     FROM rides
+     JOIN users riders ON riders.id = rides.rider_id
+     LEFT JOIN drivers ON drivers.id = rides.driver_id
+     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     WHERE rides.flight_issue IS NOT NULL AND rides.ride_status NOT IN ('completed', 'cancelled')
+     ORDER BY rides.flight_issue_notified_at ASC NULLS LAST`
+  );
+  res.json({ flightIssues: result.rows });
+});
+
+// ── Vehicle owners ───────────────────────────────────────────────────────
+
+// GET /api/admin/vehicles — every listed vehicle (routes/owners.js POST
+// /vehicles), with its owner's name/email and whether it's currently
+// assigned to a driver. Before this route, a vehicle only became visible
+// in the admin panel once a verified driver was attached to it (via the
+// Drivers page join) — anything an owner listed but that no driver has
+// picked up yet had no page at all.
+router.get("/vehicles", async (req, res) => {
+  const result = await pool.query(
+    `SELECT vehicles.*, owners.name as owner_name, owners.email as owner_email, owners.phone as owner_phone,
+            driver_users.name as assigned_driver_name, drivers.is_verified as assigned_driver_verified
+     FROM vehicles
+     JOIN users owners ON owners.id = vehicles.owner_user_id
+     LEFT JOIN drivers ON drivers.vehicle_id = vehicles.id
+     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     ORDER BY vehicles.created_at DESC`
+  );
+  res.json({ vehicles: result.rows });
+});
+
 // ── Waitlist ─────────────────────────────────────────────────────────────
 
 // GET /api/admin/waitlist — every waitlist signup, for manual export into
@@ -294,6 +341,77 @@ router.patch("/riders/:id/verify-id", requireRole("admin"), async (req, res) => 
     [status, status === "rejected" ? (rejectionReason || "Not specified") : null, req.params.id]
   );
   res.json({ rider: updated.rows[0] });
+});
+
+// ── Wallet adjustments (refunds / manual corrections) ───────────────────
+
+// PATCH /api/admin/riders/:id/wallet-adjust — admin-only manual credit or
+// debit to a rider's wallet, with a required description. This is the
+// direct fix for what RidesPage's own admin-notes placeholder used to
+// describe ("refunded ₦2,000 via Paystack manually") — before this route,
+// every refund or balance correction happened entirely outside the app,
+// leaving no record next to the wallet_transactions ledger it should live
+// in. requireRole("admin") only, same split as verify-id/verify-driver —
+// 'support' can see the Wallet ledger but can't move money.
+// body: { amountNaira, description } — positive credits, negative debits.
+router.patch("/riders/:id/wallet-adjust", requireRole("admin"), async (req, res) => {
+  const { amountNaira, description } = req.body;
+  const amount = Number(amountNaira);
+
+  if (!Number.isFinite(amount) || amount === 0) {
+    return res.status(400).json({ error: "amountNaira must be a non-zero number." });
+  }
+  if (Math.abs(amount) > 5000000) {
+    return res.status(400).json({ error: "A single adjustment can't exceed ₦5,000,000. Split it into multiple steps if you need to move more." });
+  }
+  if (!description || !description.trim()) {
+    return res.status(400).json({ error: "A description is required so this adjustment stays traceable later." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      "SELECT wallet_balance_naira FROM users WHERE id = $1 AND role = 'rider' FOR UPDATE",
+      [req.params.id]
+    );
+    if (!existing.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Rider not found" });
+    }
+
+    const currentBalance = Number(existing.rows[0].wallet_balance_naira);
+    const newBalance = currentBalance + amount;
+    if (newBalance < 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `This would take the wallet negative (current balance ₦${currentBalance.toLocaleString()}).` });
+    }
+
+    await client.query("UPDATE users SET wallet_balance_naira = $1 WHERE id = $2", [newBalance, req.params.id]);
+
+    const inserted = await client.query(
+      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, description)
+       VALUES ($1, 'admin_adjustment', 'completed', $2, $3, $4) RETURNING *`,
+      [req.params.id, amount, newBalance, `${description.trim()} (admin: ${req.user.email})`]
+    );
+
+    await client.query("COMMIT");
+    res.json({
+      transaction: {
+        ...inserted.rows[0],
+        amount_naira: Number(inserted.rows[0].amount_naira),
+        balance_after_naira: Number(inserted.rows[0].balance_after_naira),
+      },
+      newBalanceNaira: newBalance,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Wallet adjustment failed:", err.message);
+    res.status(500).json({ error: "Could not adjust this rider's wallet. Please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 // ── Analytics ────────────────────────────────────────────────────────────

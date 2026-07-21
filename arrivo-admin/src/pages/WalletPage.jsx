@@ -11,11 +11,13 @@ const TYPE_LABELS = {
   tip: "Tip",
   credit: "Credit",
   refund: "Refund",
+  admin_adjustment: "Admin adjustment",
 };
 
 function typeTone(type) {
   if (type === "topup" || type === "credit" || type === "refund") return "teal";
   if (type === "ride_charge" || type === "membership_charge") return "muted";
+  if (type === "admin_adjustment") return "amber";
   return "amber";
 }
 

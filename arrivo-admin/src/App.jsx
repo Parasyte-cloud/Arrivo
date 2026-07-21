@@ -9,6 +9,8 @@ import { LiveMapPage } from "./pages/LiveMapPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { MembershipsPage } from "./pages/MembershipsPage";
 import { WalletPage } from "./pages/WalletPage";
+import { FlightIssuesPage } from "./pages/FlightIssuesPage";
+import { VehiclesPage } from "./pages/VehiclesPage";
 import { Sidebar } from "./components/Sidebar";
 
 function Dashboard() {
@@ -25,6 +27,8 @@ function Dashboard() {
         {page === "riders" && <RidersPage />}
         {page === "drivers" && <DriversPage />}
         {page === "rides" && <RidesPage />}
+        {page === "flight-issues" && <FlightIssuesPage />}
+        {page === "vehicles" && <VehiclesPage />}
         {page === "memberships" && <MembershipsPage />}
         {page === "wallet" && <WalletPage />}
         {page === "live-map" && <LiveMapPage />}
