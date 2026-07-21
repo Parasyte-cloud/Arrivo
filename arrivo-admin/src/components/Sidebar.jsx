@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { id: "riders", label: "Riders" },
   { id: "drivers", label: "Drivers" },
   { id: "rides", label: "Rides" },
+  { id: "memberships", label: "Memberships" },
+  { id: "wallet", label: "Wallet" },
   { id: "live-map", label: "Live Map" },
   { id: "analytics", label: "Analytics" },
 ];

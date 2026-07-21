@@ -173,6 +173,7 @@ router.get("/riders", async (req, res) => {
     `SELECT users.id, users.name, users.email, users.phone, users.preferred_language, users.created_at,
             users.id_document_url, users.id_verification_status, users.id_verification_submitted_at,
             users.id_verification_reviewed_at, users.id_verification_rejection_reason,
+            users.wallet_balance_naira,
             COUNT(rides.id) as ride_count,
             COALESCE(SUM(CASE WHEN rides.payment_status = 'paid' THEN rides.fare_naira ELSE 0 END), 0) as total_spent_naira,
             MAX(rides.created_at) as last_ride_at
@@ -188,7 +189,56 @@ router.get("/riders", async (req, res) => {
       ...r,
       ride_count: Number(r.ride_count),
       total_spent_naira: Number(r.total_spent_naira),
+      wallet_balance_naira: Number(r.wallet_balance_naira),
     })),
+  });
+});
+
+// ── Wallet ledger ────────────────────────────────────────────────────────
+
+// GET /api/admin/wallet-transactions — the full wallet_transactions log
+// (top-ups, ride charges, membership charges, tips, refunds/credits), with
+// the owning user's name/email joined in. This is the "real money is
+// invisible" gap: before this, resolving a rider's balance dispute meant
+// querying the database directly since nothing in the admin UI showed the
+// underlying ledger a wallet_balance_naira figure is derived from.
+// Optional ?userId= to drill into one rider's history (e.g. from the Riders
+// page); otherwise returns the most recent transactions across everyone.
+router.get("/wallet-transactions", async (req, res) => {
+  const { userId } = req.query;
+  const baseQuery = `
+    SELECT wallet_transactions.*, users.name as user_name, users.email as user_email
+    FROM wallet_transactions
+    JOIN users ON users.id = wallet_transactions.user_id
+  `;
+  const result = userId
+    ? await pool.query(baseQuery + ` WHERE wallet_transactions.user_id = $1 ORDER BY wallet_transactions.created_at DESC LIMIT 500`, [userId])
+    : await pool.query(baseQuery + ` ORDER BY wallet_transactions.created_at DESC LIMIT 200`);
+
+  res.json({
+    transactions: result.rows.map((t) => ({ ...t, amount_naira: Number(t.amount_naira), balance_after_naira: t.balance_after_naira != null ? Number(t.balance_after_naira) : null })),
+  });
+});
+
+// ── Memberships ──────────────────────────────────────────────────────────
+
+// GET /api/admin/memberships — every membership row (individual annual,
+// corporate account, and corporate delegate), with the member's name/email
+// joined in, plus the company account's name/email when this row is a
+// delegate (company_account_id set) so admin can see who's billing whom
+// without cross-referencing user ids by hand.
+router.get("/memberships", async (req, res) => {
+  const result = await pool.query(
+    `SELECT memberships.*, users.name as user_name, users.email as user_email,
+            company_users.name as company_name, company_users.email as company_email
+     FROM memberships
+     JOIN users ON users.id = memberships.user_id
+     LEFT JOIN users company_users ON company_users.id = memberships.company_account_id
+     ORDER BY memberships.created_at DESC
+     LIMIT 500`
+  );
+  res.json({
+    memberships: result.rows.map((m) => ({ ...m, price_naira: Number(m.price_naira) })),
   });
 });
 

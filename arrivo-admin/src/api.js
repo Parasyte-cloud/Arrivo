@@ -61,6 +61,11 @@ export const verifyRiderId = (token, id, status, rejectionReason) =>
     body: JSON.stringify({ status, rejectionReason }),
   });
 
+export const getWalletTransactions = (token, userId) =>
+  request(`/api/admin/wallet-transactions${userId ? `?userId=${userId}` : ""}`, token);
+
+export const getMemberships = (token) => request("/api/admin/memberships", token);
+
 export const getWaitlist = (token) => request("/api/admin/waitlist", token);
 
 export const getPanics = (token) => request("/api/admin/panics", token);

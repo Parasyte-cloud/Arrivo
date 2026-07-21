@@ -138,6 +138,7 @@ export function RidersPage() {
                 <th>Signed up</th>
                 <th>Rides</th>
                 <th>Total spent</th>
+                <th>Wallet balance</th>
                 <th>Last activity</th>
                 <th>ID verification</th>
               </tr>
@@ -160,6 +161,7 @@ export function RidersPage() {
                     )}
                   </td>
                   <td>₦{r.total_spent_naira.toLocaleString()}</td>
+                  <td>₦{r.wallet_balance_naira.toLocaleString()}</td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
                     {r.last_ride_at ? formatDateTime(r.last_ride_at) : "—"}
                   </td>
