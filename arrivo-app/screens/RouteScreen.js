@@ -139,6 +139,22 @@ export default function RouteScreen({ navigation, route }) {
   const [scheduleHour, setScheduleHour] = useState("9"); // 0-23
   const [scheduleMinute, setScheduleMinute] = useState("00");
 
+  // "Full Day" can be booked for more than a single day now — a dropdown of
+  // 2-6 days, or type a number directly, either updates the same value.
+  // Capped at 6 to match arrivo-backend/services/fare.js's
+  // MAX_FULL_DAY_COUNT: past 6 days, "Full week" is already the cheaper way
+  // to book that much time, so Full Day intentionally doesn't compete with
+  // it past that point. Defaults to 1 — "leave it as it is" needs no
+  // interaction at all. Irrelevant for every other booking type.
+  const MAX_FULL_DAY_COUNT = 6;
+  const [fullDayCount, setFullDayCount] = useState(1);
+  const [fullDayCountInput, setFullDayCountInput] = useState("1");
+  const setFullDayCountClamped = (n) => {
+    const clamped = Math.min(Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1), MAX_FULL_DAY_COUNT);
+    setFullDayCount(clamped);
+    setFullDayCountInput(String(clamped));
+  };
+
   // Airline-style luggage entry: carry-on stays with the rider and never
   // affects vehicle choice; checked bags + the heavy/oversized flag are
   // what drive the auto-recommendation below (same convention as the
@@ -225,7 +241,11 @@ export default function RouteScreen({ navigation, route }) {
     setQuoteLoading(true);
     quoteDebounceRef.current = setTimeout(async () => {
       try {
-        const payload = { bookingType, vehicleType: vehicle, securityEscort, fleetSize, luxury: luxury && (vehicle === "sedan" || vehicle === "suv") };
+        const payload = {
+          bookingType, vehicleType: vehicle, securityEscort, fleetSize,
+          luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
+          durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
+        };
         if (needsCoords) {
           // pickupAddress/destinationAddress are what actually price a
           // one-way trip now (flat per-location fare, see
@@ -249,7 +269,7 @@ export default function RouteScreen({ navigation, route }) {
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(quoteDebounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, pickupCoords, destinationCoords, excludedArea, overCapacity]);
+  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, overCapacity]);
 
   // Flight number is required for one-way airport pickups — it's the only
   // way to actually track the rider's flight and get a real ETA (see
@@ -269,13 +289,13 @@ export default function RouteScreen({ navigation, route }) {
       amountNaira: quote.fareNaira,
       distanceKm: quote.distanceKm,
       durationMin: quote.durationMin,
-      label: `${VEHICLES.find((v) => v.id === vehicle).label}. ${selectedBooking.label}`,
+      label: `${VEHICLES.find((v) => v.id === vehicle).label}. ${selectedBooking.label}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""}`,
       pickupAddress: pickup,
       stops,
       flightNumber: flightNumber.trim() || undefined,
       vehicleType: vehicle,
       bookingType: selectedBooking.id,
-      durationDays: selectedBooking.days,
+      durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
       securityEscort,
       fleetSize,
       luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
@@ -314,6 +334,35 @@ export default function RouteScreen({ navigation, route }) {
               </Pressable>
             ))}
           </View>
+          {bookingType === "full_day" ? (
+            <View style={{ marginTop: spacing.sm }}>
+              <Text style={styles.meta}>How many full days? (leave at 1 if it's just the one)</Text>
+              <View style={[styles.bookingRow, { marginTop: 6 }]}>
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <Pressable
+                    key={n}
+                    onPress={() => setFullDayCountClamped(n)}
+                    style={[styles.bookingChip, fullDayCount === n && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, fullDayCount === n && styles.bookingChipTextActive]}>{n} day{n > 1 ? "s" : ""}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: spacing.sm }}>
+                <Text style={styles.meta}>Or type a number (1–{MAX_FULL_DAY_COUNT}):</Text>
+                <TextInput
+                  style={[styles.input, { width: 60, marginLeft: 8, marginBottom: 0, textAlign: "center" }]}
+                  value={fullDayCountInput}
+                  onChangeText={(text) => {
+                    setFullDayCountInput(text.replace(/[^0-9]/g, ""));
+                  }}
+                  onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+              </View>
+            </View>
+          ) : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>

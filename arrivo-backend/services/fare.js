@@ -142,6 +142,17 @@ function roundUpToNearest(amount, step) {
 const CHARTER_FLAT_BASE_NAIRA = { sedan: 8500, suv: 12500, truck: 16000, pickup: 11000 };
 const CHARTER_MULTIPLIER = { full_day: 6, full_week: 30, full_month: 100 };
 
+// A rider booking 'full_day' can now ask for more than one consecutive full
+// day (e.g. a 3-day chauffeur booking) instead of only ever a single day —
+// "someone spotted" that the day count was collected (duration_days on the
+// ride) but never actually multiplied into the charge. Capped at 6: past
+// that, 'full_week' (7 days for 30 multiplier-units, vs. 6 days of
+// full_day at 6 units/day = 36 units) is already the cheaper way to book
+// the same length of time, so full_day intentionally doesn't compete with
+// it past 6 days. full_week/full_month stay flat packages, unaffected —
+// they aren't priced "per day" the same way full_day is.
+const MAX_FULL_DAY_COUNT = 6;
+
 // Priced in USD so it doesn't silently drift in real terms as the
 // naira/dollar rate moves — converted at quote/booking time using whatever
 // services/fx.js currently reports.
@@ -179,10 +190,15 @@ function computeOneWayFare({ pickupAddress, destinationAddress, vehicleType }) {
   return roundUpToNearest(total, ROUND_TO_NAIRA);
 }
 
-function computeCharterFare({ vehicleType, bookingType }) {
+function computeCharterFare({ vehicleType, bookingType, durationDays }) {
   const multiplier = CHARTER_MULTIPLIER[bookingType];
   if (!multiplier) throw new Error(`computeCharterFare: unknown bookingType '${bookingType}'`);
-  return (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * multiplier;
+  // Only 'full_day' scales linearly with an explicit day count — a rider
+  // picking "3 days" pays exactly 3x a single full day. full_week/full_month
+  // are already fixed multi-day packages (see MAX_FULL_DAY_COUNT above), so
+  // durationDays is ignored for those regardless of what a client sends.
+  const dayCount = bookingType === "full_day" ? Math.min(Math.max(Number(durationDays) || 1, 1), MAX_FULL_DAY_COUNT) : 1;
+  return (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * multiplier * dayCount;
 }
 
 // Shared by the /quote endpoint (rider is just previewing) and ride
@@ -196,7 +212,7 @@ function computeCharterFare({ vehicleType, bookingType }) {
 // than fetched in here, so this function stays a pure/sync calculation —
 // easy to unit-test and to call from a request handler that already has
 // the rate cached.
-async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd }) {
+async function computeFare({ bookingType, pickupAddress, destinationAddress, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays }) {
   // 'dropoff' (Airport Drop-off — departing rider, pickup → airport) is
   // priced with the exact same per-location formula as 'one_way' (arriving
   // rider, airport → destination) — computeOneWayFare already prices off
@@ -204,7 +220,7 @@ async function computeFare({ bookingType, pickupAddress, destinationAddress, veh
   const base =
     bookingType === "one_way" || bookingType === "dropoff"
       ? computeOneWayFare({ pickupAddress, destinationAddress, vehicleType })
-      : computeCharterFare({ vehicleType, bookingType });
+      : computeCharterFare({ vehicleType, bookingType, durationDays });
 
   let total = base;
   if (luxury && LUXURY_SURCHARGE_USD[vehicleType]) {
@@ -231,4 +247,5 @@ module.exports = {
   DEFAULT_AREA_PRICE_NAIRA,
   EXCLUDED_AREAS,
   NIGHT_MULTIPLIER,
+  MAX_FULL_DAY_COUNT,
 };

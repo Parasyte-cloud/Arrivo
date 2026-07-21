@@ -7,7 +7,7 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea } = require("../services/fare");
+const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 
@@ -63,6 +63,15 @@ router.post("/", requireAuth, async (req, res) => {
   const allowedTypes = ["one_way", "dropoff", "full_day", "full_week", "full_month"];
   if (!allowedTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: ${allowedTypes.join(", ")}` });
+  }
+  // "Full Day" can now be booked for more than a single day (e.g. 3
+  // consecutive full days) instead of only ever one — computeCharterFare
+  // multiplies the flat day-rate by this. Capped at MAX_FULL_DAY_COUNT
+  // (past that, 'full_week' is already the cheaper way to book that much
+  // time — see services/fare.js). Only meaningful for 'full_day'; ignored
+  // (and not validated) for every other bookingType.
+  if (bookingType === "full_day" && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > MAX_FULL_DAY_COUNT)) {
+    return res.status(400).json({ error: `durationDays must be a whole number from 1 to ${MAX_FULL_DAY_COUNT} for a Full Day booking.` });
   }
   const isOneWayStyle = bookingType === "one_way" || bookingType === "dropoff";
   // One-way and drop-off fares are both priced off the non-airport leg (see
@@ -187,8 +196,9 @@ router.post("/", requireAuth, async (req, res) => {
   } else {
     // Charter bookings (full_day/week/month) aren't distance- or
     // location-based — flat day-rate × duration, unaffected by any of the
-    // above.
-    fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
+    // above. durationDays only actually scales the fare for 'full_day' (see
+    // services/fare.js computeCharterFare) — harmless to always pass it.
+    fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays });
   }
 
   // Best-effort capture of the flight's scheduled time AT BOOKING, purely
@@ -317,13 +327,16 @@ router.post("/", requireAuth, async (req, res) => {
 router.post("/quote", requireAuth, async (req, res) => {
   const {
     bookingType = "one_way", vehicleType, securityEscort, fleetSize, luxury,
-    pickupAddress, destinationAddress,
+    pickupAddress, destinationAddress, durationDays = 1,
     pickupLat, pickupLng, destinationLat, destinationLng,
   } = req.body;
 
   if (!vehicleType) return res.status(400).json({ error: "vehicleType is required" });
   if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
     return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
+  }
+  if (bookingType === "full_day" && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > MAX_FULL_DAY_COUNT)) {
+    return res.status(400).json({ error: `durationDays must be a whole number from 1 to ${MAX_FULL_DAY_COUNT} for a Full Day booking.` });
   }
 
   const ngnPerUsd = await getNgnPerUsd();
@@ -359,7 +372,7 @@ router.post("/quote", requireAuth, async (req, res) => {
   if (!allowedCharterTypes.includes(bookingType)) {
     return res.status(400).json({ error: `bookingType must be one of: one_way, dropoff, ${allowedCharterTypes.join(", ")}` });
   }
-  const fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd });
+  const fareNaira = await computeFare({ bookingType, vehicleType, securityEscort, fleetSize, luxury, ngnPerUsd, durationDays });
   res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm: null, durationMin: null });
 });
 

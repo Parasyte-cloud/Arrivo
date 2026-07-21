@@ -45,6 +45,19 @@ export default function ChauffeurScreen({ navigation }) {
   const [duration, setDuration] = useState("full_day");
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
 
+  // "Single day" can now be booked for more than one consecutive full day —
+  // mirrors RouteScreen's identical picker + arrivo-backend/services/fare.js's
+  // MAX_FULL_DAY_COUNT cap (past 6 days, "Full week" is already cheaper for
+  // the same length of time). Irrelevant for full_week/full_month.
+  const MAX_FULL_DAY_COUNT = 6;
+  const [fullDayCount, setFullDayCount] = useState(1);
+  const [fullDayCountInput, setFullDayCountInput] = useState("1");
+  const setFullDayCountClamped = (n) => {
+    const clamped = Math.min(Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1), MAX_FULL_DAY_COUNT);
+    setFullDayCount(clamped);
+    setFullDayCountInput(String(clamped));
+  };
+
   const [quote, setQuote] = useState(null); // { fareNaira } | null
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [quoteError, setQuoteError] = useState(null);
@@ -64,6 +77,7 @@ export default function ChauffeurScreen({ navigation }) {
           bookingType: duration,
           vehicleType: choice,
           luxury: luxury && (choice === "sedan" || choice === "suv"),
+          durationDays: duration === "full_day" ? fullDayCount : selectedDuration.days,
         });
         setQuote(result);
       } catch (e) {
@@ -73,18 +87,18 @@ export default function ChauffeurScreen({ navigation }) {
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(debounceRef.current);
-  }, [choice, duration, luxury, token]);
+  }, [choice, duration, luxury, fullDayCount, token]);
 
   const confirm = () => {
     if (!canConfirm) return;
     navigation.navigate("Checkout", {
       amountNaira: quote.fareNaira,
-      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
+      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,
       bookingType: duration,
-      durationDays: selectedDuration.days,
+      durationDays: duration === "full_day" ? fullDayCount : selectedDuration.days,
       luxury: luxury && (choice === "sedan" || choice === "suv"),
     });
   };
@@ -108,6 +122,34 @@ export default function ChauffeurScreen({ navigation }) {
               </Pressable>
             ))}
           </View>
+          {duration === "full_day" ? (
+            <View style={{ marginTop: spacing.sm }}>
+              <Text style={styles.addonNote}>How many full days? (leave at 1 if it's just the one)</Text>
+              <View style={[styles.bookingRow, { marginTop: 6 }]}>
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <Pressable
+                    key={n}
+                    onPress={() => setFullDayCountClamped(n)}
+                    style={[styles.bookingChip, fullDayCount === n && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, fullDayCount === n && styles.bookingChipTextActive]}>{n} day{n > 1 ? "s" : ""}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: spacing.sm }}>
+                <Text style={styles.addonNote}>Or type a number (1–{MAX_FULL_DAY_COUNT}):</Text>
+                <TextInput
+                  style={[styles.smallInput, { marginLeft: 8, minWidth: 40 }]}
+                  value={fullDayCountInput}
+                  onChangeText={(text) => setFullDayCountInput(text.replace(/[^0-9]/g, ""))}
+                  onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholderTextColor={colors.dark.textMuted}
+                />
+              </View>
+            </View>
+          ) : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
