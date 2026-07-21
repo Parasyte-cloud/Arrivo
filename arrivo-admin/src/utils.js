@@ -2,16 +2,26 @@
 // toLocaleTimeString/toLocaleString fall back to whatever locale the
 // browser/OS resolves to, which on the deployed build was silently
 // rendering 24-hour time even though AM/PM display was intended.
+//
+// Separately, the browser's own AM/PM casing isn't guaranteed — with no
+// locale pinned, toLocaleTimeString renders it however the visiting
+// browser/OS's regional settings say to (some render "pm" lowercase),
+// which is why the same admin panel could show "07:56 pm" on one machine
+// and "07:56 PM" on another. This forces it uppercase everywhere instead
+// of leaving it to whatever locale the viewer happens to have.
+function forceUppercaseMeridiem(timeString) {
+  return timeString.replace(/\b(am|pm)\b/i, (m) => m.toUpperCase());
+}
 
 export function formatDateTime(isoString) {
   const d = new Date(isoString);
   const date = d.toLocaleDateString();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+  const time = forceUppercaseMeridiem(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }));
   return `${date} · ${time}`;
 }
 
 export function formatTime(isoString) {
-  return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+  return forceUppercaseMeridiem(new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }));
 }
 
 // Builds a CSV from an array of rows and triggers a browser download.

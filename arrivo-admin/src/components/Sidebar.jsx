@@ -39,7 +39,7 @@ export function Sidebar({ page, setPage }) {
 
   return (
     <aside className="sidebar">
-      <div className="brand">arrivo</div>
+      <div className="brand">RideArrivo</div>
       <div className="brand-sub">OPS CONSOLE</div>
       {isReadOnly ? (
         <div style={{

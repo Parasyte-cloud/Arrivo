@@ -24,7 +24,7 @@ export function LoginPage() {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand">arrivo</div>
+        <div className="brand">RideArrivo</div>
         <div className="brand-sub">OPS CONSOLE</div>
 
         <input
