@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linki
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
-import { initializePayment, verifyPayment, createRide, getWallet, getMembership } from "../services/api";
+import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getWalletMinimum } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useCurrency } from "../hooks/useCurrency";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -14,19 +15,36 @@ export default function CheckoutScreen({ route, navigation }) {
   const {
     amountNaira = 12500, label = "Airport Pickup", pickupAddress = "Murtala Muhammed Airport",
     stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
-    securityEscort = false, fleetSize = 0, emergencyContactName, emergencyContactPhone,
+    securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
+    distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
   } = route?.params || {};
   const { user, token } = useAuth();
+  const { formatFare, isNigeria } = useCurrency(token);
 
   const [walletBalance, setWalletBalance] = useState(null);
   const [hasMembership, setHasMembership] = useState(false);
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership
 
+  // Standing wallet-balance floor (~$100-equivalent) that must be met
+  // before ANY ride can be booked, regardless of which payment method gets
+  // chosen above for the fare itself — checked proactively here so the
+  // rider sees a top-up prompt before trying to pay, not just a rejection
+  // from the server. POST /api/rides re-checks this for real either way.
+  const [walletMinimum, setWalletMinimum] = useState(null); // { walletBalanceNaira, minWalletBalanceNaira, meetsMinimum } | null
+  const [loadingWalletMinimum, setLoadingWalletMinimum] = useState(true);
+
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [message, setMessage] = useState(null);
   const [agreedCancellation, setAgreedCancellation] = useState(false);
   const [dashCamConsent, setDashCamConsent] = useState(false);
+
+  // "Reserve now, pay at pickup" — only offered for one-way airport
+  // pickups (there's a real "landing and scanning the driver" moment to
+  // hook the charge to). Only wallet/membership can defer this way; card
+  // always pays at booking, same as before this existed (see rides.js).
+  const canDeferPayment = bookingType === "one_way";
+  const [payAtPickup, setPayAtPickup] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -49,7 +67,32 @@ export default function CheckoutScreen({ route, navigation }) {
     })();
   }, [token, amountNaira]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await getWalletMinimum(token);
+        setWalletMinimum(result);
+      } catch (e) {
+        // If this check fails to load, don't block checkout on it — the
+        // server-side gate in POST /api/rides still enforces the real rule.
+      } finally {
+        setLoadingWalletMinimum(false);
+      }
+    })();
+  }, [token]);
+
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
+
+  // Switching into "reserve, pay at pickup" mode: card isn't a valid
+  // choice there, so bump off it onto whichever of membership/wallet is
+  // actually usable rather than leaving the rider on a hidden option.
+  const togglePayAtPickup = (next) => {
+    setPayAtPickup(next);
+    if (next && paymentMethod === "card") {
+      setPaymentMethod(hasMembership ? "membership" : "wallet");
+    }
+  };
+
   const pendingPaymentRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
 
   // expo-web-browser's openAuthSessionAsync would normally tell us the
@@ -77,8 +120,9 @@ export default function CheckoutScreen({ route, navigation }) {
         const { ride } = await createRide(token, {
           pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
           paymentReference: reference, bookingType, durationDays,
-          agreedCancellationPolicy: true, securityEscort, fleetSize, paymentMethod: "card",
+          agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
           emergencyContactName, emergencyContactPhone, dashCamConsent,
+          distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
         });
         setStatus("success");
         setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
@@ -112,8 +156,10 @@ export default function CheckoutScreen({ route, navigation }) {
       const { ride } = await createRide(token, {
         pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
-        securityEscort, fleetSize, paymentMethod,
+        securityEscort, fleetSize, luxury, paymentMethod,
+        payAtPickup: canDeferPayment && payAtPickup && paymentMethod !== "card",
         emergencyContactName, emergencyContactPhone, dashCamConsent,
+        distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
       });
       setStatus("success");
       setTimeout(() => navigation.navigate("Tracking", { rideId: ride.id }), 900);
@@ -124,6 +170,13 @@ export default function CheckoutScreen({ route, navigation }) {
   };
 
   const pay = () => {
+    if (walletMinimum && !walletMinimum.meetsMinimum) {
+      setMessage(
+        `You need at least ${formatFare(walletMinimum.minWalletBalanceNaira)} in your wallet before booking. Tap "Top up wallet" below to continue.`
+      );
+      setStatus("error");
+      return;
+    }
     if (!agreedCancellation) {
       setMessage("Please agree to the Cancellation & Refund Policy before paying.");
       setStatus("error");
@@ -135,7 +188,7 @@ export default function CheckoutScreen({ route, navigation }) {
       return;
     }
     setMessage(null);
-    if (paymentMethod === "card") payWithCard();
+    if (paymentMethod === "card" && !payAtPickup) payWithCard();
     else payWithWalletOrMembership();
   };
 
@@ -150,9 +203,53 @@ export default function CheckoutScreen({ route, navigation }) {
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.row}>
             <Text style={styles.label}>{label}</Text>
-            <Text style={styles.amount}>{formatNaira(amountNaira)}</Text>
+            <Text style={styles.amount}>
+              {formatFare(amountNaira)}
+              {!isNigeria ? ` (${formatNaira(amountNaira)})` : ""}
+            </Text>
           </View>
         </Card>
+
+        {!loadingWalletMinimum && walletMinimum && !walletMinimum.meetsMinimum ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
+            <Text style={styles.warningText}>
+              RideArrivo requires a minimum wallet balance of {formatFare(walletMinimum.minWalletBalanceNaira)} before any ride
+              can be booked. Your current balance is {formatFare(walletMinimum.walletBalanceNaira)}.
+            </Text>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              label="Top up wallet"
+              onPress={() => navigation.navigate("Home", { screen: "Wallet" })}
+              trailingIcon
+            />
+          </Card>
+        ) : null}
+
+        {canDeferPayment ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
+            <Text style={styles.cardLabel}>When would you like to pay?</Text>
+            <View style={styles.bookingRow}>
+              <Pressable
+                onPress={() => togglePayAtPickup(false)}
+                style={[styles.bookingChip, !payAtPickup && styles.bookingChipActive]}
+              >
+                <Text style={[styles.bookingChipText, !payAtPickup && styles.bookingChipTextActive]}>Pay now</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => togglePayAtPickup(true)}
+                style={[styles.bookingChip, payAtPickup && styles.bookingChipActive]}
+              >
+                <Text style={[styles.bookingChipText, payAtPickup && styles.bookingChipTextActive]}>Reserve, pay at pickup</Text>
+              </Pressable>
+            </View>
+            {payAtPickup ? (
+              <Text style={styles.note}>
+                Your ride is reserved now. The fare is charged from your wallet automatically when you scan your
+                driver's QR code at pickup — make sure your balance covers it by then.
+              </Text>
+            ) : null}
+          </Card>
+        ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>How would you like to pay?</Text>
@@ -160,21 +257,24 @@ export default function CheckoutScreen({ route, navigation }) {
             <ActivityIndicator color={colors.amber} style={{ marginVertical: spacing.sm }} />
           ) : (
             <View style={{ gap: 8 }}>
+              {!payAtPickup ? (
+                <Pressable
+                  onPress={() => setPaymentMethod("card")}
+                  style={[styles.payOption, paymentMethod === "card" && styles.payOptionActive]}
+                >
+                  <Text style={styles.payOptionLabel}>{paymentMethod === "card" ? "● " : "○ "}Card (Paystack)</Text>
+                </Pressable>
+              ) : null}
               <Pressable
-                onPress={() => setPaymentMethod("card")}
-                style={[styles.payOption, paymentMethod === "card" && styles.payOptionActive]}
-              >
-                <Text style={styles.payOptionLabel}>{paymentMethod === "card" ? "● " : "○ "}Card (Paystack)</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => walletSufficient && setPaymentMethod("wallet")}
-                disabled={!walletSufficient}
-                style={[styles.payOption, paymentMethod === "wallet" && styles.payOptionActive, !walletSufficient && { opacity: 0.4 }]}
+                onPress={() => (payAtPickup || walletSufficient) && setPaymentMethod("wallet")}
+                disabled={!payAtPickup && !walletSufficient}
+                style={[styles.payOption, paymentMethod === "wallet" && styles.payOptionActive, !payAtPickup && !walletSufficient && { opacity: 0.4 }]}
               >
                 <Text style={styles.payOptionLabel}>
-                  {paymentMethod === "wallet" ? "● " : "○ "}Wallet balance{walletBalance != null ? ` (${formatNaira(walletBalance)})` : ""}
+                  {paymentMethod === "wallet" ? "● " : "○ "}Wallet{walletBalance != null ? ` (${formatNaira(walletBalance)})` : ""}
+                  {payAtPickup ? " — charged at pickup" : ""}
                 </Text>
-                {!walletSufficient && walletBalance != null ? (
+                {!payAtPickup && !walletSufficient && walletBalance != null ? (
                   <Text style={styles.payOptionNote}>Not enough balance for this fare</Text>
                 ) : null}
               </Pressable>
@@ -190,7 +290,7 @@ export default function CheckoutScreen({ route, navigation }) {
           )}
         </Card>
 
-        {paymentMethod === "card" ? (
+        {paymentMethod === "card" && !payAtPickup ? (
           <Card tone="dark" style={{ marginBottom: spacing.lg }}>
             <Text style={styles.note}>
               Payment is handled by Paystack's secure checkout. RideArrivo never sees or stores your card details.
@@ -229,9 +329,15 @@ export default function CheckoutScreen({ route, navigation }) {
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
-          label={isBusy ? "Please wait…" : `Pay ${formatNaira(amountNaira)}`}
+          label={
+            isBusy
+              ? "Please wait…"
+              : payAtPickup
+              ? `Reserve · ${formatFare(amountNaira)} at pickup`
+              : `Pay ${formatFare(amountNaira)}`
+          }
           onPress={pay}
-          disabled={isBusy}
+          disabled={isBusy || (walletMinimum && !walletMinimum.meetsMinimum)}
           trailingIcon
         />
       </ScrollView>
@@ -247,6 +353,17 @@ const styles = StyleSheet.create({
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700" },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  bookingChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.dark.surfaceBorder,
+  },
+  bookingChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
+  bookingChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
+  bookingChipTextActive: { color: colors.ink },
   payOption: {
     paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
     borderWidth: 1, borderColor: colors.dark.surfaceBorder,
@@ -264,4 +381,5 @@ const styles = StyleSheet.create({
   agreeText: { color: colors.dark.textMuted, fontSize: 12, flex: 1 },
   statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
   errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  warningText: { color: "#FF9B8A", fontSize: 12, lineHeight: 17 },
 });

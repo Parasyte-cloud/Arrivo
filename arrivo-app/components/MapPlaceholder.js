@@ -4,8 +4,11 @@ import Svg, { Path, Circle } from "react-native-svg";
 import { colors, radius } from "../theme/tokens";
 
 // NOTE: This is a stylized placeholder so the app runs with zero API keys.
-// To go live, swap this component's contents for <MapView> from
-// react-native-maps, wired to your Google Maps API key (see app.json > extra.googleMapsApiKey).
+// LiveMap.js (in this same folder) renders a real <MapView> once real keys
+// are configured in app.json (extra.googleMapsApiKey, ios.config.googleMapsApiKey,
+// android.config.googleMaps.apiKey) and falls back to rendering this
+// component otherwise — so this file stays in place as that fallback
+// rather than being replaced.
 export function MapPlaceholder({ etaLabel, distanceLabel, height = 170 }) {
   return (
     <View style={[styles.wrap, { height }]}>

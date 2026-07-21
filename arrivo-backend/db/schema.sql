@@ -160,6 +160,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS audio_recording_enabled BOOLEAN NOT N
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS listening_device_activated_at TIMESTAMPTZ;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS listening_device_via_panic BOOLEAN NOT NULL DEFAULT false;
 
+-- Real pickup/destination coordinates, resolved from Google Place Details
+-- when the rider picks an address from autocomplete (see routes/places.js).
+-- Used to compute real driving distance/duration for the fare (see
+-- services/fare.js + services/googleMaps.js) instead of the old approach
+-- of matching keywords in a typed address string against a flat price
+-- table. Only pickup + final destination are stored — an intermediate
+-- stop doesn't get its own distance leg in this version; the fare is
+-- based on the pickup-to-final-destination route.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pickup_lat NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pickup_lng NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS destination_lat NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS destination_lng NUMERIC;
+
 -- ── Wallet ──
 -- A rider (or, later, a company on a delegate plan) can hold a balance and
 -- pay for rides directly from it, as an alternative to per-trip card
@@ -213,3 +226,19 @@ CREATE TABLE IF NOT EXISTS waitlist (
 CREATE INDEX IF NOT EXISTS idx_rides_panic_active
   ON rides (panic_triggered_at)
   WHERE panic_triggered_at IS NOT NULL AND panic_resolved_at IS NULL;
+
+-- "Reserve now, pay at pickup" — a one-way-only alternative to paying in
+-- full at booking. Only a wallet charge can actually be deferred this way
+-- (see routes/rides.js): the rider reserves the ride now, and the fare is
+-- debited from their wallet automatically when they scan their driver's
+-- placard QR at pickup (POST /api/rides/scan), rather than at booking time.
+-- Membership never charges per trip either way, so pay_at_pickup is a
+-- no-op for it beyond being recorded here. Card is not allowed to defer —
+-- there's no good way to prompt for card details mid-pickup, so card
+-- payment always happens at booking, same as before this feature existed.
+-- payment_method is now stored on every ride (previously only implicit in
+-- which code path created it) so a pending pay-at-pickup ride knows how
+-- it'll eventually be settled, and so this is visible in the admin
+-- dashboard/reporting.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pay_at_pickup BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS payment_method TEXT;

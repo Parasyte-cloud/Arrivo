@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { MapPlaceholder } from "../components/MapPlaceholder";
+import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice } from "../services/api";
@@ -284,7 +284,12 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 
   return (
     <View>
-      <MapPlaceholder etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"} height={170} />
+      <LiveMap
+        pickup={ride.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
+        destination={ride.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
+        etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"}
+        height={170}
+      />
       <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>
           <Tag label={ride.ride_status.replace("_", " ").toUpperCase()} tone={isInProgress ? "teal" : "amber"} />

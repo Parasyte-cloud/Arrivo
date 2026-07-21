@@ -15,6 +15,9 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location so riders can see you en route."
+      },
+      "config": {
+        "googleMapsApiKey": "REPLACE_WITH_YOUR_IOS_MAPS_SDK_KEY"
       }
     },
     "android": {
@@ -26,13 +29,19 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "REPLACE_WITH_YOUR_ANDROID_MAPS_SDK_KEY"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
+      "googleMapsApiKey": "REPLACE_WITH_YOUR_IOS_MAPS_SDK_KEY",
       "eas": {
         "projectId": "322115da-a006-439d-b70d-81945e02420b"
       }

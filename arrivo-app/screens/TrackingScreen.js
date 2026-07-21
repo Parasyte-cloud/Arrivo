@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { MapPlaceholder } from "../components/MapPlaceholder";
+import { LiveMap } from "../components/LiveMap";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideDetails, triggerPanic, activateListeningDevice, rateRide } from "../services/api";
@@ -173,7 +173,13 @@ export default function TrackingScreen({ route, navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
-        <MapPlaceholder etaLabel={`🚗 ${statusLabel}`} height={220} />
+        <LiveMap
+          pickup={ride?.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
+          destination={ride?.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
+          driverLocation={ride?.current_lat != null ? { lat: Number(ride.current_lat), lng: Number(ride.current_lng) } : null}
+          etaLabel={`🚗 ${statusLabel}`}
+          height={220}
+        />
 
         {loadError ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>

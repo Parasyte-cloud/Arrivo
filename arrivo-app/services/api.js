@@ -36,6 +36,55 @@ export function createRide(token, rideData) {
   });
 }
 
+// Proxied through our own backend rather than calling Google directly —
+// keeps the Places API key server-side only. sessionToken should be a
+// fresh random string generated once per address-entry session (see
+// components/AddressAutocomplete.js) so Google bills the autocomplete
+// keystrokes + the eventual details lookup together as one session.
+export function getPlacesAutocomplete(token, input, sessionToken) {
+  const params = new URLSearchParams({ input, sessionToken });
+  return request(`/api/places/autocomplete?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function getPlaceDetails(token, placeId, sessionToken) {
+  const params = new URLSearchParams({ placeId, sessionToken });
+  return request(`/api/places/details?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Live fare estimate before payment — same formula the backend
+// re-verifies against when the ride is actually created, so this number
+// is what the rider will actually be charged (barring live traffic
+// shifting slightly in the few minutes before they pay).
+export function getFareQuote(token, quoteData) {
+  return request("/api/rides/quote", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(quoteData),
+  });
+}
+
+// Current naira-per-dollar rate, for showing a $ estimate to riders booking
+// from outside Nigeria (see useCurrency hook + arrivo-backend/services/fx.js
+// — naira is always the real, charged amount; this is display-only).
+export function getFxRate(token) {
+  return request("/api/rides/fx-rate", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Whether this rider currently holds the required minimum wallet balance
+// (~$100-equivalent) that must be met before any ride can be booked,
+// regardless of which payment method they use for the fare itself.
+export function getWalletMinimum(token) {
+  return request("/api/rides/wallet-minimum", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export function getRideHistory(token) {
   return request("/api/rides/mine", {
     headers: { Authorization: `Bearer ${token}` },

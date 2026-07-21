@@ -1,27 +1,40 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator } from "react-native";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
+import { useAuth } from "../context/AuthContext";
+import { getFareQuote } from "../services/api";
+import { useCurrency } from "../hooks/useCurrency";
 
-const OPTIONS = [
-  { id: "sedan", label: "Sedan, comfort", price: 45000 },
-  { id: "suv", label: "SUV, spacious", price: 65000 },
-  { id: "luxury", label: "Luxury", price: 120000 },
+// Mirrors LUXURY_SURCHARGE_USD in arrivo-backend/services/fare.js — only
+// Sedan/SUV get the toggle, Executive is already the premium tier.
+const LUXURY_LABEL_USD = { sedan: 60, suv: 100 };
+
+// Same vehicle set as RouteScreen (sedan/suv/truck, "truck" labeled
+// "Executive Vehicle") rather than this screen's own previous set
+// ("Sedan comfort"/"SUV spacious"/"Luxury") — a rider shouldn't see two
+// different vehicle-tier vocabularies depending on which booking flow
+// they're in. Pricing itself now comes live from the same
+// POST /api/rides/quote endpoint RouteScreen uses (see
+// arrivo-backend/services/fare.js), instead of a separately maintained
+// local price table that had drifted out of sync with the real one.
+const VEHICLES = [
+  { id: "sedan", label: "Standard Sedan" },
+  { id: "suv", label: "Premium SUV" },
+  { id: "truck", label: "Executive Vehicle" },
 ];
-
-// Multipliers relative to a single day's price, discounted for longer
-// commitments — mirrors the ratio RouteScreen uses for its own
-// full_day(6)/full_week(30)/full_month(100) multipliers (30/6=5, 100/6≈16.7),
-// so a week/month chauffeur booking is priced consistently with the rest
-// of the app rather than a separately invented number.
 const DURATIONS = [
-  { id: "full_day", label: "Single day", days: 1, multiplier: 1 },
-  { id: "full_week", label: "Full week", days: 7, multiplier: 5 },
-  { id: "full_month", label: "Full month", days: 30, multiplier: 16 },
+  { id: "full_day", label: "Single day", days: 1 },
+  { id: "full_week", label: "Full week", days: 7 },
+  { id: "full_month", label: "Full month", days: 30 },
 ];
+
+const QUOTE_DEBOUNCE_MS = 400;
 
 export default function ChauffeurScreen({ navigation }) {
+  const { token } = useAuth();
+  const { formatFare, isNigeria } = useCurrency(token);
   const [pickupAddress, setPickupAddress] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -29,21 +42,49 @@ export default function ChauffeurScreen({ navigation }) {
   const [hours, setHours] = useState("6");
   const [choice, setChoice] = useState("suv");
   const [duration, setDuration] = useState("full_day");
+  const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
 
-  const opt = OPTIONS.find((o) => o.id === choice);
+  const [quote, setQuote] = useState(null); // { fareNaira } | null
+  const [quoteLoading, setQuoteLoading] = useState(true);
+  const [quoteError, setQuoteError] = useState(null);
+  const debounceRef = useRef(null);
+
   const selectedDuration = DURATIONS.find((d) => d.id === duration);
-  const totalPrice = opt.price * selectedDuration.multiplier;
-  const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0;
+  const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0 && !!quote && !quoteLoading;
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    setQuote(null);
+    setQuoteLoading(true);
+    setQuoteError(null);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const result = await getFareQuote(token, {
+          bookingType: duration,
+          vehicleType: choice,
+          luxury: luxury && choice !== "truck",
+        });
+        setQuote(result);
+      } catch (e) {
+        setQuoteError(e.message || "Couldn't calculate a price for this booking. Please try again.");
+      } finally {
+        setQuoteLoading(false);
+      }
+    }, QUOTE_DEBOUNCE_MS);
+    return () => clearTimeout(debounceRef.current);
+  }, [choice, duration, luxury, token]);
 
   const confirm = () => {
+    if (!canConfirm) return;
     navigation.navigate("Checkout", {
-      amountNaira: totalPrice,
-      label: `Chauffeur — ${opt.label} · ${selectedDuration.label} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
+      amountNaira: quote.fareNaira,
+      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,
       bookingType: duration,
       durationDays: selectedDuration.days,
+      luxury: luxury && choice !== "truck",
     });
   };
 
@@ -131,23 +172,51 @@ export default function ChauffeurScreen({ navigation }) {
 
         <Card tone="dark">
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
-          {OPTIONS.map((o) => (
-            <Pressable key={o.id} onPress={() => setChoice(o.id)} style={styles.optRow}>
-              <Text style={[styles.optLabel, choice === o.id && { color: colors.amber }]}>
-                {choice === o.id ? "● " : "○ "}
-                {o.label}
+          {VEHICLES.map((v) => (
+            <Pressable key={v.id} onPress={() => setChoice(v.id)} style={styles.optRow}>
+              <Text style={[styles.optLabel, choice === v.id && { color: colors.amber }]}>
+                {choice === v.id ? "● " : "○ "}
+                {v.label}
               </Text>
-              <Text style={styles.optPrice}>₦{(o.price * selectedDuration.multiplier).toLocaleString()}</Text>
             </Pressable>
           ))}
+          {choice === "sedan" || choice === "suv" ? (
+            <View style={[styles.row, { marginTop: 4 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>Luxury</Text>
+                <Text style={styles.addonNote}>
+                  Nicer {choice === "sedan" ? "Sedan" : "SUV"} — adds ${LUXURY_LABEL_USD[choice]} equivalent
+                </Text>
+              </View>
+              <Switch
+                value={luxury}
+                onValueChange={setLuxury}
+                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+              />
+            </View>
+          ) : null}
         </Card>
 
-        {!canConfirm ? (
+        {!canConfirm && pickupAddress.trim() && date.trim() && time.trim() ? (
+          quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
+        ) : !canConfirm ? (
           <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>
         ) : null}
 
         <View style={{ height: spacing.lg }} />
-        <Button label={`Continue · ₦${totalPrice.toLocaleString()}`} onPress={confirm} disabled={!canConfirm} trailingIcon />
+        {quoteLoading ? (
+          <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
+            <ActivityIndicator color={colors.amber} />
+            <Text style={styles.quotingText}>Calculating price…</Text>
+          </View>
+        ) : (
+          <Button
+            label={quote ? `Continue · ${formatFare(quote.fareNaira)}${!isNigeria ? ` (₦${quote.fareNaira.toLocaleString()})` : ""}` : "Continue"}
+            onPress={confirm}
+            disabled={!canConfirm}
+            trailingIcon
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -189,6 +258,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.dark.hairline,
   },
   optLabel: { color: colors.dark.text, fontSize: 13 },
-  optPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: spacing.sm, textAlign: "center" },
+  quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
 });

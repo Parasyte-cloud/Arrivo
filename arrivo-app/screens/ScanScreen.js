@@ -49,6 +49,12 @@ export default function ScanScreen({ navigation }) {
     }
   };
 
+  // "Reserve, pay at pickup" rides get charged from the wallet right at
+  // scan time (see POST /api/rides/scan) — if the balance can't cover it,
+  // the backend's error message mentions "top up" explicitly, which is
+  // what this checks for to offer a direct link instead of just "try again."
+  const isTopUpError = !!message && /top up/i.test(message);
+
   if (!permission) {
     return (
       <View style={styles.screen}>
@@ -89,15 +95,27 @@ export default function ScanScreen({ navigation }) {
         {status === "error" && message ? (
           <View style={styles.statusBox}>
             <Text style={styles.errorText}>{message}</Text>
-            <Pressable
-              onPress={() => {
-                setStatus("idle");
-                setMessage(null);
-              }}
-              style={styles.retryBtn}
-            >
-              <Text style={styles.retryText}>Try again</Text>
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+              {isTopUpError ? (
+                <Pressable
+                  onPress={() => navigation.navigate("Home", { screen: "Wallet" })}
+                  style={styles.retryBtn}
+                >
+                  <Text style={styles.retryText}>Top up wallet</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                onPress={() => {
+                  setStatus("idle");
+                  setMessage(null);
+                }}
+                style={[styles.retryBtn, isTopUpError && { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.amber }]}
+              >
+                <Text style={[styles.retryText, isTopUpError && { color: colors.amber }]}>
+                  {isTopUpError ? "Scan again" : "Try again"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
       </View>

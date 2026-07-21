@@ -21,6 +21,7 @@ const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const waitlistRouter = require("./routes/waitlist");
+const placesRouter = require("./routes/places");
 
 const app = express();
 
@@ -50,6 +51,7 @@ app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
+app.use("/api/places", placesRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.
