@@ -38,6 +38,21 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
 
+-- Rider ID verification — previously a dead "Verified ID" label in the app
+-- with no real flow behind it (no upload, no status, no review). A rider
+-- submits a photo of their ID (id_document_url, same base64-data-URL
+-- storage pattern as avatar_url — no cloud storage/file upload service
+-- exists yet, see avatar_url above), which puts them in 'pending' for an
+-- admin to review (see PATCH /api/admin/riders/:id/verify-id) and approve
+-- or reject. Distinct from drivers.is_verified, which is a separate,
+-- pre-existing flow gating whether a DRIVER can go online — this is the
+-- rider-facing identity check shown on the Profile screen.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id_document_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_status TEXT NOT NULL DEFAULT 'unverified'; -- 'unverified' | 'pending' | 'verified' | 'rejected'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_submitted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_reviewed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_rejection_reason TEXT;
+
 CREATE TABLE IF NOT EXISTS vehicles (
   id SERIAL PRIMARY KEY,
   owner_user_id INTEGER NOT NULL REFERENCES users(id),

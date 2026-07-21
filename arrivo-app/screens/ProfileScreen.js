@@ -30,7 +30,18 @@ function statusStyle(status) {
   return { color: colors.dark.textMuted };
 }
 
-export default function ProfileScreen() {
+// "Verified ID" used to be a static label here with no upload, no status,
+// and no logic behind it at all — tapping it did nothing. This maps the
+// real id_verification_status (see routes/auth.js submit-id-verification +
+// routes/admin.js verify-id) to a short label + color for that row.
+function idVerificationBadge(status) {
+  if (status === "verified") return { label: "Verified ✓", color: "#8FD9C4" };
+  if (status === "pending") return { label: "Pending review", color: colors.amber };
+  if (status === "rejected") return { label: "Rejected — resubmit", color: colors.coral };
+  return { label: "Not verified", color: colors.dark.textMuted };
+}
+
+export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
   const { user, token, logout, updateProfile } = useAuth();
@@ -224,7 +235,15 @@ export default function ProfileScreen() {
         )}
 
         <Card tone="dark" style={{ marginBottom: spacing.md, marginTop: spacing.md }}>
-          <Text style={styles.link}>{t("profile.verifiedId")}</Text>
+          <Pressable
+            style={styles.verifiedIdRow}
+            onPress={() => navigation.navigate("VerifyId")}
+          >
+            <Text style={styles.link}>{t("profile.verifiedId")}</Text>
+            <Text style={{ color: idVerificationBadge(user?.id_verification_status).color, fontSize: 12, fontWeight: "600" }}>
+              {idVerificationBadge(user?.id_verification_status).label}
+            </Text>
+          </Pressable>
           <Text style={styles.link}>{t("profile.emergencyContacts")}</Text>
           <Text style={styles.link}>{t("profile.rideSharingPrefs")}</Text>
           <Text style={styles.link}>{t("profile.support")}</Text>
@@ -274,6 +293,7 @@ const styles = StyleSheet.create({
   langModalRowTextActive: { color: colors.amber, fontWeight: "700" },
   langModalCheck: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   link: { color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
+  verifiedIdRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   avatarCircle: {
     width: 60, height: 60, borderRadius: 30, backgroundColor: colors.dark.fieldBg,
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",

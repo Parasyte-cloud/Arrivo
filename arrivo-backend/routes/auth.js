@@ -227,6 +227,33 @@ router.patch("/me", requireAuth, async (req, res) => {
   res.json({ user: publicUser(updated.rows[0]) });
 });
 
+// Same 6MB cap as driver documents (routes/drivers.js) — an ID photo needs
+// to be legible, so this is deliberately looser than the 4MB avatar cap.
+const MAX_ID_DOCUMENT_BYTES = 6 * 1024 * 1024;
+
+// POST /api/auth/submit-id-verification — a rider uploads a photo of their
+// ID to move from 'unverified' straight to 'pending' review. This is what
+// the Profile screen's "Verified ID" row now actually does — it used to be
+// a static label with no upload, no status, and nothing behind it.
+// body: { idDocumentDataUrl }
+router.post("/submit-id-verification", requireAuth, async (req, res) => {
+  const { idDocumentDataUrl } = req.body;
+  if (!idDocumentDataUrl) {
+    return res.status(400).json({ error: "idDocumentDataUrl is required" });
+  }
+  const docError = validateImageDataUrl(idDocumentDataUrl, "ID photo", MAX_ID_DOCUMENT_BYTES);
+  if (docError) return res.status(400).json({ error: docError });
+
+  const updated = await pool.query(
+    `UPDATE users SET id_document_url = $1, id_verification_status = 'pending',
+                       id_verification_submitted_at = now(), id_verification_reviewed_at = NULL,
+                       id_verification_rejection_reason = NULL
+     WHERE id = $2 RETURNING *`,
+    [idDocumentDataUrl, req.user.id]
+  );
+  res.json({ user: publicUser(updated.rows[0]) });
+});
+
 // POST /api/auth/push-token — register this device's Expo push token so
 // the backend can send trip status notifications (driver accepted, trip
 // started/completed). One token per user; each new registration replaces

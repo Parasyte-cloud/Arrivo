@@ -5,13 +5,35 @@ import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
 
+// Maps the users.id_verification_status column (see db/schema.sql /
+// routes/auth.js POST /submit-id-verification) to a StatusPill tone.
+function idVerificationTone(status) {
+  switch (status) {
+    case "verified": return "teal";
+    case "pending": return "amber";
+    case "rejected": return "coral";
+    default: return "muted"; // unverified — rider hasn't submitted anything yet
+  }
+}
+
+function idVerificationLabel(status) {
+  switch (status) {
+    case "verified": return "Verified";
+    case "pending": return "Pending review";
+    case "rejected": return "Rejected";
+    default: return "Not submitted";
+  }
+}
+
 export function RidersPage() {
-  const { token } = useAuth();
+  const { token, isReadOnly } = useAuth();
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // 'all' | 'never_booked' | 'booked'
+  const [busyId, setBusyId] = useState(null);
+  const [idModal, setIdModal] = useState(null); // rider row | null — for viewing/reviewing a submitted ID photo
 
   const load = useCallback(async () => {
     try {
@@ -27,7 +49,26 @@ export function RidersPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const reviewId = async (rider, status) => {
+    let rejectionReason;
+    if (status === "rejected") {
+      rejectionReason = window.prompt(`Reason for rejecting ${rider.name}'s ID (shown to the rider):`, "");
+      if (rejectionReason === null) return; // admin cancelled the prompt
+    }
+    setBusyId(rider.id);
+    try {
+      await api.verifyRiderId(token, rider.id, status, rejectionReason);
+      await load();
+      setIdModal(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const neverBooked = riders.filter((r) => r.ride_count === 0).length;
+  const pendingIdReviews = riders.filter((r) => r.id_verification_status === "pending").length;
 
   const filtered = riders.filter((r) => {
     if (filter === "never_booked" && r.ride_count !== 0) return false;
@@ -62,6 +103,10 @@ export function RidersPage() {
           <div className="stat-num" style={{ color: "var(--teal)" }}>{riders.length - neverBooked}</div>
           <div className="stat-label">Booked at least once</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--amber)" }}>{pendingIdReviews}</div>
+          <div className="stat-label">ID reviews pending</div>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
@@ -94,6 +139,7 @@ export function RidersPage() {
                 <th>Rides</th>
                 <th>Total spent</th>
                 <th>Last activity</th>
+                <th>ID verification</th>
               </tr>
             </thead>
             <tbody>
@@ -117,12 +163,83 @@ export function RidersPage() {
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
                     {r.last_ride_at ? formatDateTime(r.last_ride_at) : "—"}
                   </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <StatusPill
+                        label={idVerificationLabel(r.id_verification_status)}
+                        tone={idVerificationTone(r.id_verification_status)}
+                      />
+                      {r.id_document_url ? (
+                        <button className="btn" onClick={() => setIdModal(r)}>
+                          Review
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {idModal && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+          }}
+          onClick={() => setIdModal(null)}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 420, textAlign: "center" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: 4 }}>{idModal.name}'s ID</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 4 }}>
+              <StatusPill
+                label={idVerificationLabel(idModal.id_verification_status)}
+                tone={idVerificationTone(idModal.id_verification_status)}
+              />
+            </p>
+            {idModal.id_verification_status === "rejected" && idModal.id_verification_rejection_reason ? (
+              <p style={{ color: "var(--coral)", fontSize: 12.5, margin: "8px 0" }}>
+                Last rejection reason: {idModal.id_verification_rejection_reason}
+              </p>
+            ) : null}
+            <img
+              src={idModal.id_document_url}
+              alt={`${idModal.name}'s submitted ID`}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #eee", marginTop: 12 }}
+            />
+            {isReadOnly ? (
+              <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 16 }}>View only</p>
+            ) : (
+              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                <button
+                  className="btn verify"
+                  style={{ flex: 1 }}
+                  disabled={busyId === idModal.id}
+                  onClick={() => reviewId(idModal, "verified")}
+                >
+                  {busyId === idModal.id ? "…" : "Verify"}
+                </button>
+                <button
+                  className="btn revoke"
+                  style={{ flex: 1 }}
+                  disabled={busyId === idModal.id}
+                  onClick={() => reviewId(idModal, "rejected")}
+                >
+                  {busyId === idModal.id ? "…" : "Reject"}
+                </button>
+              </div>
+            )}
+            <button className="btn" style={{ marginTop: 10, width: "100%" }} onClick={() => setIdModal(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

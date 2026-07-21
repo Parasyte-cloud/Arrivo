@@ -171,6 +171,8 @@ router.get("/waitlist", async (req, res) => {
 router.get("/riders", async (req, res) => {
   const result = await pool.query(
     `SELECT users.id, users.name, users.email, users.phone, users.preferred_language, users.created_at,
+            users.id_document_url, users.id_verification_status, users.id_verification_submitted_at,
+            users.id_verification_reviewed_at, users.id_verification_rejection_reason,
             COUNT(rides.id) as ride_count,
             COALESCE(SUM(CASE WHEN rides.payment_status = 'paid' THEN rides.fare_naira ELSE 0 END), 0) as total_spent_naira,
             MAX(rides.created_at) as last_ride_at
@@ -188,6 +190,29 @@ router.get("/riders", async (req, res) => {
       total_spent_naira: Number(r.total_spent_naira),
     })),
   });
+});
+
+// PATCH /api/admin/riders/:id/verify-id — approve or reject a rider's
+// submitted ID photo (see POST /api/auth/submit-id-verification, which is
+// what puts them in 'pending' in the first place). requireRole("admin")
+// only — 'support' tokens can see the queue via GET /riders above but can't
+// act on it, same split as verifying a driver.
+// body: { status: 'verified' | 'rejected', rejectionReason? }
+router.patch("/riders/:id/verify-id", requireRole("admin"), async (req, res) => {
+  const { status, rejectionReason } = req.body;
+  if (!["verified", "rejected"].includes(status)) {
+    return res.status(400).json({ error: "status must be 'verified' or 'rejected'" });
+  }
+  const existing = await pool.query("SELECT id FROM users WHERE id = $1 AND role = 'rider'", [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: "Rider not found" });
+
+  const updated = await pool.query(
+    `UPDATE users SET id_verification_status = $1, id_verification_reviewed_at = now(),
+                       id_verification_rejection_reason = $2
+     WHERE id = $3 RETURNING id, id_verification_status, id_verification_reviewed_at, id_verification_rejection_reason`,
+    [status, status === "rejected" ? (rejectionReason || "Not specified") : null, req.params.id]
+  );
+  res.json({ rider: updated.rows[0] });
 });
 
 // ── Analytics ────────────────────────────────────────────────────────────

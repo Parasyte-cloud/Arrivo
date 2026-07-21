@@ -55,6 +55,11 @@ export const getDriverQrImage = async (token, driverId) => {
 };
 
 export const getRiders = (token) => request("/api/admin/riders", token);
+export const verifyRiderId = (token, id, status, rejectionReason) =>
+  request(`/api/admin/riders/${id}/verify-id`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ status, rejectionReason }),
+  });
 
 export const getWaitlist = (token) => request("/api/admin/waitlist", token);
 

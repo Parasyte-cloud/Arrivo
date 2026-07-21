@@ -26,6 +26,7 @@ import ScanScreen from "./screens/ScanScreen";
 import ActivityScreen from "./screens/ActivityScreen";
 import WalletScreen from "./screens/WalletScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import VerifyIdScreen from "./screens/VerifyIdScreen";
 
 import { colors } from "./theme/tokens";
 
@@ -79,6 +80,18 @@ const ICONS = {
   Profile: "person",
 };
 
+// Profile tab needs its own stack (same reason as HomeStack above) so
+// VerifyIdScreen can push on top of it with a real back button, instead of
+// only being reachable as a modal or another tab.
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: "Verified ID" }} />
+    </Stack.Navigator>
+  );
+}
+
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -93,7 +106,7 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
 }

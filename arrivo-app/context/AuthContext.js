@@ -84,9 +84,23 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // Moves the rider from 'unverified'/'rejected' straight to 'pending' —
+  // see routes/auth.js POST /submit-id-verification. Same setUser(data.user)
+  // pattern as updateProfile above, so VerifyIdScreen/ProfileScreen see the
+  // new status immediately without needing a fresh /me fetch or re-login.
+  const submitIdVerification = async (idDocumentDataUrl) => {
+    const data = await request("/api/auth/submit-id-verification", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ idDocumentDataUrl }),
+    });
+    setUser(data.user);
+    return data.user;
+  };
+
   return (
     <AuthContext.Provider
-      value={{ token, user, initializing, signup, login, logout, updateProfile, isAuthenticated: !!token }}
+      value={{ token, user, initializing, signup, login, logout, updateProfile, submitIdVerification, isAuthenticated: !!token }}
     >
       {children}
     </AuthContext.Provider>
