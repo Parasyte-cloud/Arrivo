@@ -444,6 +444,18 @@ export default function RouteScreen({ navigation, route }) {
             <Ionicons name="add-circle-outline" size={16} color={colors.tealBright} />
             <Text style={styles.addStopText}>Add destination</Text>
           </Pressable>
+          {needsCoords && (!pickup.trim() || !destination.trim()) ? (
+            // The same "Enter a pickup address and destination to continue"
+            // message used to only appear all the way at the bottom, right
+            // above Confirm — after Passengers, Luggage, Choose a vehicle,
+            // Security escort, Fleet accompaniment, and Emergency contact.
+            // A rider scrolling straight to Confirm had no idea which of
+            // those six sections it was actually complaining about. Shown
+            // here too, right against the fields it's actually about.
+            <Text style={[styles.hintText, { marginTop: 8 }]}>
+              Fill in both fields above to see your fare and continue.
+            </Text>
+          ) : null}
         </Card>
 
         {needsCoords && pickup.trim() && destination.trim() && !coordsResolved ? (

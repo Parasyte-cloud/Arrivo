@@ -26,6 +26,15 @@ const { startScheduler } = require("./services/scheduler");
 
 const app = express();
 
+// Render (and most PaaS hosts) sit behind a reverse proxy — requests reach
+// this process over plain HTTP internally, with the original scheme only
+// preserved in the X-Forwarded-Proto header. Without trusting that proxy,
+// req.protocol always reports "http" even for a real https:// request from
+// a rider's phone, which would make the verification-email link built from
+// req.protocol below (routes/auth.js) silently downgrade to http://. Only
+// the first hop is trusted (Render's own edge), not an arbitrary chain.
+app.set("trust proxy", 1);
+
 app.use(cors());
 
 // The Paystack webhook needs the RAW request body to verify its signature,

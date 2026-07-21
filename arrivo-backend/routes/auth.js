@@ -85,10 +85,20 @@ router.post("/signup", async (req, res) => {
 
   // Points at this backend's own GET /api/auth/verify-email route (below),
   // not the marketing website — ridearrivo.com never had a working
-  // verify-email.html, so links to it silently did nothing. Set
-  // EMAIL_VERIFY_BASE_URL in production to your deployed backend's public
-  // URL + /api/auth/verify-email, e.g. https://api.ridearrivo.com/api/auth/verify-email
-  const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || `http://localhost:${process.env.PORT || 4000}/api/auth/verify-email`}?token=${verificationToken}`;
+  // verify-email.html, so links to it silently did nothing.
+  //
+  // This used to fall back to a hardcoded `http://localhost:${PORT}` when
+  // EMAIL_VERIFY_BASE_URL wasn't set — which nobody ever set on the actual
+  // deployed backend, so every verification email sent from production
+  // linked to localhost on nobody's phone. Fixed to derive the real,
+  // currently-running host directly from the incoming request instead
+  // (req.protocol + req.get("host") — Express fills these in from the
+  // actual request, so this is automatically correct in every environment:
+  // localhost while developing locally, the real Render URL in
+  // production). EMAIL_VERIFY_BASE_URL is now purely an optional override
+  // (e.g. if a custom domain should be used instead of the raw Render URL).
+  const requestBaseUrl = `${req.protocol}://${req.get("host")}/api/auth/verify-email`;
+  const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || requestBaseUrl}?token=${verificationToken}`;
   sendVerificationEmail(user.email, verifyUrl).catch((e) => console.error("Verification email failed:", e.message));
   sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
 
