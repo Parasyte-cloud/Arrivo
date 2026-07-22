@@ -17,7 +17,9 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
@@ -79,7 +81,8 @@
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }
-      ]
+      ],
+      "expo-web-browser"
     ]
   }
 }
