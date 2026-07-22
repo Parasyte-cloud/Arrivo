@@ -23,6 +23,13 @@ export function getFlightStatus(flightNumber, arrIata = "LOS") {
   return request(`/api/flights/status?${params.toString()}`);
 }
 
+// Always responds the same generic message whether or not the email has an
+// account (see the backend route) — this call succeeding just means the
+// request went through, not that an email necessarily exists for it.
+export function forgotPassword(email) {
+  return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+}
+
 export function initializePayment(email, amountNaira) {
   return request("/api/payments/initialize", {
     method: "POST",
@@ -151,6 +158,18 @@ export function tipRide(token, rideId, amountNaira, paymentMethod, paymentRefere
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ amountNaira, paymentMethod, paymentReference }),
+  });
+}
+
+// Pays off an automatically-computed Chauffeur time-overage charge (see
+// ride.overage_naira, set server-side at trip completion — TrackingScreen's
+// "Extra time charge" card). Unlike tipRide, there's no amountNaira here —
+// the amount is whatever the backend already computed, not rider-chosen.
+export function payRideOverage(token, rideId, paymentMethod, paymentReference) {
+  return request(`/api/rides/${rideId}/overage-charge`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ paymentMethod, paymentReference }),
   });
 }
 

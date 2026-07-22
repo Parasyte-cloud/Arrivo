@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
-  tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum,
+  tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
 } from "../services/api";
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
@@ -72,6 +72,17 @@ export default function TrackingScreen({ route, navigation }) {
   const [tipStatus, setTipStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [tipMessage, setTipMessage] = useState(null);
   const pendingTipRef = useRef(null);
+
+  // Chauffeur time-overage charge — automatically computed server-side at
+  // trip completion (see PATCH /:id/status in the backend) for a single-day
+  // Full Day booking that ran longer than the hours selected at booking.
+  // Unlike a tip, the amount isn't rider-chosen — ride.overage_naira is
+  // whatever the system already computed; this only collects how to pay it.
+  // Same wallet-debit-or-fresh-card-charge rails as everything else here.
+  const [overagePaymentMethod, setOveragePaymentMethod] = useState("wallet");
+  const [overageStatus, setOverageStatus] = useState("idle"); // idle | opening | verifying | success | error
+  const [overageMessage, setOverageMessage] = useState(null);
+  const pendingOverageRef = useRef(null);
 
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
@@ -229,6 +240,16 @@ export default function TrackingScreen({ route, navigation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canTip, token]);
 
+  // Same wallet-balance fetch, for the overage-charge prompt below — kept as
+  // its own effect (rather than folded into canTip's) since a ride could in
+  // principle have an overage and no driver-tip situation at the same time.
+  const canPayOverage = ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 && !ride?.overage_payment_method;
+  useEffect(() => {
+    if (!canPayOverage) return;
+    getWallet(token).then((w) => setWalletBalance(w.balanceNaira)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canPayOverage, token]);
+
   // Flight cancelled/rescheduled (services/scheduler.js flags ride.flight_issue
   // and refunds the original fare to the wallet) — check whether the rider
   // still meets the $100-equivalent standing minimum before the trip can
@@ -249,10 +270,16 @@ export default function TrackingScreen({ route, navigation }) {
   // direct close callback the way expo-web-browser's auth session would.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" && pendingTipRef.current) {
+      if (nextState !== "active") return;
+      if (pendingTipRef.current) {
         const reference = pendingTipRef.current;
         pendingTipRef.current = null;
         verifyAndApplyCardTip(reference);
+      }
+      if (pendingOverageRef.current) {
+        const reference = pendingOverageRef.current;
+        pendingOverageRef.current = null;
+        verifyAndApplyCardOverage(reference);
       }
     });
     return () => subscription.remove();
@@ -274,6 +301,51 @@ export default function TrackingScreen({ route, navigation }) {
     } catch (e) {
       setTipStatus("error");
       setTipMessage(e.message || "Something went wrong confirming your tip.");
+    }
+  };
+
+  const verifyAndApplyCardOverage = async (reference) => {
+    setOverageStatus("verifying");
+    try {
+      const verification = await verifyPayment(reference);
+      if (!verification.success) {
+        setOverageStatus("error");
+        setOverageMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        return;
+      }
+      await payRideOverage(token, rideId, "card", reference);
+      await fetchRide();
+      setOverageStatus("success");
+    } catch (e) {
+      setOverageStatus("error");
+      setOverageMessage(e.message || "Something went wrong confirming this payment.");
+    }
+  };
+
+  const submitOveragePayment = async () => {
+    const overageNaira = Number(ride?.overage_naira) || 0;
+    if (!(overageNaira > 0)) return;
+    setOverageMessage(null);
+    if (overagePaymentMethod === "wallet") {
+      setOverageStatus("verifying");
+      try {
+        await payRideOverage(token, rideId, "wallet");
+        await fetchRide();
+        setOverageStatus("success");
+      } catch (e) {
+        setOverageStatus("error");
+        setOverageMessage(e.message || "Couldn't complete this payment. Please try again.");
+      }
+      return;
+    }
+    setOverageStatus("opening");
+    try {
+      const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira);
+      pendingOverageRef.current = reference;
+      await Linking.openURL(authorizationUrl);
+    } catch (e) {
+      setOverageStatus("error");
+      setOverageMessage(e.message || "Something went wrong starting this payment.");
     }
   };
 
@@ -469,6 +541,55 @@ export default function TrackingScreen({ route, navigation }) {
                 ) : (
                   <Button label="Submit rating" variant="ghost" tone="dark" onPress={submitRating} />
                 )}
+              </>
+            )}
+          </Card>
+        ) : null}
+
+        {ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: ride.overage_payment_method ? 0 : 1 }}>
+            <Text style={styles.cardLabel}>Extra time charge</Text>
+            {ride.overage_payment_method ? (
+              <Text style={styles.meta}>
+                This trip ran longer than the {Number(ride.included_hours_per_day)}h booked, so an extra {formatFare(ride.overage_naira)} was charged. Paid — thanks.
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.meta}>
+                  This trip ran longer than the {Number(ride.included_hours_per_day)}h you booked, so there's an extra {formatFare(ride.overage_naira)} to settle for the additional time.
+                </Text>
+                <View style={{ height: spacing.sm }} />
+                <View style={styles.bookingRow}>
+                  <Pressable
+                    onPress={() => setOveragePaymentMethod("wallet")}
+                    style={[styles.bookingChip, overagePaymentMethod === "wallet" && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, overagePaymentMethod === "wallet" && styles.bookingChipTextActive]}>
+                      Wallet{walletBalance != null ? ` (₦${Number(walletBalance).toLocaleString()})` : ""}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setOveragePaymentMethod("card")}
+                    style={[styles.bookingChip, overagePaymentMethod === "card" && styles.bookingChipActive]}
+                  >
+                    <Text style={[styles.bookingChipText, overagePaymentMethod === "card" && styles.bookingChipTextActive]}>Card</Text>
+                  </Pressable>
+                </View>
+
+                {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid — thank you.</Text> : null}
+
+                <View style={{ height: spacing.sm }} />
+                {overageStatus === "opening" || overageStatus === "verifying" ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : overageStatus !== "success" ? (
+                  <Button
+                    label={`Pay ${formatFare(ride.overage_naira)}`}
+                    variant="ghost"
+                    tone="dark"
+                    onPress={submitOveragePayment}
+                  />
+                ) : null}
               </>
             )}
           </Card>

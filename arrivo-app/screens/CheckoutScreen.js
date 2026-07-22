@@ -17,7 +17,7 @@ export default function CheckoutScreen({ route, navigation }) {
     stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
     securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
-    scheduledPickupAt, linkedRideId, adults = 1, children = 0,
+    scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
   } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
@@ -113,7 +113,7 @@ export default function CheckoutScreen({ route, navigation }) {
           agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
           emergencyContactName, emergencyContactPhone, dashCamConsent,
           distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
-          scheduledPickupAt, linkedRideId, adults, children,
+          scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
         });
         setStatus("success");
         onRideCreated(ride);
@@ -188,7 +188,7 @@ export default function CheckoutScreen({ route, navigation }) {
         securityEscort, fleetSize, luxury, paymentMethod,
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
-        scheduledPickupAt, linkedRideId, adults, children,
+        scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
       });
       setStatus("success");
       onRideCreated(ride);

@@ -4,6 +4,7 @@ import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { forgotPassword } from "../services/api";
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
@@ -11,6 +12,18 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // "Forgot password?" toggles this same screen into a lightweight
+  // email-only mode rather than a separate navigation route — the backend
+  // (POST /api/auth/forgot-password, already used by the website's own
+  // reset flow) emails a reset link pointing at reset-password.html, so
+  // this screen's only job is collecting the email and showing that a
+  // request went out.
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState(null);
+  const [forgotError, setForgotError] = useState(null);
 
   const submit = async () => {
     setError(null);
@@ -21,6 +34,23 @@ export default function LoginScreen({ navigation }) {
       setError(e.message || "Invalid email or password");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitForgotPassword = async () => {
+    setForgotError(null);
+    if (!forgotEmail.trim()) {
+      setForgotError("Enter the email on your account.");
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      await forgotPassword(forgotEmail.trim().toLowerCase());
+      setForgotMessage("If an account exists for that email, a reset link has been sent. Check your inbox.");
+    } catch (e) {
+      setForgotError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -35,34 +65,77 @@ export default function LoginScreen({ navigation }) {
         </Text>
         <Text style={styles.subBrand}>DRIVER</Text>
         <View style={{ height: spacing.lg }} />
-        <Text style={styles.title}>Welcome back</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor={colors.textMuted}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor={colors.textMuted}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        {forgotMode ? (
+          <>
+            <Text style={styles.title}>Reset your password</Text>
+            {forgotMessage ? (
+              <>
+                <Text style={styles.link}>{forgotMessage}</Text>
+                <View style={{ height: spacing.lg }} />
+                <Pressable onPress={() => { setForgotMode(false); setForgotMessage(null); setForgotEmail(""); }}>
+                  <Text style={styles.link}>Back to log in</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email"
+                  placeholderTextColor={colors.textMuted}
+                  value={forgotEmail}
+                  onChangeText={setForgotEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+                {forgotError ? <Text style={styles.error}>{forgotError}</Text> : null}
+                <View style={{ height: spacing.sm }} />
+                {forgotLoading ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : (
+                  <Button label="Send reset link" onPress={submitForgotPassword} />
+                )}
+                <Pressable onPress={() => { setForgotMode(false); setForgotError(null); }} style={{ marginTop: spacing.lg }}>
+                  <Text style={styles.link}>Back to log in</Text>
+                </Pressable>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Welcome back</Text>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={colors.textMuted}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
 
-        <View style={{ height: spacing.sm }} />
-        {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Log In" onPress={submit} />}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
-          <Text style={styles.link}>New here? Apply to drive for RideArrivo</Text>
-        </Pressable>
+            <Pressable onPress={() => setForgotMode(true)} style={{ alignSelf: "flex-end", marginTop: 2, marginBottom: spacing.sm }}>
+              <Text style={styles.link}>Forgot password?</Text>
+            </Pressable>
+
+            {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Log In" onPress={submit} />}
+
+            <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
+              <Text style={styles.link}>New here? Apply to drive for RideArrivo</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
     </View>

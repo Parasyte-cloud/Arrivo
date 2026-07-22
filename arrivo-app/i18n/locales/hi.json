@@ -30,7 +30,13 @@
     "welcomeBack": "वापसी पर स्वागत है",
     "joinArrivo": "RideArrivo से जुड़ें",
     "invalidCredentials": "अमान्य ईमेल या पासवर्ड",
-    "loading": "कृपया प्रतीक्षा करें…"
+    "loading": "कृपया प्रतीक्षा करें…",
+    "forgotPassword": "पासवर्ड भूल गए?",
+    "resetPassword": "अपना पासवर्ड रीसेट करें",
+    "sendResetLink": "रीसेट लिंक भेजें",
+    "resetLinkSent": "यदि उस ईमेल के लिए खाता मौजूद है, तो एक रीसेट लिंक भेज दिया गया है। कृपया अपना इनबॉक्स जांचें।",
+    "backToLogin": "लॉग इन पर वापस जाएं",
+    "enterEmailForReset": "अपने खाते का ईमेल दर्ज करें।"
   },
   "profile": {
     "title": "प्रोफ़ाइल",

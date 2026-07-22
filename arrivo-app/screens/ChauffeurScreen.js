@@ -108,6 +108,12 @@ export default function ChauffeurScreen({ navigation }) {
       bookingType: duration,
       durationDays: duration === "full_day" ? fullDayCount : selectedDuration.days,
       luxury: luxury && (choice === "sedan" || choice === "suv"),
+      // Only meaningful for a single-day Full Day booking — the backend
+      // only stores this (as included_hours_per_day) for exactly that case,
+      // since it's what a possible time-overage charge later gets measured
+      // against. Silently omitted for week/month/multi-day bookings, which
+      // don't have a comparable per-day hour figure to hold the rider to.
+      hoursPerDay: duration === "full_day" && fullDayCount === 1 ? Number(hours) : undefined,
     });
   };
 

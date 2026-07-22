@@ -30,7 +30,13 @@
     "welcomeBack": "欢迎回来",
     "joinArrivo": "加入 RideArrivo",
     "invalidCredentials": "电子邮箱或密码无效",
-    "loading": "请稍候…"
+    "loading": "请稍候…",
+    "forgotPassword": "忘记密码？",
+    "resetPassword": "重置密码",
+    "sendResetLink": "发送重置链接",
+    "resetLinkSent": "如果该邮箱有对应账户，重置链接已发送，请查收。",
+    "backToLogin": "返回登录",
+    "enterEmailForReset": "请输入您账户的电子邮箱。"
   },
   "profile": {
     "title": "个人资料",

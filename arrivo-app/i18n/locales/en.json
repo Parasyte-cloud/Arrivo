@@ -30,7 +30,13 @@
     "welcomeBack": "Welcome back",
     "joinArrivo": "Join RideArrivo",
     "invalidCredentials": "Invalid email or password",
-    "loading": "Please wait…"
+    "loading": "Please wait…",
+    "forgotPassword": "Forgot password?",
+    "resetPassword": "Reset your password",
+    "sendResetLink": "Send reset link",
+    "resetLinkSent": "If an account exists for that email, a reset link has been sent. Check your inbox.",
+    "backToLogin": "Back to log in",
+    "enterEmailForReset": "Enter the email on your account."
   },
   "profile": {
     "title": "Profile",

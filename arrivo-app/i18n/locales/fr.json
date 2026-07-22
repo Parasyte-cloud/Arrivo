@@ -30,7 +30,13 @@
     "welcomeBack": "Content de vous revoir",
     "joinArrivo": "Rejoignez RideArrivo",
     "invalidCredentials": "E-mail ou mot de passe invalide",
-    "loading": "Veuillez patienter…"
+    "loading": "Veuillez patienter…",
+    "forgotPassword": "Mot de passe oublié ?",
+    "resetPassword": "Réinitialisez votre mot de passe",
+    "sendResetLink": "Envoyer le lien de réinitialisation",
+    "resetLinkSent": "Si un compte existe pour cet e-mail, un lien de réinitialisation a été envoyé. Vérifiez votre boîte de réception.",
+    "backToLogin": "Retour à la connexion",
+    "enterEmailForReset": "Entrez l'e-mail de votre compte."
   },
   "profile": {
     "title": "Profil",

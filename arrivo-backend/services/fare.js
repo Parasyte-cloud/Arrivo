@@ -277,11 +277,38 @@ async function computeFare({ bookingType, pickupAddress, destinationAddress, veh
   return Math.round(total);
 }
 
+// ── Chauffeur time-overage ──
+// Scoped to single-day 'full_day' bookings only (see the schema.sql comment
+// on rides.included_hours_per_day for why one-way and multi-day charters are
+// excluded). The per-day flat rate doesn't actually vary with how many
+// hours a rider selects at booking (a 4-hour and a 10-hour single-day
+// booking cost the same CHARTER_FLAT_BASE_NAIRA*6) — so rather than invent
+// a separate, disconnected per-hour rate table, the hourly overage rate is
+// derived FROM the day rate the rider already paid, divided by the hours
+// THEY selected as included. That keeps the rate consistent with what they
+// actually agreed to pay per hour, whatever number of hours they picked.
+const OVERAGE_GRACE_HOURS = 0.5; // small buffer so arriving a few minutes late to end the trip never triggers a charge
+const MAX_OVERAGE_MULTIPLE_OF_FARE = 2; // sanity cap — protects against a driver forgetting to mark a trip complete for hours/days
+
+function computeOverageNaira({ vehicleType, includedHoursPerDay, elapsedHours, fareNaira }) {
+  if (!includedHoursPerDay || includedHoursPerDay <= 0) return 0;
+  const overageHours = elapsedHours - includedHoursPerDay - OVERAGE_GRACE_HOURS;
+  if (overageHours <= 0) return 0;
+
+  const dayRateNaira = (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * (CHARTER_MULTIPLIER.full_day || 0);
+  const perHourNaira = dayRateNaira / includedHoursPerDay;
+
+  const rawOverage = roundUpToNearest(perHourNaira * overageHours, ROUND_TO_NAIRA);
+  const cap = Math.round((fareNaira || 0) * MAX_OVERAGE_MULTIPLE_OF_FARE);
+  return cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
+}
+
 module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
   computeVehicleCount,
+  computeOverageNaira,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,
@@ -297,4 +324,6 @@ module.exports = {
   MAX_FULL_DAY_COUNT,
   MAX_PASSENGERS,
   MAX_AUTO_VEHICLE_COUNT,
+  OVERAGE_GRACE_HOURS,
+  MAX_OVERAGE_MULTIPLE_OF_FARE,
 };

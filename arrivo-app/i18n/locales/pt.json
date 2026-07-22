@@ -30,7 +30,13 @@
     "welcomeBack": "Bem-vindo de volta",
     "joinArrivo": "Junte-se à RideArrivo",
     "invalidCredentials": "E-mail ou senha inválidos",
-    "loading": "Aguarde, por favor…"
+    "loading": "Aguarde, por favor…",
+    "forgotPassword": "Esqueceu a senha?",
+    "resetPassword": "Redefina sua senha",
+    "sendResetLink": "Enviar link de redefinição",
+    "resetLinkSent": "Se existir uma conta para esse e-mail, um link de redefinição foi enviado. Verifique sua caixa de entrada.",
+    "backToLogin": "Voltar ao login",
+    "enterEmailForReset": "Digite o e-mail da sua conta."
   },
   "profile": {
     "title": "Perfil",

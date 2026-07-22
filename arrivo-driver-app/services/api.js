@@ -31,6 +31,12 @@ export function signup(payload) {
 export function login(payload) {
   return request("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
 }
+// Always responds the same generic message whether or not the email has an
+// account (see the backend route) — this call succeeding just means the
+// request went through, not that an email necessarily exists for it.
+export function forgotPassword(email) {
+  return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+}
 export function getMe(token) {
   return request("/api/auth/me", authed(token));
 }

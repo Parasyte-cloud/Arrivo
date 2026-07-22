@@ -199,7 +199,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance_naira NUMERIC NOT NULL
 CREATE TABLE IF NOT EXISTS wallet_transactions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  type TEXT NOT NULL, -- 'topup' | 'ride_charge' | 'credit' | 'refund' | 'membership_charge' | 'tip'
+  type TEXT NOT NULL, -- 'topup' | 'ride_charge' | 'credit' | 'refund' | 'membership_charge' | 'tip' | 'overage'
   status TEXT NOT NULL DEFAULT 'completed', -- 'pending' | 'completed' | 'failed'
   amount_naira NUMERIC NOT NULL, -- positive for topup/credit, negative for charges
   balance_after_naira NUMERIC, -- null while status = 'pending'
@@ -338,3 +338,27 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS reminder_now_sent BOOLEAN NOT NULL DE
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS adults INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS children INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS vehicle_count INTEGER NOT NULL DEFAULT 1;
+
+-- ── Chauffeur time-overage charge ──
+-- Deliberately scoped to single-day Chauffeur ('full_day', duration_days = 1)
+-- bookings ONLY. One-way/drop-off trips are flat-rate per zone regardless of
+-- how long they actually take (that's an explicit product promise — "pay in
+-- full now, never surprised later" — see CheckoutScreen's payment copy) and
+-- multi-day/full_week/full_month charters have no per-day hour figure to
+-- compare against, so neither gets this. included_hours_per_day is the
+-- number of hours the rider selected on the Chauffeur Booking screen at
+-- booking time (previously collected but never actually sent to the
+-- backend — it only appeared in the on-screen booking summary label).
+-- completed_at + tracking_started_at (already existed, set when the driver
+-- taps Start Trip) give the real elapsed time; if it exceeds
+-- included_hours_per_day by more than a small grace window, PATCH
+-- /:id/status computes overage_naira automatically when the ride is marked
+-- completed (see routes/rides.js). Riders never pay this in cash — same
+-- wallet-debit-or-fresh-card-charge rails as tipping, see POST
+-- /api/rides/:id/overage-charge. One overage charge per ride, same
+-- "stays 0 until set" pattern as tip_naira.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS included_hours_per_day NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_naira NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_payment_method TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_payment_reference TEXT;

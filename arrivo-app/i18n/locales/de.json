@@ -30,7 +30,13 @@
     "welcomeBack": "Willkommen zurück",
     "joinArrivo": "RideArrivo beitreten",
     "invalidCredentials": "Ungültige E-Mail oder Passwort",
-    "loading": "Bitte warten…"
+    "loading": "Bitte warten…",
+    "forgotPassword": "Passwort vergessen?",
+    "resetPassword": "Passwort zurücksetzen",
+    "sendResetLink": "Reset-Link senden",
+    "resetLinkSent": "Falls für diese E-Mail ein Konto existiert, wurde ein Reset-Link gesendet. Bitte prüfen Sie Ihr Postfach.",
+    "backToLogin": "Zurück zur Anmeldung",
+    "enterEmailForReset": "Geben Sie die E-Mail Ihres Kontos ein."
   },
   "profile": {
     "title": "Profil",

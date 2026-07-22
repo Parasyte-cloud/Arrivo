@@ -7,7 +7,7 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount } = require("../services/fare");
+const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 
@@ -54,8 +54,22 @@ router.post("/", requireAuth, async (req, res) => {
     distanceKm: clientDistanceKm, durationMin: clientDurationMin, securityEscort, fleetSize, paymentMethod = "card",
     emergencyContactName, emergencyContactPhone, dashCamConsent, luxury, payAtPickup,
     pickupLat, pickupLng, destinationLat, destinationLng,
-    scheduledPickupAt, linkedRideId, adults = 1, children = 0,
+    scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
   } = req.body;
+
+  // Only meaningful (and only stored) for a single-day 'full_day' Chauffeur
+  // booking — see the schema.sql comment on rides.included_hours_per_day for
+  // why multi-day charters and one-way/drop-off trips don't get this at all.
+  // Silently ignored (not an error) for every other booking shape, since
+  // older app builds simply won't send it.
+  let includedHoursPerDay = null;
+  if (bookingType === "full_day" && Number(durationDays) === 1 && hoursPerDay != null) {
+    const hours = Number(hoursPerDay);
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) {
+      return res.status(400).json({ error: "hoursPerDay must be a number between 0 and 24." });
+    }
+    includedHoursPerDay = hours;
+  }
   // Validated as whole numbers in a sane range BEFORE anything downstream
   // touches them — adults/children end up written straight into INTEGER
   // columns below, and an un-validated fractional value (e.g. 2.5) would
@@ -283,9 +297,9 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
     const inserted = await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
     );
     return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   }
@@ -306,9 +320,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
       );
       const ride = rideResult.rows[0];
 
@@ -336,9 +350,9 @@ router.post("/", requireAuth, async (req, res) => {
   }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount]
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
+    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
   );
 
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
@@ -649,10 +663,44 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   }
 
   const updated = await pool.query(
-    "UPDATE rides SET ride_status = $1, updated_at = now() WHERE id = $2 RETURNING *",
+    `UPDATE rides SET ride_status = $1, updated_at = now(),
+       completed_at = CASE WHEN $1 = 'completed' THEN now() ELSE completed_at END
+     WHERE id = $2 RETURNING *`,
     [status, req.params.id]
   );
   let ride = updated.rows[0];
+
+  // Chauffeur time-overage — deliberately scoped to single-day 'full_day'
+  // bookings only (see the schema.sql comment on included_hours_per_day for
+  // why). tracking_started_at is set when the driver tapped Start Trip;
+  // completed_at was just set above. Elapsed wall-clock time between the two
+  // is a meaningful signal here specifically because it's a single
+  // continuous engagement, not a multi-day booking with overnight gaps where
+  // raw elapsed time would be meaningless. Silently does nothing if
+  // included_hours_per_day was never set (an older booking, or a rider who
+  // didn't have this field yet) — never invents an overage from thin air.
+  if (
+    status === "completed" &&
+    ride.booking_type === "full_day" &&
+    Number(ride.duration_days) === 1 &&
+    ride.included_hours_per_day &&
+    ride.tracking_started_at
+  ) {
+    const elapsedHours = (new Date(ride.completed_at).getTime() - new Date(ride.tracking_started_at).getTime()) / (1000 * 60 * 60);
+    const overageNaira = computeOverageNaira({
+      vehicleType: ride.vehicle_type,
+      includedHoursPerDay: Number(ride.included_hours_per_day),
+      elapsedHours,
+      fareNaira: Number(ride.fare_naira),
+    });
+    if (overageNaira > 0) {
+      const overageUpdate = await pool.query(
+        "UPDATE rides SET overage_naira = $1, updated_at = now() WHERE id = $2 RETURNING *",
+        [overageNaira, ride.id]
+      );
+      ride = overageUpdate.rows[0];
+    }
+  }
 
   // Charge-at-drop-off for flight-issue rides: the fare wasn't collected
   // upfront this time (it was refunded when the issue was flagged), so
@@ -950,6 +998,97 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Wallet tip failed:", err.message);
     return res.status(500).json({ error: "Could not complete tip payment. Please try again." });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/rides/:id/overage-charge — pays off an automatically-computed
+// Chauffeur time-overage charge (see PATCH /:id/status above, where
+// overage_naira gets set at trip completion for a single-day 'full_day'
+// booking that ran longer than the hours the rider selected at booking).
+// Modeled closely on POST /:id/tip just above: same wallet-debit-or-fresh-
+// card-charge rails, riders never pay this in cash. Unlike a tip, the
+// amount is NOT rider-chosen — it's whatever the system already computed
+// and stored on the ride, so this endpoint only accepts a payment method.
+// body: { paymentMethod: 'wallet' | 'card', paymentReference? }
+router.post("/:id/overage-charge", requireAuth, async (req, res) => {
+  const { paymentMethod, paymentReference } = req.body;
+
+  if (!["wallet", "card"].includes(paymentMethod)) {
+    return res.status(400).json({ error: "paymentMethod must be 'wallet' or 'card'" });
+  }
+
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND rider_id = $2", [req.params.id, req.user.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status !== "completed") {
+    return res.status(400).json({ error: "This ride isn't completed yet." });
+  }
+  const overageNaira = Number(ride.overage_naira);
+  if (!(overageNaira > 0)) {
+    return res.status(400).json({ error: "There's no overage charge on this ride." });
+  }
+  if (ride.overage_payment_reference || ride.overage_payment_method) {
+    return res.status(400).json({ error: "This overage charge has already been paid." });
+  }
+
+  if (paymentMethod === "card") {
+    if (!paymentReference) {
+      return res.status(400).json({ error: "paymentReference is required for a card payment" });
+    }
+    let verification;
+    try {
+      verification = await verifyPaystackTransaction(paymentReference);
+    } catch (err) {
+      console.error("Overage charge payment verification failed:", err.response?.data || err.message);
+      return res.status(502).json({ error: "Couldn't verify the payment. Please try again." });
+    }
+    if (!verification.success || Math.round(verification.amountNaira) !== Math.round(overageNaira)) {
+      return res.status(400).json({ error: "Payment could not be verified." });
+    }
+    const updated = await pool.query(
+      `UPDATE rides SET overage_payment_method = 'card', overage_payment_reference = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+      [paymentReference, ride.id]
+    );
+    return res.json({ ride: withParsedStops(updated.rows[0]) });
+  }
+
+  // Wallet — same atomic, row-locked pattern as every other wallet debit in
+  // this file.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+    const balance = Number(userResult.rows[0].wallet_balance_naira);
+    if (balance < overageNaira) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Insufficient wallet balance for this charge.", balanceNaira: balance, overageNaira });
+    }
+
+    const rideUpdate = await client.query(
+      `UPDATE rides SET overage_payment_method = 'wallet', overage_payment_reference = NULL, updated_at = now() WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+
+    const newBalanceResult = await client.query(
+      "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+      [overageNaira, req.user.id]
+    );
+    const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+
+    await client.query(
+      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+       VALUES ($1, 'overage', 'completed', $2, $3, $4, $5)`,
+      [req.user.id, -overageNaira, newBalance, ride.id, "Time overage charge for Ride #" + ride.id]
+    );
+
+    await client.query("COMMIT");
+    return res.json({ ride: withParsedStops(rideUpdate.rows[0]) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Wallet overage charge failed:", err.message);
+    return res.status(500).json({ error: "Could not complete payment. Please try again." });
   } finally {
     client.release();
   }
