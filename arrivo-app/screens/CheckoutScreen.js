@@ -252,7 +252,7 @@ export default function CheckoutScreen({ route, navigation }) {
         <Text style={styles.title}>Confirm &amp; Pay</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.row}>
+          <View style={styles.summaryRow}>
             <Text style={styles.label}>{label}</Text>
             <Text style={styles.amount}>
               {formatFare(amountNaira)}
@@ -270,7 +270,13 @@ export default function CheckoutScreen({ route, navigation }) {
             <View style={{ height: spacing.sm }} />
             <Button
               label="Top up wallet"
-              onPress={() => navigation.navigate("Home", { screen: "Wallet" })}
+              // Wallet is a sibling Tab.Screen, not nested inside the Home
+              // stack Checkout lives in — navigating to "Home" > "Wallet"
+              // looked for a screen called Wallet inside the Home stack,
+              // found nothing, and silently did nothing. Navigating to
+              // "Wallet" directly lets React Navigation bubble the request
+              // up to the parent Tab.Navigator, which does have it.
+              onPress={() => navigation.navigate("Wallet")}
               trailingIcon
             />
           </Card>
@@ -358,7 +364,14 @@ export default function CheckoutScreen({ route, navigation }) {
         <Button
           label={isBusy ? "Please wait…" : `Pay ${formatFare(amountNaira)}`}
           onPress={pay}
-          disabled={isBusy || (walletMinimum && !walletMinimum.meetsMinimum)}
+          // Only disabled while a request is actually in flight. It used to
+          // also disable whenever the wallet minimum wasn't met, which made
+          // tapping Pay do literally nothing — no feedback at all, since a
+          // disabled Pressable's onPress never fires. pay() already checks
+          // this exact condition (see above) and sets a clear inline error
+          // message right above this button, so leaving it tappable gives
+          // the rider a response instead of a dead button.
+          disabled={isBusy}
           trailingIcon
         />
       </ScrollView>
@@ -370,8 +383,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  label: { color: colors.dark.text, fontSize: 14, fontWeight: "600" },
-  amount: { color: colors.amber, fontSize: 18, fontWeight: "700" },
+  // Wraps to a second line instead of clipping the fare off the edge of the
+  // card when the summary label is long (e.g. a Chauffeur booking's label
+  // includes vehicle + duration + date/time + purpose all in one string).
+  summaryRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", rowGap: 6 },
+  label: { color: colors.dark.text, fontSize: 14, fontWeight: "600", flexShrink: 1, flexBasis: "60%", paddingRight: 8 },
+  amount: { color: colors.amber, fontSize: 18, fontWeight: "700", flexShrink: 0 },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

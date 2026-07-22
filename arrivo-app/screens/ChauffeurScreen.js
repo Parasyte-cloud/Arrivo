@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
@@ -114,7 +114,12 @@ export default function ChauffeurScreen({ navigation }) {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Chauffeur</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -255,6 +260,7 @@ export default function ChauffeurScreen({ navigation }) {
           />
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
