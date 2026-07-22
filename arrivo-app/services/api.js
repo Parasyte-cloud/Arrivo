@@ -1,9 +1,15 @@
 import { API_BASE_URL } from "./config";
 
 async function request(path, options = {}) {
+  // NOTE: headers must be merged, not spread at the top level — any caller
+  // that passes its own `headers` (e.g. { Authorization }, which is nearly
+  // every authenticated call in this file) would otherwise silently replace
+  // this whole object and drop Content-Type entirely, since object spread
+  // only merges top-level keys. Without Content-Type: application/json,
+  // Express's body parser never parses the JSON body at all.
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

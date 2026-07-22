@@ -43,8 +43,5 @@
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "babel-preset-expo": "~54.0.10"
-  },
-  "overrides": {
-    "@expo/config-plugins": "^8.0.0"
   }
 }

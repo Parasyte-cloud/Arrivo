@@ -1,9 +1,12 @@
 import { API_BASE_URL } from "./config";
 
 async function request(path, options = {}) {
+  // See identical note in arrivo-app/services/api.js — headers must be
+  // merged, not spread at the top level, or a caller's own `headers` (e.g.
+  // Authorization) silently wipes out Content-Type entirely.
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
