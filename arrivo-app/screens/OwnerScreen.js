@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Pressable, KeyboardAvoidingView, Platform } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -100,7 +100,12 @@ export default function OwnerScreen() {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Your vehicles</Text>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -126,7 +131,7 @@ export default function OwnerScreen() {
           data.vehicles.map((v) => (
             <Card key={v.id} tone="dark" style={{ marginBottom: spacing.md }}>
               <View style={styles.header}>
-                <View>
+                <View style={{ flex: 1, flexShrink: 1, paddingRight: 8 }}>
                   <Text style={styles.vehicleName}>{v.make_model}</Text>
                   <Text style={styles.sub}>{v.plate_number} · {v.vehicle_type?.toUpperCase()}</Text>
                 </View>
@@ -189,6 +194,7 @@ export default function OwnerScreen() {
           {adding ? <ActivityIndicator color={colors.amber} /> : <Button label="List this vehicle" onPress={submitVehicle} trailingIcon />}
         </Card>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

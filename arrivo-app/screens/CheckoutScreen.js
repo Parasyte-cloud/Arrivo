@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linki
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
-import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getWalletMinimum } from "../services/api";
+import { initializePayment, verifyPayment, createRide, getWallet, getMembership } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 
@@ -26,14 +26,6 @@ export default function CheckoutScreen({ route, navigation }) {
   const [hasMembership, setHasMembership] = useState(false);
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership
-
-  // Standing wallet-balance floor (~$100-equivalent) that must be met
-  // before ANY ride can be booked, regardless of which payment method gets
-  // chosen above for the fare itself — checked proactively here so the
-  // rider sees a top-up prompt before trying to pay, not just a rejection
-  // from the server. POST /api/rides re-checks this for real either way.
-  const [walletMinimum, setWalletMinimum] = useState(null); // { walletBalanceNaira, minWalletBalanceNaira, meetsMinimum } | null
-  const [loadingWalletMinimum, setLoadingWalletMinimum] = useState(true);
 
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [message, setMessage] = useState(null);
@@ -66,20 +58,6 @@ export default function CheckoutScreen({ route, navigation }) {
       }
     })();
   }, [token, amountNaira]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const result = await getWalletMinimum(token);
-        setWalletMinimum(result);
-      } catch (e) {
-        // If this check fails to load, don't block checkout on it — the
-        // server-side gate in POST /api/rides still enforces the real rule.
-      } finally {
-        setLoadingWalletMinimum(false);
-      }
-    })();
-  }, [token]);
 
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
 
@@ -199,13 +177,6 @@ export default function CheckoutScreen({ route, navigation }) {
   };
 
   const pay = () => {
-    if (walletMinimum && !walletMinimum.meetsMinimum) {
-      setMessage(
-        `You need at least ${formatFare(walletMinimum.minWalletBalanceNaira)} in your wallet before booking. Tap "Top up wallet" below to continue.`
-      );
-      setStatus("error");
-      return;
-    }
     if (!agreedCancellation) {
       setMessage("Please agree to the Cancellation & Refund Policy before paying.");
       setStatus("error");
@@ -260,27 +231,6 @@ export default function CheckoutScreen({ route, navigation }) {
             </Text>
           </View>
         </Card>
-
-        {!loadingWalletMinimum && walletMinimum && !walletMinimum.meetsMinimum ? (
-          <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
-            <Text style={styles.warningText}>
-              RideArrivo requires a minimum wallet balance of {formatFare(walletMinimum.minWalletBalanceNaira)} before any ride
-              can be booked. Your current balance is {formatFare(walletMinimum.walletBalanceNaira)}.
-            </Text>
-            <View style={{ height: spacing.sm }} />
-            <Button
-              label="Top up wallet"
-              // Wallet is a sibling Tab.Screen, not nested inside the Home
-              // stack Checkout lives in — navigating to "Home" > "Wallet"
-              // looked for a screen called Wallet inside the Home stack,
-              // found nothing, and silently did nothing. Navigating to
-              // "Wallet" directly lets React Navigation bubble the request
-              // up to the parent Tab.Navigator, which does have it.
-              onPress={() => navigation.navigate("Wallet")}
-              trailingIcon
-            />
-          </Card>
-        ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>How would you like to pay?</Text>

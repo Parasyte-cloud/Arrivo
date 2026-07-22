@@ -4,6 +4,7 @@
     "slug": "arrivo",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "ridearrivo",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -12,9 +13,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.arrivo.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo uses your location to track your ride in progress."
+        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route."
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
@@ -43,6 +44,11 @@
     "extra": {
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o",
+      "googleOAuth": {
+        "iosClientId": "425853448895-v0oepj0r28dtbeqrk445s2t83v06pof0.apps.googleusercontent.com",
+        "androidClientId": "425853448895-lj45c8t7ctijaaabkut03elh4masfeq5.apps.googleusercontent.com",
+        "webClientId": "425853448895-r6ha3gh7b4i4lcsl3lohncuk3ecblsl3.apps.googleusercontent.com"
+      },
       "eas": {
         "projectId": "2ac1ed4e-98a9-4efc-8db4-1bab621da448"
       }
@@ -65,6 +71,13 @@
         {
           "icon": "./assets/icon.png",
           "color": "#F4A300"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RideArrivo needs access to your photos so you can upload a profile picture or ID document.",
+          "cameraPermission": "RideArrivo needs camera access so you can take a photo for your profile or ID verification."
         }
       ],
       [

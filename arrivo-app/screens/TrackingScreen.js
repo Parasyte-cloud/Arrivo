@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput, AppState } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput, AppState, KeyboardAvoidingView, Platform } from "react-native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
@@ -397,7 +397,12 @@ export default function TrackingScreen({ route, navigation }) {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <LiveMap
           pickup={ride?.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
           destination={ride?.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
@@ -734,6 +739,7 @@ export default function TrackingScreen({ route, navigation }) {
           )}
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

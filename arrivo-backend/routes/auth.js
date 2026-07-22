@@ -6,6 +6,7 @@ const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { validateImageDataUrl } = require("../services/imageValidation");
+const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 
 const router = express.Router();
 
@@ -182,6 +183,122 @@ router.post("/login", async (req, res) => {
 
   const token = signToken(user);
   res.json({ token, user: publicUser(user) });
+});
+
+// Shared by POST /google and POST /apple below. Finds the user already
+// linked to this provider id, or links/creates one by email, then returns
+// { user, isNewAccount }. Never trusts the client's agreedToTerms for an
+// account that already exists — that flag only matters (and gets enforced)
+// the moment a brand-new account is actually being created here.
+async function findOrCreateOAuthProfile({ providerColumn, providerId, email, name, avatarUrl, emailVerified, role, agreedToTerms }) {
+  let user = (await pool.query(`SELECT * FROM users WHERE ${providerColumn} = $1`, [providerId])).rows[0];
+  if (user) return { user, isNewAccount: false };
+
+  if (!email) {
+    throw Object.assign(new Error("This account has no email on file, so we can't sign you in."), { status: 400 });
+  }
+
+  const byEmail = (await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()])).rows[0];
+  if (byEmail) {
+    const linked = await pool.query(`UPDATE users SET ${providerColumn} = $1 WHERE id = $2 RETURNING *`, [providerId, byEmail.id]);
+    return { user: linked.rows[0], isNewAccount: false };
+  }
+
+  if (!agreedToTerms) {
+    throw Object.assign(new Error("You must agree to the data protection and privacy terms to create a profile"), { status: 400 });
+  }
+  if (!["rider", "driver"].includes(role)) {
+    throw Object.assign(new Error("Invalid role."), { status: 400 });
+  }
+
+  const randomPassword = crypto.randomBytes(24).toString("hex");
+  const passwordHash = bcrypt.hashSync(randomPassword, SALT_ROUNDS);
+  const inserted = await pool.query(
+    `INSERT INTO users (name, email, password_hash, role, ${providerColumn}, agreed_to_terms, email_verified, avatar_url)
+     VALUES ($1, $2, $3, $4, $5, true, $6, $7) RETURNING *`,
+    [name || "RideArrivo user", email.toLowerCase(), passwordHash, role, providerId, !!emailVerified, avatarUrl || null]
+  );
+  const newUser = inserted.rows[0];
+  sendWelcomeEmail(newUser.email, newUser.name).catch((e) => console.error("Welcome email failed:", e.message));
+  return { user: newUser, isNewAccount: true };
+}
+
+// POST /api/auth/google — sign in (or sign up) with a Google ID token.
+// body: { idToken, role?, agreedToTerms? }
+// idToken is what expo-auth-session's Google provider hands back after the
+// rider/driver taps "Continue with Google" — verified against Google's own
+// servers in services/oauth.js before any of its contents are trusted.
+// agreedToTerms is only required (and only checked) when this is genuinely
+// a brand-new account; an existing account already agreed at signup.
+router.post("/google", async (req, res) => {
+  const { idToken, role = "rider", agreedToTerms } = req.body;
+  if (!idToken) return res.status(400).json({ error: "idToken is required" });
+
+  let payload;
+  try {
+    payload = await verifyGoogleIdToken(idToken);
+  } catch (e) {
+    return res.status(401).json({ error: e.message || "Could not verify this Google sign-in. Please try again." });
+  }
+
+  try {
+    const { user, isNewAccount } = await findOrCreateOAuthProfile({
+      providerColumn: "google_id",
+      providerId: payload.providerId,
+      email: payload.email,
+      name: payload.name,
+      avatarUrl: payload.avatarUrl,
+      emailVerified: payload.emailVerified,
+      role,
+      agreedToTerms,
+    });
+    if (user.role !== role) {
+      return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
+    }
+    const token = signToken(user);
+    res.json({ token, user: publicUser(user), isNewAccount });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Google." });
+  }
+});
+
+// POST /api/auth/apple — sign in (or sign up) with an Apple identity token.
+// body: { identityToken, fullName?: { givenName, familyName }, role?, agreedToTerms? }
+// Apple only ever sends fullName on the very first authorization for a given
+// app — the client has to capture it right then and forward it here, since
+// there's no way to fetch it again later.
+router.post("/apple", async (req, res) => {
+  const { identityToken, fullName, role = "rider", agreedToTerms } = req.body;
+  if (!identityToken) return res.status(400).json({ error: "identityToken is required" });
+
+  let payload;
+  try {
+    payload = await verifyAppleIdentityToken(identityToken);
+  } catch (e) {
+    return res.status(401).json({ error: e.message || "Could not verify this Apple sign-in. Please try again." });
+  }
+
+  const name = fullName ? [fullName.givenName, fullName.familyName].filter(Boolean).join(" ") : null;
+
+  try {
+    const { user, isNewAccount } = await findOrCreateOAuthProfile({
+      providerColumn: "apple_id",
+      providerId: payload.providerId,
+      email: payload.email,
+      name,
+      avatarUrl: null,
+      emailVerified: payload.emailVerified,
+      role,
+      agreedToTerms,
+    });
+    if (user.role !== role) {
+      return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
+    }
+    const token = signToken(user);
+    res.json({ token, user: publicUser(user), isNewAccount });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Apple." });
+  }
 });
 
 // GET /api/auth/me

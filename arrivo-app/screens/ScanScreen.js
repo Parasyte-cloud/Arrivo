@@ -98,7 +98,10 @@ export default function ScanScreen({ navigation }) {
             <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
               {isTopUpError ? (
                 <Pressable
-                  onPress={() => navigation.navigate("Home", { screen: "Wallet" })}
+                  // Wallet is a sibling top-level Tab.Screen, not nested
+                  // inside Home — see the identical fix in
+                  // CheckoutScreen.js's "Top up wallet" button.
+                  onPress={() => navigation.navigate("Wallet")}
                   style={styles.retryBtn}
                 >
                   <Text style={styles.retryText}>Top up wallet</Text>

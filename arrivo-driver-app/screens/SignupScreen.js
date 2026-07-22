@@ -5,10 +5,12 @@ import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import OAuthButtons from "../components/OAuthButtons";
 
 export default function SignupScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { signup } = useAuth();
+  const { signup, loginWithGoogle, loginWithApple } = useAuth();
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -43,11 +45,39 @@ export default function SignupScreen({ navigation }) {
     }
   };
 
+  const handleGoogleIdToken = async (idToken) => {
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithGoogle({ idToken, agreedToTerms });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Google. Please try again.");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const handleAppleResult = async ({ identityToken, fullName, error: appleError }) => {
+    if (appleError) {
+      setError(appleError);
+      return;
+    }
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithApple({ identityToken, fullName, agreedToTerms });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Apple. Please try again.");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
   return (
     <View style={{ flex: 1 }}>
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Drive with RideArrivo</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 
@@ -129,6 +159,22 @@ export default function SignupScreen({ navigation }) {
         <View style={{ height: spacing.sm }} />
         {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Continue" onPress={submit} />}
 
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <OAuthButtons
+          disabled={!agreedToTerms}
+          busy={oauthBusy}
+          onGoogleIdToken={handleGoogleIdToken}
+          onAppleResult={handleAppleResult}
+        />
+        {!agreedToTerms ? (
+          <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+        ) : null}
+
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>Already have an account? Log in</Text>
         </Pressable>
@@ -173,4 +219,8 @@ const styles = StyleSheet.create({
   modalAgreeBtnText: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerText: { color: colors.textMuted, fontSize: 12 },
+  oauthHint: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

@@ -31,6 +31,16 @@ export function signup(payload) {
 export function login(payload) {
   return request("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
 }
+// One call handles both first-time signup and every later login — the
+// backend finds-or-creates the account itself (see routes/auth.js POST
+// /google and /apple). agreedToTerms is only required/enforced server-side
+// the moment a brand-new account actually gets created.
+export function loginWithGoogle({ idToken, agreedToTerms }) {
+  return request("/api/auth/google", { method: "POST", body: JSON.stringify({ idToken, role: "driver", agreedToTerms }) });
+}
+export function loginWithApple({ identityToken, fullName, agreedToTerms }) {
+  return request("/api/auth/apple", { method: "POST", body: JSON.stringify({ identityToken, fullName, role: "driver", agreedToTerms }) });
+}
 // Always responds the same generic message whether or not the email has an
 // account (see the backend route) — this call succeeding just means the
 // request went through, not that an email necessarily exists for it.

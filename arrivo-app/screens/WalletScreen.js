@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl, Linking, AppState } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, RefreshControl, Linking, AppState, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -131,9 +131,15 @@ export default function WalletScreen({ navigation }) {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.amber} />}
+        keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.title}>Wallet</Text>
 
@@ -202,6 +208,7 @@ export default function WalletScreen({ navigation }) {
           })
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

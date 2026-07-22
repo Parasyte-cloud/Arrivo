@@ -15,6 +15,7 @@ import { usePushNotifications } from "./hooks/usePushNotifications";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
+import CompleteProfileScreen from "./screens/CompleteProfileScreen";
 import HomeScreen from "./screens/HomeScreen";
 import RouteScreen from "./screens/RouteScreen";
 import CheckoutScreen from "./screens/CheckoutScreen";
@@ -126,7 +127,7 @@ function AuthFlow() {
 }
 
 function RootNavigator() {
-  const { isAuthenticated, initializing, token } = useAuth();
+  const { isAuthenticated, initializing, token, user } = useAuth();
   usePushNotifications(token);
 
   if (initializing) {
@@ -138,7 +139,21 @@ function RootNavigator() {
     );
   }
 
-  return isAuthenticated ? <MainTabs /> : <AuthFlow />;
+  if (!isAuthenticated) return <AuthFlow />;
+
+  // Google/Apple sign-in only ever gives us a name + email — WhatsApp
+  // number and country of residence are required fields the password
+  // signup form collects inline (see SignupScreen.js), but an OAuth account
+  // can reach here without them. Checking the real user record (rather
+  // than a one-time "isNewAccount" flag that wouldn't survive an app
+  // restart) means a password-signup rider is never affected, and anyone
+  // who closes the app mid-way through this lands right back on it next
+  // launch instead of slipping through with an incomplete profile.
+  if (!user?.whatsapp_number || !user?.country_of_residence) {
+    return <CompleteProfileScreen />;
+  }
+
+  return <MainTabs />;
 }
 
 export default function App() {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, Modal, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Circle, Line } from "react-native-svg";
@@ -122,7 +122,12 @@ export default function ProfileScreen({ navigation }) {
   return (
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{t("profile.title")}</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -251,6 +256,7 @@ export default function ProfileScreen({ navigation }) {
 
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

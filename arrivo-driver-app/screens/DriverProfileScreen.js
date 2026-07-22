@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
+import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -62,7 +62,12 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
   return (
     <View style={styles.screen}>
       <GradientBackground />
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Complete your driver profile</Text>
         <Text style={styles.subtitle}>Step 2 of 2. A few details so we can verify you to drive — your vehicle is assigned separately by RideArrivo</Text>
 
@@ -100,6 +105,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
 
         {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Save & Continue" onPress={submit} />}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

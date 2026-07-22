@@ -72,6 +72,22 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const loginWithGoogle = async ({ idToken, agreedToTerms }) => {
+    const data = await api.loginWithGoogle({ idToken, agreedToTerms });
+    await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    setToken(data.token);
+    setUser(data.user);
+    return data;
+  };
+
+  const loginWithApple = async ({ identityToken, fullName, agreedToTerms }) => {
+    const data = await api.loginWithApple({ identityToken, fullName, agreedToTerms });
+    await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    setToken(data.token);
+    setUser(data.user);
+    return data;
+  };
+
   const logout = async () => {
     await stopBackgroundLocation();
     await SecureStore.deleteItemAsync(TOKEN_KEY);

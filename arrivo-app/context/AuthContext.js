@@ -7,9 +7,19 @@ const TOKEN_KEY = "arrivo_token";
 const AuthContext = createContext(null);
 
 async function request(path, options = {}) {
+  // NOTE: headers must be merged, not spread at the top level — same bug
+  // (and same fix) as services/api.js's request(): any caller that passes
+  // its own `headers` (e.g. { Authorization }, which updateProfile and
+  // submitIdVerification below both do) would otherwise silently replace
+  // this whole object and drop Content-Type entirely. Without
+  // Content-Type: application/json, Express's body parser never parses the
+  // JSON body — req.body ends up {}, and since the backend's PATCH /me
+  // reads every field as `field ?? current.field`, an empty body just
+  // silently no-ops instead of erroring: tapping "Save" on the Profile
+  // screen would show "Saved ✓" without actually saving anything.
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -67,6 +77,35 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // Google/Apple sign-in — one call handles both first-time signup and every
+  // later login, since the backend finds-or-creates the account itself (see
+  // routes/auth.js POST /google and /apple). agreedToTerms is only actually
+  // required (and enforced server-side) the moment a brand-new account gets
+  // created; an existing account already agreed back when it first signed up.
+  const loginWithGoogle = async ({ idToken, agreedToTerms }) => {
+    const data = await request("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ idToken, role: "rider", agreedToTerms }),
+    });
+    await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    setToken(data.token);
+    setUser(data.user);
+    setAppLanguage(data.user.preferred_language);
+    return data;
+  };
+
+  const loginWithApple = async ({ identityToken, fullName, agreedToTerms }) => {
+    const data = await request("/api/auth/apple", {
+      method: "POST",
+      body: JSON.stringify({ identityToken, fullName, role: "rider", agreedToTerms }),
+    });
+    await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    setToken(data.token);
+    setUser(data.user);
+    setAppLanguage(data.user.preferred_language);
+    return data;
+  };
+
   const logout = async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
@@ -100,7 +139,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ token, user, initializing, signup, login, logout, updateProfile, submitIdVerification, isAuthenticated: !!token }}
+      value={{ token, user, initializing, signup, login, loginWithGoogle, loginWithApple, logout, updateProfile, submitIdVerification, isAuthenticated: !!token }}
     >
       {children}
     </AuthContext.Provider>

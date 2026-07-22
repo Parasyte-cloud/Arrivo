@@ -9,6 +9,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone } from "../utils/phoneValidation";
+import OAuthButtons from "../components/OAuthButtons";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -25,7 +26,8 @@ const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 export default function SignupScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
-  const { signup } = useAuth();
+  const { signup, loginWithGoogle, loginWithApple } = useAuth();
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -114,6 +116,40 @@ export default function SignupScreen({ navigation }) {
       setError(e.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Google/Apple both go through the same backend find-or-create endpoint
+  // (POST /api/auth/google or /apple) — agreedToTerms is only actually
+  // enforced server-side the moment a genuinely new account is created, but
+  // the button itself stays disabled until the checkbox above is checked so
+  // nobody creates a profile via Google/Apple without ever seeing the data
+  // protection notice, same as the password path just above.
+  const handleGoogleIdToken = async (idToken) => {
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithGoogle({ idToken, agreedToTerms });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Google. Please try again.");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const handleAppleResult = async ({ identityToken, fullName, error: appleError }) => {
+    if (appleError) {
+      setError(appleError);
+      return;
+    }
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithApple({ identityToken, fullName, agreedToTerms });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Apple. Please try again.");
+    } finally {
+      setOauthBusy(false);
     }
   };
 
@@ -277,6 +313,26 @@ export default function SignupScreen({ navigation }) {
           <Button label={t("auth.createAccount")} onPress={submit} />
         )}
 
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* Disabled until the data-protection checkbox above is checked —
+            same rule the password path enforces in submit(), just applied
+            here too so nobody can create a profile via Google/Apple without
+            ever seeing the privacy notice. */}
+        <OAuthButtons
+          disabled={!agreedToTerms}
+          busy={oauthBusy}
+          onGoogleIdToken={handleGoogleIdToken}
+          onAppleResult={handleAppleResult}
+        />
+        {!agreedToTerms ? (
+          <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+        ) : null}
+
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>{t("auth.haveAccount")}</Text>
         </Pressable>
@@ -351,4 +407,8 @@ const styles = StyleSheet.create({
   modalAgreeBtnText: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerText: { color: colors.textMuted, fontSize: 12 },
+  oauthHint: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

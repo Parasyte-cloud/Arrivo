@@ -11,13 +11,12 @@ const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, 
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 
-// Minimum standing wallet balance every rider must hold before ANY ride can
-// be created — this is separate from how the fare itself gets paid (card,
-// wallet, or membership). The business decision behind this: "prompted to
-// deposit in their wallet before the ride starts, at least $100.00" — a
-// security-deposit-style floor, not money that has to be spent on this
-// trip. Priced in USD and converted at booking time (never hardcoded in
-// naira) for the same reason LUXURY_SURCHARGE_USD in services/fare.js is.
+// Used only to re-confirm a rider can cover their trip after a flight-issue
+// refund (see the flight_issue re-payment check in PATCH /:id/status below).
+// This is NOT a standing floor required to book a ride at all — wallet is
+// just one of the optional ways to pay (card or wallet), never mandatory.
+// Priced in USD and converted at charge time (never hardcoded in naira) for
+// the same reason LUXURY_SURCHARGE_USD in services/fare.js is.
 const MIN_WALLET_BALANCE_USD = 100;
 
 const router = express.Router();
@@ -265,23 +264,6 @@ router.post("/", requireAuth, async (req, res) => {
     } catch (err) {
       console.error("Flight lookup failed during ride creation (informational only, not blocking):", err.message);
     }
-  }
-
-  // Standing wallet-balance floor — applies before ANY payment method,
-  // including card and membership. A rider who's never topped up their
-  // wallet gets a clear, actionable error here rather than the ride
-  // silently going through with $0 held; the apps check this proactively
-  // too (GET /api/rides/wallet-minimum) so riders see the top-up prompt
-  // before they even reach checkout, but this is the real enforcement.
-  const minBalanceNaira = MIN_WALLET_BALANCE_USD * ngnPerUsd;
-  const walletRow = await pool.query("SELECT wallet_balance_naira FROM users WHERE id = $1", [req.user.id]);
-  const currentWalletBalance = Number(walletRow.rows[0]?.wallet_balance_naira || 0);
-  if (currentWalletBalance < minBalanceNaira) {
-    return res.status(400).json({
-      error: `You need at least ₦${Math.round(minBalanceNaira).toLocaleString()} (~$${MIN_WALLET_BALANCE_USD}) in your wallet before booking a ride. Please top up and try again.`,
-      walletBalanceNaira: currentWalletBalance,
-      minWalletBalanceNaira: minBalanceNaira,
-    });
   }
 
   // A membership rider doesn't pay per trip at all — that's the entire

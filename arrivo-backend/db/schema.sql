@@ -362,3 +362,15 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_naira NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_payment_method TEXT;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_payment_reference TEXT;
+
+-- ── Google / Apple sign-in ──
+-- Nullable, unique per provider so the same Google/Apple account always
+-- resolves back to the same RideArrivo user on future sign-ins. An account
+-- created this way still gets a random bcrypt password_hash (same pattern
+-- as the guest-checkout flow in POST /api/auth/guest) so password_hash can
+-- stay NOT NULL — nobody ever needs to know or use that password. If
+-- someone signs in with Google/Apple using the same email as an existing
+-- password account, that account gets linked (the provider id column gets
+-- set on it) rather than creating a second, duplicate account.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id TEXT UNIQUE;
