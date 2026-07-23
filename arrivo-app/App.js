@@ -1,6 +1,6 @@
 import "./i18n"; // side-effect: initializes i18next before anything renders
 
-import React from "react";
+import React, { useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { usePushNotifications } from "./hooks/usePushNotifications";
+import LaunchIntro from "./components/LaunchIntro";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -129,6 +130,15 @@ function AuthFlow() {
 function RootNavigator() {
   const { isAuthenticated, initializing, token, user } = useAuth();
   usePushNotifications(token);
+  // Plays once per cold launch, independent of how long the auth check
+  // takes — a consistent brand moment every time, not something that only
+  // shows up on a slow session restore. Falls through to the exact same
+  // initializing/auth logic as before once it finishes.
+  const [introDone, setIntroDone] = useState(false);
+
+  if (!introDone) {
+    return <LaunchIntro onFinish={() => setIntroDone(true)} />;
+  }
 
   if (initializing) {
     // Restoring a saved session token — brief splash-like loading state.

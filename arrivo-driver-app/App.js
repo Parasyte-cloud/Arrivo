@@ -9,6 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { getDriverProfile } from "./services/api";
+import LaunchIntro from "./components/LaunchIntro";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -73,6 +74,11 @@ function RootNavigator() {
   const { isAuthenticated, initializing, token } = useAuth();
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
+  // Plays once per cold launch, independent of how long the auth check
+  // takes — a consistent brand moment every time, not something that only
+  // shows up on a slow session restore. Falls through to the exact same
+  // initializing/auth logic as before once it finishes.
+  const [introDone, setIntroDone] = useState(false);
 
   const checkProfile = useCallback(async () => {
     if (!token) return;
@@ -91,6 +97,7 @@ function RootNavigator() {
     if (isAuthenticated) checkProfile();
   }, [isAuthenticated, checkProfile]);
 
+  if (!introDone) return <LaunchIntro onFinish={() => setIntroDone(true)} />;
   if (initializing) return <Loading />;
   if (!isAuthenticated) return <AuthFlow />;
   if (checkingProfile) return <Loading />;

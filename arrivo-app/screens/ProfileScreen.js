@@ -48,7 +48,24 @@ export default function ProfileScreen({ navigation }) {
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
   const [country, setCountry] = useState(user?.country_of_residence || "");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  // "Saved ✓" used to be a one-off `useState(false)` flipped to true right
+  // after a successful save — but it had no way to reflect that the data
+  // was STILL saved once this screen remounted (e.g. returning from the
+  // photo-library picker below tears down and rebuilds this component,
+  // resetting all of its local state). The save itself was never lost —
+  // updateProfile() below does persist to the backend and refreshes `user`
+  // — but the confirmation flag reverting to "Save" made it look like it
+  // had been, which is exactly the bug reported. Deriving it from whether
+  // the current fields match what's actually on `user` (refreshed from
+  // AuthContext, which survives this screen remounting) fixes that: it
+  // reflects reality regardless of remounts, not a fragile local flag.
+  const hasAnyContactInfo = whatsapp.trim().length > 0 || country.trim().length > 0;
+  const isSaved =
+    !saving &&
+    hasAnyContactInfo &&
+    whatsapp === (user?.whatsapp_number || "") &&
+    country === (user?.country_of_residence || "");
   const [avatarUri, setAvatarUri] = useState(user?.avatar_url || null);
   const [avatarError, setAvatarError] = useState(null);
   const [trips, setTrips] = useState(null); // null = loading
@@ -72,12 +89,16 @@ export default function ProfileScreen({ navigation }) {
 
   const saveContactDetails = async () => {
     setSaving(true);
-    setSaved(false);
+    setSaveError(null);
     try {
       await updateProfile({ whatsappNumber: whatsapp, countryOfResidence: country });
-      setSaved(true);
+      // No setSaved(true) needed — isSaved above recomputes automatically
+      // once updateProfile's setUser(data.user) lands, since it compares
+      // against the now-updated user.whatsapp_number/country_of_residence.
     } catch (e) {
-      // Keep it simple — the fields just won't show a "saved" confirmation.
+      // Previously silent — a failed save looked identical to a slow one,
+      // with no indication anything had gone wrong.
+      setSaveError(e.message || "Couldn't save your details. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -171,8 +192,9 @@ export default function ProfileScreen({ navigation }) {
           {saving ? (
             <ActivityIndicator color={colors.amber} />
           ) : (
-            <Button label={saved ? "Saved ✓" : "Save"} variant="ghost" tone="dark" onPress={saveContactDetails} />
+            <Button label={isSaved ? "Saved ✓" : "Save"} variant="ghost" tone="dark" onPress={saveContactDetails} />
           )}
+          {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
