@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Button } from "../components/UI";
 import { colors, spacing, radius } from "../theme/tokens";
@@ -130,13 +130,23 @@ export default function ScanScreen({ navigation }) {
   }
 
   if (!permission.granted) {
+    // Once denied, iOS never lets a second requestPermission() prompt show
+    // again (canAskAgain false) — it silently no-ops, leaving someone stuck
+    // tapping a button that does nothing with no path forward. Send them to
+    // Settings directly in that case instead.
+    const canRetryInApp = permission.canAskAgain !== false;
     return (
       <View style={[styles.screen, { padding: spacing.lg }]}>
         <Text style={styles.permissionText}>
           RideArrivo needs camera access to scan your driver's QR code and start live tracking.
+          {canRetryInApp ? "" : " Camera access was denied — enable it in Settings to continue."}
         </Text>
         <View style={{ height: spacing.md }} />
-        <Button label="Allow camera access" onPress={requestPermission} trailingIcon />
+        <Button
+          label={canRetryInApp ? "Allow camera access" : "Open Settings"}
+          onPress={canRetryInApp ? requestPermission : () => Linking.openSettings()}
+          trailingIcon
+        />
       </View>
     );
   }
@@ -147,7 +157,17 @@ export default function ScanScreen({ navigation }) {
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        onBarcodeScanned={status === "verifying" ? undefined : handleScan}
+        // Only actively scan while idle. Previously this only excluded
+        // "verifying", so while an error/offline card was on screen the
+        // placard was very likely still in frame (nobody yanks the phone
+        // away instantly) and the camera would immediately re-fire,
+        // re-triggering confirmScan on every frame — a flicker between
+        // "Confirming…" and the error card, repeated network/cache calls,
+        // and no real chance to read the message or tap Retry. Now scanning
+        // only resumes once the user explicitly acts (Try again/Scan again
+        // reset status to "idle"; Retry on the offline card re-verifies
+        // directly without needing another scan).
+        onBarcodeScanned={status === "idle" ? handleScan : undefined}
       />
       <View style={styles.overlay}>
         <View style={styles.frame} />
@@ -184,8 +204,10 @@ export default function ScanScreen({ navigation }) {
               {isTopUpError ? (
                 <Pressable
                   // Wallet is a sibling top-level Tab.Screen, not nested
-                  // inside Home — see the identical fix in
-                  // CheckoutScreen.js's "Top up wallet" button.
+                  // inside Home — see the identical "Top up wallet" button
+                  // in TrackingScreen.js (pay-at-pickup has since been
+                  // removed from CheckoutScreen.js entirely, so that's no
+                  // longer where the equivalent button lives).
                   onPress={() => navigation.navigate("Wallet")}
                   style={styles.retryBtn}
                 >

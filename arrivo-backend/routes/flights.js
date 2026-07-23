@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 // Common Nigerian airport IATA codes, so the app can send a friendly name
@@ -60,7 +61,13 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
 }
 
 // GET /api/flights/status?flightNumber=BA075&arrIata=LOS
-router.get("/status", async (req, res) => {
+// requireAuth added — this was previously open to anyone, letting an
+// unauthenticated caller burn the paid AviationStack quota with no rate
+// limiting. The rider app now sends its token (see services/api.js
+// getFlightStatus); the scheduler's own background lookups call
+// lookupFlightStatus directly and never go through this HTTP route at all,
+// so they're unaffected.
+router.get("/status", requireAuth, async (req, res) => {
   const { flightNumber, arrIata = "LOS" } = req.query;
 
   if (!flightNumber) {

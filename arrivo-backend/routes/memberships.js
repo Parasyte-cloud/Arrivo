@@ -157,9 +157,29 @@ router.post("/corporate/link-delegate", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "This account doesn't have an active corporate membership yet." });
   }
 
-  const delegateUser = await pool.query("SELECT id FROM users WHERE email = $1", [delegateEmail.toLowerCase()]);
+  // Only a 'rider' account can be added as a delegate — a driver or admin
+  // account being silently converted into a corporate delegate (which
+  // grants no-payment rides billed to this company) was previously possible
+  // simply by knowing their email.
+  const delegateUser = await pool.query("SELECT id, role FROM users WHERE email = $1", [delegateEmail.toLowerCase()]);
   if (!delegateUser.rows[0]) {
     return res.status(404).json({ error: "No RideArrivo account found for that email. The delegate needs to sign up first." });
+  }
+  if (delegateUser.rows[0].role !== "rider") {
+    return res.status(400).json({ error: "Only a rider account can be added as a corporate delegate." });
+  }
+
+  // A rider already linked (to this company or a different one) shouldn't
+  // get a second active corporate_delegate row — previously nothing stopped
+  // that, which could stack multiple companies billing for the same rider's
+  // trips, or silently re-link someone away from a company that added them
+  // without either company's knowledge.
+  const alreadyDelegate = await pool.query(
+    `SELECT id FROM memberships WHERE user_id = $1 AND plan_type = 'corporate_delegate' AND company_account_id IS NOT NULL AND status = 'active' AND expires_at > now()`,
+    [delegateUser.rows[0].id]
+  );
+  if (alreadyDelegate.rows[0]) {
+    return res.status(400).json({ error: "This rider is already linked as a delegate under a corporate account." });
   }
 
   const inserted = await pool.query(

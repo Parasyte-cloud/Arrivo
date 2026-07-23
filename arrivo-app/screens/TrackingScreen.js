@@ -63,6 +63,10 @@ export default function TrackingScreen({ route, navigation }) {
     offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine — no SIM data needed." : null
   );
   const flushingRef = useRef(false);
+  // Bumped whenever flushPendingScan lands a confirmed ride — lets fetchRide
+  // (above) detect and discard an in-flight GET that resolves afterward
+  // with now-stale data. See the comment in fetchRide for the exact race.
+  const confirmedGenerationRef = useRef(0);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
   const [listeningSending, setListeningSending] = useState(false);
@@ -108,8 +112,16 @@ export default function TrackingScreen({ route, navigation }) {
 
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
+    const generationAtStart = confirmedGenerationRef.current;
     try {
       const { ride: data } = await getRideDetails(token, rideId);
+      // If flushPendingScan confirmed the offline scan while this GET was
+      // in flight, its result is newer and authoritative — applying this
+      // request's now-stale response on top would visibly regress the
+      // ride's status (e.g. back to "accepted" after it already flipped to
+      // "in_progress"), if only for one poll cycle. Skip it; the next tick
+      // will fetch fresh data consistent with the confirmed state.
+      if (confirmedGenerationRef.current !== generationAtStart) return;
       setRide(data);
       setPanicActive(!!data.panic_triggered_at);
       setLoadError(null);
@@ -143,6 +155,7 @@ export default function TrackingScreen({ route, navigation }) {
     try {
       const { ride: confirmedRide } = await scanRideQr(token, pending.scanToken);
       await clearPendingScan();
+      confirmedGenerationRef.current += 1;
       setOfflineMode(false);
       setOfflineNotice(null);
       setLoadError(null);
@@ -194,7 +207,7 @@ export default function TrackingScreen({ route, navigation }) {
     if (!ride?.flight_number) return;
     setFlightLoading(true);
     try {
-      const data = await getFlightStatus(ride.flight_number, "LOS");
+      const data = await getFlightStatus(token, ride.flight_number, "LOS");
       setFlightStatus(data);
       setFlightError(null);
     } catch (e) {

@@ -327,6 +327,7 @@ export default function SignupScreen({ navigation }) {
           disabled={!agreedToTerms}
           busy={oauthBusy}
           onGoogleIdToken={handleGoogleIdToken}
+          onGoogleError={setError}
           onAppleResult={handleAppleResult}
         />
         {!agreedToTerms ? (

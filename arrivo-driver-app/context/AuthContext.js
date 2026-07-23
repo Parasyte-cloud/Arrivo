@@ -5,6 +5,14 @@ import * as api from "../services/api";
 import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
 
 const TOKEN_KEY = "arrivo_driver_token";
+// Caches the last successfully-fetched profile so a cold start with no
+// signal (very real for a driver waiting at the airport) can still let them
+// into the app using their last-known profile, instead of stranding them on
+// Login. Previously a non-401 getMe() failure correctly avoided deleting the
+// token, but never actually granted access either — token/user both stayed
+// null, so isAuthenticated was false regardless, and the driver was dropped
+// on Login anyway despite the comment's stated intent.
+const USER_CACHE_KEY = "arrivo_driver_user_cache";
 
 // Stops the background location task (see hooks/useLocationReporting.js)
 // if it's running. Without this, logging out would leave a background
@@ -35,6 +43,10 @@ export function AuthProvider({ children }) {
           const { user: me } = await api.getMe(saved);
           setToken(saved);
           setUser(me);
+          // Refresh the cache on every successful cold-start fetch so the
+          // fallback below is never more stale than the driver's last
+          // successful launch.
+          await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(me));
         }
       } catch (e) {
         // Only clear a stored token when the server actually says it's
@@ -43,6 +55,24 @@ export function AuthProvider({ children }) {
         // wipe a perfectly good session and force a re-login for no reason.
         if (e?.status === 401) {
           await SecureStore.deleteItemAsync(TOKEN_KEY);
+          await SecureStore.deleteItemAsync(USER_CACHE_KEY);
+        } else {
+          // Not a rejected token — just couldn't reach the server. Admit the
+          // driver using the last profile we successfully fetched, so they
+          // aren't stranded on Login. Every real API call still carries the
+          // token and will get its own 401 if the token has actually gone
+          // bad in the meantime; this only smooths over the cold-start check.
+          try {
+            const saved = await SecureStore.getItemAsync(TOKEN_KEY);
+            const cachedUserRaw = await SecureStore.getItemAsync(USER_CACHE_KEY);
+            if (saved && cachedUserRaw) {
+              setToken(saved);
+              setUser(JSON.parse(cachedUserRaw));
+            }
+          } catch {
+            // Cache unreadable/corrupt — fall through to the Login screen,
+            // same as before this fix existed.
+          }
         }
       } finally {
         setInitializing(false);
@@ -56,6 +86,7 @@ export function AuthProvider({ children }) {
     // combined `name` server-side) and requires agreedToTerms to be true.
     const data = await api.signup({ firstName, lastName, email, phone, password, agreedToTerms, role: "driver" });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(data.user));
     setToken(data.token);
     setUser(data.user);
     return data.user;
@@ -67,6 +98,7 @@ export function AuthProvider({ children }) {
       throw new Error("This account isn't registered as a driver. Use the RideArrivo rider app instead.");
     }
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(data.user));
     setToken(data.token);
     setUser(data.user);
     return data.user;
@@ -75,6 +107,7 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = async ({ idToken, agreedToTerms }) => {
     const data = await api.loginWithGoogle({ idToken, agreedToTerms });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(data.user));
     setToken(data.token);
     setUser(data.user);
     return data;
@@ -83,6 +116,7 @@ export function AuthProvider({ children }) {
   const loginWithApple = async ({ identityToken, fullName, agreedToTerms }) => {
     const data = await api.loginWithApple({ identityToken, fullName, agreedToTerms });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+    await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(data.user));
     setToken(data.token);
     setUser(data.user);
     return data;
@@ -91,6 +125,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await stopBackgroundLocation();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await SecureStore.deleteItemAsync(USER_CACHE_KEY);
     setToken(null);
     setUser(null);
   };

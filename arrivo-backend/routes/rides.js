@@ -25,6 +25,34 @@ function withParsedStops(ride) {
   return { ...ride, stops: JSON.parse(ride.stops || "[]") };
 }
 
+// A real, successful Paystack reference passing verification only proves
+// money moved ONCE — it says nothing about which charge it's for. Every
+// "mark this paid" endpoint below (PATCH /:id/payment, POST /:id/tip,
+// POST /:id/overage-charge) independently verifies a client-supplied
+// reference against Paystack and checks the amount, but until now never
+// checked whether that same reference had already been used to pay for a
+// DIFFERENT ride/tip/overage. A rider could pay once for a real ride, then
+// create a second ride (or trigger a tip/overage) reusing that same
+// already-successful reference and get it marked paid for free — a genuine
+// double-spend, no timing/race required. This is the shared guard closing
+// that hole: called after Paystack verification succeeds, before any row is
+// updated, at each of the three call sites. excludeRideId is the ride
+// currently being processed, since that ride legitimately "owns" its own
+// payment_reference — this only rejects the reference showing up somewhere
+// ELSE that's already paid.
+async function isPaymentReferenceReused(reference, excludeRideId) {
+  const result = await pool.query(
+    `SELECT id FROM rides
+     WHERE id != $2
+       AND ((payment_reference = $1 AND payment_status = 'paid')
+         OR tip_payment_reference = $1
+         OR overage_payment_reference = $1)
+     LIMIT 1`,
+    [reference, excludeRideId]
+  );
+  return !!result.rows[0];
+}
+
 // POST /api/rides — create a new ride/booking (requires auth)
 // body: { pickupAddress, stops?, flightNumber?, vehicleType, fareNaira,
 //         paymentReference?, bookingType?, durationDays?, agreedCancellationPolicy,
@@ -791,6 +819,10 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
     console.error(`Payment amount mismatch for ride #${ride.id}: paid ₦${verification.amountNaira}, expected ₦${expectedNaira}`);
     return res.status(400).json({ error: "The amount paid doesn't match this ride's fare. Contact support." });
   }
+  if (await isPaymentReferenceReused(ride.payment_reference, ride.id)) {
+    console.error(`Reused payment reference on ride #${ride.id}: ${ride.payment_reference} was already used to pay for a different charge.`);
+    return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+  }
 
   const updated = await pool.query(
     "UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
@@ -937,6 +969,10 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
     if (!verification.success || Math.round(verification.amountNaira) !== Math.round(amountNaira)) {
       return res.status(400).json({ error: "Tip payment could not be verified." });
     }
+    if (await isPaymentReferenceReused(paymentReference, ride.id)) {
+      console.error(`Reused payment reference on ride #${ride.id} tip: ${paymentReference} was already used to pay for a different charge.`);
+      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+    }
     const updated = await pool.query(
       `UPDATE rides SET tip_naira = $1, tip_payment_method = 'card', tip_payment_reference = $2, updated_at = now() WHERE id = $3 RETURNING *`,
       [amountNaira, paymentReference, ride.id]
@@ -1028,6 +1064,10 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
     }
     if (!verification.success || Math.round(verification.amountNaira) !== Math.round(overageNaira)) {
       return res.status(400).json({ error: "Payment could not be verified." });
+    }
+    if (await isPaymentReferenceReused(paymentReference, ride.id)) {
+      console.error(`Reused payment reference on ride #${ride.id} overage charge: ${paymentReference} was already used to pay for a different charge.`);
+      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
     }
     const updated = await pool.query(
       `UPDATE rides SET overage_payment_method = 'card', overage_payment_reference = $1, updated_at = now() WHERE id = $2 RETURNING *`,
@@ -1184,32 +1224,45 @@ router.post("/scan", requireAuth, async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
-      const balance = Number(userResult.rows[0].wallet_balance_naira);
-      const fareNaira = Number(ride.fare_naira);
-      if (balance < fareNaira) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          error: `Your wallet balance (₦${Math.round(balance).toLocaleString()}) isn't enough to cover this ride's ₦${Math.round(fareNaira).toLocaleString()} fare. Please top up your wallet and scan again.`,
-          balanceNaira: balance,
-          fareNaira,
-        });
+      // Lock the RIDE row too, not just the wallet — the earlier version
+      // only locked the wallet balance, so two near-simultaneous /scan
+      // calls on the same still-unpaid ride could both pass the outer
+      // `payment_status !== "paid"` check (read before this transaction
+      // even started) and both debit the wallet. Locking the ride row and
+      // re-reading payment_status from inside the transaction closes that:
+      // whichever request gets here second sees the first one's committed
+      // 'paid' status and skips charging again.
+      const rideLockResult = await client.query("SELECT payment_status FROM rides WHERE id = $1 FOR UPDATE", [ride.id]);
+      if (rideLockResult.rows[0].payment_status === "paid") {
+        await client.query("COMMIT"); // nothing to roll back, just release the lock
+      } else {
+        const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+        const balance = Number(userResult.rows[0].wallet_balance_naira);
+        const fareNaira = Number(ride.fare_naira);
+        if (balance < fareNaira) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            error: `Your wallet balance (₦${Math.round(balance).toLocaleString()}) isn't enough to cover this ride's ₦${Math.round(fareNaira).toLocaleString()} fare. Please top up your wallet and scan again.`,
+            balanceNaira: balance,
+            fareNaira,
+          });
+        }
+
+        const newBalanceResult = await client.query(
+          "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+          [fareNaira, req.user.id]
+        );
+        const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+
+        await client.query(
+          `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+           VALUES ($1, 'ride_charge', 'completed', $2, $3, $4, $5)`,
+          [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + ride.pickup_address + ")"]
+        );
+
+        await client.query("UPDATE rides SET payment_status = 'paid' WHERE id = $1", [ride.id]);
+        await client.query("COMMIT");
       }
-
-      const newBalanceResult = await client.query(
-        "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
-        [fareNaira, req.user.id]
-      );
-      const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
-
-      await client.query(
-        `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
-         VALUES ($1, 'ride_charge', 'completed', $2, $3, $4, $5)`,
-        [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + ride.pickup_address + ")"]
-      );
-
-      await client.query("UPDATE rides SET payment_status = 'paid' WHERE id = $1", [ride.id]);
-      await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
       console.error("Pay-at-pickup wallet charge failed:", err.message);
@@ -1219,11 +1272,25 @@ router.post("/scan", requireAuth, async (req, res) => {
     }
   }
 
+  // WHERE ride_status = 'accepted' guard added — without it, two concurrent
+  // scans (e.g. a flaky-connection double-tap, or the offline retry queue
+  // racing a manual retry) could both pass the SELECT above and both run
+  // this UPDATE, each resetting tracking_started_at to its own now(). Since
+  // tracking_started_at feeds directly into computeOverageNaira's
+  // elapsedHours (services/fare.js), a later overwrite would corrupt that
+  // trip's overage calculation. If this UPDATE affects zero rows, another
+  // request already won the race — fetch the (now in_progress) ride fresh
+  // and return that instead of a spurious error.
   const updated = await pool.query(
     `UPDATE rides SET ride_status = 'in_progress', tracking_started_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
+     WHERE id = $1 AND ride_status = 'accepted' RETURNING *`,
     [ride.id]
   );
+
+  if (!updated.rows[0]) {
+    const alreadyStarted = await pool.query("SELECT * FROM rides WHERE id = $1", [ride.id]);
+    return res.json({ ride: withParsedStops(alreadyStarted.rows[0]), driverName: driver.driver_name });
+  }
 
   res.json({ ride: withParsedStops(updated.rows[0]), driverName: driver.driver_name });
 });

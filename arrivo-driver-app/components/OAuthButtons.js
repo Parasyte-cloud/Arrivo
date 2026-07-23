@@ -22,7 +22,7 @@ const GOOGLE_WEB_CLIENT_ID = Constants.expoConfig?.extra?.googleOAuth?.webClient
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only). `disabled` gates these behind the data-protection checkbox on
 // the signup screen, exactly like "Create account" below them is gated.
-export default function OAuthButtons({ onGoogleIdToken, onAppleResult, disabled, busy }) {
+export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, disabled, busy }) {
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -33,9 +33,26 @@ export default function OAuthButtons({ onGoogleIdToken, onAppleResult, disabled,
   });
 
   useEffect(() => {
-    if (response?.type !== "success") return;
+    if (!response) return;
+    // Previously only handled "success" and silently dropped everything
+    // else — a real Google sign-in failure (bad client config, network
+    // error) left the driver with zero feedback: no error text, spinner
+    // just stops, nothing happens. "dismiss"/"cancel" (they backed out of
+    // the picker themselves) is intentionally still silent here, matching
+    // how the Apple handler below ignores ERR_REQUEST_CANCELED — only a
+    // genuine "error" type is worth surfacing.
+    if (response.type === "error") {
+      onGoogleError && onGoogleError(response.error?.message || "Couldn't sign in with Google. Please try again.");
+      return;
+    }
+    if (response.type !== "success") return;
     const idToken = response.authentication?.idToken || response.params?.id_token;
-    if (idToken) onGoogleIdToken(idToken);
+    if (idToken) {
+      onGoogleIdToken(idToken);
+    } else {
+      onGoogleError && onGoogleError("Couldn't complete Google sign-in. Please try again.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
 
   const handleAppleSignIn = async () => {

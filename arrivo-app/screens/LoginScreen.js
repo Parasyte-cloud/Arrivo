@@ -185,6 +185,7 @@ export default function LoginScreen({ navigation }) {
             <OAuthButtons
               busy={oauthBusy}
               onGoogleIdToken={handleGoogleIdToken}
+              onGoogleError={setError}
               onAppleResult={handleAppleResult}
             />
             <Text style={styles.oauthNotice}>

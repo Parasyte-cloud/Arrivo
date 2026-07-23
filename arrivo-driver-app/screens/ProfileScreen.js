@@ -15,20 +15,27 @@ export default function ProfileScreen() {
   const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  const loadProfile = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const { driver } = await getDriverProfile(token);
+      setProfile(driver);
+    } catch (e) {
+      // Previously a silent no-op here just left the Vehicle/Languages/
+      // Rating card blank forever with no indication anything went wrong,
+      // and no way to retry short of leaving and reopening the tab.
+      setLoadError(e.message || "Couldn't load your profile.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
-      (async () => {
-        try {
-          const { driver } = await getDriverProfile(token);
-          setProfile(driver);
-        } catch (e) {
-          // no-op — profile card just won't render vehicle details
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }, [token])
+      loadProfile();
+    }, [loadProfile])
   );
 
   return (
@@ -45,6 +52,12 @@ export default function ProfileScreen() {
 
         {loading ? (
           <ActivityIndicator color={colors.amber} />
+        ) : loadError ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
+            <Text style={styles.rowMuted}>{loadError}</Text>
+            <View style={{ height: spacing.sm }} />
+            <Button label="Retry" variant="ghost" tone="dark" onPress={loadProfile} />
+          </Card>
         ) : profile ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <Text style={styles.cardLabel}>Vehicle</Text>

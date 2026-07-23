@@ -89,7 +89,17 @@ router.post(
       .update(req.body)
       .digest("hex");
 
-    if (signature !== expected) {
+    // timingSafeEqual over a plain !== comparison — this is the one truly
+    // trusted payment-confirmation path (see comment above), so it's worth
+    // closing even a theoretical timing side-channel on the HMAC check.
+    // Requires equal-length buffers, hence the length check first (a length
+    // mismatch already means "not equal" without needing the safe compare).
+    const signatureBuf = Buffer.from(signature || "", "utf8");
+    const expectedBuf = Buffer.from(expected, "utf8");
+    const signatureValid =
+      signatureBuf.length === expectedBuf.length && crypto.timingSafeEqual(signatureBuf, expectedBuf);
+
+    if (!signatureValid) {
       console.warn("Webhook signature mismatch — ignoring request");
       return res.sendStatus(401);
     }

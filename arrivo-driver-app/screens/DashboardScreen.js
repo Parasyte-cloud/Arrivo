@@ -7,7 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice } from "../services/api";
+import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice, getDriverProfile } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
@@ -21,6 +21,7 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef(null);
 
   // While online (whether waiting for a request or mid-trip), periodically
@@ -48,6 +49,26 @@ export default function DashboardScreen() {
     } catch (e) {
       setError(e.message);
     }
+  }, [token]);
+
+  // isOnline used to always start false on every mount (app cold start, or
+  // even just this screen remounting), regardless of whatever the backend's
+  // is_online actually said — so a driver who was genuinely online when the
+  // app was killed (common — phones get closed/restarted at the airport)
+  // would look and act offline (no location reporting, no ride polling)
+  // until they noticed and flipped the switch back on themselves. Runs once
+  // on mount, not on every focus — toggleOnline below is the source of
+  // truth for the rest of the session.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { driver } = await getDriverProfile(token);
+        if (driver && driver.is_online) setIsOnline(true);
+      } catch (e) {
+        // Non-fatal — worst case the driver has to flip the switch
+        // themselves, same as before this fix existed.
+      }
+    })();
   }, [token]);
 
   // On screen focus, check whether this driver already has an active ride
@@ -144,7 +165,25 @@ export default function DashboardScreen() {
       <GradientBackground variant="dark" />
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={activeRide ? checkForActiveRide : refreshAvailable} tintColor={colors.amber} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            // refreshing was previously hardcoded to false — the pull
+            // gesture's spinner would immediately snap back regardless of
+            // how long the actual refresh took, giving no feedback that
+            // anything happened. Wrapping the same calls to actually track
+            // in-flight state fixes that without changing what gets refreshed.
+            onRefresh={async () => {
+              setRefreshing(true);
+              try {
+                await (activeRide ? checkForActiveRide() : refreshAvailable());
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+            tintColor={colors.amber}
+          />
+        }
       >
         <View style={styles.header}>
           <View>
@@ -281,14 +320,24 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 
   const sendPanicRequest = () => {
     setPanicError(false);
+    setListeningError(false);
     triggerPanic(token, ride.id, "Driver-initiated SOS")
-      .then(() => setPanicConfirmed(true))
-      .catch(() => setPanicError(true));
-    // "One trigger, full response" — panic already activates the listening
-    // device server-side in the same write on success, so reflect that in
-    // the UI optimistically; if the panic call itself fails, activateListening
-    // below still gives an independent way to confirm/retry it.
-    setListeningOn(true);
+      .then(() => {
+        setPanicConfirmed(true);
+        // "One trigger, full response" — panic activates the listening
+        // device server-side in the same write, so only reflect "on" once
+        // the call actually succeeds. Previously this ran unconditionally,
+        // outside the .then/.catch — a failed panic request (network down,
+        // the exact case panicError exists to surface) still showed
+        // "Listening device: on" with no error and no retry affordance,
+        // the same false-safety-reassurance bug already fixed once for
+        // panicConfirmed/panicError itself, just missed here.
+        setListeningOn(true);
+      })
+      .catch(() => {
+        setPanicError(true);
+        setListeningError(true);
+      });
   };
 
   const startPanicCountdown = () => {

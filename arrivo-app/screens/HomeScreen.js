@@ -10,7 +10,7 @@ import { useAuth } from "../context/AuthContext";
 
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [flightNumber, setFlightNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -22,7 +22,7 @@ export default function HomeScreen({ navigation }) {
     setError(null);
     setFlight(null);
     try {
-      const data = await getFlightStatus(flightNumber.trim().toUpperCase(), "LOS");
+      const data = await getFlightStatus(token, flightNumber.trim().toUpperCase(), "LOS");
       setFlight(data);
     } catch (e) {
       setError(e.message || t("home.flightNotFound"));

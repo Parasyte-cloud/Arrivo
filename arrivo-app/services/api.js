@@ -32,9 +32,11 @@ export function isNetworkError(e) {
   return /network request failed|failed to fetch|network error|timed out|timeout|abort/i.test(msg);
 }
 
-export function getFlightStatus(flightNumber, arrIata = "LOS") {
+export function getFlightStatus(token, flightNumber, arrIata = "LOS") {
   const params = new URLSearchParams({ flightNumber, arrIata });
-  return request(`/api/flights/status?${params.toString()}`);
+  return request(`/api/flights/status?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 }
 
 // Always responds the same generic message whether or not the email has an
