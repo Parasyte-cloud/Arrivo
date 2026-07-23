@@ -41,14 +41,52 @@ router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {
 // currently-accepted ride and flips it to "in progress", starting tracking.
 // scan_token never changes for a given driver, so a printed placard stays
 // valid forever — re-printing is never needed just because of an app update.
+//
+// The payload also carries the driver's name/vehicle/plate as query params
+// alongside the token (not just the bare token). This is deliberate: a
+// traveler scanning at the airport often has zero data connectivity, so the
+// app decodes these straight off the QR code itself to show "your driver is
+// X, driving a Y, plate Z" instantly, with no network round trip at all.
+// The token is still what the backend actually trusts for the real
+// confirm-and-start-tracking action (see POST /api/rides/scan) — these
+// extra fields are display-only, never trusted for anything server-side.
+// One consequence: if this driver's assigned vehicle changes later, this
+// placard's plate/vehicle text goes stale until reprinted — same as any
+// physical placard would need updating when a driver switches cars.
 router.get("/drivers/:id/qr", async (req, res) => {
-  const driver = (await pool.query("SELECT scan_token FROM drivers WHERE id = $1", [req.params.id])).rows[0];
+  const driver = (
+    await pool.query(
+      `SELECT drivers.scan_token, users.name as driver_name,
+              vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
+       FROM drivers
+       JOIN users ON users.id = drivers.user_id
+       LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+       WHERE drivers.id = $1`,
+      [req.params.id]
+    )
+  ).rows[0];
   if (!driver) return res.status(404).json({ error: "Driver not found" });
   if (!driver.scan_token) {
     return res.status(400).json({ error: "This driver has no scan token yet — ask them to save their profile once in the driver app or portal to generate one." });
   }
 
-  const scanUrl = `${process.env.SCAN_BASE_URL || "https://ridearrivo.com/scan.html"}?token=${driver.scan_token}`;
+  // Built with encodeURIComponent field-by-field rather than
+  // URLSearchParams#toString() — the latter encodes spaces as "+" (form
+  // encoding), but the app's QR payload parser uses a plain regex +
+  // decodeURIComponent (to avoid depending on URLSearchParams being
+  // polyfilled in the RN runtime), which does NOT turn "+" back into a
+  // space. %20 (what encodeURIComponent produces) decodes correctly with
+  // both that regex parser AND the website's URLSearchParams, so this way
+  // a driver name like "Ade Johnson" or vehicle "Toyota Camry" displays
+  // correctly on both instead of showing literal "+" characters.
+  const qs = [["token", driver.scan_token]];
+  if (driver.driver_name) qs.push(["name", driver.driver_name]);
+  if (driver.make_model) qs.push(["vehicle", driver.make_model]);
+  if (driver.plate_number) qs.push(["plate", driver.plate_number]);
+  if (driver.vehicle_type) qs.push(["type", driver.vehicle_type]);
+  const queryString = qs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+
+  const scanUrl = `${process.env.SCAN_BASE_URL || "https://ridearrivo.com/scan.html"}?${queryString}`;
   const pngBuffer = await QRCode.toBuffer(scanUrl, { width: 600, margin: 2 });
 
   res.set("Content-Type", "image/png");

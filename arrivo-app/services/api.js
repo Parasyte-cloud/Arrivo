@@ -18,6 +18,20 @@ async function request(path, options = {}) {
   return data;
 }
 
+// `fetch` itself rejects (before any response exists) when there's no
+// connectivity at all — React Native's fetch polyfill throws a TypeError
+// with a message like "Network request failed" in that case. That's a
+// fundamentally different situation from `request()`'s normal thrown Error
+// above (which means the server WAS reached and gave a definitive answer,
+// e.g. "wrong driver" or "already started"). Callers that need to offer an
+// offline fallback (see ScanScreen.js) use this to tell the two apart —
+// only a genuine connectivity failure should trigger offline behavior;
+// a real server rejection should just be shown to the user as-is.
+export function isNetworkError(e) {
+  const msg = String(e && e.message ? e.message : "");
+  return /network request failed|failed to fetch|network error|timed out|timeout|abort/i.test(msg);
+}
+
 export function getFlightStatus(flightNumber, arrIata = "LOS") {
   const params = new URLSearchParams({ flightNumber, arrIata });
   return request(`/api/flights/status?${params.toString()}`);

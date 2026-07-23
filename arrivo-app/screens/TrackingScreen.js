@@ -9,7 +9,9 @@ import { useCurrency } from "../hooks/useCurrency";
 import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
+  scanRideQr, isNetworkError,
 } from "../services/api";
+import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
 // amount option for anyone who wants a specific number instead.
@@ -35,12 +37,32 @@ function initials(name) {
 }
 
 export default function TrackingScreen({ route, navigation }) {
-  const { rideId } = route?.params || {};
+  const { rideId, offlinePending, offlineDriverInfo, offlineRideSummary } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare } = useCurrency(token);
-  const [ride, setRide] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Offline scan fallback (see ScanScreen.js): when a scan couldn't reach
+  // the server, we still know — from the QR code itself, plus whatever ride
+  // was last cached while online — enough to show "this is your ride, this
+  // is your driver" instantly, with zero network dependency. This seeds
+  // `ride` with that info immediately instead of showing a spinner while a
+  // network request that has no signal to complete over just hangs.
+  const [ride, setRide] = useState(() => {
+    if (!offlinePending) return null;
+    return {
+      id: rideId,
+      ride_status: (offlineRideSummary && offlineRideSummary.rideStatus) || "accepted",
+      driver_name: (offlineDriverInfo && offlineDriverInfo.name) || (offlineRideSummary && offlineRideSummary.driverName) || null,
+      make_model: (offlineDriverInfo && offlineDriverInfo.vehicle) || (offlineRideSummary && offlineRideSummary.makeModel) || null,
+      plate_number: (offlineDriverInfo && offlineDriverInfo.plate) || (offlineRideSummary && offlineRideSummary.plateNumber) || null,
+    };
+  });
+  const [loading, setLoading] = useState(!offlinePending);
   const [loadError, setLoadError] = useState(null);
+  const [offlineMode, setOfflineMode] = useState(!!offlinePending);
+  const [offlineNotice, setOfflineNotice] = useState(
+    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine — no SIM data needed." : null
+  );
+  const flushingRef = useRef(false);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
   const [listeningSending, setListeningSending] = useState(false);
@@ -91,15 +113,59 @@ export default function TrackingScreen({ route, navigation }) {
       setRide(data);
       setPanicActive(!!data.panic_triggered_at);
       setLoadError(null);
+      cacheActiveRide(data);
+      if (["completed", "cancelled"].includes(data.ride_status)) {
+        clearCachedActiveRide();
+      }
     } catch (e) {
-      setLoadError(e.message || "Couldn't load this ride.");
+      // While we're deliberately in offline mode (seeded from the QR scan),
+      // a network failure here is expected, not an error worth alarming
+      // the rider with — the offline banner below already explains what's
+      // going on, and flushPendingScan (below) is what actually recovers.
+      if (!(isNetworkError(e) && offlineMode)) {
+        setLoadError(e.message || "Couldn't load this ride.");
+      }
     } finally {
       setLoading(false);
     }
-  }, [token, rideId]);
+  }, [token, rideId, offlineMode]);
+
+  // Retries a scan that couldn't reach the server earlier (see ScanScreen.js)
+  // the moment there's a real chance it'll succeed — called on every poll
+  // tick and whenever the app comes back to the foreground, so it recovers
+  // on its own the instant the phone finds a signal or WiFi, no rider action
+  // needed. Guards against overlapping attempts with flushingRef.
+  const flushPendingScan = useCallback(async () => {
+    if (flushingRef.current) return;
+    const pending = await getPendingScan();
+    if (!pending) return;
+    flushingRef.current = true;
+    try {
+      const { ride: confirmedRide } = await scanRideQr(token, pending.scanToken);
+      await clearPendingScan();
+      setOfflineMode(false);
+      setOfflineNotice(null);
+      setLoadError(null);
+      setRide(confirmedRide);
+      cacheActiveRide(confirmedRide);
+    } catch (e) {
+      if (!isNetworkError(e)) {
+        // Server was reachable and definitively rejected this scan (ride no
+        // longer valid, wrong driver, etc.) — retrying the same token
+        // forever won't help, so stop queuing it and surface why.
+        await clearPendingScan();
+        setOfflineNotice(e.message || "Couldn't confirm your ride automatically. Please scan your driver's QR code again.");
+      }
+      // else: still offline — leave it queued, the next tick will retry.
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [token]);
 
   useEffect(() => {
     fetchRide();
+    flushPendingScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchRide]);
 
   // Poll for updates (driver location, status changes) while the trip is
@@ -107,14 +173,18 @@ export default function TrackingScreen({ route, navigation }) {
   // ride?.ride_status so this effect re-runs (clearing the old interval)
   // the moment the status actually changes, instead of a single interval
   // whose closure only ever sees the `ride` value from when it was created
-  // (which was always null) and so never actually stopped polling.
+  // (which was always null) and so never actually stopped polling. Each
+  // tick also retries any queued offline scan (cheap no-op if none queued).
   useEffect(() => {
     if (ride && ["completed", "cancelled"].includes(ride.ride_status)) {
       return;
     }
-    pollRef.current = setInterval(fetchRide, POLL_INTERVAL_MS);
+    pollRef.current = setInterval(() => {
+      fetchRide();
+      flushPendingScan();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
-  }, [fetchRide, ride?.ride_status]);
+  }, [fetchRide, flushPendingScan, ride?.ride_status]);
 
   // This ride's actual flight status — the whole point of requiring a
   // flight number for one-way bookings (see RouteScreen). Only fetched
@@ -271,6 +341,7 @@ export default function TrackingScreen({ route, navigation }) {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState !== "active") return;
+      flushPendingScan();
       if (pendingTipRef.current) {
         const reference = pendingTipRef.current;
         pendingTipRef.current = null;
@@ -284,7 +355,7 @@ export default function TrackingScreen({ route, navigation }) {
     });
     return () => subscription.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipAmount]);
+  }, [tipAmount, flushPendingScan]);
 
   const verifyAndApplyCardTip = async (reference) => {
     setTipStatus("verifying");
@@ -410,6 +481,13 @@ export default function TrackingScreen({ route, navigation }) {
           etaLabel={`🚗 ${statusLabel}`}
           height={220}
         />
+
+        {offlineMode ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>📡 Working offline</Text>
+            <Text style={styles.meta}>{offlineNotice}</Text>
+          </Card>
+        ) : null}
 
         {loadError ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
