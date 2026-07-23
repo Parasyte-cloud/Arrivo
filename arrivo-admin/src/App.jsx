@@ -18,10 +18,19 @@ function Dashboard() {
   // the first thing an ops person sees, not something they have to
   // remember to check.
   const [page, setPage] = useState("panics");
+  // Sidebar is always visible on desktop; on narrow (phone) screens it
+  // becomes an off-canvas drawer toggled by the hamburger button below —
+  // see the .sidebar / .mobile-topbar rules in styles.css for the
+  // breakpoint (860px) that switches between the two layouts.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="app-shell">
-      <Sidebar page={page} setPage={setPage} />
+      <div className="mobile-topbar">
+        <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
+        <span className="mobile-brand">RideArrivo</span>
+      </div>
+      <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="main">
         {page === "panics" && <PanicsPage />}
         {page === "riders" && <RidersPage />}

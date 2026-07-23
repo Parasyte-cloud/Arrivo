@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { id: "analytics", label: "Analytics" },
 ];
 
-export function Sidebar({ page, setPage }) {
+export function Sidebar({ page, setPage, open, onClose }) {
   const { user, token, logout, isReadOnly } = useAuth();
   const [panicCount, setPanicCount] = useState(0);
   const [flightIssueCount, setFlightIssueCount] = useState(0);
@@ -38,7 +38,9 @@ export function Sidebar({ page, setPage }) {
   const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
 
   return (
-    <aside className="sidebar">
+    <>
+      {open ? <div className="sidebar-backdrop" onClick={onClose} /> : null}
+      <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
       <div className="brand">RideArrivo</div>
       <div className="brand-sub">OPS CONSOLE</div>
       {isReadOnly ? (
@@ -58,7 +60,7 @@ export function Sidebar({ page, setPage }) {
             <button
               key={item.id}
               className={`nav-item ${page === item.id ? "active" : ""}`}
-              onClick={() => setPage(item.id)}
+              onClick={() => { setPage(item.id); onClose && onClose(); }}
               style={item.danger && count > 0 ? { color: "#ff8a75" } : undefined}
             >
               {item.label}
@@ -86,6 +88,7 @@ export function Sidebar({ page, setPage }) {
         {user?.name}
       </div>
       <button className="logout" onClick={logout}>Log out</button>
-    </aside>
+      </aside>
+    </>
   );
 }

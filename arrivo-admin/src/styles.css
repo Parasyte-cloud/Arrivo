@@ -281,3 +281,99 @@ textarea.notes {
   font-size: 12.5px;
   resize: vertical;
 }
+
+/* ── Mobile layout ──
+   Below 860px the sidebar switches from an always-visible column to an
+   off-canvas drawer, opened via the hamburger button in .mobile-topbar
+   (rendered by App.jsx, hidden on desktop). This is what was missing
+   before — on phones the sidebar and content used to just get squeezed
+   into the same flex row at their desktop widths. */
+.mobile-topbar {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--ink);
+    color: var(--canvas);
+    padding: 14px 18px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .mobile-topbar .hamburger {
+    all: unset;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 8px;
+  }
+
+  .mobile-topbar .mobile-brand {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .app-shell {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 250px;
+    max-width: 80vw;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 30;
+    overflow-y: auto;
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 25;
+  }
+
+  .main {
+    padding: 20px 16px;
+    max-width: 100%;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+  }
+}
