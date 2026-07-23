@@ -6,14 +6,16 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
+import OAuthButtons from "../components/OAuthButtons";
 
 export default function LoginScreen({ navigation }) {
   const { t } = useTranslation();
-  const { login } = useAuth();
+  const { login, loginWithGoogle, loginWithApple } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [oauthBusy, setOauthBusy] = useState(false);
 
   // "Forgot password?" toggles this same screen into a lightweight
   // email-only mode rather than a separate navigation route — the backend
@@ -54,6 +56,43 @@ export default function LoginScreen({ navigation }) {
       setForgotError(e.message || t("auth.invalidCredentials"));
     } finally {
       setForgotLoading(false);
+    }
+  };
+
+  // Login and Signup both use the same backend find-or-create endpoint (see
+  // routes/auth.js POST /google and /apple) — a brand-new account can just
+  // as easily start here as on the Signup screen. Unlike Signup's checkbox
+  // gate, there's no separate consent step here: tapping "Continue with
+  // Google/Apple" right under the visible privacy-policy notice below IS
+  // the agreement action, the same pattern most apps use for a combined
+  // sign-in screen (agreedToTerms is still sent through and still enforced
+  // server-side for any genuinely new account — this isn't a client-only
+  // formality).
+  const handleGoogleIdToken = async (idToken) => {
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithGoogle({ idToken, agreedToTerms: true });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Google. Please try again.");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const handleAppleResult = async ({ identityToken, fullName, error: appleError }) => {
+    if (appleError) {
+      setError(appleError);
+      return;
+    }
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithApple({ identityToken, fullName, agreedToTerms: true });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Apple. Please try again.");
+    } finally {
+      setOauthBusy(false);
     }
   };
 
@@ -137,6 +176,21 @@ export default function LoginScreen({ navigation }) {
               <Button label={t("auth.login")} onPress={submit} />
             )}
 
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <OAuthButtons
+              busy={oauthBusy}
+              onGoogleIdToken={handleGoogleIdToken}
+              onAppleResult={handleAppleResult}
+            />
+            <Text style={styles.oauthNotice}>
+              By continuing with Google or Apple, you agree to RideArrivo's Data Protection & Privacy Policy.
+            </Text>
+
             <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
               <Text style={styles.link}>{t("auth.needAccount")}</Text>
             </Pressable>
@@ -164,4 +218,8 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerText: { color: colors.textMuted, fontSize: 12 },
+  oauthNotice: { color: colors.textMuted, fontSize: 10.5, textAlign: "center", marginTop: 10, lineHeight: 15 },
 });

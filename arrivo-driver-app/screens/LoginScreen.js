@@ -5,13 +5,15 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
+import OAuthButtons from "../components/OAuthButtons";
 
 export default function LoginScreen({ navigation }) {
-  const { login } = useAuth();
+  const { login, loginWithGoogle, loginWithApple } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [oauthBusy, setOauthBusy] = useState(false);
 
   // "Forgot password?" toggles this same screen into a lightweight
   // email-only mode rather than a separate navigation route — the backend
@@ -51,6 +53,34 @@ export default function LoginScreen({ navigation }) {
       setForgotError(e.message || "Something went wrong. Please try again.");
     } finally {
       setForgotLoading(false);
+    }
+  };
+
+  const handleGoogleIdToken = async (idToken) => {
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithGoogle({ idToken, agreedToTerms: true });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Google. Please try again.");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const handleAppleResult = async ({ identityToken, fullName, error: appleError }) => {
+    if (appleError) {
+      setError(appleError);
+      return;
+    }
+    setError(null);
+    setOauthBusy(true);
+    try {
+      await loginWithApple({ identityToken, fullName, agreedToTerms: true });
+    } catch (e) {
+      setError(e.message || "Couldn't sign you in with Apple. Please try again.");
+    } finally {
+      setOauthBusy(false);
     }
   };
 
@@ -131,6 +161,21 @@ export default function LoginScreen({ navigation }) {
 
             {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Log In" onPress={submit} />}
 
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <OAuthButtons
+              busy={oauthBusy}
+              onGoogleIdToken={handleGoogleIdToken}
+              onAppleResult={handleAppleResult}
+            />
+            <Text style={styles.oauthNotice}>
+              By continuing with Google or Apple, you agree to RideArrivo's Data Protection & Privacy Policy.
+            </Text>
+
             <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
               <Text style={styles.link}>New here? Apply to drive for RideArrivo</Text>
             </Pressable>
@@ -159,4 +204,8 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.15)" },
+  dividerText: { color: colors.textMuted, fontSize: 12 },
+  oauthNotice: { color: colors.textMuted, fontSize: 10.5, textAlign: "center", marginTop: 10, lineHeight: 15 },
 });
