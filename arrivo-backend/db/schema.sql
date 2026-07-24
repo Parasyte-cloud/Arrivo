@@ -374,3 +374,17 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_payment_reference TEXT;
 -- set on it) rather than creating a second, duplicate account.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id TEXT UNIQUE;
+
+-- ── Shared live-tracking link ──
+-- Lets a rider (or driver) generate a read-only tracking link for someone
+-- who isn't a RideArrivo account at all — the per-ride emergency contact,
+-- a family member, anyone. Previously "Share ride" only opened the OS share
+-- sheet with a plain descriptive text message, no link — the person it was
+-- sent to had no way to actually see the trip, since track.html otherwise
+-- requires the rider's own login token. share_token is generated lazily
+-- (see GET /api/rides/:id/share) the first time a share link is requested
+-- for a given ride, not at booking time, so most rides never need one.
+-- Deliberately never expires or gets revoked in this version — same
+-- lifetime as the ride record itself, matching how the rider's own
+-- track.html?ride=id link already works with no expiry either.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;

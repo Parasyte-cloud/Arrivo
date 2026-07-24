@@ -9,7 +9,7 @@ import { useCurrency } from "../hooks/useCurrency";
 import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
-  scanRideQr, isNetworkError,
+  scanRideQr, isNetworkError, getRideShareLink,
 } from "../services/api";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
@@ -232,8 +232,21 @@ export default function TrackingScreen({ route, navigation }) {
   const shareRide = async () => {
     try {
       const driverPart = ride?.driver_name ? ` with ${ride.driver_name}` : "";
+      const destinationPart = ride?.stops?.[ride.stops.length - 1] || "my destination";
+      let linkPart = "";
+      // Get (or lazily create) a real read-only link the person can actually
+      // open — previously this message had no link at all, so whoever it
+      // was sent to had no way to see the trip, just this text. Best-effort:
+      // if the link fetch fails, still share the descriptive text alone
+      // rather than blocking the whole share sheet on it.
+      try {
+        const shareResult = await getRideShareLink(token, ride.id);
+        if (shareResult?.shareUrl) linkPart = ` Track live: ${shareResult.shareUrl}`;
+      } catch (e) {
+        // ignore — share the text-only message below instead
+      }
       await Share.share({
-        message: `I'm on a RideArrivo trip${driverPart}, heading to ${ride?.stops?.[ride.stops.length - 1] || "my destination"}. Pickup was ${ride?.pickup_address || "—"}.`,
+        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "—"}.${linkPart}`,
       });
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));

@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
@@ -840,6 +841,40 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
   res.json({ ride: withParsedStops(newRide) });
 });
 
+// GET /api/rides/track/:token — the public, no-login counterpart to GET
+// /:id below. Registered before /:id so a request for /track/anything
+// can never be mistaken for a numeric ride id lookup. Meant for someone
+// who isn't a RideArrivo account at all (the emergency contact named on
+// the ride, a family member the rider forwarded the link to) — so this
+// deliberately returns a much smaller subset than the authenticated
+// version: driver identity/vehicle/live location, pickup/destination, and
+// status, never payment info, fare, admin notes, or the rider's own
+// contact details.
+router.get("/track/:token", async (req, res) => {
+  const result = await pool.query(
+    `SELECT rides.id, rides.pickup_address, rides.stops, rides.ride_status,
+            rides.flight_number, rides.booking_type,
+            rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
+            rides.created_at,
+            riders.name as rider_name,
+            driver_users.name as driver_name, driver_users.phone as driver_phone,
+            drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            drivers.profile_photo_url as driver_photo_url, drivers.rating as driver_rating,
+            vehicles.make_model, vehicles.plate_number
+     FROM rides
+     JOIN users riders ON riders.id = rides.rider_id
+     LEFT JOIN drivers ON drivers.id = rides.driver_id
+     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+     WHERE rides.share_token = $1`,
+    [req.params.token]
+  );
+  const ride = result.rows[0];
+  if (!ride) return res.status(404).json({ error: "This tracking link is invalid or no longer active." });
+
+  res.json({ ride: withParsedStops(ride) });
+});
+
 // GET /api/rides/:id — full details for one ride, including the driver's
 // current live location if one is assigned. Used by the rider's tracking
 // screen to poll for progress. Only the rider who booked it or the
@@ -871,6 +906,36 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ride: withParsedStops(ride) });
+});
+
+// GET /api/rides/:id/share — the rider (or assigned driver, or admin) calls
+// this to get a real link for the "Share ride" button. Lazily creates
+// share_token on first call rather than at booking time, since most rides
+// never need one. Safe to call repeatedly — returns the same token/link
+// once it exists rather than rotating it, so a link already sent to
+// someone doesn't silently stop working.
+router.get("/:id/share", requireAuth, async (req, res) => {
+  const result = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = result.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  const driver = await getDriverForUser(req.user.id);
+  const isRider = ride.rider_id === req.user.id;
+  const isAssignedDriver = driver && ride.driver_id === driver.id;
+  if (!isRider && !isAssignedDriver && req.user.role !== "admin") {
+    return res.status(403).json({ error: "You don't have access to this ride" });
+  }
+
+  let token = ride.share_token;
+  if (!token) {
+    token = crypto.randomBytes(16).toString("hex");
+    await pool.query("UPDATE rides SET share_token = $1 WHERE id = $2", [token, ride.id]);
+  }
+
+  // Same optional-override-with-hardcoded-fallback pattern as
+  // PASSWORD_RESET_BASE_URL / SCAN_BASE_URL elsewhere in this file/routes.
+  const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html";
+  res.json({ shareToken: token, shareUrl: `${base}?share=${token}` });
 });
 
 // POST /api/rides/:id/rate — the rider rates their driver after a

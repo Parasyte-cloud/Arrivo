@@ -126,6 +126,16 @@ export function getRideDetails(token, rideId) {
   });
 }
 
+// GET /api/rides/:id/share — real read-only link for the emergency contact
+// (or anyone else) to actually see the trip, no login required on their
+// end. Safe to call every time "Share ride" is tapped: the backend returns
+// the same link on repeat calls instead of rotating it.
+export function getRideShareLink(token, rideId) {
+  return request(`/api/rides/${rideId}/share`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export function addVehicle(token, vehicleData) {
   return request("/api/owners/vehicles", {
     method: "POST",
