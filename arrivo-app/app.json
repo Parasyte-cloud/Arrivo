@@ -12,10 +12,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.arrivo.app",
+      "bundleIdentifier": "com.ridearrivo.rider",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route."
+        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
@@ -28,9 +29,10 @@
       },
       "package": "com.arrivo.app",
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "config": {
         "googleMaps": {
@@ -45,7 +47,7 @@
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o",
       "googleOAuth": {
-        "iosClientId": "425853448895-v0oepj0r28dtbeqrk445s2t83v06pof0.apps.googleusercontent.com",
+        "iosClientId": "425853448895-o8burrutrcvobsra6k5mrc2iopqioome.apps.googleusercontent.com",
         "androidClientId": "425853448895-lj45c8t7ctijaaabkut03elh4masfeq5.apps.googleusercontent.com",
         "webClientId": "425853448895-r6ha3gh7b4i4lcsl3lohncuk3ecblsl3.apps.googleusercontent.com"
       },

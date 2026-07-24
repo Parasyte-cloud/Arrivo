@@ -51,7 +51,7 @@
       "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
       "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o",
       "googleOAuth": {
-        "iosClientId": "425853448895-muga4qe48c2aht5nep5fjftonvd0h0ub.apps.googleusercontent.com",
+        "iosClientId": "425853448895-q2615cfrppo2kfc3jasjl84kbvjouued.apps.googleusercontent.com",
         "androidClientId": "425853448895-9lsh1d70engq6k1gjnkf5lqr817bj4r1.apps.googleusercontent.com",
         "webClientId": "425853448895-r6ha3gh7b4i4lcsl3lohncuk3ecblsl3.apps.googleusercontent.com"
       },
