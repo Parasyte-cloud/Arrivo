@@ -145,6 +145,14 @@ export function getRideShareLink(token, rideId) {
   });
 }
 
+// GET /api/rides/:id/fleet — the other escort vehicles traveling alongside
+// a Fleet Accompaniment booking, so the rider can see the whole convoy.
+export function getRideFleetCompanions(token, rideId) {
+  return request(`/api/rides/${rideId}/fleet`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export function addVehicle(token, vehicleData) {
   return request("/api/owners/vehicles", {
     method: "POST",

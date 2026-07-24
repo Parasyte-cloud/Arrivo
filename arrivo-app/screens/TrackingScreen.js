@@ -9,7 +9,7 @@ import { useCurrency } from "../hooks/useCurrency";
 import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
-  scanRideQr, isNetworkError, getRideShareLink,
+  scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
 } from "../services/api";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
@@ -58,6 +58,11 @@ export default function TrackingScreen({ route, navigation }) {
   });
   const [loading, setLoading] = useState(!offlinePending);
   const [loadError, setLoadError] = useState(null);
+  // Fleet Accompaniment convoy — only ever populated once the ride actually
+  // has escort vehicles dispatched (fleet_group_id set by
+  // createFleetCompanions on the backend). Empty for the vast majority of
+  // rides that aren't fleet bookings at all.
+  const [fleetCompanions, setFleetCompanions] = useState([]);
   const [offlineMode, setOfflineMode] = useState(!!offlinePending);
   const [offlineNotice, setOfflineNotice] = useState(
     offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine — no SIM data needed." : null
@@ -142,6 +147,21 @@ export default function TrackingScreen({ route, navigation }) {
     }
   }, [token, rideId, offlineMode]);
 
+  // Fleet Accompaniment convoy — a no-op fetch (empty companions array) for
+  // the vast majority of rides that aren't fleet bookings, so this is safe
+  // to call unconditionally on every poll rather than needing its own
+  // separate on/off logic.
+  const fetchFleetCompanions = useCallback(async () => {
+    if (!rideId) return;
+    try {
+      const { companions } = await getRideFleetCompanions(token, rideId);
+      setFleetCompanions(companions || []);
+    } catch (e) {
+      // best-effort — the rider's own ride/driver info above still works
+      // fine without convoy data; just leave it stale until the next poll.
+    }
+  }, [token, rideId]);
+
   // Retries a scan that couldn't reach the server earlier (see ScanScreen.js)
   // the moment there's a real chance it'll succeed — called on every poll
   // tick and whenever the app comes back to the foreground, so it recovers
@@ -177,6 +197,7 @@ export default function TrackingScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchRide();
+    fetchFleetCompanions();
     flushPendingScan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchRide]);
@@ -194,10 +215,11 @@ export default function TrackingScreen({ route, navigation }) {
     }
     pollRef.current = setInterval(() => {
       fetchRide();
+      fetchFleetCompanions();
       flushPendingScan();
     }, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
-  }, [fetchRide, flushPendingScan, ride?.ride_status]);
+  }, [fetchRide, fetchFleetCompanions, flushPendingScan, ride?.ride_status]);
 
   // This ride's actual flight status — the whole point of requiring a
   // flight number for one-way bookings (see RouteScreen). Only fetched
@@ -598,6 +620,23 @@ export default function TrackingScreen({ route, navigation }) {
             </View>
           </View>
         </Card>
+
+        {fleetCompanions.length > 0 ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>Your fleet convoy</Text>
+            {fleetCompanions.map((c) => (
+              <View key={c.id} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}>
+                <Text style={styles.meta}>
+                  {c.driver_name ? c.driver_name : "Escort vehicle"}
+                  {c.make_model ? ` · ${c.make_model}` : ""}
+                </Text>
+                <Text style={styles.meta}>
+                  {c.ride_status === "requested" ? "Awaiting driver" : c.ride_status.replace("_", " ")}
+                </Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
 
         {ride?.ride_status === "completed" && hasDriver ? (
           <Card tone="dark" tinted style={{ marginTop: spacing.md }}>

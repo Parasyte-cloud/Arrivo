@@ -46,6 +46,12 @@ export const updateRide = (token, id, payload) =>
 // key required here... rather than embedding a live map").
 export const getLiveRides = (token) => request("/api/admin/rides/live", token);
 
+// GET /api/rides/:id/fleet — same endpoint the rider app/website use to
+// show their convoy; the requireAuth check there explicitly allows admin
+// role through too, so staff can see fleet companion status/assignment
+// here without needing a separate admin-only route.
+export const getRideFleetCompanions = (token, id) => request(`/api/rides/${id}/fleet`, token);
+
 export const getAnalytics = (token) => request("/api/admin/analytics", token);
 
 // This one isn't a JSON fetch — it returns a PNG directly, and the browser

@@ -54,6 +54,50 @@ async function isPaymentReferenceReused(reference, excludeRideId) {
   return !!result.rows[0];
 }
 
+// Fleet Accompaniment used to be a priced integer on the ONE ride the
+// rider booked — no additional vehicle was ever created or dispatched, no
+// driver ever knew they were part of a fleet. This is the real dispatch:
+// called right after a fleet-size ride is inserted, it creates that many
+// ADDITIONAL ride rows (the escort vehicles), each entering the exact same
+// driver-acceptance queue/status flow as any normal ride — a real driver
+// has to accept and drive each one, same as the primary. Companions are
+// already "paid" (fare_naira 0, covered by the primary's flat fleet
+// surcharge — see FLEET_PRICE_NAIRA in services/fare.js) since the rider
+// already paid for the whole convoy as one line item at booking.
+// dbClient is either the shared pool or an in-transaction client (the
+// wallet payment branch below runs this inside its own BEGIN/COMMIT) —
+// both expose the same .query interface, so this doesn't need to know or
+// care which one it got.
+async function createFleetCompanions(dbClient, primaryRide) {
+  const fleetSize = Number(primaryRide.fleet_size) || 0;
+  if (fleetSize <= 0) return;
+
+  // The primary ride also gets fleet_group_id pointing at ITS OWN id, so
+  // "SELECT * FROM rides WHERE fleet_group_id = X" always returns the
+  // whole convoy (primary + every companion) with one simple query —
+  // nobody calling that query needs to separately remember to also fetch
+  // the primary by its own id.
+  await dbClient.query("UPDATE rides SET fleet_group_id = id WHERE id = $1", [primaryRide.id]);
+
+  for (let i = 0; i < fleetSize; i++) {
+    await dbClient.query(
+      `INSERT INTO rides (
+         rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira,
+         booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min,
+         payment_status, payment_method, pay_at_pickup, pickup_lat, pickup_lng,
+         destination_lat, destination_lng, scheduled_pickup_at, fleet_group_id, is_fleet_companion
+       ) VALUES ($1, $2, $3, $4, $5, 0, $6, $7, true, $8, $9, 'paid', $10, false, $11, $12, $13, $14, $15, $16, true)`,
+      [
+        primaryRide.rider_id, primaryRide.pickup_address, primaryRide.stops, primaryRide.flight_number,
+        primaryRide.vehicle_type, primaryRide.booking_type, primaryRide.duration_days,
+        primaryRide.distance_km, primaryRide.duration_min, primaryRide.payment_method,
+        primaryRide.pickup_lat, primaryRide.pickup_lng, primaryRide.destination_lat, primaryRide.destination_lng,
+        primaryRide.scheduled_pickup_at, primaryRide.id,
+      ]
+    );
+  }
+}
+
 // POST /api/rides — create a new ride/booking (requires auth)
 // body: { pickupAddress, stops?, flightNumber?, vehicleType, fareNaira,
 //         paymentReference?, bookingType?, durationDays?, agreedCancellationPolicy,
@@ -317,6 +361,7 @@ router.post("/", requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
       [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
     );
+    await createFleetCompanions(pool, inserted.rows[0]);
     return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   }
 
@@ -354,6 +399,8 @@ router.post("/", requireAuth, async (req, res) => {
         [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
       );
 
+      await createFleetCompanions(client, ride);
+
       await client.query("COMMIT");
       return res.status(201).json({ ride: withParsedStops(ride) });
     } catch (err) {
@@ -371,6 +418,7 @@ router.post("/", requireAuth, async (req, res) => {
     [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
   );
 
+  await createFleetCompanions(pool, inserted.rows[0]);
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
 });
 
@@ -941,6 +989,43 @@ router.get("/:id/share", requireAuth, async (req, res) => {
   // PASSWORD_RESET_BASE_URL / SCAN_BASE_URL elsewhere in this file/routes.
   const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html";
   res.json({ shareToken: token, shareUrl: `${base}?share=${token}` });
+});
+
+// GET /api/rides/:id/fleet — the companion escort vehicles traveling
+// alongside this ride, if it's a Fleet Accompaniment booking. Returns each
+// companion's own driver name/phone/vehicle/live location and status,
+// same shape as GET /:id already returns for the ride itself, so the rider
+// can see their whole convoy moving together, not just their own vehicle.
+// Works from either the primary ride's id or a companion's id — both share
+// the same fleet_group_id once createFleetCompanions (see above) has run.
+router.get("/:id/fleet", requireAuth, async (req, res) => {
+  const self = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = self.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  const driver = await getDriverForUser(req.user.id);
+  const isRider = ride.rider_id === req.user.id;
+  const isAssignedDriver = driver && ride.driver_id === driver.id;
+  if (!isRider && !isAssignedDriver && req.user.role !== "admin") {
+    return res.status(403).json({ error: "You don't have access to this ride" });
+  }
+
+  if (!ride.fleet_group_id) return res.json({ companions: [] });
+
+  const result = await pool.query(
+    `SELECT rides.id, rides.ride_status, rides.is_fleet_companion,
+            driver_users.name as driver_name, driver_users.phone as driver_phone,
+            drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            vehicles.make_model, vehicles.plate_number
+     FROM rides
+     LEFT JOIN drivers ON drivers.id = rides.driver_id
+     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+     WHERE rides.fleet_group_id = $1 AND rides.id != $2
+     ORDER BY rides.id ASC`,
+    [ride.fleet_group_id, ride.id]
+  );
+  res.json({ companions: result.rows });
 });
 
 // POST /api/rides/:id/rate — the rider rates their driver after a

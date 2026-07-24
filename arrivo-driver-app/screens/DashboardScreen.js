@@ -269,14 +269,24 @@ function RequestCard({ ride, busy, onAccept }) {
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
         <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
-        <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
+        {/* A fleet-companion row is always fare_naira = 0 — the rider
+            already paid for the whole convoy as one line item on their
+            primary ride (see FLEET_PRICE_NAIRA in services/fare.js and
+            createFleetCompanions in routes/rides.js). Showing a bare "₦0"
+            here would read as a broken/free ride rather than what it
+            actually is: already paid, just billed elsewhere. */}
+        <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
       </View>
       {/* is_preferred_for_you comes from GET /available — set when this
           rider asked to keep the same driver for their return trip and this
           ride is currently held exclusively for this driver (see
           routes/rides.js and services/scheduler.js's claim-window expiry). */}
       {ride.is_preferred_for_you ? <Tag label="⭐ Your regular rider" tone="amber" /> : null}
+      {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
       <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+      {ride.is_fleet_companion ? (
+        <Text style={styles.meta}>Traveling alongside another RideArrivo vehicle to the same destination.</Text>
+      ) : null}
       {scheduled ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduled}</Text> : null}
       {arriveBy ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveBy} (30 min early)</Text> : null}
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
@@ -394,8 +404,9 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
       <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>
           <Tag label={ride.ride_status.replace("_", " ").toUpperCase()} tone={isInProgress ? "teal" : "amber"} />
-          <Text style={styles.fare}>₦{ride.fare_naira?.toLocaleString()}</Text>
+          <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
         </View>
+        {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
         <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
           <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />

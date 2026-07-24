@@ -57,6 +57,12 @@ export function RidesPage() {
   const [expandedId, setExpandedId] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  // Fleet Accompaniment — fleet_size on the ride is just a priced integer;
+  // the actual companion escort vehicles are separate ride rows (see
+  // createFleetCompanions in routes/rides.js) fetched on demand here rather
+  // than for every row in the table, since most rides aren't fleet bookings.
+  const [fleetCompanions, setFleetCompanions] = useState({});
+  const [fleetLoading, setFleetLoading] = useState(false);
 
   const debouncedSearch = useDebounced(search, 350);
 
@@ -86,6 +92,13 @@ export function RidesPage() {
     } else {
       setExpandedId(ride.id);
       setNoteDraft(ride.admin_notes || "");
+      if (ride.fleet_size > 0 && !fleetCompanions[ride.id]) {
+        setFleetLoading(true);
+        api.getRideFleetCompanions(token, ride.id)
+          .then((data) => setFleetCompanions((prev) => ({ ...prev, [ride.id]: data.companions || [] })))
+          .catch(() => setFleetCompanions((prev) => ({ ...prev, [ride.id]: [] })))
+          .finally(() => setFleetLoading(false));
+      }
     }
   };
 
@@ -216,6 +229,28 @@ export function RidesPage() {
                     <tr>
                       <td colSpan={8} style={{ background: "#fafafd" }}>
                         <div style={{ padding: "8px 4px" }}>
+                          {r.fleet_size > 0 ? (
+                            <div style={{ marginBottom: 14 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
+                                Fleet Accompaniment — {r.fleet_size} escort vehicle{r.fleet_size > 1 ? "s" : ""}
+                              </div>
+                              {fleetLoading && !fleetCompanions[r.id] ? (
+                                <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Loading convoy…</div>
+                              ) : (fleetCompanions[r.id] || []).length === 0 ? (
+                                <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>No escort vehicles loaded yet.</div>
+                              ) : (
+                                (fleetCompanions[r.id] || []).map((c) => (
+                                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
+                                    <span>
+                                      Ride #{c.id} — {c.driver_name || <span style={{ color: "var(--text-muted)" }}>Unassigned</span>}
+                                      {c.make_model ? ` · ${c.make_model}` : ""}
+                                    </span>
+                                    <StatusPill label={c.ride_status.replace("_", " ")} tone={rideStatusTone(c.ride_status)} />
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          ) : null}
                           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
                             Admin notes / dispute log
                           </div>

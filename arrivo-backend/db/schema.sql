@@ -405,3 +405,26 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;
 -- any of this is displayed. Null for rides created before this shipped.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS quoted_usd_amount NUMERIC;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS quoted_ngn_per_usd NUMERIC;
+
+-- ── Fleet Accompaniment — real convoy dispatch ──
+-- fleet_size (added earlier, see the security_escort/fleet_size block
+-- above) was only ever a priced integer on the ONE ride the rider booked
+-- and paid for — no additional vehicle ever actually got created or
+-- dispatched, no driver ever saw they were part of a fleet, and admin had
+-- no visibility into it at all. It worked exactly like security_escort:
+-- a priced checkbox, not real coordination.
+--
+-- fleet_group_id fixes that: when a ride is booked with fleetSize 2 or 3,
+-- POST /api/rides now inserts that many ADDITIONAL ride rows — the
+-- companion escort vehicles — each pointing fleet_group_id back at the
+-- primary (rider-paid) ride's id. Companions have fare_naira = 0 (already
+-- covered by the primary's flat fleet surcharge) and payment_status =
+-- 'paid' immediately, but otherwise flow through the exact same
+-- driver-acceptance queue, status transitions, and tracking as any normal
+-- ride — a real driver has to actually accept and drive each one.
+-- is_fleet_companion distinguishes a companion row from the primary at a
+-- glance (the primary also has fleet_group_id set to ITS OWN id once
+-- companions exist, so "SELECT * WHERE fleet_group_id = X" always returns
+-- the whole convoy including the primary, without a separate self-join).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS fleet_group_id INTEGER REFERENCES rides(id);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_fleet_companion BOOLEAN NOT NULL DEFAULT false;
