@@ -28,7 +28,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F7F4EC"
+        "backgroundColor": "#12123B"
       },
       "package": "com.arrivo.driver",
       "permissions": [
@@ -69,7 +69,7 @@
           "image": "./assets/splash.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#F7F4EC"
+          "backgroundColor": "#12123B"
         }
       ],
       [

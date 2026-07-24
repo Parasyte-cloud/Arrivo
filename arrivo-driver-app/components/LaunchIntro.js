@@ -4,8 +4,8 @@ import { colors } from "../theme/tokens";
 
 // A brief, one-time brand moment played on cold launch, right after the
 // native splash screen (see app.json's expo-splash-screen config, same
-// cream background as here so the handoff is seamless) hides and before the
-// real first screen (Login or the main tabs, decided by App.js) appears.
+// dark navy background as here so the handoff is seamless) hides and before
+// the real first screen (Login or the main tabs, decided by App.js) appears.
 //
 // Kept deliberately simple, per the actual product ask: the pin settles in
 // with a soft drop, a single thin motion streak sweeps in from behind it and
@@ -84,7 +84,7 @@ export default function LaunchIntro({ onFinish }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.cream, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" },
   pinWrap: { width: 120, height: 120, alignItems: "center", justifyContent: "center" },
   pin: { width: 120, height: 120, resizeMode: "contain" },
   streak: {
