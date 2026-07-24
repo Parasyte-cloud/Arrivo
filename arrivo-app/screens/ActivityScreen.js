@@ -12,7 +12,7 @@ import { useCurrency } from "../hooks/useCurrency";
 export default function ActivityScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
-  const { formatFare } = useCurrency(token);
+  const { formatRideFare } = useCurrency(token);
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -65,7 +65,7 @@ export default function ActivityScreen({ navigation }) {
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
                   </Text>
                 </View>
-                <Text style={styles.tripPrice}>{formatFare(ride.fare_naira)}</Text>
+                <Text style={styles.tripPrice}>{formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
               </View>
             </Card>
           </Pressable>

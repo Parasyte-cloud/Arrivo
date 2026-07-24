@@ -278,6 +278,11 @@ router.post("/", requireAuth, async (req, res) => {
     }
   }
 
+  // Snapshot of "what USD price did we actually show this rider," locked to
+  // the exact rate used for this booking (see schema.sql for why this
+  // exists separately from the live-recomputed estimate elsewhere).
+  const quotedUsdAmount = fareNaira / ngnPerUsd;
+
   // Best-effort capture of the flight's scheduled time AT BOOKING, purely
   // so services/scheduler.js can later tell "this flight got rescheduled"
   // (the live time has drifted a lot from this) apart from "it's always
@@ -308,9 +313,9 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
     const inserted = await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
     );
     return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   }
@@ -331,9 +336,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
       );
       const ride = rideResult.rows[0];
 
@@ -361,9 +366,9 @@ router.post("/", requireAuth, async (req, res) => {
   }
 
   const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay]
+    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
   );
 
   res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });

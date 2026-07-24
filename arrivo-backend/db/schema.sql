@@ -388,3 +388,20 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id TEXT UNIQUE;
 -- lifetime as the ride record itself, matching how the rider's own
 -- track.html?ride=id link already works with no expiry either.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;
+
+-- ── Locked USD quote at booking ──
+-- Real USD charging (Paystack settling in USD, not just naira) needs
+-- Paystack's merchant account itself to have USD/multi-currency enabled —
+-- a business-side request to Paystack, not something this codebase can
+-- turn on by itself. Until that's confirmed, every fare is still charged
+-- in naira (see PAYSTACK_SECRET_KEY usage in routes/payments.js), same as
+-- always. What CAN ship now: instead of a foreign rider only ever seeing a
+-- live-recomputed "$ estimate" that can silently drift if the FX rate
+-- moves between booking and looking at their receipt later, snapshot the
+-- USD figure and the rate used for it at the exact moment the ride is
+-- booked. quoted_usd_amount/quoted_ngn_per_usd are the real, permanent
+-- record of "here's the USD price we actually showed this rider" — the
+-- foundation to flip on real USD settlement later without changing how
+-- any of this is displayed. Null for rides created before this shipped.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS quoted_usd_amount NUMERIC;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS quoted_ngn_per_usd NUMERIC;
