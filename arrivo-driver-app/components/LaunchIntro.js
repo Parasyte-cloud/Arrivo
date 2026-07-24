@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Animated, Text, StyleSheet } from "react-native";
+import { View, Animated, StyleSheet } from "react-native";
 import { colors } from "../theme/tokens";
 
 // A brief, one-time brand moment played on cold launch, right after the
@@ -75,10 +75,10 @@ export default function LaunchIntro({ onFinish }) {
           style={[styles.pin, { opacity: pinOpacity, transform: [{ scale: pinScale }, { translateY: pinTranslateY }] }]}
         />
       </View>
-      <Animated.Text style={[styles.brand, { opacity: wordmarkOpacity, transform: [{ translateY: wordmarkTranslateY }] }]}>
-        <Text style={{ color: colors.ink }}>Ride</Text>
-        <Text style={{ color: colors.amber }}>Arrivo</Text>
-      </Animated.Text>
+      <Animated.Image
+        source={require("../assets/wordmark.png")}
+        style={[styles.brand, { opacity: wordmarkOpacity, transform: [{ translateY: wordmarkTranslateY }] }]}
+      />
     </View>
   );
 }
@@ -94,5 +94,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.amber,
   },
-  brand: { fontSize: 30, fontWeight: "700", marginTop: 18 },
+  // Real wordmark image (1829x309 source, ~5.92:1) instead of a system-font
+  // rendering of the two-tone "RideArrivo" text — matches the actual
+  // logotype used on the website and elsewhere now, rather than an
+  // approximation in whatever font this device has installed.
+  brand: { width: 220, height: 220 / (1829 / 309), marginTop: 18, resizeMode: "contain" },
 });

@@ -1,7 +1,7 @@
 import "./i18n"; // side-effect: initializes i18next before anything renders
 
 import React, { useState } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Image } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
@@ -63,7 +63,20 @@ const stackScreenOptions = {
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} options={{ title: "RideArrivo" }} />
+      <Stack.Screen
+        name="HomeMain"
+        component={HomeScreen}
+        options={{
+          // Real wordmark image instead of a plain text title, matching the
+          // logotype now used everywhere else (website navbar, launch
+          // splash). The header background here is colors.ink (dark), so
+          // this uses the cream/light variant of the wordmark, not the navy
+          // one used on light backgrounds.
+          headerTitle: () => (
+            <Image source={require("./assets/wordmark-light.png")} style={{ width: 130, height: 130 / (1829 / 309) }} resizeMode="contain" />
+          ),
+        }}
+      />
       <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
       <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
