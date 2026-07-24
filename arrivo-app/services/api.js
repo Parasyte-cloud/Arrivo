@@ -84,6 +84,15 @@ export function getPlaceDetails(token, placeId, sessionToken) {
   });
 }
 
+// Turns a device GPS coordinate into an address, for the "use my current
+// location" pickup button (RouteScreen/ChauffeurScreen).
+export function getReverseGeocode(token, lat, lng) {
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  return request(`/api/places/reverse-geocode?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 // Live fare estimate before payment — same formula the backend
 // re-verifies against when the ride is actually created, so this number
 // is what the rider will actually be charged (barring live traffic

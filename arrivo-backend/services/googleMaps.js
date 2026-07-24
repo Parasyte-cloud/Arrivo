@@ -18,6 +18,7 @@ const axios = require("axios");
 
 const PLACES_BASE = "https://maps.googleapis.com/maps/api/place";
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
+const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
 function requireKey() {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY;
@@ -101,4 +102,23 @@ async function getDistanceDuration(originLat, originLng, destLat, destLng) {
   };
 }
 
-module.exports = { placesAutocomplete, placeDetails, getDistanceDuration };
+// The reverse of placeDetails above: turns a device's raw GPS coordinate
+// into a human-readable address, for the rider app's "use my current
+// location" button on the pickup field (RouteScreen/ChauffeurScreen).
+// Uses the plain Geocoding API, not Places — different endpoint, but the
+// same server-side key (GOOGLE_MAPS_SERVER_KEY) works as long as the
+// Geocoding API is also enabled for it in Google Cloud Console.
+async function reverseGeocode(lat, lng) {
+  const key = requireKey();
+  const response = await axios.get(GEOCODE_URL, {
+    params: { latlng: `${lat},${lng}`, key },
+  });
+  if (response.data.status !== "OK") {
+    throw new Error(`Reverse geocode failed: ${response.data.status} ${response.data.error_message || ""}`.trim());
+  }
+  const result = response.data.results?.[0];
+  if (!result) throw new Error("Reverse geocode returned no results");
+  return { address: result.formatted_address, lat, lng };
+}
+
+module.exports = { placesAutocomplete, placeDetails, getDistanceDuration, reverseGeocode };

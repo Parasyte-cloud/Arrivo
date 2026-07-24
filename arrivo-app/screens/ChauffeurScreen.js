@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getFareQuote } from "../services/api";
+import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 
 // Mirrors LUXURY_SURCHARGE_USD in arrivo-backend/services/fare.js — only
@@ -37,6 +39,10 @@ export default function ChauffeurScreen({ navigation }) {
   const { token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
   const [pickupAddress, setPickupAddress] = useState("");
+  // Same "explicit ask, never on mount" pattern as RouteScreen's identical
+  // feature — see the handler below for why.
+  const [locatingPickup, setLocatingPickup] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -69,6 +75,30 @@ export default function ChauffeurScreen({ navigation }) {
 
   const selectedDuration = DURATIONS.find((d) => d.id === duration);
   const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0 && !!quote && !quoteLoading;
+
+  // Same handler as RouteScreen's identical feature: only ever runs on a
+  // tap, never on mount, so permission is asked for at the moment it's
+  // actually needed. No coordinates to set here (unlike RouteScreen) —
+  // chauffeur/day bookings are flat-rate, not distance-priced, so this
+  // screen only ever tracked pickupAddress as plain text to begin with.
+  const useCurrentLocationForPickup = async () => {
+    setLocationError("");
+    setLocatingPickup(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setLocationError("Location permission denied — you can still type your pickup address above.");
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
+      setPickupAddress(result.address);
+    } catch (e) {
+      setLocationError("Couldn't detect your location right now — you can still type your pickup address above.");
+    } finally {
+      setLocatingPickup(false);
+    }
+  };
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -166,6 +196,15 @@ export default function ChauffeurScreen({ navigation }) {
             placeholder="Where should your chauffeur meet you?"
             placeholderTextColor={colors.dark.textMuted}
           />
+          <Pressable onPress={useCurrentLocationForPickup} style={styles.useLocationRow} disabled={locatingPickup}>
+            {locatingPickup ? (
+              <ActivityIndicator size="small" color={colors.tealBright} />
+            ) : (
+              <Ionicons name="locate-outline" size={16} color={colors.tealBright} />
+            )}
+            <Text style={styles.useLocationText}>{locatingPickup ? "Finding your location…" : "Use my current location"}</Text>
+          </Pressable>
+          {locationError ? <Text style={styles.locationHint}>{locationError}</Text> : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -280,6 +319,9 @@ const styles = StyleSheet.create({
   smallInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", minWidth: 100 },
   purposeInput: { color: colors.dark.text, fontSize: 13, textAlign: "right", flex: 1, marginLeft: 20 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  useLocationRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  useLocationText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
+  locationHint: { color: colors.amber, fontSize: 11, marginTop: 6, lineHeight: 15 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
     paddingHorizontal: 12,

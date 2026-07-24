@@ -1,6 +1,6 @@
 const express = require("express");
 const { requireAuth } = require("../middleware/auth");
-const { placesAutocomplete, placeDetails } = require("../services/googleMaps");
+const { placesAutocomplete, placeDetails, reverseGeocode } = require("../services/googleMaps");
 
 const router = express.Router();
 
@@ -32,6 +32,22 @@ router.get("/details", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Place details failed:", err.message);
     res.status(502).json({ error: "Couldn't look up that address right now." });
+  }
+});
+
+// GET /api/places/reverse-geocode?lat=...&lng=...
+// Used by the rider app's "use my current location" pickup button — turns
+// the device's raw GPS coordinate into an address string to show/store,
+// same as picking a suggestion from autocomplete would.
+router.get("/reverse-geocode", requireAuth, async (req, res) => {
+  const { lat, lng } = req.query;
+  if (lat == null || lng == null) return res.status(400).json({ error: "lat and lng are required" });
+  try {
+    const result = await reverseGeocode(Number(lat), Number(lng));
+    res.json(result);
+  } catch (err) {
+    console.error("Reverse geocode failed:", err.message);
+    res.status(502).json({ error: "Couldn't look up an address for that location right now." });
   }
 });
 

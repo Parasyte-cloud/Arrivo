@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getFareQuote } from "../services/api";
+import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 
 // Luxury toggle only makes sense on Sedan/SUV — Executive is already the
@@ -119,6 +120,14 @@ export default function RouteScreen({ navigation, route }) {
       ? { lat: route.params.presetPickupLat, lng: route.params.presetPickupLng }
       : null
   );
+  // "Use my current location" — deliberately not auto-run on mount. Only
+  // fires when the rider taps the button, so permission is asked for
+  // explicitly at the moment it's actually needed, not assumed on load.
+  // Declining leaves everything exactly as it already worked before this
+  // feature existed: pickup stays a plain typed/autocompleted field.
+  const [locatingPickup, setLocatingPickup] = useState(false);
+  const [locationError, setLocationError] = useState("");
+
   const [stops, setStops] = useState([route?.params?.presetDestinationAddress || ""]);
   const [destinationCoords, setDestinationCoords] = useState(
     route?.params?.presetDestinationLat != null && route?.params?.presetDestinationLng != null
@@ -184,6 +193,31 @@ export default function RouteScreen({ navigation, route }) {
   const quoteDebounceRef = useRef(null);
   // See the quote-fetch effect below for what this guards against.
   const quoteRequestIdRef = useRef(0);
+
+  // Only ever runs when the rider taps the button below — never on mount —
+  // per the product requirement that location access be an explicit ask,
+  // not an assumption. A decline (or any failure) just leaves an inline
+  // message; typing the address by hand still works exactly as before,
+  // since that's the only path this app has ever had until now.
+  const useCurrentLocationForPickup = async () => {
+    setLocationError("");
+    setLocatingPickup(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setLocationError("Location permission denied — you can still type your pickup address above.");
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
+      setPickup(result.address);
+      setPickupCoords({ lat: result.lat, lng: result.lng });
+    } catch (e) {
+      setLocationError("Couldn't detect your location right now — you can still type your pickup address above.");
+    } finally {
+      setLocatingPickup(false);
+    }
+  };
 
   const addStop = () => setStops((s) => [...s, ""]);
   const updateStop = (i, val) => {
@@ -416,6 +450,15 @@ export default function RouteScreen({ navigation, route }) {
               placeholder="Pickup address"
             />
           </View>
+          <Pressable onPress={useCurrentLocationForPickup} style={styles.addStop} disabled={locatingPickup}>
+            {locatingPickup ? (
+              <ActivityIndicator size="small" color={colors.tealBright} />
+            ) : (
+              <Ionicons name="locate-outline" size={16} color={colors.tealBright} />
+            )}
+            <Text style={styles.addStopText}>{locatingPickup ? "Finding your location…" : "Use my current location"}</Text>
+          </Pressable>
+          {locationError ? <Text style={styles.hintText}>{locationError}</Text> : null}
           {stops.map((stop, i) => (
             <View key={i} style={styles.stopRow}>
               <View style={styles.thread} />
