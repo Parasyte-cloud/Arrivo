@@ -428,3 +428,15 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS quoted_ngn_per_usd NUMERIC;
 -- the whole convoy including the primary, without a separate self-join).
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS fleet_group_id INTEGER REFERENCES rides(id);
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_fleet_companion BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Fleet Accompaniment — escort driver payout ──
+-- Companion rides above always have fare_naira = 0 (the rider already paid
+-- the whole convoy surcharge on the primary ride), which meant an escort
+-- driver's own trip carried zero recorded earnings anywhere — real driving
+-- work with no ledger entry. Business decision (Jul 2026): a flat
+-- $100-equivalent payout per completed escort trip, computed once at
+-- completion (see routes/rides.js PATCH /:id/status) and stored here so it
+-- shows up in that driver's earnings the same way fare_naira/tip_naira do.
+-- Null for rides that aren't fleet companions, or that completed before
+-- this shipped.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS escort_payout_naira NUMERIC;

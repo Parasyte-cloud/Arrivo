@@ -192,11 +192,21 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
   const driver = await getDriverForUser(req.user.id);
   if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
 
+  // completedTrips previously counted every completed ride, including Fleet
+  // Accompaniment escort companions — those always have fare_naira = 0 (the
+  // rider already paid for the whole convoy on the primary ride's fare, see
+  // createFleetCompanions in routes/rides.js), so counting them here made a
+  // driver's trip count look inflated relative to what they actually earned
+  // (e.g. "50 trips" when several paid nothing). Split out separately so
+  // completedTrips stays a meaningful "trips that paid you" figure, without
+  // hiding the real driving work behind completedFleetEscortTrips.
   const summary = (
     await pool.query(
-      `SELECT COUNT(*) as "completedTrips",
+      `SELECT COUNT(*) FILTER (WHERE NOT is_fleet_companion) as "completedTrips",
+              COUNT(*) FILTER (WHERE is_fleet_companion) as "completedFleetEscortTrips",
               COALESCE(SUM(fare_naira), 0) as "totalNaira",
-              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira"
+              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira",
+              COALESCE(SUM(escort_payout_naira), 0) as "totalEscortPayoutNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'`,
       [driver.id]
     )
@@ -205,7 +215,8 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
   const thisMonth = (
     await pool.query(
       `SELECT COALESCE(SUM(fare_naira), 0) as "totalNaira",
-              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira"
+              COALESCE(SUM(tip_naira), 0) as "totalTipsNaira",
+              COALESCE(SUM(escort_payout_naira), 0) as "totalEscortPayoutNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'
        AND date_trunc('month', created_at) = date_trunc('month', now())`,
       [driver.id]
@@ -214,14 +225,18 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
 
   res.json({
     completedTrips: Number(summary.completedTrips),
-    // totalNaira/thisMonthNaira include tips (what the driver actually
-    // earned in total); totalTipsNaira/thisMonthTipsNaira break that out
-    // separately so the app can show "of which ₦X was tips" rather than
-    // hiding it inside one lump sum.
-    totalNaira: Number(summary.totalNaira) + Number(summary.totalTipsNaira),
+    completedFleetEscortTrips: Number(summary.completedFleetEscortTrips),
+    // totalNaira/thisMonthNaira include tips AND the flat fleet-escort
+    // payout (what the driver actually earned in total); totalTipsNaira/
+    // totalEscortPayoutNaira (and their thisMonth equivalents) break those
+    // out separately so the app can show "of which ₦X was tips/escort pay"
+    // rather than hiding them inside one lump sum.
+    totalNaira: Number(summary.totalNaira) + Number(summary.totalTipsNaira) + Number(summary.totalEscortPayoutNaira),
     totalTipsNaira: Number(summary.totalTipsNaira),
-    thisMonthNaira: Number(thisMonth.totalNaira) + Number(thisMonth.totalTipsNaira),
+    totalEscortPayoutNaira: Number(summary.totalEscortPayoutNaira),
+    thisMonthNaira: Number(thisMonth.totalNaira) + Number(thisMonth.totalTipsNaira) + Number(thisMonth.totalEscortPayoutNaira),
     thisMonthTipsNaira: Number(thisMonth.totalTipsNaira),
+    thisMonthEscortPayoutNaira: Number(thisMonth.totalEscortPayoutNaira),
   });
 });
 

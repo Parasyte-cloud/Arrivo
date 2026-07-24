@@ -90,7 +90,13 @@ export default function ChauffeurScreen({ navigation }) {
         setLocationError("Location permission denied — you can still type your pickup address above.");
         return;
       }
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // See RouteScreen.js's identical fix for why this races against a
+      // manual timeout — a weak/no GPS signal would otherwise leave this
+      // stuck on "Finding your location…" indefinitely with no way out.
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+      ]);
       const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
       setPickupAddress(result.address);
     } catch (e) {

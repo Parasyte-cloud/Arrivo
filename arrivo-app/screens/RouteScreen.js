@@ -208,7 +208,16 @@ export default function RouteScreen({ navigation, route }) {
         setLocationError("Location permission denied — you can still type your pickup address above.");
         return;
       }
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // A weak/no GPS signal (common indoors or in an airport terminal —
+      // exactly where this button matters most) can leave this promise
+      // hanging far longer than anyone will wait, with no cancel affordance
+      // otherwise — the button would just stay stuck on "Finding your
+      // location…" forever. Racing it against a manual timeout guarantees
+      // this always resolves into the same graceful fallback message below.
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+      ]);
       const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
       setPickup(result.address);
       setPickupCoords({ lat: result.lat, lng: result.lng });

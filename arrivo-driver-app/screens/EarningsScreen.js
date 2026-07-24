@@ -84,6 +84,11 @@ export default function EarningsScreen() {
                 Includes ₦{summary.totalTipsNaira.toLocaleString()} in tips (₦{(summary.thisMonthTipsNaira || 0).toLocaleString()} this month) — 100% goes to you.
               </Text>
             ) : null}
+            {summary.totalEscortPayoutNaira > 0 ? (
+              <Text style={styles.tipsNote}>
+                Includes ₦{summary.totalEscortPayoutNaira.toLocaleString()} in fleet-escort payouts (₦{(summary.thisMonthEscortPayoutNaira || 0).toLocaleString()} this month) — flat $100 per escort trip.
+              </Text>
+            ) : null}
           </Card>
         ) : null}
 
@@ -95,6 +100,7 @@ export default function EarningsScreen() {
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
                   <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+                  {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
                 </View>
                 <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
                 <Text style={styles.tripDate}>{new Date(ride.created_at).toLocaleDateString()} · {ride.rider_name}</Text>
@@ -103,7 +109,18 @@ export default function EarningsScreen() {
                 ) : null}
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.tripPrice}>₦{ride.fare_naira?.toLocaleString()}</Text>
+                {/* Completed escort trips now carry a real escort_payout_naira
+                    (flat $100-equivalent, computed at completion — see
+                    routes/rides.js) instead of the generic "Included in
+                    fleet booking" placeholder, which only still applies to
+                    an escort trip that hasn't completed yet. */}
+                <Text style={styles.tripPrice}>
+                  {ride.is_fleet_companion
+                    ? ride.escort_payout_naira
+                      ? `₦${Number(ride.escort_payout_naira).toLocaleString()}`
+                      : "Included in fleet booking"
+                    : `₦${ride.fare_naira?.toLocaleString()}`}
+                </Text>
                 {Number(ride.tip_naira) > 0 ? (
                   <Text style={styles.tipLine}>+₦{Number(ride.tip_naira).toLocaleString()} tip</Text>
                 ) : null}

@@ -8,7 +8,7 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira } = require("../services/fare");
+const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, FLEET_ESCORT_PAYOUT_USD } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 
@@ -356,13 +356,28 @@ router.post("/", requireAuth, async (req, res) => {
     if (!membership.rows[0]) {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
-    const inserted = await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
-    );
-    await createFleetCompanions(pool, inserted.rows[0]);
-    return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+    // In its own transaction (same reasoning as the wallet branch below):
+    // without this, a fleet-companion insert failure after the primary ride
+    // already committed as 'paid' would leave a real, charged ride with a
+    // half-built (or missing) convoy and no way to retry cleanly.
+    const membershipClient = await pool.connect();
+    try {
+      await membershipClient.query("BEGIN");
+      const inserted = await membershipClient.query(
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+      );
+      await createFleetCompanions(membershipClient, inserted.rows[0]);
+      await membershipClient.query("COMMIT");
+      return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+    } catch (err) {
+      await membershipClient.query("ROLLBACK");
+      console.error("Membership ride creation failed:", err.message);
+      return res.status(500).json({ error: "Could not complete this booking. Please try again." });
+    } finally {
+      membershipClient.release();
+    }
   }
 
   // Paying from wallet happens in the same DB transaction as creating the
@@ -412,14 +427,27 @@ router.post("/", requireAuth, async (req, res) => {
     }
   }
 
-  const inserted = await pool.query(
-    `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-    [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
-  );
-
-  await createFleetCompanions(pool, inserted.rows[0]);
-  res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+  // Same transaction reasoning as the membership/wallet branches above — a
+  // fleet-companion insert failure must not leave a real card-paid ride
+  // with a half-built convoy and no clean way to retry.
+  const cardClient = await pool.connect();
+  try {
+    await cardClient.query("BEGIN");
+    const inserted = await cardClient.query(
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+    );
+    await createFleetCompanions(cardClient, inserted.rows[0]);
+    await cardClient.query("COMMIT");
+    res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+  } catch (err) {
+    await cardClient.query("ROLLBACK");
+    console.error("Card ride creation failed:", err.message);
+    res.status(500).json({ error: "Could not complete this booking. Please try again." });
+  } finally {
+    cardClient.release();
+  }
 });
 
 // POST /api/rides/quote — a live fare estimate, before any payment happens.
@@ -766,6 +794,21 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     }
   }
 
+  // Fleet-escort driver payout — a companion ride's fare_naira is always 0
+  // (the rider already paid the whole convoy surcharge on the primary
+  // ride), so without this an escort driver completed real trips with zero
+  // recorded earnings anywhere. Flat $100-equivalent per completed escort
+  // trip (business decision, Jul 2026), computed once here at completion
+  // and stored so it's never recomputed at a drifted rate on a later read.
+  if (status === "completed" && ride.is_fleet_companion && ride.escort_payout_naira == null) {
+    const ngnPerUsd = await getNgnPerUsd();
+    const escortPayoutUpdate = await pool.query(
+      "UPDATE rides SET escort_payout_naira = $1, updated_at = now() WHERE id = $2 RETURNING *",
+      [Math.round(FLEET_ESCORT_PAYOUT_USD * ngnPerUsd), ride.id]
+    );
+    ride = escortPayoutUpdate.rows[0];
+  }
+
   // Charge-at-drop-off for flight-issue rides: the fare wasn't collected
   // upfront this time (it was refunded when the issue was flagged), so
   // collect it now, at completion, instead — same row-locked wallet-debit
@@ -1006,7 +1049,11 @@ router.get("/:id/fleet", requireAuth, async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   const isRider = ride.rider_id === req.user.id;
   const isAssignedDriver = driver && ride.driver_id === driver.id;
-  if (!isRider && !isAssignedDriver && req.user.role !== "admin") {
+  // Admin panel's RidesPage.jsx calls this for BOTH "admin" and "support"
+  // logins (see AuthContext.jsx isReadOnly) — "support" was missing here,
+  // so a support-role staffer got a silent 403 that RidesPage.jsx's .catch()
+  // masked as an empty "No escort vehicles loaded yet." companion list.
+  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
     return res.status(403).json({ error: "You don't have access to this ride" });
   }
 

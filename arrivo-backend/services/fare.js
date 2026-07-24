@@ -159,6 +159,15 @@ const MAX_FULL_DAY_COUNT = 365;
 const SECURITY_ESCORT_PRICE_USD = 100;
 const FLEET_PRICE_NAIRA = { 2: 70000, 3: 100000 };
 
+// Flat payout to a fleet-escort companion driver per completed convoy trip
+// (business decision, July 2026) — separate from the rider-facing
+// FLEET_PRICE_NAIRA surcharge above, which the primary ride's driver never
+// shared with escort drivers. Priced in USD like the other flat add-ons
+// here, converted to naira at completion time. Paid out regardless of how
+// many escort vehicles were in the convoy — each companion driver gets the
+// same flat $100 for their own leg of it.
+const FLEET_ESCORT_PAYOUT_USD = 100;
+
 // How many passengers each vehicle type actually seats — mirrors the
 // identical MAX_PASSENGERS map kept client-side in both apps' booking
 // screens and the website's booking.js. Duplicated here (not imported from
@@ -315,6 +324,7 @@ module.exports = {
   isLagosNightTime,
   SECURITY_ESCORT_PRICE_USD,
   FLEET_PRICE_NAIRA,
+  FLEET_ESCORT_PAYOUT_USD,
   VEHICLE_TIER_DELTA_NAIRA,
   LUXURY_SURCHARGE_USD,
   AREA_PRICING,

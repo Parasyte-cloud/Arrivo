@@ -62,7 +62,12 @@ export function RidesPage() {
   // createFleetCompanions in routes/rides.js) fetched on demand here rather
   // than for every row in the table, since most rides aren't fleet bookings.
   const [fleetCompanions, setFleetCompanions] = useState({});
-  const [fleetLoading, setFleetLoading] = useState(false);
+  // Tracked per-ride-id (not one shared boolean) — a single shared flag meant
+  // expanding fleet ride A then quickly switching to a different uncached
+  // fleet ride C could have C's "Loading convoy…" state cleared early by A's
+  // request resolving first, flashing "No escort vehicles loaded yet." before
+  // C's own response actually arrived.
+  const [fleetLoadingIds, setFleetLoadingIds] = useState(() => new Set());
 
   const debouncedSearch = useDebounced(search, 350);
 
@@ -93,11 +98,15 @@ export function RidesPage() {
       setExpandedId(ride.id);
       setNoteDraft(ride.admin_notes || "");
       if (ride.fleet_size > 0 && !fleetCompanions[ride.id]) {
-        setFleetLoading(true);
+        setFleetLoadingIds((prev) => new Set(prev).add(ride.id));
         api.getRideFleetCompanions(token, ride.id)
           .then((data) => setFleetCompanions((prev) => ({ ...prev, [ride.id]: data.companions || [] })))
           .catch(() => setFleetCompanions((prev) => ({ ...prev, [ride.id]: [] })))
-          .finally(() => setFleetLoading(false));
+          .finally(() => setFleetLoadingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(ride.id);
+            return next;
+          }));
       }
     }
   };
@@ -234,7 +243,7 @@ export function RidesPage() {
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
                                 Fleet Accompaniment — {r.fleet_size} escort vehicle{r.fleet_size > 1 ? "s" : ""}
                               </div>
-                              {fleetLoading && !fleetCompanions[r.id] ? (
+                              {fleetLoadingIds.has(r.id) && !fleetCompanions[r.id] ? (
                                 <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Loading convoy…</div>
                               ) : (fleetCompanions[r.id] || []).length === 0 ? (
                                 <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>No escort vehicles loaded yet.</div>
