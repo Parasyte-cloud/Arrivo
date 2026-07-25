@@ -314,6 +314,10 @@ router.patch("/me", requireAuth, async (req, res) => {
   const {
     name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber, avatarDataUrl,
     audioRecordingEnabled,
+    // Ride-sharing preferences — standing defaults set once on Profile (see
+    // db/schema.sql's "Ride-sharing preferences" block). Not yet read by
+    // any booking screen to auto-apply, just stored/shown back for now.
+    preferredVehicleType, quietRide, temperaturePreference, childSeatRequired, travelingWithPet,
   } = req.body;
   const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
   if (!current) return res.status(404).json({ error: "User not found" });
@@ -323,11 +327,22 @@ router.patch("/me", requireAuth, async (req, res) => {
     if (avatarError) return res.status(400).json({ error: avatarError });
   }
 
+  const ALLOWED_VEHICLE_TYPES = ["sedan", "suv", "truck"];
+  if (preferredVehicleType !== undefined && preferredVehicleType !== null && !ALLOWED_VEHICLE_TYPES.includes(preferredVehicleType)) {
+    return res.status(400).json({ error: `preferredVehicleType must be one of: ${ALLOWED_VEHICLE_TYPES.join(", ")}, or null` });
+  }
+  const ALLOWED_TEMPS = ["cool", "warm"];
+  if (temperaturePreference !== undefined && temperaturePreference !== null && !ALLOWED_TEMPS.includes(temperaturePreference)) {
+    return res.status(400).json({ error: `temperaturePreference must be one of: ${ALLOWED_TEMPS.join(", ")}, or null` });
+  }
+
   const updated = await pool.query(
     `UPDATE users SET name = $1, phone = $2, preferred_language = $3,
                        whatsapp_number = $4, country_of_residence = $5, passport_number = $6,
-                       avatar_url = $7, audio_recording_enabled = $8
-     WHERE id = $9 RETURNING *`,
+                       avatar_url = $7, audio_recording_enabled = $8,
+                       preferred_vehicle_type = $9, quiet_ride = $10, temperature_preference = $11,
+                       child_seat_required = $12, traveling_with_pet = $13
+     WHERE id = $14 RETURNING *`,
     [
       name ?? current.name,
       phone ?? current.phone,
@@ -337,11 +352,46 @@ router.patch("/me", requireAuth, async (req, res) => {
       passportNumber ?? current.passport_number,
       avatarDataUrl !== undefined ? avatarDataUrl : current.avatar_url,
       audioRecordingEnabled ?? current.audio_recording_enabled,
+      preferredVehicleType !== undefined ? preferredVehicleType : current.preferred_vehicle_type,
+      quietRide ?? current.quiet_ride,
+      temperaturePreference !== undefined ? temperaturePreference : current.temperature_preference,
+      childSeatRequired ?? current.child_seat_required,
+      travelingWithPet ?? current.traveling_with_pet,
       req.user.id,
     ]
   );
 
   res.json({ user: publicUser(updated.rows[0]) });
+});
+
+// POST /api/auth/resend-verification-email — the Profile screen's "Resend
+// verification email" action. Regenerates a fresh token (the original
+// signup one expires after 24 hours and is one-time-use — see
+// verifyEmailToken below) rather than reusing whatever's already on the
+// row, which may well be gone by the time someone actually asks for this.
+router.post("/resend-verification-email", requireAuth, async (req, res) => {
+  const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
+  if (!current) return res.status(404).json({ error: "User not found" });
+  if (current.email_verified) {
+    return res.json({ ok: true, alreadyVerified: true });
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await pool.query(
+    "UPDATE users SET email_verification_token = $1, email_verification_expires = $2 WHERE id = $3",
+    [verificationToken, verificationExpires, current.id]
+  );
+
+  const requestBaseUrl = `${req.protocol}://${req.get("host")}/api/auth/verify-email`;
+  const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || requestBaseUrl}?token=${verificationToken}`;
+  try {
+    await sendVerificationEmail(current.email, verifyUrl);
+  } catch (e) {
+    console.error("Resend verification email failed:", e.message);
+    return res.status(502).json({ error: "Couldn't send the verification email right now. Please try again." });
+  }
+  res.json({ ok: true });
 });
 
 // Same 6MB cap as driver documents (routes/drivers.js) — an ID photo needs

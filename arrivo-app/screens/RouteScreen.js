@@ -8,7 +8,7 @@ import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getFareQuote, getReverseGeocode } from "../services/api";
+import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 
 // Luxury toggle only makes sense on Sedan/SUV — Executive is already the
@@ -145,6 +145,24 @@ export default function RouteScreen({ navigation, route }) {
   const [emergencyContactName, setEmergencyContactName] = useState("");
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const linkedRideId = route?.params?.linkedRideId || null;
+
+  // Pre-fills this per-ride field from the first contact saved on Profile
+  // -> Emergency contacts, instead of the rider retyping the same name and
+  // number on every single booking. Still fully editable/clearable per
+  // trip — this only sets an initial value, never overwrites anything the
+  // rider's already typed here.
+  useEffect(() => {
+    getEmergencyContacts(token)
+      .then((data) => {
+        const first = (data.contacts || [])[0];
+        if (first) {
+          setEmergencyContactName((prev) => prev || first.name);
+          setEmergencyContactPhone((prev) => prev || first.phone);
+        }
+      })
+      .catch(() => {}); // non-critical — the field just stays blank, same as before this existed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Airport Drop-off has no flight-landing event to anchor timing on, so
   // the rider tells us directly when they want picking up. Defaults to

@@ -41,10 +41,19 @@ function idVerificationBadge(status) {
   return { label: "Not verified", color: colors.dark.textMuted };
 }
 
+// Same idea as idVerificationBadge above — email_verified was already
+// tracked on every account (set the moment someone clicks the link in
+// their signup email), just never actually shown anywhere in the app.
+function emailVerifiedBadge(verified) {
+  return verified ? { label: "Verified ✓", color: "#8FD9C4" } : { label: "Not verified", color: colors.dark.textMuted };
+}
+
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
-  const { user, token, logout, updateProfile } = useAuth();
+  const { user, token, logout, updateProfile, resendVerificationEmail } = useAuth();
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [resendMessage, setResendMessage] = useState(null);
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
   const [country, setCountry] = useState(user?.country_of_residence || "");
   const [saving, setSaving] = useState(false);
@@ -101,6 +110,19 @@ export default function ProfileScreen({ navigation }) {
       setSaveError(e.message || "Couldn't save your details. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resendEmail = async () => {
+    setResendingEmail(true);
+    setResendMessage(null);
+    try {
+      const data = await resendVerificationEmail();
+      setResendMessage(data.alreadyVerified ? "Your email is already verified." : "Verification email sent — check your inbox.");
+    } catch (e) {
+      setResendMessage(e.message || "Couldn't send the verification email. Please try again.");
+    } finally {
+      setResendingEmail(false);
     }
   };
 
@@ -271,9 +293,35 @@ export default function ProfileScreen({ navigation }) {
               {idVerificationBadge(user?.id_verification_status).label}
             </Text>
           </Pressable>
-          <Text style={styles.link}>{t("profile.emergencyContacts")}</Text>
-          <Text style={styles.link}>{t("profile.rideSharingPrefs")}</Text>
-          <Text style={styles.link}>{t("profile.support")}</Text>
+          <View style={styles.hairline} />
+
+          <View style={styles.verifiedIdRow}>
+            <Text style={styles.link}>Email verification</Text>
+            <Text style={{ color: emailVerifiedBadge(user?.email_verified).color, fontSize: 12, fontWeight: "600" }}>
+              {emailVerifiedBadge(user?.email_verified).label}
+            </Text>
+          </View>
+          {!user?.email_verified ? (
+            resendingEmail ? (
+              <ActivityIndicator color={colors.amber} style={{ alignSelf: "flex-start", marginTop: 4 }} />
+            ) : (
+              <Pressable onPress={resendEmail} style={{ marginTop: 4 }}>
+                <Text style={styles.resendLink}>Resend verification email</Text>
+              </Pressable>
+            )
+          ) : null}
+          {resendMessage ? <Text style={styles.meta}>{resendMessage}</Text> : null}
+          <View style={styles.hairline} />
+
+          <Pressable onPress={() => navigation.navigate("EmergencyContacts")}>
+            <Text style={styles.link}>{t("profile.emergencyContacts")}</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate("RidePreferences")}>
+            <Text style={styles.link}>{t("profile.rideSharingPrefs")}</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate("Support")}>
+            <Text style={styles.link}>{t("profile.support")}</Text>
+          </Pressable>
         </Card>
 
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
@@ -322,6 +370,8 @@ const styles = StyleSheet.create({
   langModalCheck: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   link: { color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
   verifiedIdRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  hairline: { height: 1, backgroundColor: colors.dark.hairline, marginVertical: 2 },
+  resendLink: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   avatarCircle: {
     width: 60, height: 60, borderRadius: 30, backgroundColor: colors.dark.fieldBg,
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",

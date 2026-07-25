@@ -463,3 +463,36 @@ CREATE TABLE IF NOT EXISTS used_payment_references (
   ride_id INTEGER REFERENCES rides(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── Saved emergency contacts ──
+-- Previously a rider retyped an emergency contact's name/phone from scratch
+-- on every single booking (see rides.emergency_contact_name/phone, set at
+-- booking time on RouteScreen). This is the Profile-level "Emergency
+-- contacts" feature: a rider saves one or more contacts once, reusable
+-- across every future booking (RouteScreen now pre-fills the per-ride field
+-- from the first saved contact, still editable per-trip). Deliberately its
+-- own table rather than columns on `users` since a rider can have more than
+-- one.
+CREATE TABLE IF NOT EXISTS emergency_contacts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  relationship TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_emergency_contacts_user ON emergency_contacts(user_id, created_at);
+
+-- ── Ride-sharing preferences ──
+-- Standing defaults a rider sets once on their Profile — previously
+-- "Ride-sharing preferences" was a label on Profile with nothing behind it
+-- at all. These are plain columns on `users` (unlike emergency contacts,
+-- there's exactly one set per rider, not a list). Note: these are stored
+-- and shown back to the rider, but booking screens don't yet read them to
+-- auto-apply a default vehicle type or pass the others to the driver —
+-- that's a natural next step, kept separate so this can ship on its own.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_vehicle_type TEXT; -- 'sedan' | 'suv' | 'truck' | null (no preference)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_ride BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_preference TEXT; -- 'cool' | 'warm' | null (no preference)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS child_seat_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL DEFAULT false;

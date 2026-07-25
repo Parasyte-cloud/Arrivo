@@ -93,6 +93,30 @@ export function getReverseGeocode(token, lat, lng) {
   });
 }
 
+// Saved emergency contacts — Profile's "Emergency contacts" screen. A rider
+// saves these once instead of retyping a contact on every booking; the
+// first one also pre-fills RouteScreen's per-ride emergency contact field.
+export function getEmergencyContacts(token) {
+  return request("/api/emergency-contacts", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function addEmergencyContact(token, { name, phone, relationship }) {
+  return request("/api/emergency-contacts", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, phone, relationship }),
+  });
+}
+
+export function deleteEmergencyContact(token, id) {
+  return request(`/api/emergency-contacts/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 // Live fare estimate before payment — same formula the backend
 // re-verifies against when the ride is actually created, so this number
 // is what the rider will actually be charged (barring live traffic

@@ -29,6 +29,9 @@ import ActivityScreen from "./screens/ActivityScreen";
 import WalletScreen from "./screens/WalletScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import VerifyIdScreen from "./screens/VerifyIdScreen";
+import EmergencyContactsScreen from "./screens/EmergencyContactsScreen";
+import RidePreferencesScreen from "./screens/RidePreferencesScreen";
+import SupportScreen from "./screens/SupportScreen";
 
 import { colors } from "./theme/tokens";
 
@@ -103,6 +106,9 @@ function ProfileStack() {
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: "Verified ID" }} />
+      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: "Emergency Contacts" }} />
+      <Stack.Screen name="RidePreferences" component={RidePreferencesScreen} options={{ title: "Ride Preferences" }} />
+      <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />
     </Stack.Navigator>
   );
 }

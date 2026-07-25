@@ -137,9 +137,19 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // Profile screen's "Resend verification email" action, next to the new
+  // email-verified badge. No setUser needed — this doesn't change anything
+  // about the account yet, just sends a fresh link to click.
+  const resendVerificationEmail = async () => {
+    return request("/api/auth/resend-verification-email", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  };
+
   return (
     <AuthContext.Provider
-      value={{ token, user, initializing, signup, login, loginWithGoogle, loginWithApple, logout, updateProfile, submitIdVerification, isAuthenticated: !!token }}
+      value={{ token, user, initializing, signup, login, loginWithGoogle, loginWithApple, logout, updateProfile, submitIdVerification, resendVerificationEmail, isAuthenticated: !!token }}
     >
       {children}
     </AuthContext.Provider>
