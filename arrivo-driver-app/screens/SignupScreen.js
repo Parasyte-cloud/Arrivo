@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, ScrollView, Modal } from "react-native";
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, ScrollView, Modal, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -78,7 +78,8 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Drive with RideArrivo</Text>
+        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Text style={styles.subBrand}>DRIVER</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 
         <TextInput style={styles.input} placeholder="First name" placeholderTextColor={colors.textMuted} value={firstName} onChangeText={setFirstName} />
@@ -189,7 +190,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "transparent" },
   content: { padding: spacing.lg, paddingTop: 60, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: "700", color: colors.ink, textAlign: "center" },
-  subtitle: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 4, marginBottom: spacing.lg },
+  brand: { width: 200, height: 200 / (2067 / 761), alignSelf: "center" },
+  subBrand: { fontSize: 12, fontWeight: "700", color: colors.amber, textAlign: "center", letterSpacing: 3, marginTop: 2 },
+  subtitle: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: 6, marginBottom: spacing.lg },
   input: {
     backgroundColor: colors.fieldBg,
     color: colors.ink,

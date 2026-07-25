@@ -158,7 +158,7 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
-        <Text style={styles.title}>{t("auth.joinArrivo")}</Text>
+        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
 
         <Pressable onPress={pickAvatar} style={styles.avatarPicker}>
           {avatarUri ? (
@@ -347,6 +347,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "transparent" },
   content: { padding: spacing.lg, paddingTop: 60, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
+  brand: { width: 220, height: 220 / (2067 / 761), alignSelf: "center", marginBottom: spacing.lg },
   avatarPicker: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: colors.fieldBg,
     alignSelf: "center", alignItems: "center", justifyContent: "center",

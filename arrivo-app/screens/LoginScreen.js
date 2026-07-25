@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -101,10 +101,7 @@ export default function LoginScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
-        <Text style={styles.brand}>
-          <Text style={{ color: colors.ink }}>Ride</Text>
-          <Text style={{ color: colors.amber }}>Arrivo</Text>
-        </Text>
+        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
         <View style={{ height: spacing.lg }} />
 
         {forgotMode ? (
@@ -206,7 +203,7 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "transparent", justifyContent: "center" },
   content: { padding: spacing.lg },
-  brand: { fontSize: 34, fontWeight: "700", textAlign: "center" },
+  brand: { width: 240, height: 240 / (2067 / 761), alignSelf: "center" },
   title: { fontSize: 24, fontWeight: "700", color: colors.ink, marginBottom: spacing.lg, textAlign: "center" },
   input: {
     backgroundColor: colors.fieldBg,
