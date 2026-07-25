@@ -12,7 +12,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.arrivo.driver",
+      "bundleIdentifier": "com.ridearrivo.driver",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
