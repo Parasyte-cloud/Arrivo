@@ -1,11 +1,24 @@
 import React, { useEffect, useRef } from "react";
-import { View, Animated, StyleSheet } from "react-native";
+import { View, Animated, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/tokens";
 
 // A brief, one-time brand moment played on cold launch, right after the
-// native splash screen (see app.json's expo-splash-screen config, same
-// dark navy background as here so the handoff is seamless) hides and before
-// the real first screen (Login or the main tabs, decided by App.js) appears.
+// native splash screen (see app.json's expo-splash-screen config) hides and
+// before the real first screen (Login or the main tabs, decided by App.js)
+// appears.
+//
+// Android's native splash is intentionally inverted from iOS's (amber
+// background, navy pin — see app.json's expo-splash-screen "android"
+// override) purely per product ask; this screen has to match whichever one
+// just handed off to it, or there'd be a jarring flash between the two. The
+// navy-background/amber-pin assets below (icon.png, wordmark.png) are used
+// on iOS; the amber-background/navy-pin assets (adaptive-icon-android.png,
+// wordmark-android.png — same artwork, colors swapped) are used on Android.
+// adaptive-icon-android.png specifically (not icon.png) is used for the pin
+// on Android because it's transparent with no baked-in square background,
+// so it drops cleanly onto this screen's amber fill with no visible edge —
+// icon.png has navy baked into its corners, which would show as an ugly
+// navy square floating on amber.
 //
 // Kept deliberately simple, per the actual product ask: the pin settles in
 // with a soft drop, a single thin motion streak sweeps in from behind it and
@@ -71,12 +84,12 @@ export default function LaunchIntro({ onFinish }) {
           ]}
         />
         <Animated.Image
-          source={require("../assets/icon.png")}
+          source={Platform.OS === "android" ? require("../assets/adaptive-icon-android.png") : require("../assets/icon.png")}
           style={[styles.pin, { opacity: pinOpacity, transform: [{ scale: pinScale }, { translateY: pinTranslateY }] }]}
         />
       </View>
       <Animated.Image
-        source={require("../assets/wordmark.png")}
+        source={Platform.OS === "android" ? require("../assets/wordmark-android.png") : require("../assets/wordmark.png")}
         style={[styles.brand, { opacity: wordmarkOpacity, transform: [{ translateY: wordmarkTranslateY }] }]}
       />
     </View>
@@ -84,7 +97,7 @@ export default function LaunchIntro({ onFinish }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: Platform.OS === "android" ? colors.amber : colors.ink, alignItems: "center", justifyContent: "center" },
   pinWrap: { width: 120, height: 120, alignItems: "center", justifyContent: "center" },
   pin: { width: 120, height: 120, resizeMode: "contain" },
   streak: {
@@ -92,7 +105,9 @@ const styles = StyleSheet.create({
     width: 46,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.amber,
+    // Same reasoning as the screen background above: this accent needs to
+    // read against whichever fill color is behind it on this platform.
+    backgroundColor: Platform.OS === "android" ? colors.ink : colors.amber,
   },
   // Real wordmark image (1829x309 source, ~5.92:1) instead of a system-font
   // rendering of the two-tone "RideArrivo" text — matches the actual

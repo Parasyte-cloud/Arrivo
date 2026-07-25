@@ -29,8 +29,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#12123B"
+        "foregroundImage": "./assets/adaptive-icon-android.png",
+        "backgroundColor": "#F4A300"
       },
       "package": "com.arrivo.driver",
       "permissions": [
@@ -76,7 +76,11 @@
           "image": "./assets/splash.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#12123B"
+          "backgroundColor": "#12123B",
+          "android": {
+            "image": "./assets/splash-android.png",
+            "backgroundColor": "#F4A300"
+          }
         }
       ],
       [
