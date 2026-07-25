@@ -1,13 +1,36 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1); // 1..24
+
+function formatDateDisplay(d) {
+  return d ? d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : "";
+}
+function formatTimeDisplay(d) {
+  return d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+}
+// Combines the separately-picked date and time into one real Date object —
+// this is what actually gets sent to the backend as scheduledPickupAt.
+// Previously date/time here were just free-typed strings dropped into a
+// display label and NEVER converted into a real timestamp at all — a
+// Chauffeur booking's scheduledPickupAt was silently left undefined the
+// entire time, unlike RouteScreen's equivalent scheduled bookings.
+function combineDateAndTime(datePart, timePart) {
+  if (!datePart || !timePart) return null;
+  const combined = new Date(datePart);
+  combined.setHours(timePart.getHours(), timePart.getMinutes(), 0, 0);
+  return combined;
+}
 
 // Mirrors LUXURY_SURCHARGE_USD in arrivo-backend/services/fare.js — only
 // Sedan/SUV get the toggle, Executive is already the premium tier.
@@ -43,10 +66,13 @@ export default function ChauffeurScreen({ navigation }) {
   // feature — see the handler below for why.
   const [locatingPickup, setLocatingPickup] = useState(false);
   const [locationError, setLocationError] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  const [dateValue, setDateValue] = useState(null); // Date | null — day only, time-of-day ignored
+  const [timeValue, setTimeValue] = useState(null); // Date | null — time-of-day only, date part ignored
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showHoursPicker, setShowHoursPicker] = useState(false);
   const [purpose, setPurpose] = useState("");
-  const [hours, setHours] = useState("6");
+  const [hours, setHours] = useState(6);
   const [choice, setChoice] = useState("suv");
   const [duration, setDuration] = useState("full_day");
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
@@ -74,7 +100,7 @@ export default function ChauffeurScreen({ navigation }) {
   const requestIdRef = useRef(0);
 
   const selectedDuration = DURATIONS.find((d) => d.id === duration);
-  const canConfirm = pickupAddress.trim().length > 0 && date.trim().length > 0 && time.trim().length > 0 && !!quote && !quoteLoading;
+  const canConfirm = pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && !!quote && !quoteLoading;
 
   // Same handler as RouteScreen's identical feature: only ever runs on a
   // tap, never on mount, so permission is asked for at the moment it's
@@ -150,15 +176,21 @@ export default function ChauffeurScreen({ navigation }) {
 
   const confirm = () => {
     if (!canConfirm) return;
+    const scheduledPickupAt = combineDateAndTime(dateValue, timeValue);
     navigation.navigate("Checkout", {
       amountNaira: quote.fareNaira,
-      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${date} ${time}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
+      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,
       bookingType: duration,
       durationDays: duration === "full_day" ? fullDayCount : selectedDuration.days,
       luxury: luxury && (choice === "sedan" || choice === "suv"),
+      // Previously never sent at all — date/time here used to be free-typed
+      // display strings only (see combineDateAndTime above), so this was
+      // silently undefined for every Chauffeur booking, unlike RouteScreen's
+      // equivalent scheduled rides.
+      scheduledPickupAt: scheduledPickupAt ? scheduledPickupAt.toISOString() : undefined,
       // Only meaningful for a single-day Full Day booking — the backend
       // only stores this (as included_hours_per_day) for exactly that case,
       // since it's what a possible time-overage charge later gets measured
@@ -229,40 +261,26 @@ export default function ChauffeurScreen({ navigation }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.row}>
+          <Pressable style={styles.row} onPress={() => setShowDatePicker(true)}>
             <Text style={styles.rowLabel}>📅 Date</Text>
-            <TextInput
-              style={styles.smallInput}
-              value={date}
-              onChangeText={setDate}
-              placeholder="e.g. Sat 25 Jul"
-              placeholderTextColor={colors.dark.textMuted}
-            />
-          </View>
+            <Text style={[styles.smallInput, !dateValue && { color: colors.dark.textMuted }]}>
+              {dateValue ? formatDateDisplay(dateValue) : "Select date"}
+            </Text>
+          </Pressable>
           <View style={styles.divider} />
-          <View style={styles.row}>
+          <Pressable style={styles.row} onPress={() => setShowTimePicker(true)}>
             <Text style={styles.rowLabel}>🕘 Time</Text>
-            <TextInput
-              style={styles.smallInput}
-              value={time}
-              onChangeText={setTime}
-              placeholder="e.g. 10:00am"
-              placeholderTextColor={colors.dark.textMuted}
-            />
-          </View>
+            <Text style={[styles.smallInput, !timeValue && { color: colors.dark.textMuted }]}>
+              {timeValue ? formatTimeDisplay(timeValue) : "Select time"}
+            </Text>
+          </Pressable>
           {duration === "full_day" ? (
             <>
               <View style={styles.divider} />
-              <View style={styles.row}>
+              <Pressable style={styles.row} onPress={() => setShowHoursPicker(true)}>
                 <Text style={styles.rowLabel}>⏱ Hours that day</Text>
-                <TextInput
-                  style={styles.smallInput}
-                  value={hours}
-                  onChangeText={setHours}
-                  keyboardType="number-pad"
-                  placeholderTextColor={colors.dark.textMuted}
-                />
-              </View>
+                <Text style={styles.smallInput}>{hours}h</Text>
+              </Pressable>
             </>
           ) : null}
           <View style={styles.divider} />
@@ -277,6 +295,104 @@ export default function ChauffeurScreen({ navigation }) {
             />
           </View>
         </Card>
+
+        {/* Date/time pickers — Android shows its own native dialog the
+            instant the component mounts and closes itself on selection
+            (see onChange below), so no wrapping Modal is needed there. iOS's
+            "inline"/"spinner" displays are persistent embedded views with no
+            built-in dismiss, so those get wrapped in the same bottom-sheet
+            Modal pattern already used for the language picker elsewhere in
+            this app (ProfileScreen/SignupScreen), with an explicit Done button. */}
+        {showDatePicker && Platform.OS === "android" ? (
+          <DateTimePicker
+            value={dateValue || new Date()}
+            mode="date"
+            display="default"
+            minimumDate={new Date()}
+            onChange={(event, selected) => {
+              setShowDatePicker(false);
+              if (event.type === "dismissed") return;
+              if (selected) setDateValue(selected);
+            }}
+          />
+        ) : null}
+        {showTimePicker && Platform.OS === "android" ? (
+          <DateTimePicker
+            value={timeValue || new Date()}
+            mode="time"
+            display="default"
+            onChange={(event, selected) => {
+              setShowTimePicker(false);
+              if (event.type === "dismissed") return;
+              if (selected) setTimeValue(selected);
+            }}
+          />
+        ) : null}
+
+        <Modal visible={Platform.OS === "ios" && showDatePicker} animationType="slide" transparent onRequestClose={() => setShowDatePicker(false)}>
+          <Pressable style={styles.pickerOverlay} onPress={() => setShowDatePicker(false)}>
+            <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Pickup date</Text>
+                <Pressable onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.pickerDone}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={dateValue || new Date()}
+                mode="date"
+                display="inline"
+                minimumDate={new Date()}
+                onChange={(event, selected) => {
+                  if (selected) setDateValue(selected);
+                }}
+              />
+            </View>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={Platform.OS === "ios" && showTimePicker} animationType="slide" transparent onRequestClose={() => setShowTimePicker(false)}>
+          <Pressable style={styles.pickerOverlay} onPress={() => setShowTimePicker(false)}>
+            <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Pickup time</Text>
+                <Pressable onPress={() => setShowTimePicker(false)}>
+                  <Text style={styles.pickerDone}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={timeValue || new Date()}
+                mode="time"
+                display="spinner"
+                onChange={(event, selected) => {
+                  if (selected) setTimeValue(selected);
+                }}
+              />
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Hours-that-day picker — a real scrollable wheel/list instead of
+            typing a number. Wrapped in the same bottom-sheet Modal on both
+            platforms (rather than leaning on Android's own compact dropdown
+            styling) so it looks and behaves identically everywhere. */}
+        <Modal visible={showHoursPicker} animationType="slide" transparent onRequestClose={() => setShowHoursPicker(false)}>
+          <Pressable style={styles.pickerOverlay} onPress={() => setShowHoursPicker(false)}>
+            <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Hours that day</Text>
+                <Pressable onPress={() => setShowHoursPicker(false)}>
+                  <Text style={styles.pickerDone}>Done</Text>
+                </Pressable>
+              </View>
+              <Picker selectedValue={hours} onValueChange={setHours} itemStyle={{ color: colors.dark.text }}>
+                {HOUR_OPTIONS.map((h) => (
+                  <Picker.Item key={h} label={`${h} hour${h === 1 ? "" : "s"}`} value={h} />
+                ))}
+              </Picker>
+            </View>
+          </Pressable>
+        </Modal>
 
         <Card tone="dark">
           <Text style={styles.cardLabel}>Choose a vehicle</Text>
@@ -305,7 +421,7 @@ export default function ChauffeurScreen({ navigation }) {
           ) : null}
         </Card>
 
-        {!canConfirm && pickupAddress.trim() && date.trim() && time.trim() ? (
+        {!canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
           quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
         ) : !canConfirm ? (
           <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>
@@ -373,4 +489,12 @@ const styles = StyleSheet.create({
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: spacing.sm, textAlign: "center" },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
+  pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  pickerCard: { backgroundColor: colors.dark.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20 },
+  pickerHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    padding: 20, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.dark.hairline,
+  },
+  pickerTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 15 },
+  pickerDone: { color: colors.amber, fontWeight: "700", fontSize: 14 },
 });
