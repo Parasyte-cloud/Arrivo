@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
+import * as AuthSession from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { colors, spacing } from "../theme/tokens";
@@ -20,6 +21,17 @@ const GOOGLE_IOS_CLIENT_ID = Constants.expoConfig?.extra?.googleOAuth?.iosClient
 const GOOGLE_ANDROID_CLIENT_ID = Constants.expoConfig?.extra?.googleOAuth?.androidClientId;
 const GOOGLE_WEB_CLIENT_ID = Constants.expoConfig?.extra?.googleOAuth?.webClientId;
 
+// On iOS, Google's authorization server only accepts a redirect back to the
+// app via a very specific "reversed client ID" URL scheme — it does NOT
+// accept the app's own generic scheme (app.json's top-level "scheme"), which
+// is what expo-auth-session falls back to if no redirectUri is given. That
+// mismatch is exactly what threw "Error 400: redirect_uri_mismatch" on
+// Google's own sign-in page. This scheme must also be registered as a
+// CFBundleURLType in app.json's ios.infoPlist — both halves are required.
+const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
+  ? `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.replace(".apps.googleusercontent.com", "")}`
+  : undefined;
+
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only, per Apple's own button — Android has no Apple button at all).
 // `disabled` is how the signup screen gates these behind the data-protection
@@ -36,6 +48,13 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // openid+email+profile is enough for account creation — RideArrivo
     // never needs any broader Google scope (contacts, calendar, etc.).
     scopes: ["openid", "profile", "email"],
+    // See GOOGLE_IOS_URL_SCHEME above — without this, iOS silently falls
+    // back to a redirect URI Google's server rejects. Android's OAuth client
+    // type validates via package name + signing certificate instead of a
+    // redirect URI, so it doesn't need (or use) this.
+    ...(Platform.OS === "ios" && GOOGLE_IOS_URL_SCHEME
+      ? { redirectUri: AuthSession.makeRedirectUri({ scheme: GOOGLE_IOS_URL_SCHEME }) }
+      : {}),
   });
 
   useEffect(() => {
