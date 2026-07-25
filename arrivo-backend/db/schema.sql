@@ -440,3 +440,26 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_fleet_companion BOOLEAN NOT NULL D
 -- Null for rides that aren't fleet companions, or that completed before
 -- this shipped.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS escort_payout_naira NUMERIC;
+
+-- ── Cross-subsystem payment-reference ledger ──
+-- Ride card payment, ride tips, ride overage charges, and wallet top-ups
+-- each independently re-verify a client-supplied Paystack reference
+-- against Paystack and the amount expected — but a real, once-successful
+-- Paystack reference stays "successful" forever, so nothing stopped the
+-- SAME reference being presented a second time to a DIFFERENT one of
+-- those four flows (pay a ride, then top up the wallet with that same
+-- already-spent reference, or vice versa) and getting credited again for
+-- free. This table is the single source of truth closing that hole: every
+-- one of those four flows claims its reference here, inside the same DB
+-- transaction as the row it's about to mark paid, via
+-- INSERT ... ON CONFLICT (reference) DO NOTHING (see
+-- services/paymentReferences.js). The UNIQUE constraint makes the claim
+-- itself atomic even under two simultaneous requests racing with the same
+-- reference — a plain SELECT-then-UPDATE check can't guarantee that.
+CREATE TABLE IF NOT EXISTS used_payment_references (
+  id SERIAL PRIMARY KEY,
+  reference TEXT UNIQUE NOT NULL,
+  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup'
+  ride_id INTEGER REFERENCES rides(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

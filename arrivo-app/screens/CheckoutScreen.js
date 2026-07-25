@@ -69,6 +69,19 @@ export default function CheckoutScreen({ route, navigation }) {
   // that same signal directly — so we watch for the app itself coming back
   // to the foreground, which happens right when someone switches back from
   // completing (or abandoning) the Paystack checkout in their browser.
+  //
+  // Depends on dashCamConsent (same fix/pattern as TrackingScreen's
+  // identical AppState listener depending on tipAmount): this effect used
+  // to run only once ([] deps), so the listener's closure over
+  // verifyAndCreateRide — and, through it, dashCamConsent — was frozen at
+  // whatever that checkbox's value was at mount (always false, since it
+  // starts unchecked). pay() already requires dashCamConsent to be true
+  // before payWithCard() ever runs, but createRide's dashCamConsent field
+  // was still being read from that stale, permanently-false closure once
+  // the rider returned from the Paystack browser — every card-paid ride
+  // was recorded as NOT having dash cam consent regardless of what was
+  // actually agreed to on screen. Re-subscribing whenever dashCamConsent
+  // changes keeps the closure (and the value sent to the backend) current.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active" && pendingPaymentRef.current) {
@@ -78,7 +91,8 @@ export default function CheckoutScreen({ route, navigation }) {
       }
     });
     return () => subscription.remove();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashCamConsent]);
 
   const verifyAndCreateRide = async (reference) => {
     setStatus("verifying");

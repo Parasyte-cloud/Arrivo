@@ -11,6 +11,7 @@ const { getDistanceDuration } = require("../services/googleMaps");
 const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, FLEET_ESCORT_PAYOUT_USD } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
+const { claimPaymentReference } = require("../services/paymentReferences");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
 // refund (see the flight_issue re-payment check in PATCH /:id/status below).
@@ -24,34 +25,6 @@ const router = express.Router();
 
 function withParsedStops(ride) {
   return { ...ride, stops: JSON.parse(ride.stops || "[]") };
-}
-
-// A real, successful Paystack reference passing verification only proves
-// money moved ONCE — it says nothing about which charge it's for. Every
-// "mark this paid" endpoint below (PATCH /:id/payment, POST /:id/tip,
-// POST /:id/overage-charge) independently verifies a client-supplied
-// reference against Paystack and checks the amount, but until now never
-// checked whether that same reference had already been used to pay for a
-// DIFFERENT ride/tip/overage. A rider could pay once for a real ride, then
-// create a second ride (or trigger a tip/overage) reusing that same
-// already-successful reference and get it marked paid for free — a genuine
-// double-spend, no timing/race required. This is the shared guard closing
-// that hole: called after Paystack verification succeeds, before any row is
-// updated, at each of the three call sites. excludeRideId is the ride
-// currently being processed, since that ride legitimately "owns" its own
-// payment_reference — this only rejects the reference showing up somewhere
-// ELSE that's already paid.
-async function isPaymentReferenceReused(reference, excludeRideId) {
-  const result = await pool.query(
-    `SELECT id FROM rides
-     WHERE id != $2
-       AND ((payment_reference = $1 AND payment_status = 'paid')
-         OR tip_payment_reference = $1
-         OR overage_payment_reference = $1)
-     LIMIT 1`,
-    [reference, excludeRideId]
-  );
-  return !!result.rows[0];
 }
 
 // Fleet Accompaniment used to be a priced integer on the ONE ride the
@@ -163,6 +136,17 @@ router.post("/", requireAuth, async (req, res) => {
 
   if (!pickupAddress) {
     return res.status(400).json({ error: "pickupAddress is required" });
+  }
+  // Unlike POST /quote (which already required this), ride creation itself
+  // never checked vehicleType at all — an omitted or garbage value (e.g. a
+  // typo, or an old app build) silently fell through to computeVehicleCount/
+  // computeFare, which both treat any unrecognized vehicleType as capacity 1
+  // and a $0 tier delta rather than rejecting it outright. Matches the same
+  // allowed list already enforced when an owner lists a vehicle
+  // (routes/owners.js) and used as the key set in services/fare.js.
+  const ALLOWED_VEHICLE_TYPES = ["sedan", "suv", "truck", "pickup"];
+  if (!vehicleType || !ALLOWED_VEHICLE_TYPES.includes(vehicleType)) {
+    return res.status(400).json({ error: `vehicleType must be one of: ${ALLOWED_VEHICLE_TYPES.join(", ")}` });
   }
   const allowedTypes = ["one_way", "dropoff", "full_day", "full_week", "full_month"];
   if (!allowedTypes.includes(bookingType)) {
@@ -473,7 +457,14 @@ router.post("/quote", requireAuth, async (req, res) => {
     adults = 1, children = 0,
   } = req.body;
 
-  if (!vehicleType) return res.status(400).json({ error: "vehicleType is required" });
+  // Same allowed list as POST / above — a quote for a garbage vehicleType
+  // used to still silently succeed (computeVehicleCount/computeFare treat any
+  // unrecognized value as capacity 1 / $0 tier delta rather than rejecting
+  // it), giving a rider a bogus quote for a vehicle type that doesn't exist.
+  const ALLOWED_VEHICLE_TYPES = ["sedan", "suv", "truck", "pickup"];
+  if (!vehicleType || !ALLOWED_VEHICLE_TYPES.includes(vehicleType)) {
+    return res.status(400).json({ error: `vehicleType must be one of: ${ALLOWED_VEHICLE_TYPES.join(", ")}` });
+  }
   if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
     return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
   }
@@ -916,16 +907,34 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
     console.error(`Payment amount mismatch for ride #${ride.id}: paid ₦${verification.amountNaira}, expected ₦${expectedNaira}`);
     return res.status(400).json({ error: "The amount paid doesn't match this ride's fare. Contact support." });
   }
-  if (await isPaymentReferenceReused(ride.payment_reference, ride.id)) {
-    console.error(`Reused payment reference on ride #${ride.id}: ${ride.payment_reference} was already used to pay for a different charge.`);
-    return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
-  }
 
-  const updated = await pool.query(
-    "UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
-    [ride.id]
-  );
-  const newRide = updated.rows[0];
+  // Claim + mark-paid happen in one transaction: a reference already spent
+  // anywhere else (a different ride, a tip, an overage charge, or a wallet
+  // top-up) fails the claim atomically and nothing is written — see
+  // services/paymentReferences.js.
+  const claimClient = await pool.connect();
+  let newRide;
+  try {
+    await claimClient.query("BEGIN");
+    const claimed = await claimPaymentReference(claimClient, ride.payment_reference, "ride_payment", ride.id);
+    if (!claimed) {
+      await claimClient.query("ROLLBACK");
+      console.error(`Reused payment reference on ride #${ride.id}: ${ride.payment_reference} was already used to pay for a different charge.`);
+      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+    }
+    const updated = await claimClient.query(
+      "UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
+      [ride.id]
+    );
+    newRide = updated.rows[0];
+    await claimClient.query("COMMIT");
+  } catch (err) {
+    await claimClient.query("ROLLBACK");
+    console.error("Ride payment claim failed:", err.message);
+    return res.status(500).json({ error: "Could not confirm this payment. Please try again." });
+  } finally {
+    claimClient.release();
+  }
 
   const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
   if (rider.rows[0]) {
@@ -1171,15 +1180,29 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
     if (!verification.success || Math.round(verification.amountNaira) !== Math.round(amountNaira)) {
       return res.status(400).json({ error: "Tip payment could not be verified." });
     }
-    if (await isPaymentReferenceReused(paymentReference, ride.id)) {
-      console.error(`Reused payment reference on ride #${ride.id} tip: ${paymentReference} was already used to pay for a different charge.`);
-      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+
+    const tipClient = await pool.connect();
+    try {
+      await tipClient.query("BEGIN");
+      const claimed = await claimPaymentReference(tipClient, paymentReference, "ride_tip", ride.id);
+      if (!claimed) {
+        await tipClient.query("ROLLBACK");
+        console.error(`Reused payment reference on ride #${ride.id} tip: ${paymentReference} was already used to pay for a different charge.`);
+        return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+      }
+      const updated = await tipClient.query(
+        `UPDATE rides SET tip_naira = $1, tip_payment_method = 'card', tip_payment_reference = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+        [amountNaira, paymentReference, ride.id]
+      );
+      await tipClient.query("COMMIT");
+      return res.json({ ride: withParsedStops(updated.rows[0]) });
+    } catch (err) {
+      await tipClient.query("ROLLBACK");
+      console.error("Card tip claim failed:", err.message);
+      return res.status(500).json({ error: "Could not complete tip payment. Please try again." });
+    } finally {
+      tipClient.release();
     }
-    const updated = await pool.query(
-      `UPDATE rides SET tip_naira = $1, tip_payment_method = 'card', tip_payment_reference = $2, updated_at = now() WHERE id = $3 RETURNING *`,
-      [amountNaira, paymentReference, ride.id]
-    );
-    return res.json({ ride: withParsedStops(updated.rows[0]) });
   }
 
   // Wallet tip — same atomic, row-locked pattern as a wallet-paid fare, so
@@ -1267,15 +1290,29 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
     if (!verification.success || Math.round(verification.amountNaira) !== Math.round(overageNaira)) {
       return res.status(400).json({ error: "Payment could not be verified." });
     }
-    if (await isPaymentReferenceReused(paymentReference, ride.id)) {
-      console.error(`Reused payment reference on ride #${ride.id} overage charge: ${paymentReference} was already used to pay for a different charge.`);
-      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+
+    const overageClient = await pool.connect();
+    try {
+      await overageClient.query("BEGIN");
+      const claimed = await claimPaymentReference(overageClient, paymentReference, "ride_overage", ride.id);
+      if (!claimed) {
+        await overageClient.query("ROLLBACK");
+        console.error(`Reused payment reference on ride #${ride.id} overage charge: ${paymentReference} was already used to pay for a different charge.`);
+        return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+      }
+      const updated = await overageClient.query(
+        `UPDATE rides SET overage_payment_method = 'card', overage_payment_reference = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+        [paymentReference, ride.id]
+      );
+      await overageClient.query("COMMIT");
+      return res.json({ ride: withParsedStops(updated.rows[0]) });
+    } catch (err) {
+      await overageClient.query("ROLLBACK");
+      console.error("Card overage claim failed:", err.message);
+      return res.status(500).json({ error: "Could not complete this payment. Please try again." });
+    } finally {
+      overageClient.release();
     }
-    const updated = await pool.query(
-      `UPDATE rides SET overage_payment_method = 'card', overage_payment_reference = $1, updated_at = now() WHERE id = $2 RETURNING *`,
-      [paymentReference, ride.id]
-    );
-    return res.json({ ride: withParsedStops(updated.rows[0]) });
   }
 
   // Wallet — same atomic, row-locked pattern as every other wallet debit in

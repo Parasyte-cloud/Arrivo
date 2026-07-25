@@ -18,7 +18,6 @@
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
         "UIBackgroundModes": [
-          "location",
           "location"
         ],
         "ITSAppUsesNonExemptEncryption": false,
@@ -75,6 +74,7 @@
     "plugins": [
       "expo-font",
       "expo-secure-store",
+      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {
