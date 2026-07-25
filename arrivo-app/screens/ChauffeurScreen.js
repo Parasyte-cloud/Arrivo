@@ -90,17 +90,32 @@ export default function ChauffeurScreen({ navigation }) {
         setLocationError("Location permission denied — you can still type your pickup address above.");
         return;
       }
-      // See RouteScreen.js's identical fix for why this races against a
-      // manual timeout — a weak/no GPS signal would otherwise leave this
-      // stuck on "Finding your location…" indefinitely with no way out.
-      const position = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
-      ]);
-      const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
-      setPickupAddress(result.address);
-    } catch (e) {
-      setLocationError("Couldn't detect your location right now — you can still type your pickup address above.");
+      let position;
+      try {
+        // See RouteScreen.js's identical fix for why this races against a
+        // manual timeout — a weak/no GPS signal would otherwise leave this
+        // stuck on "Finding your location…" indefinitely with no way out.
+        position = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+        ]);
+      } catch (e) {
+        // GPS itself never produced a fix — most commonly a weak/no signal
+        // indoors. Kept as a distinct message from the reverse-geocode
+        // failure below (a real coordinate our backend/Google Maps
+        // couldn't resolve to an address) so the wording actually points
+        // at what went wrong, instead of one generic catch-all hiding
+        // which of the two very different failure modes actually happened.
+        setLocationError("Couldn't get a GPS signal — try again near a window or outdoors, or type your pickup address above.");
+        return;
+      }
+
+      try {
+        const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
+        setPickupAddress(result.address);
+      } catch (e) {
+        setLocationError("Got your location, but couldn't look up an address for it — you can still type your pickup address above.");
+      }
     } finally {
       setLocatingPickup(false);
     }
