@@ -12,8 +12,9 @@ import { API_BASE_URL } from "../services/config";
 // storage mechanism just for this one background path.
 const TOKEN_KEY = "arrivo_driver_token";
 
-// Returns { apiKey, userId, token } or null if there's no signed-in
-// session yet (e.g. a push arriving after logout, or before first login).
+// Returns { apiKey, userId, videoToken, chatToken } or null if there's no
+// signed-in session yet (e.g. a push arriving after logout, or before
+// first login).
 export async function fetchStreamCallAuth() {
   const jwt = await SecureStore.getItemAsync(TOKEN_KEY);
   if (!jwt) return null;

@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
+import { CallButton } from "../components/CallButton";
 
 function exportRidersCsv(riders) {
   downloadCsv(
@@ -205,6 +206,9 @@ export function RidersPage() {
                   <td>
                     <div style={{ fontWeight: 600 }}>{r.name}</div>
                     <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.email}{r.phone ? <> · <PhoneLink phone={r.phone} style={{ fontSize: 12 }} /></> : ""}</div>
+                    <div style={{ marginTop: 4 }}>
+                      <CallButton calleeUserId={r.id} calleeName={r.name} />
+                    </div>
                   </td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>
                     {formatDateTime(r.created_at)}

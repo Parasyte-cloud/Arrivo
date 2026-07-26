@@ -14,10 +14,11 @@ export function setPushConfig() {
   StreamVideoRN.setPushConfig({
     ios: {
       pushProviderName: IOS_PUSH_PROVIDER_NAME,
-      // RideArrivo calling is voice-only — no camera toggle or video track
-      // is ever requested, so CallKit doesn't need to offer video-call
-      // affordances.
-      supportsVideo: false,
+      // Riders and drivers can now start either a voice-only or a video
+      // call (see DashboardScreen.js's callRiderInApp) — CallKit needs
+      // supportsVideo: true so its native incoming-call screen offers a
+      // camera-enabled answer path instead of assuming audio-only.
+      supportsVideo: true,
       callsHistory: true,
       displayCallTimeout: 60000,
       // Without this, an accepted call would drop the instant the driver
@@ -53,7 +54,7 @@ export function setPushConfig() {
       const tokenProvider = async () => {
         const fresh = await fetchStreamCallAuth();
         if (!fresh) throw new Error("Not logged in");
-        return fresh.token;
+        return fresh.videoToken;
       };
 
       return StreamVideoClient.getOrCreateInstance({

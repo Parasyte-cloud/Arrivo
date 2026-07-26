@@ -122,7 +122,7 @@
       [
         "@config-plugins/react-native-webrtc",
         {
-          "cameraPermission": "RideArrivo Driver's calling library requests camera access at the system level, but it only ever uses it for voice calls with your rider — video is never enabled.",
+          "cameraPermission": "RideArrivo Driver needs camera access so your rider can see you during a video call, if you choose to turn your camera on.",
           "microphonePermission": "RideArrivo Driver needs microphone access so you can talk with your rider during a call."
         }
       ],

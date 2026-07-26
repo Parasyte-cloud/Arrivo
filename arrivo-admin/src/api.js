@@ -21,6 +21,12 @@ export const login = (email, password) =>
 
 export const getMe = (token) => request("/api/auth/me", token);
 
+// Mints a Stream Video (+ Chat) token for the signed-in admin/support
+// account — same role-agnostic /api/calls/token endpoint the mobile apps
+// use (see hooks/useAdminStreamClient.js). Returns { apiKey, userId,
+// videoToken, chatToken }.
+export const getCallToken = (token) => request("/api/calls/token", token, { method: "POST" });
+
 export const getDrivers = (token) => request("/api/admin/drivers", token);
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });

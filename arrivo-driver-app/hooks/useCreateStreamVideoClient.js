@@ -34,7 +34,7 @@ export function useCreateStreamVideoClient() {
 
         const tokenProvider = async () => {
           const fresh = await getCallToken(token);
-          return fresh.token;
+          return fresh.videoToken;
         };
 
         const instance = StreamVideoClient.getOrCreateInstance({

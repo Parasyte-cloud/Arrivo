@@ -14,7 +14,7 @@ import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
@@ -224,7 +224,7 @@ export default function DashboardScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
             <Text style={styles.sectionLabel}>Nearby requests</Text>
@@ -320,7 +320,7 @@ function RequestCard({ ride, busy, onAccept }) {
   );
 }
 
-function ActiveTripCard({ ride, busy, onAdvance, token }) {
+function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
   const streamVideoClient = useStreamVideoClient();
@@ -418,12 +418,16 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
 
   useEffect(() => () => clearInterval(countdownRef.current), []);
 
-  // In-app call (the primary action) — a real internet voice call routed
-  // through Stream, ringing on the rider's phone (even locked/backgrounded
-  // — see arrivo-app's own CallKit/push setup) with no phone numbers
-  // exchanged. rides.rider_id is already the rider's own users.id (riders
-  // don't have a separate profile table the way drivers do), so no lookup
-  // is needed here unlike the rider-side "call driver" button.
+  // In-app call (the primary action) — a real internet voice OR video call
+  // routed through Stream, ringing on the rider's phone (even locked/
+  // backgrounded — see arrivo-app's own CallKit/push setup) with no phone
+  // numbers exchanged. rides.rider_id is already the rider's own users.id
+  // (riders don't have a separate profile table the way drivers do), so no
+  // lookup is needed here unlike the rider-side "call driver" button.
+  // video: true just enables the call to carry a video track — the
+  // prebuilt CallContent UI (components/CallOverlay.js) already surfaces a
+  // camera toggle, so either side can still keep their camera off and use
+  // it as a voice-only call if they prefer.
   const callRiderInApp = async () => {
     if (!ride?.rider_id) {
       Alert.alert("Not available yet", "You'll be able to call your rider once this trip is active.");
@@ -437,7 +441,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
       const call = streamVideoClient.call("default", Crypto.randomUUID());
       await call.getOrCreate({
         ring: true,
-        video: false,
+        video: true,
         data: {
           members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.rider_id) }],
         },
@@ -471,6 +475,9 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
         <Pressable onPress={callRiderInApp}>
           <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
+        </Pressable>
+        <Pressable onPress={() => navigation?.navigate("Chat", { rideId: ride.id })}>
+          <Text style={[styles.meta, { textDecorationLine: "underline" }]}>💬 Message rider</Text>
         </Pressable>
         {ride.rider_phone ? (
           <Pressable

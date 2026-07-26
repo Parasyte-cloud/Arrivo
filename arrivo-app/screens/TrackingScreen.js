@@ -282,10 +282,14 @@ export default function TrackingScreen({ route, navigation }) {
   };
 
   // In-app call (the primary "Call driver" action) — a real internet voice
-  // call routed through Stream, ringing on the driver's phone (even locked/
-  // backgrounded — see arrivo-driver-app's own CallKit/push setup) with no
-  // phone numbers exchanged. "Include caller in members" and "use a unique
-  // call id per call" are both Stream's own documented best practices here.
+  // OR video call routed through Stream, ringing on the driver's phone (even
+  // locked/backgrounded — see arrivo-driver-app's own CallKit/push setup)
+  // with no phone numbers exchanged. "Include caller in members" and "use a
+  // unique call id per call" are both Stream's own documented best practices
+  // here. video: true just enables the call to carry a video track — the
+  // prebuilt CallContent UI (components/CallOverlay.js) already surfaces a
+  // camera toggle, so either side can still keep their camera off and use
+  // it as a voice-only call if they prefer.
   const callDriverInApp = async () => {
     if (!ride?.driver_user_id) {
       Alert.alert("Not available yet", "You'll be able to call your driver once they've accepted your ride.");
@@ -299,7 +303,7 @@ export default function TrackingScreen({ route, navigation }) {
       const call = streamVideoClient.call("default", Crypto.randomUUID());
       await call.getOrCreate({
         ring: true,
-        video: false,
+        video: true,
         data: {
           members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.driver_user_id) }],
         },
@@ -863,6 +867,16 @@ export default function TrackingScreen({ route, navigation }) {
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
           <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriverInApp} style={{ flex: 1 }} />
         </View>
+        {ride?.driver_user_id ? (
+          <View style={{ marginTop: spacing.xs }}>
+            <Button
+              label="💬 Message driver"
+              variant="ghost"
+              tone="dark"
+              onPress={() => navigation.navigate("Chat", { rideId })}
+            />
+          </View>
+        ) : null}
         {ride?.driver_phone ? (
           <Pressable onPress={dialDriverPhone} style={{ alignSelf: "center", marginTop: 6, marginBottom: spacing.sm }}>
             <Text style={{ color: colors.dark.textMuted, fontSize: 12, textDecorationLine: "underline" }}>

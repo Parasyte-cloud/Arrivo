@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
+import { CallButton } from "../components/CallButton";
 
 function exportDriversCsv(drivers) {
   downloadCsv(
@@ -132,6 +133,13 @@ export function DriversPage() {
                   <td>
                     <div style={{ fontWeight: 600 }}>{d.name}</div>
                     <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{d.email}{d.phone ? <> · <PhoneLink phone={d.phone} style={{ fontSize: 12 }} /></> : ""}</div>
+                    <div style={{ marginTop: 4 }}>
+                      {/* d.id is drivers.id (this row's own primary key) —
+                          NOT usable as a Stream user id. d.user_id is the
+                          driver's actual users.id, joined server-side (see
+                          arrivo-backend/routes/admin.js GET /drivers). */}
+                      <CallButton calleeUserId={d.user_id} calleeName={d.name} />
+                    </div>
                   </td>
                   <td>
                     {d.make_model ? (

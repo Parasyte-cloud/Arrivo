@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
@@ -19,11 +20,32 @@ import DriverProfileScreen from "./screens/DriverProfileScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import EarningsScreen from "./screens/EarningsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import ChatScreen from "./screens/ChatScreen";
 
 import { colors } from "./theme/tokens";
 
 const AuthStack = createNativeStackNavigator();
+const DashboardStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const stackScreenOptions = {
+  headerStyle: { backgroundColor: colors.ink },
+  headerTintColor: colors.cream,
+  headerTitleStyle: { color: colors.cream },
+  contentStyle: { backgroundColor: colors.ink },
+};
+
+// Dashboard tab gets its own stack (mirrors the rider app's HomeStack) so
+// ChatScreen can be pushed on top with a real back button, instead of only
+// being reachable as a modal or a separate tab.
+function DashboardStackScreen() {
+  return (
+    <DashboardStack.Navigator screenOptions={stackScreenOptions}>
+      <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
+      <DashboardStack.Screen name="Chat" component={ChatScreen} options={{ title: "Message rider" }} />
+    </DashboardStack.Navigator>
+  );
+}
 
 const navTheme = {
   ...DarkTheme,
@@ -57,7 +79,7 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Dashboard" component={DashboardStackScreen} />
       <Tab.Screen name="Earnings" component={EarningsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
@@ -111,15 +133,21 @@ function RootNavigator() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <CallOverlayProvider>
-          <NavigationContainer theme={navTheme}>
-            <StatusBar style="light" />
-            <RootNavigator />
-          </NavigationContainer>
-        </CallOverlayProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    // Required at the root by react-native-gesture-handler (which
+    // react-native-reanimated / stream-chat-expo's message list depends on)
+    // — without it, swipe-to-reply and other gesture-based chat UI
+    // silently doesn't respond to touches at all.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <CallOverlayProvider>
+            <NavigationContainer theme={navTheme}>
+              <StatusBar style="light" />
+              <RootNavigator />
+            </NavigationContainer>
+          </CallOverlayProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
