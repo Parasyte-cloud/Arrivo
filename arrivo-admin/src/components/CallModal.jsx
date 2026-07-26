@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import "@stream-io/video-react-sdk/dist/css/styles.css";
 import {
   StreamCall,
@@ -18,6 +19,23 @@ import {
 function CallUI({ calleeName, onClose }) {
   const { useCallCallingState } = useCallStateHooks();
   const callingState = useCallCallingState();
+  const wasJoinedRef = useRef(false);
+
+  // Nothing else in this file watches for the other party leaving — once
+  // they hang up, the calling state moves from JOINED to LEFT (or IDLE)
+  // and, without this, the modal would just sit there showing a dead call
+  // until the admin manually clicks a control. Only auto-close once we've
+  // actually been JOINED at some point, so the normal "Calling…" pre-answer
+  // state (which also isn't JOINED) doesn't trigger an immediate close.
+  useEffect(() => {
+    if (callingState === CallingState.JOINED) {
+      wasJoinedRef.current = true;
+      return;
+    }
+    if (wasJoinedRef.current && (callingState === CallingState.LEFT || callingState === CallingState.IDLE)) {
+      onClose();
+    }
+  }, [callingState, onClose]);
 
   return (
     <StreamTheme>
@@ -38,7 +56,7 @@ export function CallModal({ call, calleeName, onClose }) {
 
   return (
     <div className="modal-backdrop" style={{ zIndex: 200 }}>
-      <div style={{ width: "100%", maxWidth: 720, background: "var(--bg1)", borderRadius: 16, overflow: "hidden" }}>
+      <div className="modal-card" style={{ maxWidth: 720, overflow: "hidden" }}>
         <StreamCall call={call}>
           <CallUI calleeName={calleeName} onClose={onClose} />
         </StreamCall>

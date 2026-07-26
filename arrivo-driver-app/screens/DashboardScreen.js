@@ -237,7 +237,21 @@ export default function DashboardScreen({ navigation }) {
               </Card>
             ) : (
               available.map((ride) => (
-                <RequestCard key={ride.id} ride={ride} busy={busyRideId === ride.id} onAccept={() => handleAccept(ride.id)} />
+                <RequestCard
+                  key={ride.id}
+                  ride={ride}
+                  busy={busyRideId === ride.id}
+                  // Once ANY accept is in flight, every OTHER card's Accept
+                  // button must be disabled too — busyRideId alone only
+                  // disabled the one row being accepted (it swaps to a
+                  // spinner via the `busy` prop above), leaving every other
+                  // still-visible request card tappable. That let a driver
+                  // fire off Accept on two different rides before either
+                  // network response came back, only for the backend to
+                  // reject the second as already-taken (or worse, race).
+                  disabled={busyRideId !== null && busyRideId !== ride.id}
+                  onAccept={() => handleAccept(ride.id)}
+                />
               ))
             )}
           </>
@@ -284,7 +298,7 @@ function arriveByLabel(ride) {
   return arriveBy.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function RequestCard({ ride, busy, onAccept }) {
+function RequestCard({ ride, busy, disabled, onAccept }) {
   const scheduled = scheduledLabel(ride);
   const arriveBy = arriveByLabel(ride);
   return (
@@ -315,7 +329,7 @@ function RequestCard({ ride, busy, onAccept }) {
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
       <View style={{ height: spacing.sm }} />
-      {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} trailingIcon />}
+      {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} disabled={disabled} trailingIcon />}
     </Card>
   );
 }

@@ -47,6 +47,15 @@ export function useLocationReporting(token, isOnline, onError) {
       const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
       if (alreadyStarted) return;
 
+      // Re-check right before actually starting — the two awaits above
+      // (foreground then background permission prompts) give plenty of time
+      // for the driver to flip back offline mid-toggle. Without this, the
+      // `stop()` branch below could already have run (finding nothing
+      // started yet) and then THIS start() call would kick off tracking
+      // anyway, leaving background location running while the UI already
+      // shows offline.
+      if (cancelled) return;
+
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.Balanced,
         timeInterval: REPORT_INTERVAL_MS,

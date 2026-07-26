@@ -7,6 +7,23 @@
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const EMAIL_FROM = process.env.EMAIL_FROM || "RideArrivo <onboarding@resend.dev>";
 
+// User-controlled strings (a rider's typed address, a driver's own display
+// name, a payment reference echoed back, a flight number) get interpolated
+// straight into these HTML email bodies below. Without escaping, something
+// like a driver setting their name to `<img src=x onerror=...>` would run
+// as real HTML in whatever mail client renders it. Only used on the HTML
+// templates — plain-text bodies (none currently sent from this file) would
+// display escape sequences literally and must never be run through this.
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function sendEmail({ to, subject, html }) {
   if (!RESEND_API_KEY) {
     console.warn(`[email] RESEND_API_KEY not set — skipping email to ${to}: "${subject}"`);
@@ -76,9 +93,9 @@ function sendBookingConfirmationEmail(to, ride) {
     subject: "Your RideArrivo booking is confirmed",
     html: wrapper(`
       <p>Your ride is booked and paid for.</p>
-      <p><strong>Pickup:</strong> ${ride.pickup_address}</p>
+      <p><strong>Pickup:</strong> ${escapeHtml(ride.pickup_address)}</p>
       <p><strong>Fare:</strong> ₦${Number(ride.fare_naira).toLocaleString()}</p>
-      <p><strong>Reference:</strong> ${ride.payment_reference || ride.id}</p>
+      <p><strong>Reference:</strong> ${escapeHtml(ride.payment_reference || ride.id)}</p>
       <p style="color:#6b6b85;font-size:13px;">We'll be in touch with your driver's details closer to pickup time.</p>
       <p style="color:#6b6b85;font-size:13px;">Need to cancel or change your booking? Read our <a href="https://ridearrivo.com/terms.html#cancellation">Cancellation &amp; Refund Policy</a> before doing so.</p>
     `),
@@ -90,7 +107,7 @@ function sendWelcomeEmail(to, name) {
     to,
     subject: "Welcome to RideArrivo",
     html: wrapper(`
-      <p>Hi ${name},</p>
+      <p>Hi ${escapeHtml(name)},</p>
       <p>Your RideArrivo account is ready. Land in Lagos. Arrive. Relax.</p>
     `),
   });
@@ -114,9 +131,9 @@ function sendDriverAssignedEmail(to, ride, driverName, vehicleLabel) {
     subject: "Your RideArrivo driver is confirmed",
     html: wrapper(`
       <p>Good news — a driver has been matched to your ride.</p>
-      <p><strong>Driver:</strong> ${driverName}</p>
-      <p><strong>Vehicle:</strong> ${vehicleLabel || "Details coming shortly"}</p>
-      <p><strong>Pickup:</strong> ${ride.pickup_address}</p>
+      <p><strong>Driver:</strong> ${escapeHtml(driverName)}</p>
+      <p><strong>Vehicle:</strong> ${vehicleLabel ? escapeHtml(vehicleLabel) : "Details coming shortly"}</p>
+      <p><strong>Pickup:</strong> ${escapeHtml(ride.pickup_address)}</p>
       ${ride.scheduled_pickup_at ? `<p><strong>Scheduled:</strong> ${new Date(ride.scheduled_pickup_at).toLocaleString()}</p>` : ""}
       <p style="color:#6b6b85;font-size:13px;">Track your ride live in the RideArrivo app, or at <a href="https://ridearrivo.com/track.html?ride=${ride.id}">ridearrivo.com/track.html</a>.</p>
     `),
@@ -134,7 +151,7 @@ function sendFlightIssueEmail(to, ride, reason) {
     to,
     subject: `Your flight ${ride.flight_number || ""} ${reasonText} — quick update on your RideArrivo booking`,
     html: wrapper(`
-      <p>We noticed flight <strong>${ride.flight_number || "—"}</strong> ${reasonText}.</p>
+      <p>We noticed flight <strong>${escapeHtml(ride.flight_number) || "—"}</strong> ${reasonText}.</p>
       <p>Your original fare has been refunded to your RideArrivo wallet. To keep your ride booked, please make sure you have at least <strong>$100</strong> (or its naira equivalent) in your wallet — this covers the trip, which will now be charged when you're dropped off instead of upfront.</p>
       <p style="color:#6b6b85;font-size:13px;">Once your new travel time is confirmed, you can update it from the app or ridearrivo.com. Questions? Just reply to this email.</p>
     `),

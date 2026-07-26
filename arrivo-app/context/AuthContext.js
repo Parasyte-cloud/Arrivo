@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
+import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
 import { API_BASE_URL } from "../services/config";
 import { setAppLanguage } from "../i18n";
 
@@ -114,6 +115,14 @@ export function AuthProvider({ children }) {
     // (or worse, still ring the person who just logged out, on a device
     // they no longer consider "theirs" for that account).
     await StreamVideoRN.onPushLogout().catch(() => {});
+    // Disconnects the actual StreamVideoClient websocket right now, rather
+    // than only relying on useCreateStreamVideoClient's effect cleanup
+    // (which fires a moment later, once isAuthenticated/token below
+    // actually propagate through React) — see hooks/useCreateStreamVideoClient.js.
+    // Without this a signed-out phone stayed connected to Stream Video as
+    // whatever user just logged out until that effect got around to
+    // tearing it down.
+    disconnectStreamVideoClient();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);

@@ -143,7 +143,7 @@ export function MembershipsPage() {
                   <td><StatusPill label={m.status} tone={membershipTone(m.status)} /></td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>{formatDateTime(m.started_at)}</td>
                   <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>{formatDateTime(m.expires_at)}</td>
-                  <td>₦{m.price_naira.toLocaleString()}</td>
+                  <td>₦{m.price_naira?.toLocaleString() ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

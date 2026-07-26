@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useAdminStreamClient } from "../hooks/useAdminStreamClient";
+import { useEffect, useState } from "react";
+import { useStreamClient } from "../StreamClientContext";
 import { CallModal } from "./CallModal";
 
 // Drop-in "Call" button for any rider/driver row (RidersPage, DriversPage).
@@ -9,10 +9,22 @@ import { CallModal } from "./CallModal";
 // arrivo-backend/routes/admin.js GET /drivers, which already joins and
 // selects users.id as user_id for exactly this reason).
 export function CallButton({ calleeUserId, calleeName }) {
-  const { client, error: clientError } = useAdminStreamClient();
+  const { client, error: clientError } = useStreamClient();
   const [call, setCall] = useState(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState(null);
+
+  // Without this, switching sidebar tabs mid-call (App.jsx conditionally
+  // unmounts whole pages, e.g. {page === "riders" && <RidersPage/>}) tears
+  // down this component tree without ever calling call.leave() — the call
+  // just stays joined server-side. Runs on every `call` change (so ending a
+  // call and starting a new one still cleans up the previous one) and on
+  // unmount.
+  useEffect(() => {
+    return () => {
+      call?.leave().catch(() => {});
+    };
+  }, [call]);
 
   const startCall = async () => {
     if (!calleeUserId) return;
@@ -50,7 +62,7 @@ export function CallButton({ calleeUserId, calleeName }) {
 
   return (
     <>
-      <button className="btn" disabled={starting} onClick={startCall} title={`Call ${calleeName || "this user"}`}>
+      <button className="btn" disabled={starting || !!call} onClick={startCall} title={`Call ${calleeName || "this user"}`}>
         {starting ? "…" : "📞 Call"}
       </button>
       {error ? <div className="error-text" style={{ fontSize: 11, marginTop: 4 }}>{error}</div> : null}

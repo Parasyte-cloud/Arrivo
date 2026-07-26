@@ -12,7 +12,19 @@ async function request(path, token, options = {}) {
     },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // A 401 means the token is missing/expired/invalid — every page's own
+    // request() call would otherwise just fail silently or repeatedly (see
+    // Sidebar.jsx's poll(), which explicitly swallows errors with
+    // .catch(() => {})). Broadcasting a DOM event here — instead of
+    // prop-drilling a logout callback through every api.js caller — lets
+    // AuthContext listen globally and force a logout/redirect to the login
+    // screen from wherever the 401 happened to occur.
+    if (res.status === 401) {
+      window.dispatchEvent(new Event("auth:expired"));
+    }
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 

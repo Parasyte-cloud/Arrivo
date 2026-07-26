@@ -154,11 +154,15 @@ export default function ProfileScreen({ navigation }) {
 
     const mime = asset.mimeType || "image/jpeg";
     const dataUrl = `data:${mime};base64,${asset.base64}`;
+    const previousAvatarUri = avatarUri;
     setAvatarUri(asset.uri);
     try {
       await updateProfile({ avatarDataUrl: dataUrl });
     } catch (e) {
       setAvatarError(e.message || "Couldn't save that photo.");
+      // Roll back the optimistic preview — otherwise the screen keeps
+      // showing the new (unsaved) photo as if the save had succeeded.
+      setAvatarUri(previousAvatarUri);
     }
   };
 

@@ -26,6 +26,12 @@ export default function ChatScreen({ route }) {
 
   useEffect(() => {
     let cancelled = false;
+    let watchedChannel = null;
+    // Reset synchronously before the async fetch/watch below starts —
+    // otherwise, if this screen instance gets reused for a different
+    // rideId, the previous ride's channel would keep rendering until the
+    // new one finishes loading.
+    setChannel(null);
     if (!chatClient || !rideId) return;
 
     (async () => {
@@ -34,7 +40,11 @@ export default function ChatScreen({ route }) {
         if (cancelled) return;
         const c = chatClient.channel("messaging", channelId);
         await c.watch();
-        if (cancelled) return;
+        if (cancelled) {
+          c.stopWatching().catch(() => {});
+          return;
+        }
+        watchedChannel = c;
         setChannel(c);
       } catch (e) {
         if (!cancelled) setError(e.message || "Could not open chat.");
@@ -43,6 +53,7 @@ export default function ChatScreen({ route }) {
 
     return () => {
       cancelled = true;
+      if (watchedChannel) watchedChannel.stopWatching().catch(() => {});
     };
   }, [chatClient, rideId, token]);
 

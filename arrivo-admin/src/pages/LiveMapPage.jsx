@@ -118,7 +118,7 @@ export function LiveMapPage() {
       ) : rides.length === 0 ? (
         <div className="table-wrap"><div className="empty-state">No rides in progress right now.</div></div>
       ) : (
-        <div style={{ borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--card-border)" }}>
+        <div style={{ borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--glass-border)" }}>
           <MapContainer center={LAGOS_CENTER} zoom={11} style={{ height: 560, width: "100%" }}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

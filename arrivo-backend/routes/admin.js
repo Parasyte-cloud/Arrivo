@@ -156,6 +156,33 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
     return res.status(400).json({ error: `rideStatus must be one of: ${allowedStatuses.join(", ")}` });
   }
 
+  // Marking a ride "completed" directly from here would bypass everything
+  // routes/rides.js's PATCH /:id/status handler does at real completion
+  // time (VALID_STATUS_TRANSITIONS, the flight-issue charge-at-drop-off
+  // wallet debit, the fleet-escort driver payout) — this route only ever
+  // touches admin_notes/ride_status with a plain UPDATE, so any of that
+  // business logic would be silently skipped instead of run. Rather than
+  // duplicate that logic here (and risk it drifting out of sync), refuse
+  // and point the admin at the real completion flow whenever completing
+  // this ride from here would skip money actually owed.
+  if (rideStatus === "completed" && ride.ride_status !== "completed") {
+    const needsFlightIssueCharge = !!ride.flight_issue && ride.payment_status !== "paid";
+    const needsEscortPayout = ride.is_fleet_companion && ride.escort_payout_naira == null;
+    if (needsFlightIssueCharge || needsEscortPayout) {
+      return res.status(400).json({
+        error:
+          "This ride can't be marked completed directly from the admin panel because it still needs " +
+          [
+            needsFlightIssueCharge && "its flight-issue fare charged at drop-off",
+            needsEscortPayout && "its fleet-escort driver payout recorded",
+          ]
+            .filter(Boolean)
+            .join(" and ") +
+          " — both only happen via the normal ride-completion flow (the driver's PATCH /api/rides/:id/status). Please complete this ride through that flow instead of setting its status here.",
+      });
+    }
+  }
+
   const updated = await pool.query(
     "UPDATE rides SET admin_notes = $1, ride_status = $2, updated_at = now() WHERE id = $3 RETURNING *",
     [adminNotes ?? ride.admin_notes, rideStatus || ride.ride_status, ride.id]

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
@@ -28,6 +28,11 @@ export default function MembershipScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [delegateEmail, setDelegateEmail] = useState("");
   const [linkStatus, setLinkStatus] = useState(null);
+  // Synchronous double-tap guard for subscribeIndividual/subscribeCorporate,
+  // mirroring ScanScreen.js's scannedRef — the `busy` state guard alone
+  // can't stop a second tap landing in the same tick/frame, before React
+  // re-renders with busy=true and swaps the button for the spinner.
+  const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +54,8 @@ export default function MembershipScreen({ navigation }) {
   );
 
   const subscribeIndividual = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -58,10 +65,13 @@ export default function MembershipScreen({ navigation }) {
       setError(e.message || "Couldn't subscribe. Please try again.");
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   };
 
   const subscribeCorporate = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -71,6 +81,7 @@ export default function MembershipScreen({ navigation }) {
       setError(e.message || "Couldn't subscribe. Please try again.");
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   };
 

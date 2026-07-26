@@ -1006,7 +1006,11 @@ router.get("/:id", requireAuth, async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   const isRider = ride.rider_id === req.user.id;
   const isAssignedDriver = driver && ride.driver_id === driver.id;
-  if (!isRider && !isAssignedDriver && req.user.role !== "admin") {
+  // "support" is allowed the same read-only access as "admin" here, matching
+  // GET /:id/fleet below — a support-role staffer can already view this
+  // ride's fleet companions, so it makes no sense to 403 them on the ride's
+  // own details.
+  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
     return res.status(403).json({ error: "You don't have access to this ride" });
   }
 
@@ -1027,14 +1031,32 @@ router.get("/:id/share", requireAuth, async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   const isRider = ride.rider_id === req.user.id;
   const isAssignedDriver = driver && ride.driver_id === driver.id;
-  if (!isRider && !isAssignedDriver && req.user.role !== "admin") {
+  // Same "support" allowance as GET /:id and GET /:id/fleet — support can
+  // already view this ride's details/fleet, so it should be able to view
+  // (not rotate) its share link too.
+  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
     return res.status(403).json({ error: "You don't have access to this ride" });
   }
 
   let token = ride.share_token;
   if (!token) {
-    token = crypto.randomBytes(16).toString("hex");
-    await pool.query("UPDATE rides SET share_token = $1 WHERE id = $2", [token, ride.id]);
+    // Conditioned on share_token IS NULL so two concurrent first "Share
+    // ride" taps can't each generate their own token and both think theirs
+    // is the real one — only one UPDATE can win. If this one loses (another
+    // request already set it a moment earlier), re-read and hand back that
+    // already-persisted token instead of the locally-generated one that
+    // never actually got saved.
+    const generatedToken = crypto.randomBytes(16).toString("hex");
+    const claim = await pool.query(
+      "UPDATE rides SET share_token = $1 WHERE id = $2 AND share_token IS NULL RETURNING share_token",
+      [generatedToken, ride.id]
+    );
+    if (claim.rowCount > 0) {
+      token = claim.rows[0].share_token;
+    } else {
+      const reread = await pool.query("SELECT share_token FROM rides WHERE id = $1", [ride.id]);
+      token = reread.rows[0].share_token;
+    }
   }
 
   // Same optional-override-with-hardcoded-fallback pattern as
@@ -1115,10 +1137,18 @@ router.post("/:id/rate", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "This trip has no assigned driver to rate" });
   }
 
+  // The read above is just a fast, friendly rejection — it can't stop two
+  // concurrent submissions from both passing it and both writing a rating.
+  // AND rider_rating IS NULL here is the real guard: only one of two
+  // concurrent UPDATEs can match this row, so the loser gets rowCount 0
+  // and is told the trip's already rated instead of silently overwriting it.
   const updated = await pool.query(
-    "UPDATE rides SET rider_rating = $1, rider_rating_comment = $2, keep_same_driver_for_return = $3, updated_at = now() WHERE id = $4 RETURNING *",
+    "UPDATE rides SET rider_rating = $1, rider_rating_comment = $2, keep_same_driver_for_return = $3, updated_at = now() WHERE id = $4 AND rider_rating IS NULL RETURNING *",
     [numRating, comment || null, !!keepSameDriver, ride.id]
   );
+  if (updated.rowCount === 0) {
+    return res.status(400).json({ error: "You've already rated this trip" });
+  }
 
   await pool.query(
     `UPDATE drivers SET rating = (

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
+import { StreamClientProvider } from "./StreamClientContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoginPage } from "./pages/LoginPage";
 import { PanicsPage } from "./pages/PanicsPage";
 import { RidersPage } from "./pages/RidersPage";
@@ -33,16 +35,18 @@ function Dashboard() {
       </div>
       <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="main">
-        {page === "panics" && <PanicsPage />}
-        {page === "riders" && <RidersPage />}
-        {page === "drivers" && <DriversPage />}
-        {page === "rides" && <RidesPage />}
-        {page === "flight-issues" && <FlightIssuesPage />}
-        {page === "vehicles" && <VehiclesPage />}
-        {page === "memberships" && <MembershipsPage />}
-        {page === "wallet" && <WalletPage />}
-        {page === "live-map" && <LiveMapPage />}
-        {page === "analytics" && <AnalyticsPage />}
+        <ErrorBoundary resetKey={page}>
+          {page === "panics" && <PanicsPage />}
+          {page === "riders" && <RidersPage />}
+          {page === "drivers" && <DriversPage />}
+          {page === "rides" && <RidesPage />}
+          {page === "flight-issues" && <FlightIssuesPage />}
+          {page === "vehicles" && <VehiclesPage />}
+          {page === "memberships" && <MembershipsPage />}
+          {page === "wallet" && <WalletPage />}
+          {page === "live-map" && <LiveMapPage />}
+          {page === "analytics" && <AnalyticsPage />}
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -55,7 +59,13 @@ function Root() {
     return <div className="login-screen"><div style={{ color: "var(--text-muted)" }}>Loading…</div></div>;
   }
 
-  return isAuthenticated ? <Dashboard /> : <LoginPage />;
+  return isAuthenticated ? (
+    <StreamClientProvider>
+      <Dashboard />
+    </StreamClientProvider>
+  ) : (
+    <LoginPage />
+  );
 }
 
 export default function App() {

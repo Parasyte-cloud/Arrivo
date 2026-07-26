@@ -220,10 +220,10 @@ export function RidersPage() {
                       <StatusPill label={`${r.ride_count} ride${r.ride_count > 1 ? "s" : ""}`} tone="teal" />
                     )}
                   </td>
-                  <td>₦{r.total_spent_naira.toLocaleString()}</td>
+                  <td>₦{r.total_spent_naira?.toLocaleString() ?? "—"}</td>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span>₦{r.wallet_balance_naira.toLocaleString()}</span>
+                      <span>₦{r.wallet_balance_naira?.toLocaleString() ?? "—"}</span>
                       {!isReadOnly ? (
                         <button className="btn" onClick={() => openAdjustModal(r)}>Adjust</button>
                       ) : null}
@@ -314,7 +314,7 @@ export function RidersPage() {
           >
             <h3 style={{ marginBottom: 4 }}>Adjust {adjustModal.name}'s wallet</h3>
             <p style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 16 }}>
-              Current balance: ₦{adjustModal.wallet_balance_naira.toLocaleString()}. Use a positive amount to credit
+              Current balance: ₦{adjustModal.wallet_balance_naira?.toLocaleString() ?? "—"}. Use a positive amount to credit
               (e.g. a refund) or a negative amount to debit (e.g. correcting an overcredit). This is logged in the
               Wallet ledger with your account attached to the description.
             </p>

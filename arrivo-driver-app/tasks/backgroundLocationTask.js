@@ -2,7 +2,7 @@ import * as TaskManager from "expo-task-manager";
 import * as SecureStore from "expo-secure-store";
 import { updateLocation } from "../services/api";
 
-// Name RiderArrivo's background location task registers under. Defined
+// Name this driver app's background location task registers under. Defined
 // once at module load — TaskManager requires the task to exist before
 // Location.startLocationUpdatesAsync ever references it, and this file is
 // imported as a side effect (see hooks/useLocationReporting.js) rather

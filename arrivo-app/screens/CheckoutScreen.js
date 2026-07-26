@@ -62,6 +62,11 @@ export default function CheckoutScreen({ route, navigation }) {
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
 
   const pendingPaymentRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
+  // Synchronous double-tap guard for payWithWalletOrMembership, mirroring
+  // ScanScreen.js's scannedRef — setStatus("verifying") alone can't stop a
+  // second tap that lands in the same tick/frame, before React re-renders
+  // with the busy state and disables the Pay button.
+  const submittingRef = useRef(false);
 
   // expo-web-browser's openAuthSessionAsync would normally tell us the
   // moment the browser closes. Using Linking.openURL (a core React Native
@@ -189,6 +194,12 @@ export default function CheckoutScreen({ route, navigation }) {
   };
 
   const payWithWalletOrMembership = async () => {
+    // Same synchronous double-tap guard as ScanScreen.js's scannedRef — the
+    // `busy`/status state guard alone isn't enough, since a second tap that
+    // lands before React re-renders with the new status would still slip
+    // through and fire a second createRide() for the same ride.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setStatus("verifying");
     try {
       const { ride } = await createRide(token, {
@@ -204,6 +215,7 @@ export default function CheckoutScreen({ route, navigation }) {
     } catch (e) {
       setStatus("error");
       setMessage(e.message || "Something went wrong confirming your ride.");
+      submittingRef.current = false;
     }
   };
 

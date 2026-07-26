@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import * as api from "../services/api";
 import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
+import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
 
 const TOKEN_KEY = "arrivo_driver_token";
 // Caches the last successfully-fetched profile so a cold start with no
@@ -125,10 +126,33 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     await stopBackgroundLocation();
+    // Tell the backend this driver went offline before dropping the token —
+    // otherwise a driver who signs out while online (rather than flipping
+    // the toggle first, see DashboardScreen.js's toggleOnline) stays marked
+    // is_online in the backend forever, still showing up as available to
+    // riders/admin with no way for the ex-session to ever say otherwise.
+    // Wrapped in try/catch so a network failure never blocks logout itself.
+    if (token) {
+      try {
+        await api.setOnlineStatus(token, false);
+      } catch {
+        // Non-fatal — worst case the driver stays marked online until the
+        // backend's own staleness handling catches up, same risk as any
+        // other dropped connection (app killed, phone dies, etc).
+      }
+    }
     // Stops this device from being registered for incoming-call push under
     // the account that's signing out — without this, a signed-out phone
     // could keep ringing for calls meant for whoever logs in on it next.
     await StreamVideoRN.onPushLogout().catch(() => {});
+    // Disconnects the live Stream Video client (see
+    // hooks/useCreateStreamVideoClient.js) explicitly here rather than
+    // waiting on that hook's own effect cleanup, which reacts to
+    // isAuthenticated flipping false — that cleanup can lag behind this
+    // function, and getOrCreateInstance's singleton would otherwise still
+    // be connected under the outgoing driver's identity if a different
+    // driver logs into this same device next.
+    await disconnectStreamVideoClient();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(USER_CACHE_KEY);
     setToken(null);

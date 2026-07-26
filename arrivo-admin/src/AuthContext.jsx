@@ -53,6 +53,18 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // api.js's central request() dispatches this whenever any endpoint
+  // responds 401 — an expired/invalid token. Several pollers here (e.g.
+  // Sidebar.jsx's panic/flight-issue poll) explicitly swallow their own
+  // errors, so without this a stale session would just fail silently and
+  // repeatedly forever instead of kicking the admin back to the login
+  // screen.
+  useEffect(() => {
+    const handleExpired = () => logout();
+    window.addEventListener("auth:expired", handleExpired);
+    return () => window.removeEventListener("auth:expired", handleExpired);
+  }, []);
+
   const isReadOnly = user?.role === "support";
 
   return (

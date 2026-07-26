@@ -15,12 +15,26 @@ import { getCallToken } from "../services/api";
 // the already-constructed client from context in order to start an
 // outgoing call — that's a different thing from this hook, which only
 // exists to build the client once, right after login.
+// Tracks the most recently created/reused StreamVideoClient instance so
+// AuthContext.js's logout() can disconnect the websocket synchronously,
+// right when the user signs out, instead of only relying on this hook's
+// effect cleanup (which requires isAuthenticated/token/user to actually
+// change — see disconnectStreamVideoClient below).
+let latestVideoClientInstance = null;
+
+export function disconnectStreamVideoClient() {
+  const instance = latestVideoClientInstance;
+  latestVideoClientInstance = null;
+  if (instance) instance.disconnectUser().catch(() => {});
+}
+
 export function useCreateStreamVideoClient() {
   const { token, user, isAuthenticated } = useAuth();
   const [client, setClient] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
+    let instance = null;
 
     if (!isAuthenticated || !token || !user) {
       setClient(null);
@@ -37,12 +51,18 @@ export function useCreateStreamVideoClient() {
           return fresh.videoToken;
         };
 
-        const instance = StreamVideoClient.getOrCreateInstance({
+        instance = StreamVideoClient.getOrCreateInstance({
           apiKey: first.apiKey,
           user: { id: first.userId, name: user.name },
           tokenProvider,
           options: { rejectCallWhenBusy: true },
         });
+        latestVideoClientInstance = instance;
+        if (cancelled) {
+          await instance.disconnectUser().catch(() => {});
+          if (latestVideoClientInstance === instance) latestVideoClientInstance = null;
+          return;
+        }
         setClient(instance);
       } catch (e) {
         // Non-fatal — calling just won't be available this session until
@@ -55,6 +75,14 @@ export function useCreateStreamVideoClient() {
 
     return () => {
       cancelled = true;
+      // Mirrors useCreateStreamChatClient.js's cleanup — without this the
+      // websocket connection this instance opened was never actually
+      // closed, just abandoned (see AuthContext.js logout()/disconnectStreamVideoClient
+      // above for the belt-and-suspenders synchronous-at-logout half of this fix).
+      if (instance) {
+        instance.disconnectUser().catch(() => {});
+        if (latestVideoClientInstance === instance) latestVideoClientInstance = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, token, user?.id]);
