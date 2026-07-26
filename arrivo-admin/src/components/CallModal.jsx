@@ -24,7 +24,7 @@ function CallUI({ calleeName, onClose }) {
       {callingState === CallingState.JOINED ? (
         <SpeakerLayout />
       ) : (
-        <div style={{ padding: 40, textAlign: "center", color: "#fff" }}>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--text)" }}>
           Calling {calleeName}…
         </div>
       )}
@@ -37,13 +37,8 @@ export function CallModal({ call, calleeName, onClose }) {
   if (!call) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(18,18,59,0.85)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200,
-      }}
-    >
-      <div style={{ width: "100%", maxWidth: 720, background: "#1B1B4D", borderRadius: 16, overflow: "hidden" }}>
+    <div className="modal-backdrop" style={{ zIndex: 200 }}>
+      <div style={{ width: "100%", maxWidth: 720, background: "var(--bg1)", borderRadius: 16, overflow: "hidden" }}>
         <StreamCall call={call}>
           <CallUI calleeName={calleeName} onClose={onClose} />
         </StreamCall>

@@ -253,15 +253,10 @@ export function RidersPage() {
       </div>
 
       {idModal && (
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-          }}
-          onClick={() => setIdModal(null)}
-        >
+        <div className="modal-backdrop" onClick={() => setIdModal(null)}>
           <div
-            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 420, textAlign: "center" }}
+            className="modal-card"
+            style={{ maxWidth: 420, textAlign: "center" }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginBottom: 4 }}>{idModal.name}'s ID</h3>
@@ -279,7 +274,7 @@ export function RidersPage() {
             <img
               src={idModal.id_document_url}
               alt={`${idModal.name}'s submitted ID`}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #eee", marginTop: 12 }}
+              style={{ width: "100%", borderRadius: 8, marginTop: 12 }}
             />
             {isReadOnly ? (
               <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 16 }}>View only</p>
@@ -311,15 +306,10 @@ export function RidersPage() {
       )}
 
       {adjustModal && (
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-          }}
-          onClick={() => setAdjustModal(null)}
-        >
+        <div className="modal-backdrop" onClick={() => setAdjustModal(null)}>
           <div
-            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%" }}
+            className="modal-card"
+            style={{ maxWidth: 420 }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginBottom: 4 }}>Adjust {adjustModal.name}'s wallet</h3>

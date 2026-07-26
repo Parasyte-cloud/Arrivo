@@ -1,58 +1,113 @@
+/* RideArrivo Ops Console — "Liquid Glass" theme, matching the dark navy +
+   amber/blue-glow backdrop and frosted glass surfaces already used across
+   every post-login screen in the rider/driver mobile apps (see
+   arrivo-app/components/GradientBackground.js and theme/tokens.js's
+   colors.dark palette — these values are deliberately the same numbers). */
+
 :root {
-  --ink: #12123b;
-  --ink-soft: #1e1e4d;
-  --card: #ffffff;
-  --card-border: #e7e5f0;
-  --canvas: #f7f4ec;
+  --bg0: #0d0d2e;
+  --bg1: #1b1b4d;
+  --bg2: #050514;
+  --glow-amber: rgba(244, 163, 0, 0.35);
+  --glow-blue: rgba(91, 127, 199, 0.4);
+
   --amber: #f4a300;
-  --teal: #0e7c7b;
-  --teal-tint: #e5f4f3;
-  --coral: #e1523d;
-  --coral-tint: #fdeae7;
-  --text: #12123b;
-  --text-muted: #6b6b85;
-  --radius: 12px;
+  --teal: #4fd9c7;
+  --teal-tint: rgba(79, 217, 199, 0.16);
+  --coral: #ff6b57;
+  --coral-tint: rgba(255, 107, 87, 0.16);
+  --amber-tint: rgba(244, 163, 0, 0.18);
+
+  --text: #f7f4ec;
+  --text-muted: rgba(247, 244, 236, 0.62);
+  --text-dim: rgba(247, 244, 236, 0.4);
+
+  --glass: rgba(255, 255, 255, 0.07);
+  --glass-strong: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.24);
+
+  --ink: #12123b; /* used only where genuinely dark text-on-amber is needed */
+  --radius: 16px;
+  --radius-sm: 10px;
 }
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
-  background: var(--canvas);
+  min-height: 100vh;
+  background: var(--bg0);
   color: var(--text);
   font-family: "Inter", sans-serif;
   font-size: 14px;
+  position: relative;
+}
+
+/* Gives every frosted-glass surface something with real tonal variation to
+   blur — a flat single color behind backdrop-filter reads as "not blurred"
+   at all. Fixed + negative z-index so it never scrolls or tiles, and sits
+   behind every bit of real content. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(640px circle at 92% -8%, var(--glow-amber), transparent 60%),
+    radial-gradient(560px circle at -8% 105%, var(--glow-blue), transparent 60%),
+    linear-gradient(160deg, var(--bg1) 0%, var(--bg0) 55%, var(--bg2) 100%);
 }
 
 h1, h2, h3, .display {
   font-family: "Space Grotesk", sans-serif;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--text);
   margin: 0;
 }
+
+a { color: inherit; }
 
 .app-shell {
   display: flex;
   min-height: 100vh;
+  gap: 20px;
+  padding: 20px;
+  align-items: flex-start;
 }
 
-/* ── Sidebar ── */
+/* ── Sidebar — the one big frosted glass panel; every other card/table/
+   modal below reuses this exact recipe (gradient tint + blur + border +
+   inset top highlight) so the whole app reads as one consistent material. */
 .sidebar {
-  width: 220px;
-  background: var(--ink);
-  color: var(--canvas);
-  padding: 28px 18px;
+  background: linear-gradient(160deg, var(--glass-strong), var(--glass));
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 0 var(--glass-highlight) inset, 0 12px 32px rgba(0, 0, 0, 0.28);
+  width: 224px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
 }
 
-.sidebar .brand {
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 22px;
-  color: var(--canvas);
+.sidebar .brand-logo {
+  height: 30px;
+  width: auto;
+  display: block;
   margin-bottom: 4px;
+  /* Source art is drawn for a light background; a soft glow instead of a
+     drop shadow keeps the navy "Ride" readable without muddying the
+     wordmark's crisp edges against this dark glass panel. */
+  filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.35));
 }
 
 .sidebar .brand-sub {
@@ -60,44 +115,74 @@ h1, h2, h3, .display {
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--amber);
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: 1;
 }
 
 .sidebar button.nav-item {
   all: unset;
   cursor: pointer;
-  padding: 11px 14px;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
   font-size: 13.5px;
   font-weight: 600;
-  color: #b9b9dd;
+  color: var(--text-muted);
   transition: background 0.15s, color 0.15s;
 }
 
-.sidebar button.nav-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--canvas); }
-.sidebar button.nav-item.active { background: var(--amber); color: var(--ink); }
+.sidebar .nav-icon {
+  font-size: 14.5px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebar button.nav-item:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.sidebar button.nav-item.active {
+  background: var(--amber);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(244, 163, 0, 0.5), 0 0 18px rgba(244, 163, 0, 0.45);
+}
+
+.sidebar .nav-badge {
+  margin-left: auto;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+}
 
 .sidebar .logout {
   all: unset;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12.5px;
-  color: #8a8ab0;
-  padding: 11px 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
 }
-.sidebar .logout:hover { color: var(--coral); }
+.sidebar .logout:hover { color: var(--coral); background: rgba(255, 107, 87, 0.1); }
+
+.sidebar-backdrop { display: none; }
 
 /* ── Main content ── */
 .main {
   flex: 1;
-  padding: 40px 48px;
   max-width: 1200px;
+  min-width: 0;
 }
 
 .page-header {
@@ -105,6 +190,7 @@ h1, h2, h3, .display {
   justify-content: space-between;
   align-items: flex-end;
   margin-bottom: 28px;
+  gap: 12px;
 }
 
 .eyebrow {
@@ -125,18 +211,26 @@ h1, h2, h3, .display {
   margin-bottom: 32px;
 }
 
-.stat-card {
-  background: var(--card);
-  border: 1px solid var(--card-border);
+.stat-card,
+.alert-card,
+.table-wrap,
+.login-card,
+.modal-card {
+  background: linear-gradient(160deg, var(--glass-strong), var(--glass));
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  padding: 20px;
+  box-shadow: 0 1px 0 var(--glass-highlight) inset, 0 12px 32px rgba(0, 0, 0, 0.28);
 }
+
+.stat-card { padding: 20px; }
 
 .stat-card .stat-num {
   font-family: "Space Grotesk", sans-serif;
   font-size: 28px;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--text);
 }
 
 .stat-card .stat-label {
@@ -145,13 +239,31 @@ h1, h2, h3, .display {
   margin-top: 4px;
 }
 
-/* ── Tables ── */
-.table-wrap {
-  background: var(--card);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius);
-  overflow: hidden;
+/* Panic/Flight-issue "needs attention" cards — same glass treatment as
+   .stat-card, with a colored ring instead of a flat border so the urgent
+   ones still stand out against every other glass surface on the page. */
+.alert-card { padding: 20px; }
+.alert-card.danger { border-color: rgba(255, 107, 87, 0.5); box-shadow: 0 0 0 1px rgba(255, 107, 87, 0.25), 0 12px 32px rgba(0, 0, 0, 0.28); }
+.alert-card.warning { border-color: rgba(244, 163, 0, 0.5); box-shadow: 0 0 0 1px rgba(244, 163, 0, 0.25), 0 12px 32px rgba(0, 0, 0, 0.28); }
+
+.alert-note {
+  background: var(--coral-tint);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12.5px;
+  margin-bottom: 12px;
 }
+
+/* Rider/driver detail columns inside Panics/FlightIssues alert cards —
+   side-by-side on desktop, stacked on phones (see the 860px query below). */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ── Tables ── */
+.table-wrap { overflow: hidden; }
 
 table { width: 100%; border-collapse: collapse; }
 
@@ -162,15 +274,16 @@ th {
   letter-spacing: 0.06em;
   color: var(--text-muted);
   padding: 14px 18px;
-  border-bottom: 1px solid var(--card-border);
-  background: #fafafd;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 td {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--card-border);
+  border-bottom: 1px solid var(--glass-border);
   font-size: 13.5px;
   vertical-align: middle;
+  color: var(--text);
 }
 
 tr:last-child td { border-bottom: none; }
@@ -190,14 +303,14 @@ tr:last-child td { border-bottom: none; }
 .pill.teal { background: var(--teal-tint); color: var(--teal); }
 .pill.teal .dot { background: var(--teal); }
 
-.pill.amber { background: #fef3e0; color: #9a6700; }
+.pill.amber { background: var(--amber-tint); color: var(--amber); }
 .pill.amber .dot { background: var(--amber); }
 
 .pill.coral { background: var(--coral-tint); color: var(--coral); }
 .pill.coral .dot { background: var(--coral); }
 
-.pill.muted { background: #f0f0f5; color: var(--text-muted); }
-.pill.muted .dot { background: #b0b0c8; }
+.pill.muted { background: var(--glass-strong); color: var(--text-muted); }
+.pill.muted .dot { background: var(--text-muted); }
 
 /* ── Buttons ── */
 button.btn {
@@ -208,15 +321,17 @@ button.btn {
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
 }
 button.btn:hover { opacity: 0.85; }
-button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+button.btn:active { transform: scale(0.98); }
+button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-button.btn.primary { background: var(--ink); color: var(--canvas); }
-button.btn.verify { background: var(--teal); color: #fff; }
+button.btn.primary { background: var(--amber); color: var(--ink); }
+button.btn.verify { background: var(--teal); color: var(--ink); }
 button.btn.revoke { background: transparent; border: 1px solid var(--coral); color: var(--coral); }
-button.btn.ghost { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+button.btn.ghost { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text); }
+button.btn.ghost:hover { background: var(--glass-strong); }
 
 /* ── Login page ── */
 .login-screen {
@@ -224,22 +339,20 @@ button.btn.ghost { background: transparent; border: 1px solid var(--card-border)
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ink);
+  padding: 20px;
 }
 
 .login-card {
   width: 360px;
-  background: var(--card);
-  border-radius: 16px;
+  max-width: 100%;
   padding: 36px 32px;
 }
 
-.login-card .brand {
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 26px;
-  font-weight: 700;
-  text-align: center;
-  color: var(--ink);
+.login-card .brand-logo {
+  height: 34px;
+  width: auto;
+  display: block;
+  margin: 0 auto;
 }
 
 .login-card .brand-sub {
@@ -248,19 +361,39 @@ button.btn.ghost { background: transparent; border: 1px solid var(--card-border)
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--teal);
-  margin-bottom: 28px;
+  margin: 8px 0 28px;
 }
 
 .field {
   width: 100%;
   padding: 12px 14px;
   border-radius: 10px;
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
   font-size: 13.5px;
   margin-bottom: 12px;
   font-family: "Inter", sans-serif;
 }
+.field::placeholder { color: var(--text-dim); }
 .field:focus { outline: 2px solid var(--amber); outline-offset: 1px; }
+
+/* RidesPage's "From"/"To" filters put a date input inside a flex <label> —
+   .field's width:100% would otherwise stretch a native date/time picker to
+   fill that entire flex row instead of sizing to its own content. */
+input[type="date"].field,
+input[type="time"].field {
+  width: auto;
+  min-width: 0;
+}
+
+/* Native date/time pickers render a dark-on-dark glyph by default in most
+   browsers — without this the "From"/"To" date filters on Rides are
+   functionally invisible against this theme's dark fields. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.9);
+}
 
 .error-text { color: var(--coral); font-size: 12.5px; margin: 4px 0 12px; }
 
@@ -275,24 +408,49 @@ textarea.notes {
   width: 100%;
   min-height: 60px;
   border-radius: 8px;
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
   padding: 8px 10px;
   font-family: "Inter", sans-serif;
   font-size: 12.5px;
   resize: vertical;
 }
+textarea.notes::placeholder { color: var(--text-dim); }
+
+/* ── Shared modal (Riders' ID review + wallet adjust, Drivers' QR placard,
+   admin Call overlay) — one definition instead of each page repeating its
+   own inline position:fixed/background/border-radius. ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 5, 20, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal-card {
+  width: 100%;
+  padding: 28px;
+}
+
+.modal-card img {
+  border: 1px solid var(--glass-border);
+}
 
 /* ── Mobile layout ──
    Below 860px the sidebar switches from an always-visible column to an
    off-canvas drawer, opened via the hamburger button in .mobile-topbar
-   (rendered by App.jsx, hidden on desktop). This is what was missing
-   before — on phones the sidebar and content used to just get squeezed
-   into the same flex row at their desktop widths. */
+   (rendered by App.jsx, hidden on desktop). It keeps the exact same
+   floating glass-card look as the desktop sidebar — just fixed-position
+   and slid off-screen until opened — rather than becoming a flat
+   edge-to-edge panel. */
 .mobile-topbar {
-  display: none;
-}
-
-.sidebar-backdrop {
   display: none;
 }
 
@@ -301,8 +459,11 @@ textarea.notes {
     display: flex;
     align-items: center;
     gap: 14px;
-    background: var(--ink);
-    color: var(--canvas);
+    background: linear-gradient(160deg, var(--glass-strong), var(--glass));
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    border-bottom: 1px solid var(--glass-border);
+    color: var(--text);
     padding: 14px 18px;
     position: sticky;
     top: 0;
@@ -315,30 +476,32 @@ textarea.notes {
     font-size: 20px;
     line-height: 1;
     padding: 4px 8px;
+    color: var(--text);
   }
 
-  .mobile-topbar .mobile-brand {
-    font-family: "Space Grotesk", sans-serif;
-    font-weight: 700;
-    font-size: 16px;
+  .mobile-topbar .mobile-brand-logo {
+    height: 22px;
+    width: auto;
+    display: block;
   }
 
   .app-shell {
     flex-direction: column;
     min-height: auto;
+    padding: 0;
+    gap: 0;
   }
 
   .sidebar {
     position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
+    top: 14px;
+    left: 14px;
+    bottom: 14px;
     width: 250px;
-    max-width: 80vw;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    max-width: 78vw;
+    transform: translateX(-120%);
+    transition: transform 0.25s ease;
     z-index: 30;
-    overflow-y: auto;
   }
 
   .sidebar.sidebar-open {
@@ -349,12 +512,14 @@ textarea.notes {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     z-index: 25;
   }
 
   .main {
-    padding: 20px 16px;
+    padding: 18px 14px 32px;
     max-width: 100%;
   }
 
@@ -364,16 +529,39 @@ textarea.notes {
     gap: 10px;
   }
 
+  /* Only the action-button-group div (RidersPage's two Export buttons) —
+     :not(:only-child) excludes every page-header that has just the single
+     title div, which must stay block-stacked (eyebrow above the h1), not
+     forced into a row. */
+  .page-header > div:last-child:not(:only-child) {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   .stat-grid {
     grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 
-  .table-wrap {
-    overflow-x: auto;
-  }
+  .stat-card { padding: 14px; }
+  .stat-card .stat-num { font-size: 22px; }
 
-  .login-card {
-    width: 100%;
-    max-width: 360px;
-  }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap table { min-width: 640px; }
+
+  th, td { padding: 12px 14px; }
+
+  .login-card { padding: 28px 22px; }
+
+  .modal-card { max-width: 100% !important; }
+
+  /* Rider/driver two-column detail grid (Panics/FlightIssues cards) stacks
+     to one column on phones instead of squeezing to ~140px each. */
+  .detail-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  .stat-grid { grid-template-columns: 1fr; }
 }

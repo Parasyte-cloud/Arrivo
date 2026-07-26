@@ -66,15 +66,7 @@ export function PanicsPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {panics.map((p) => (
-            <div
-              key={p.id}
-              style={{
-                background: "#fff",
-                border: "2px solid var(--coral)",
-                borderRadius: "var(--radius)",
-                padding: 20,
-              }}
-            >
+            <div key={p.id} className="alert-card danger">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: "var(--coral)" }}>
@@ -86,7 +78,7 @@ export function PanicsPage() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14, fontSize: 13.5 }}>
+              <div className="detail-grid" style={{ marginBottom: 14, fontSize: 13.5 }}>
                 <div>
                   <div style={{ color: "var(--text-muted)", fontSize: 11.5, marginBottom: 2 }}>RIDER</div>
                   <div style={{ fontWeight: 600 }}>{p.rider_name}</div>
@@ -126,7 +118,7 @@ export function PanicsPage() {
               ) : null}
 
               {p.panic_notes ? (
-                <div style={{ background: "#FDEAE7", borderRadius: 8, padding: 10, fontSize: 12.5, marginBottom: 12 }}>
+                <div className="alert-note">
                   <strong>Rider's note:</strong> {p.panic_notes}
                 </div>
               ) : null}

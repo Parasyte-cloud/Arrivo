@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { StreamVideoClient } from "@stream-io/video-react-sdk";
 import { useAuth } from "../AuthContext";
 import { getCallToken } from "../api";
@@ -14,8 +14,15 @@ import { getCallToken } from "../api";
 // keyed purely on the signed-in user's id, and admins/support staff share
 // the same `users` table/id-space as riders and drivers (see db/schema.sql),
 // so this needs no admin-specific backend work.
-let clientPromise = null;
-
+//
+// IMPORTANT: uses getOrCreateInstance (same as every mobile hook in this
+// codebase), NOT `new StreamVideoClient()`. Two admins can share the same
+// browser/computer across a logout+login without a full page reload (the
+// login form just swaps React state) — a plain cached instance keyed only
+// on "does one exist yet" would keep calling as the FIRST admin's Stream
+// identity forever. getOrCreateInstance is Stream's own SDK mechanism for
+// this exact situation: passing a different `user.id` makes it disconnect
+// the previous session and connect the new one under the hood.
 export function useAdminStreamClient() {
   const { token, user, isAuthenticated } = useAuth();
   const [client, setClient] = useState(null);
@@ -29,26 +36,20 @@ export function useAdminStreamClient() {
       return;
     }
 
-    if (!clientPromise) {
-      clientPromise = (async () => {
+    (async () => {
+      try {
         const auth = await getCallToken(token);
-        const instance = new StreamVideoClient({
+        if (cancelled) return;
+        const instance = StreamVideoClient.getOrCreateInstance({
           apiKey: auth.apiKey,
           user: { id: auth.userId, name: user.name },
           token: auth.videoToken,
         });
-        return instance;
-      })();
-    }
-
-    clientPromise
-      .then((instance) => {
-        if (!cancelled) setClient(instance);
-      })
-      .catch((e) => {
-        clientPromise = null; // let the next attempt retry from scratch
+        setClient(instance);
+      } catch (e) {
         if (!cancelled) setError(e.message || "Could not set up calling.");
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;

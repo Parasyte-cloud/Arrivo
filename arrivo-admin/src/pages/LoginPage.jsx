@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../AuthContext";
+import wordmarkLight from "../assets/wordmark-light.png";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -24,7 +25,7 @@ export function LoginPage() {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand">RideArrivo</div>
+        <img src={wordmarkLight} alt="RideArrivo" className="brand-logo" />
         <div className="brand-sub">OPS CONSOLE</div>
 
         <input

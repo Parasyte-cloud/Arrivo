@@ -241,7 +241,7 @@ export function RidesPage() {
                   </tr>
                   {expandedId === r.id ? (
                     <tr>
-                      <td colSpan={8} style={{ background: "#fafafd" }}>
+                      <td colSpan={8} style={{ background: "rgba(255,255,255,0.03)" }}>
                         <div style={{ padding: "8px 4px" }}>
                           {r.emergency_contact_name || r.emergency_contact_phone ? (
                             <div style={{ marginBottom: 14, fontSize: 12.5 }}>

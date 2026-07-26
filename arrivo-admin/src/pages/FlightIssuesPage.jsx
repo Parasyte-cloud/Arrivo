@@ -57,15 +57,7 @@ export function FlightIssuesPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {flightIssues.map((f) => (
-            <div
-              key={f.id}
-              style={{
-                background: "#fff",
-                border: "2px solid var(--amber)",
-                borderRadius: "var(--radius)",
-                padding: 20,
-              }}
-            >
+            <div key={f.id} className="alert-card warning">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: "var(--amber)" }}>
@@ -78,7 +70,7 @@ export function FlightIssuesPage() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14, fontSize: 13.5 }}>
+              <div className="detail-grid" style={{ marginBottom: 14, fontSize: 13.5 }}>
                 <div>
                   <div style={{ color: "var(--text-muted)", fontSize: 11.5, marginBottom: 2 }}>RIDER</div>
                   <div style={{ fontWeight: 600 }}>{f.rider_name}</div>

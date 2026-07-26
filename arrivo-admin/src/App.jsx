@@ -12,6 +12,7 @@ import { WalletPage } from "./pages/WalletPage";
 import { FlightIssuesPage } from "./pages/FlightIssuesPage";
 import { VehiclesPage } from "./pages/VehiclesPage";
 import { Sidebar } from "./components/Sidebar";
+import wordmarkLight from "./assets/wordmark-light.png";
 
 function Dashboard() {
   // Default to Panic Alerts on login — the safety-critical view should be
@@ -28,7 +29,7 @@ function Dashboard() {
     <div className="app-shell">
       <div className="mobile-topbar">
         <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
-        <span className="mobile-brand">RideArrivo</span>
+        <img src={wordmarkLight} alt="RideArrivo" className="mobile-brand-logo" />
       </div>
       <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="main">
@@ -51,7 +52,7 @@ function Root() {
   const { isAuthenticated, initializing } = useAuth();
 
   if (initializing) {
-    return <div className="login-screen"><div style={{ color: "#fff" }}>Loading…</div></div>;
+    return <div className="login-screen"><div style={{ color: "var(--text-muted)" }}>Loading…</div></div>;
   }
 
   return isAuthenticated ? <Dashboard /> : <LoginPage />;

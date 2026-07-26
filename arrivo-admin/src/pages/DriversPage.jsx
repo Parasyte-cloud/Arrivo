@@ -196,22 +196,24 @@ export function DriversPage() {
       </div>
 
       {qrModal && (
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "rgba(18,18,59,0.6)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-          }}
-          onClick={closeQrModal}
-        >
+        <div className="modal-backdrop" onClick={closeQrModal}>
           <div
-            style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 360, textAlign: "center" }}
+            className="modal-card"
+            style={{ maxWidth: 360, textAlign: "center" }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginBottom: 4 }}>{qrModal.driverName}</h3>
             <p style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 16 }}>
               Print this and place it on the dashboard or a window placard. Riders scan it to confirm their driver and start live tracking.
             </p>
-            <img src={qrModal.imageUrl} alt="Driver placard QR code" style={{ width: "100%", borderRadius: 8, border: "1px solid #eee" }} />
+            {/* The QR PNG itself is rendered with a solid white background
+                by the backend (routes/admin.js's qrcode.toBuffer), so it
+                stays scannable regardless of this card's dark glass tint —
+                only a light padding ring is added here to keep it from
+                touching the card edge. */}
+            <div style={{ background: "#fff", borderRadius: 8, padding: 8 }}>
+              <img src={qrModal.imageUrl} alt="Driver placard QR code" style={{ width: "100%", display: "block", borderRadius: 4 }} />
+            </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <a
                 href={qrModal.imageUrl}
