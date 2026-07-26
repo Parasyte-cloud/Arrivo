@@ -12,6 +12,10 @@ import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1); // 1..24
+// Mirrors MAX_FULL_DAY_COUNT in arrivo-backend/services/fare.js — that's a
+// sanity ceiling, not a pricing one, so the picker offers the full range
+// rather than silently capping something free-typing used to allow.
+const DAY_COUNT_OPTIONS = Array.from({ length: 365 }, (_, i) => i + 1); // 1..365
 
 function formatDateDisplay(d) {
   return d ? d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : "";
@@ -77,18 +81,15 @@ export default function ChauffeurScreen({ navigation }) {
   const [duration, setDuration] = useState("full_day");
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
 
-  // "Single day" can be booked for any number of consecutive days — just
-  // type a number, the fare is calculated on checkout. Mirrors RouteScreen's
-  // identical field; arrivo-backend/services/fare.js still enforces a
-  // generous sanity-check upper bound server-side (MAX_FULL_DAY_COUNT
-  // there), purely to reject garbage input. Irrelevant for full_week/full_month.
+  // "Single day" can be booked for any number of consecutive days — the
+  // fare is calculated on checkout. Mirrors RouteScreen's identical field;
+  // arrivo-backend/services/fare.js still enforces a generous sanity-check
+  // upper bound server-side (MAX_FULL_DAY_COUNT there). Irrelevant for
+  // full_week/full_month. A picker (see DAY_COUNT_OPTIONS/showDaysPicker)
+  // instead of free-typing a number — the only invalid input this used to
+  // allow (blank, non-numeric, 0) is no longer possible at all now.
   const [fullDayCount, setFullDayCount] = useState(1);
-  const [fullDayCountInput, setFullDayCountInput] = useState("1");
-  const setFullDayCountClamped = (n) => {
-    const normalized = Math.max(Number.isFinite(n) ? Math.round(n) : 1, 1);
-    setFullDayCount(normalized);
-    setFullDayCountInput(String(normalized));
-  };
+  const [showDaysPicker, setShowDaysPicker] = useState(false);
 
   const [quote, setQuote] = useState(null); // { fareNaira } | null
   const [quoteLoading, setQuoteLoading] = useState(true);
@@ -225,20 +226,32 @@ export default function ChauffeurScreen({ navigation }) {
             ))}
           </View>
           {duration === "full_day" ? (
-            <View style={{ marginTop: spacing.sm }}>
+            <Pressable style={{ marginTop: spacing.sm }} onPress={() => setShowDaysPicker(true)}>
               <Text style={styles.addonNote}>Number of days</Text>
-              <TextInput
-                style={[styles.smallInput, { marginTop: 6 }]}
-                value={fullDayCountInput}
-                onChangeText={(text) => setFullDayCountInput(text.replace(/[^0-9]/g, ""))}
-                onEndEditing={() => setFullDayCountClamped(Number(fullDayCountInput))}
-                placeholder="1"
-                keyboardType="number-pad"
-                placeholderTextColor={colors.dark.textMuted}
-              />
-            </View>
+              <Text style={[styles.smallInput, { marginTop: 6 }]}>
+                {fullDayCount} day{fullDayCount === 1 ? "" : "s"}
+              </Text>
+            </Pressable>
           ) : null}
         </Card>
+
+        <Modal visible={showDaysPicker} animationType="slide" transparent onRequestClose={() => setShowDaysPicker(false)}>
+          <Pressable style={styles.pickerOverlay} onPress={() => setShowDaysPicker(false)}>
+            <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Number of days</Text>
+                <Pressable onPress={() => setShowDaysPicker(false)}>
+                  <Text style={styles.pickerDone}>Done</Text>
+                </Pressable>
+              </View>
+              <Picker selectedValue={fullDayCount} onValueChange={setFullDayCount} itemStyle={{ color: colors.dark.text }}>
+                {DAY_COUNT_OPTIONS.map((n) => (
+                  <Picker.Item key={n} label={`${n} day${n === 1 ? "" : "s"}`} value={n} />
+                ))}
+              </Picker>
+            </View>
+          </Pressable>
+        </Modal>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Pickup address</Text>
