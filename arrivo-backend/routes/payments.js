@@ -2,6 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
+const { claimPaymentReference } = require("../services/paymentReferences");
 const router = express.Router();
 
 const PAYSTACK_BASE = "https://api.paystack.co";
@@ -140,12 +141,38 @@ router.post(
               `Webhook amount mismatch for ride #${ride.id}: paid ${amount} kobo, expected ${expectedKobo} kobo — NOT marking paid.`
             );
           } else {
-            await pool.query(
-              `UPDATE rides SET payment_status = 'paid', updated_at = now()
-               WHERE id = $1 AND payment_status != 'paid'`,
-              [ride.id]
-            );
-            console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference} - NGN ${amount / 100} - ${customer.email}`);
+            // Claim the reference in the SAME transaction as the UPDATE, exactly
+            // like the other four card-payment call sites (PATCH :id/payment,
+            // POST :id/tip, POST :id/overage-charge, wallet topup verify) — this
+            // webhook was the one path that could mark a ride paid WITHOUT ever
+            // recording the reference as spent, meaning a genuinely-successful
+            // charge (if this webhook is what settles it, e.g. the client-side
+            // verify call never lands) could then be replayed on a tip, overage
+            // charge, or wallet top-up as if it were a brand-new payment.
+            const webhookClient = await pool.connect();
+            try {
+              await webhookClient.query("BEGIN");
+              const claimed = await claimPaymentReference(webhookClient, reference, "ride_payment", ride.id);
+              if (!claimed) {
+                await webhookClient.query("ROLLBACK");
+                console.error(
+                  `Webhook: payment reference ${reference} for ride #${ride.id} was already claimed elsewhere — not marking paid.`
+                );
+              } else {
+                await webhookClient.query(
+                  `UPDATE rides SET payment_status = 'paid', updated_at = now()
+                   WHERE id = $1 AND payment_status != 'paid'`,
+                  [ride.id]
+                );
+                await webhookClient.query("COMMIT");
+                console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference} - NGN ${amount / 100} - ${customer.email}`);
+              }
+            } catch (claimErr) {
+              await webhookClient.query("ROLLBACK");
+              throw claimErr;
+            } finally {
+              webhookClient.release();
+            }
           }
         }
       } catch (e) {

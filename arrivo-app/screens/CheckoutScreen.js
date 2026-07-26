@@ -99,16 +99,33 @@ export default function CheckoutScreen({ route, navigation }) {
     try {
       const verification = await verifyPayment(reference);
       if (verification.success) {
-        const { ride } = await createRide(token, {
-          pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
-          paymentReference: reference, bookingType, durationDays,
-          agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
-          emergencyContactName, emergencyContactPhone, dashCamConsent,
-          distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
-          scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
-        });
-        setStatus("success");
-        onRideCreated(ride);
+        // Card has now genuinely been charged (Paystack confirmed it) —
+        // from this point on, ANY failure below means the rider paid but
+        // has no ride, so every catch path from here must say so explicitly
+        // and give them the reference to quote support. Previously the
+        // catch below was shared with the "payment not verified" case above
+        // and just showed e.message, which for e.g. "scheduledPickupAt must
+        // be in the future" (a real, reachable validation error on a
+        // same-day Chauffeur booking before this fix) gave no indication
+        // the card had already been charged.
+        try {
+          const { ride } = await createRide(token, {
+            pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
+            paymentReference: reference, bookingType, durationDays,
+            agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
+            emergencyContactName, emergencyContactPhone, dashCamConsent,
+            distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
+            scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
+          });
+          setStatus("success");
+          onRideCreated(ride);
+        } catch (createErr) {
+          setStatus("error");
+          setMessage(
+            `Your payment went through, but we couldn't finish booking your ride (${createErr.message || "please try again"}). ` +
+              `You were charged — contact support with reference ${reference} and we'll sort it out.`
+          );
+        }
       } else {
         setStatus("error");
         setMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);

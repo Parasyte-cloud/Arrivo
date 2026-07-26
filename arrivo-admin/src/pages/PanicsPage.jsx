@@ -117,6 +117,14 @@ export function PanicsPage() {
                 {p.pickup_address}
               </div>
 
+              {p.emergency_contact_name || p.emergency_contact_phone ? (
+                <div style={{ marginBottom: 12, fontSize: 13 }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: 11.5, marginBottom: 2 }}>EMERGENCY CONTACT</div>
+                  <div style={{ fontWeight: 600 }}>{p.emergency_contact_name || "No name on file"}</div>
+                  {p.emergency_contact_phone ? <PhoneLink phone={p.emergency_contact_phone} /> : null}
+                </div>
+              ) : null}
+
               {p.panic_notes ? (
                 <div style={{ background: "#FDEAE7", borderRadius: 8, padding: 10, fontSize: 12.5, marginBottom: 12 }}>
                   <strong>Rider's note:</strong> {p.panic_notes}

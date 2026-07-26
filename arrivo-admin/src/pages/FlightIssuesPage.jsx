@@ -101,6 +101,11 @@ export function FlightIssuesPage() {
                   Original scheduled arrival: {formatDateTime(f.original_flight_scheduled_at)}
                 </div>
               ) : null}
+              {f.scheduled_pickup_at ? (
+                <div style={{ fontSize: 12.5, color: "var(--coral)", fontWeight: 600, marginTop: 4 }}>
+                  Scheduled pickup: {formatDateTime(f.scheduled_pickup_at)}
+                </div>
+              ) : null}
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 4 }}>
                 Ride status: {f.ride_status.replace("_", " ")}
               </div>

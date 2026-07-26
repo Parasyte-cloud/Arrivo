@@ -232,12 +232,25 @@ export function RidesPage() {
                         <span style={{ color: "var(--text-muted)", fontSize: 12.5 }}>—</span>
                       )}
                     </td>
-                    <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{formatDateTime(r.created_at)}</td>
+                    <td style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                      <div>{formatDateTime(r.created_at)}</div>
+                      {r.scheduled_pickup_at ? (
+                        <div style={{ color: "var(--coral)", fontWeight: 600 }}>Pickup: {formatDateTime(r.scheduled_pickup_at)}</div>
+                      ) : null}
+                    </td>
                   </tr>
                   {expandedId === r.id ? (
                     <tr>
                       <td colSpan={8} style={{ background: "#fafafd" }}>
                         <div style={{ padding: "8px 4px" }}>
+                          {r.emergency_contact_name || r.emergency_contact_phone ? (
+                            <div style={{ marginBottom: 14, fontSize: 12.5 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase" }}>
+                                Emergency contact
+                              </div>
+                              <div>{r.emergency_contact_name || "No name on file"}{r.emergency_contact_phone ? ` · ${r.emergency_contact_phone}` : ""}</div>
+                            </div>
+                          ) : null}
                           {r.fleet_size > 0 ? (
                             <div style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>

@@ -101,7 +101,18 @@ export default function ChauffeurScreen({ navigation }) {
   const requestIdRef = useRef(0);
 
   const selectedDuration = DURATIONS.find((d) => d.id === duration);
-  const canConfirm = pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && !!quote && !quoteLoading;
+  // Backend rejects any scheduledPickupAt in the past (routes/rides.js,
+  // "scheduledPickupAt must be in the future") — Chauffeur bookings only
+  // started sending this field at all in this same change (see
+  // combineDateAndTime below), and both pickers now seed "now" as soon as
+  // they're opened, so a rider accepting the defaults without deliberately
+  // moving the time forward could previously reach Checkout, get charged by
+  // Paystack, and only THEN have ride creation fail on this exact check —
+  // mirrors RouteScreen's scheduledTimeValid guard, which blocks earlier.
+  const scheduledPickupAtValue = combineDateAndTime(dateValue, timeValue);
+  const scheduledTimeValid = !dateValue || !timeValue || scheduledPickupAtValue.getTime() > Date.now();
+  const canConfirm =
+    pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && scheduledTimeValid && !!quote && !quoteLoading;
 
   // Same handler as RouteScreen's identical feature: only ever runs on a
   // tap, never on mount, so permission is asked for at the moment it's
@@ -177,7 +188,7 @@ export default function ChauffeurScreen({ navigation }) {
 
   const confirm = () => {
     if (!canConfirm) return;
-    const scheduledPickupAt = combineDateAndTime(dateValue, timeValue);
+    const scheduledPickupAt = scheduledPickupAtValue;
     navigation.navigate("Checkout", {
       amountNaira: quote.fareNaira,
       label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
@@ -274,14 +285,38 @@ export default function ChauffeurScreen({ navigation }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Pressable style={styles.row} onPress={() => setShowDatePicker(true)}>
+          <Pressable
+            style={styles.row}
+            onPress={() => {
+              // Seed a real default the instant the picker opens (rather than
+              // leaving state null until onChange fires) — iOS's "inline"
+              // calendar only fires onChange when you tap a different day,
+              // and Android's dialog always returns a value on OK, but this
+              // guarantees a value is committed even if someone opens the
+              // picker and taps Done/dismiss without touching anything.
+              if (!dateValue) setDateValue(new Date());
+              setShowDatePicker(true);
+            }}
+          >
             <Text style={styles.rowLabel}>📅 Date</Text>
             <Text style={[styles.smallInput, !dateValue && { color: colors.dark.textMuted }]}>
               {dateValue ? formatDateDisplay(dateValue) : "Select date"}
             </Text>
           </Pressable>
           <View style={styles.divider} />
-          <Pressable style={styles.row} onPress={() => setShowTimePicker(true)}>
+          <Pressable
+            style={styles.row}
+            onPress={() => {
+              // Same reasoning as Date above — this is the more important
+              // case in practice: iOS's "spinner" time picker only fires
+              // onChange when the wheel is physically scrolled to a
+              // different value, so tapping Done on the default-displayed
+              // time (e.g. "now") without scrolling previously left
+              // timeValue stuck at null with no visible error as to why.
+              if (!timeValue) setTimeValue(new Date());
+              setShowTimePicker(true);
+            }}
+          >
             <Text style={styles.rowLabel}>🕘 Time</Text>
             <Text style={[styles.smallInput, !timeValue && { color: colors.dark.textMuted }]}>
               {timeValue ? formatTimeDisplay(timeValue) : "Select time"}
@@ -434,7 +469,9 @@ export default function ChauffeurScreen({ navigation }) {
           ) : null}
         </Card>
 
-        {!canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
+        {!canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
+          <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+        ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
           quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
         ) : !canConfirm ? (
           <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>

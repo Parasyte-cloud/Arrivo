@@ -374,5 +374,11 @@ function exportWaitlistCsv(token) {
     a.download = `arrivo-waitlist-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }).catch((e) => {
+    // Previously unhandled — a failed request (expired token, network
+    // error, 500) just left the button looking like it silently did
+    // nothing, with no error surfaced anywhere.
+    console.error("Failed to export waitlist CSV:", e.message);
+    window.alert("Couldn't export the waitlist CSV: " + (e.message || "please try again."));
   });
 }

@@ -52,35 +52,49 @@ export default function ProfileScreen() {
 
         {loading ? (
           <ActivityIndicator color={colors.amber} />
-        ) : loadError ? (
+        ) : loadError && !profile ? (
+          // Only replaces the whole card with an error when there's no
+          // profile data at all yet (first load failed). A refocus refetch
+          // that fails after a previous successful load falls through to
+          // the branch below instead — previously this was an else-if
+          // chain that blanked out an already-loaded Vehicle/Languages/
+          // Rating card on any transient refetch error, discarding good
+          // cached data over a one-off network blip.
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <Text style={styles.rowMuted}>{loadError}</Text>
             <View style={{ height: spacing.sm }} />
             <Button label="Retry" variant="ghost" tone="dark" onPress={loadProfile} />
           </Card>
         ) : profile ? (
-          <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.cardLabel}>Vehicle</Text>
-            {profile.make_model && profile.plate_number ? (
-              <>
-                <Text style={styles.row}>{profile.make_model} · {profile.plate_number}</Text>
-                <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
-              </>
-            ) : (
-              <Text style={styles.rowMuted}>No vehicle assigned yet — RideArrivo will assign you one before your first ride.</Text>
-            )}
-            <View style={{ height: spacing.sm }} />
-            <Text style={styles.cardLabel}>Languages</Text>
-            <Text style={styles.row}>
-              {(profile.spoken_languages || "en")
-                .split(",")
-                .map((c) => LANGUAGE_LABELS[c.trim()] || c)
-                .join(", ")}
-            </Text>
-            <View style={{ height: spacing.sm }} />
-            <Text style={styles.cardLabel}>Rating</Text>
-            <Text style={styles.row}>★ {profile.rating?.toFixed(1) ?? "5.0"}</Text>
-          </Card>
+          <>
+            {loadError ? (
+              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: colors.coral, borderWidth: 1 }}>
+                <Text style={styles.rowMuted}>Couldn't refresh your profile just now — showing your last-loaded info.</Text>
+              </Card>
+            ) : null}
+            <Card tone="dark" style={{ marginBottom: spacing.md }}>
+              <Text style={styles.cardLabel}>Vehicle</Text>
+              {profile.make_model && profile.plate_number ? (
+                <>
+                  <Text style={styles.row}>{profile.make_model} · {profile.plate_number}</Text>
+                  <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
+                </>
+              ) : (
+                <Text style={styles.rowMuted}>No vehicle assigned yet — RideArrivo will assign you one before your first ride.</Text>
+              )}
+              <View style={{ height: spacing.sm }} />
+              <Text style={styles.cardLabel}>Languages</Text>
+              <Text style={styles.row}>
+                {(profile.spoken_languages || "en")
+                  .split(",")
+                  .map((c) => LANGUAGE_LABELS[c.trim()] || c)
+                  .join(", ")}
+              </Text>
+              <View style={{ height: spacing.sm }} />
+              <Text style={styles.cardLabel}>Rating</Text>
+              <Text style={styles.row}>★ {profile.rating?.toFixed(1) ?? "5.0"}</Text>
+            </Card>
+          </>
         ) : null}
 
         <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl, Pressable, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
@@ -28,12 +28,32 @@ export default function DashboardScreen() {
   // report this phone's GPS position to the backend. This is what makes
   // the admin dashboard's driver list and the rider's tracking screen show
   // a real position instead of nothing.
-  useLocationReporting(token, isOnline);
+  useLocationReporting(token, isOnline, setError);
 
   const checkForActiveRide = useCallback(async () => {
     try {
       const { rides } = await getMyDriverRides(token);
-      const active = rides.find((r) => r.ride_status === "accepted" || r.ride_status === "in_progress");
+      // An "accepted" ride can be a preferred/regular-driver scheduled
+      // booking accepted days in advance (see backend's early-visibility
+      // window for preferred_driver_id rides in GET /available) — treating
+      // that identically to a trip starting right now locked the driver out
+      // of the online switch and the nearby-requests queue for the ENTIRE
+      // wait, sometimes days, with no way to go back online until they
+      // tapped Start/Cancel on a booking that might be a week out.
+      // in_progress is always the real current trip. accepted only counts
+      // as "active" (blocking) if there's no scheduled_pickup_at (an
+      // immediate ride) or that time is within the same 5-hour window the
+      // backend already uses to decide when a scheduled ride becomes
+      // current business (routes/rides.js GET /available, and the
+      // matching first reminder push in services/scheduler.js) — this
+      // keeps client and server agreeing on when "scheduled" becomes "now."
+      const active = rides.find((r) => {
+        if (r.ride_status === "in_progress") return true;
+        if (r.ride_status !== "accepted") return false;
+        if (!r.scheduled_pickup_at) return true;
+        const msUntilPickup = new Date(r.scheduled_pickup_at).getTime() - Date.now();
+        return msUntilPickup <= 5 * 60 * 60 * 1000;
+      });
       setActiveRide(active || null);
       return active;
     } catch (e) {
@@ -415,7 +435,19 @@ function ActiveTripCard({ ride, busy, onAdvance, token }) {
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
-        <Text style={styles.meta}>Rider: {ride.rider_name}{ride.rider_phone ? ` · ${ride.rider_phone}` : ""}</Text>
+        {ride.rider_phone ? (
+          <Pressable
+            onPress={() =>
+              Linking.openURL(`tel:${ride.rider_phone}`).catch(() =>
+                Alert.alert("Couldn't open dialer", "Please dial the number manually: " + ride.rider_phone)
+              )
+            }
+          >
+            <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ {ride.rider_phone}</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+        )}
       </Card>
 
       <View style={{ height: spacing.md }} />
