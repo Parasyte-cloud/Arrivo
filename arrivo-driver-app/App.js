@@ -10,6 +10,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { getDriverProfile } from "./services/api";
 import LaunchIntro from "./components/LaunchIntro";
+import { CallOverlayProvider } from "./components/CallOverlay";
+import { useNotificationPermission } from "./hooks/useNotificationPermission";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -72,6 +74,7 @@ function Loading() {
 
 function RootNavigator() {
   const { isAuthenticated, initializing, token } = useAuth();
+  useNotificationPermission(token);
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
   // Plays once per cold launch, independent of how long the auth check
@@ -110,10 +113,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style="light" />
-          <RootNavigator />
-        </NavigationContainer>
+        <CallOverlayProvider>
+          <NavigationContainer theme={navTheme}>
+            <StatusBar style="light" />
+            <RootNavigator />
+          </NavigationContainer>
+        </CallOverlayProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

@@ -117,6 +117,19 @@ export function deleteEmergencyContact(token, id) {
   });
 }
 
+// Mints a Stream Video user token for in-app calling (see
+// hooks/useStreamVideoClient.js) — returns { apiKey, userId, token }.
+// Called both from the normal in-app flow (with a token from useAuth())
+// and, separately, from utils/streamPushAuth.js's own self-contained copy
+// of this same request for the background/cold-start push path, which has
+// no React context to pull a token from.
+export function getCallToken(token) {
+  return request("/api/calls/token", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 // Live fare estimate before payment — same formula the backend
 // re-verifies against when the ride is actually created, so this number
 // is what the rider will actually be charged (barring live traffic

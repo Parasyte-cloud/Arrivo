@@ -14,6 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ridearrivo.driver",
       "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
@@ -27,6 +28,9 @@
           }
         ]
       },
+      "entitlements": {
+        "aps-environment": "production"
+      },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
       }
@@ -37,6 +41,7 @@
         "backgroundColor": "#F4A300"
       },
       "package": "com.arrivo.driver",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -98,7 +103,40 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#F4A300"
+        }
+      ],
+      [
+        "@stream-io/video-react-native-sdk",
+        {
+          "ringing": true,
+          "androidKeepCallAlive": true,
+          "iosKeepCallAlive": true
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "RideArrivo Driver's calling library requests camera access at the system level, but it only ever uses it for voice calls with your rider — video is never enabled.",
+          "microphonePermission": "RideArrivo Driver needs microphone access so you can talk with your rider during a call."
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "forceStaticLinking": ["RNFBApp", "RNFBMessaging", "stream-react-native-webrtc"]
+          }
+        }
+      ]
     ]
   }
 }

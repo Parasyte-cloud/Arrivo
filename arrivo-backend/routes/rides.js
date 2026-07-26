@@ -988,7 +988,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   const result = await pool.query(
     `SELECT rides.*,
             riders.name as rider_name, riders.phone as rider_phone,
-            driver_users.name as driver_name, driver_users.phone as driver_phone,
+            driver_users.id as driver_user_id, driver_users.name as driver_name, driver_users.phone as driver_phone,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
             drivers.rating as driver_rating, drivers.is_verified as driver_is_verified,
             vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type as assigned_vehicle_type

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput, AppState, KeyboardAvoidingView, Platform } from "react-native";
+import * as Crypto from "expo-crypto";
+import { useStreamVideoClient } from "@stream-io/video-react-native-sdk";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
@@ -40,6 +42,10 @@ export default function TrackingScreen({ route, navigation }) {
   const { rideId, offlinePending, offlineDriverInfo, offlineRideSummary } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare } = useCurrency(token);
+  // undefined until components/CallOverlay.js's <StreamVideo> provider (set
+  // up in App.js right after login) has a client ready — guarded against
+  // below rather than assumed always-present.
+  const streamVideoClient = useStreamVideoClient();
   // Offline scan fallback (see ScanScreen.js): when a scan couldn't reach
   // the server, we still know — from the QR code itself, plus whatever ride
   // was last cached while online — enough to show "this is your ride, this
@@ -275,7 +281,39 @@ export default function TrackingScreen({ route, navigation }) {
     }
   };
 
-  const callDriver = () => {
+  // In-app call (the primary "Call driver" action) — a real internet voice
+  // call routed through Stream, ringing on the driver's phone (even locked/
+  // backgrounded — see arrivo-driver-app's own CallKit/push setup) with no
+  // phone numbers exchanged. "Include caller in members" and "use a unique
+  // call id per call" are both Stream's own documented best practices here.
+  const callDriverInApp = async () => {
+    if (!ride?.driver_user_id) {
+      Alert.alert("Not available yet", "You'll be able to call your driver once they've accepted your ride.");
+      return;
+    }
+    if (!streamVideoClient) {
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      return;
+    }
+    try {
+      const call = streamVideoClient.call("default", Crypto.randomUUID());
+      await call.getOrCreate({
+        ring: true,
+        video: false,
+        data: {
+          members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.driver_user_id) }],
+        },
+      });
+    } catch (e) {
+      Alert.alert("Couldn't start the call", e.message || "Please try again, or dial their number below instead.");
+    }
+  };
+
+  // Fallback — a real cellular call to the driver's phone number, kept
+  // around for when in-app calling isn't set up yet or either side has no
+  // data connection. No longer the primary action (see callDriverInApp
+  // above and the "Call driver" button below).
+  const dialDriverPhone = () => {
     if (!ride?.driver_phone) {
       Alert.alert("Not available yet", "Your driver's number will appear here once they've accepted your ride.");
       return;
@@ -823,8 +861,15 @@ export default function TrackingScreen({ route, navigation }) {
 
         <View style={styles.grid2}>
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
-          <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriver} style={{ flex: 1 }} />
+          <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriverInApp} style={{ flex: 1 }} />
         </View>
+        {ride?.driver_phone ? (
+          <Pressable onPress={dialDriverPhone} style={{ alignSelf: "center", marginTop: 6, marginBottom: spacing.sm }}>
+            <Text style={{ color: colors.dark.textMuted, fontSize: 12, textDecorationLine: "underline" }}>
+              Or dial their number directly
+            </Text>
+          </Pressable>
+        ) : null}
 
         {ride?.ride_status === "accepted" ? (
           <Button

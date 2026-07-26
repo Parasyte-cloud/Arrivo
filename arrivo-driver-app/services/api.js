@@ -89,3 +89,13 @@ export function triggerPanic(token, rideId, note) {
 export function activateListeningDevice(token, rideId) {
   return request(`/api/rides/${rideId}/listening-device`, authed(token, { method: "POST" }));
 }
+
+// Mints a Stream Video user token for in-app calling (see
+// hooks/useCreateStreamVideoClient.js) — returns { apiKey, userId, token }.
+// Called both from the normal in-app flow (with a token from useAuth())
+// and, separately, from utils/streamPushAuth.js's own self-contained copy
+// of this same request for the background/cold-start push path, which has
+// no React context to pull a token from.
+export function getCallToken(token) {
+  return request("/api/calls/token", authed(token, { method: "POST" }));
+}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
+import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import { API_BASE_URL } from "../services/config";
 import { setAppLanguage } from "../i18n";
 
@@ -107,6 +108,12 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    // Stops this device from being registered for incoming-call push under
+    // the account that's signing out — without this, a signed-out phone
+    // could keep ringing for calls meant for whoever logs in on it next
+    // (or worse, still ring the person who just logged out, on a device
+    // they no longer consider "theirs" for that account).
+    await StreamVideoRN.onPushLogout().catch(() => {});
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);

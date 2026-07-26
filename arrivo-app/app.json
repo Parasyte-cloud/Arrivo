@@ -14,6 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ridearrivo.rider",
       "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -22,6 +23,9 @@
             "CFBundleURLSchemes": ["com.googleusercontent.apps.425853448895-o8burrutrcvobsra6k5mrc2iopqioome"]
           }
         ]
+      },
+      "entitlements": {
+        "aps-environment": "production"
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
@@ -33,6 +37,7 @@
         "backgroundColor": "#F4A300"
       },
       "package": "com.arrivo.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -100,7 +105,33 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@stream-io/video-react-native-sdk",
+        {
+          "ringing": true,
+          "androidKeepCallAlive": true,
+          "iosKeepCallAlive": true
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "RideArrivo's calling library requests camera access at the system level, but RideArrivo only ever uses it for voice calls with your driver — video is never enabled.",
+          "microphonePermission": "RideArrivo needs microphone access so you can talk with your driver during a call."
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "forceStaticLinking": ["RNFBApp", "RNFBMessaging", "stream-react-native-webrtc"]
+          }
+        }
+      ]
     ]
   }
 }

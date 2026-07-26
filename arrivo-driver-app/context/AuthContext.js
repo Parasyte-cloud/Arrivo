@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
+import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import * as api from "../services/api";
 import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
 
@@ -124,6 +125,10 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     await stopBackgroundLocation();
+    // Stops this device from being registered for incoming-call push under
+    // the account that's signing out — without this, a signed-out phone
+    // could keep ringing for calls meant for whoever logs in on it next.
+    await StreamVideoRN.onPushLogout().catch(() => {});
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(USER_CACHE_KEY);
     setToken(null);
