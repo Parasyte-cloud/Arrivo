@@ -496,3 +496,24 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_ride BOOLEAN NOT NULL DEFAULT f
 ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_preference TEXT; -- 'cool' | 'warm' | null (no preference)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS child_seat_required BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Support tickets ──
+-- Support used to be an email link and a list of FAQs, so a rider had no way
+-- to tell us what was actually wrong and we had nothing on file. This is what
+-- the form on the Support screen writes to.
+-- ride_id is the trip they're on if one is live, otherwise the last one they
+-- booked. We store the id at submit time so support isn't stuck asking
+-- "which trip?". Stays null for a rider who has never booked anything, which
+-- is a normal case, not an error.
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  ride_id INTEGER REFERENCES rides(id),
+  type TEXT NOT NULL, -- 'complaint' | 'question' | 'support'
+  subject TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open', -- 'open' | 'closed'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status, created_at);

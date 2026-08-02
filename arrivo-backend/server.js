@@ -25,6 +25,7 @@ const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const chatRouter = require("./routes/chat");
+const supportRouter = require("./routes/support");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -68,6 +69,7 @@ app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/chat", chatRouter);
+app.use("/api/support", supportRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.

@@ -342,3 +342,14 @@ export function linkCorporateDelegate(token, delegateEmail) {
     body: JSON.stringify({ delegateEmail }),
   });
 }
+
+// The Support screen's form. type is 'complaint' | 'question' | 'support'.
+// rideId is the rider's most recent booking, sent so support knows which trip
+// they mean without having to ask. Leave it out when they've never booked.
+export function createSupportTicket(token, { type, subject, description, rideId }) {
+  return request("/api/support/tickets", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ type, subject, description, rideId }),
+  });
+}
