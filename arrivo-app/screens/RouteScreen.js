@@ -481,15 +481,14 @@ export default function RouteScreen({ navigation, route }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.stopRow}>
+          <View style={styles.addressRow}>
             <View style={[styles.dot, { backgroundColor: colors.tealBright }]} />
             <AddressAutocomplete
               style={{ flex: 1 }}
-              inputStyle={styles.stopInput}
               value={pickup}
               onChangeText={setPickup}
               onSelect={(resolved) => setPickupCoords(resolved)}
-              placeholder="Pickup address"
+              placeholder="Enter pickup address"
             />
           </View>
           <Pressable onPress={useCurrentLocationForPickup} style={styles.addStop} disabled={locatingPickup}>
@@ -502,25 +501,27 @@ export default function RouteScreen({ navigation, route }) {
           </Pressable>
           {locationError ? <Text style={styles.hintText}>{locationError}</Text> : null}
           {stops.map((stop, i) => (
-            <View key={i} style={styles.stopRow}>
+            <View key={i} style={styles.addressRow}>
               <View style={styles.thread} />
               <View style={[styles.dot, { backgroundColor: i === stops.length - 1 ? colors.coral : colors.amber }]} />
               {i === stops.length - 1 ? (
                 <AddressAutocomplete
                   style={{ flex: 1 }}
-                  inputStyle={styles.stopInput}
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
                   onSelect={(resolved) => setDestinationCoords(resolved)}
-                  placeholder="Destination"
+                  placeholder="Enter destination"
                 />
               ) : (
-                <TextInput
-                  style={styles.stopInput}
+                // Same field, suggestions off. Middle stops never needed coords
+                // and this keeps every address row looking identical.
+                <AddressAutocomplete
+                  style={{ flex: 1 }}
+                  enableSuggestions={false}
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
-                  placeholder={`Stop ${i + 1}`}
-                  placeholderTextColor={colors.dark.textMuted}
+                  onSelect={() => {}}
+                  placeholder={`Enter stop ${i + 1}`}
                 />
               )}
             </View>
@@ -854,9 +855,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   stopRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  // Same row, just more room under it now the address fields are proper boxes
+  // instead of a line of text. Kept separate because stopRow is shared with the
+  // passenger and luggage rows further down.
+  addressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.sm },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
   thread: { width: 2, height: 16, backgroundColor: "rgba(255,255,255,0.25)", marginLeft: 3.5 },
-  stopInput: { color: colors.dark.text, fontSize: 13, paddingVertical: 6 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   hintText: { color: colors.amber, fontSize: 11, marginTop: 8, marginLeft: 18, lineHeight: 15 },

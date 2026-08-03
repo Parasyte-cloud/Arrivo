@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, TextInput, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getPlacesAutocomplete, getPlaceDetails } from "../services/api";
@@ -19,7 +20,10 @@ function newSessionToken() {
 // plain free-text field with no suggestions if the rider keeps typing
 // without picking a suggestion, so this never actually blocks booking —
 // worst case it behaves like the old plain TextInput did.
-export default function AddressAutocomplete({ value, onChangeText, onSelect, placeholder, style, inputStyle }) {
+// enableSuggestions=false gives the same looking field with no Places calls
+// behind it. Middle stops use that: they don't need coordinates (only pickup
+// and the final destination price the trip) and every lookup is billed.
+export default function AddressAutocomplete({ value, onChangeText, onSelect, placeholder, style, inputStyle, enableSuggestions = true }) {
   const { token } = useAuth();
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,7 +34,7 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
-    if (!focused || value.trim().length < MIN_CHARS) {
+    if (!enableSuggestions || !focused || value.trim().length < MIN_CHARS) {
       setSuggestions([]);
       setLoading(false);
       return;
@@ -71,18 +75,24 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
 
   return (
     <View style={style}>
-      <TextInput
-        style={inputStyle}
-        value={value}
-        onChangeText={(v) => {
-          onChangeText(v);
-          onSelect(null); // typing after a selection invalidates the resolved coordinates
-        }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => setFocused(false), 150)} // delay so a suggestion tap registers first
-        placeholder={placeholder}
-        placeholderTextColor={colors.dark.textMuted}
-      />
+      {/* The box and the pencil are the whole point of this wrapper. These
+          rows used to be bare text next to a coloured dot, so riders couldn't
+          tell they were tappable at all. */}
+      <View style={[styles.field, focused && styles.fieldFocused]}>
+        <TextInput
+          style={[styles.input, inputStyle]}
+          value={value}
+          onChangeText={(v) => {
+            onChangeText(v);
+            onSelect(null); // typing after a selection invalidates the resolved coordinates
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)} // delay so a suggestion tap registers first
+          placeholder={placeholder}
+          placeholderTextColor={colors.dark.textMuted}
+        />
+        <Ionicons name="pencil" size={13} color={colors.dark.textMuted} style={styles.pencil} />
+      </View>
       {focused && loading ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" color={colors.amber} />
@@ -103,6 +113,18 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
 }
 
 const styles = StyleSheet.create({
+  field: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.dark.fieldBg,
+    borderWidth: 1,
+    borderColor: colors.dark.surfaceBorder,
+    borderRadius: radius.sm + 2,
+    paddingHorizontal: spacing.sm,
+  },
+  fieldFocused: { borderColor: colors.amber },
+  input: { flex: 1, color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
+  pencil: { marginLeft: 6 },
   loadingRow: { paddingVertical: 4, paddingLeft: 4 },
   dropdown: {
     backgroundColor: colors.dark.bg1,
