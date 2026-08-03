@@ -10,12 +10,15 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import {
+  PREMIUM_UPGRADE_LABEL,
+  premiumUpgradeDescription,
+  premiumUpgradePrice,
+} from "../utils/premiumUpgrade";
 
-// Luxury toggle only makes sense on Sedan/SUV — Executive is already the
-// premium tier, and this mirrors LUXURY_SURCHARGE_USD in
-// arrivo-backend/services/fare.js (the actual source of truth for the
-// surcharge amount; these labels are just for display before a quote loads).
-const LUXURY_LABEL_USD = { sedan: 60, suv: 100 };
+// The upgrade only makes sense on Sedan/SUV. Executive is already the premium
+// tier and Pickup is a cargo vehicle. Wording and price live in
+// utils/premiumUpgrade.js so this screen and Chauffeur Booking stay in step.
 
 // Areas RideArrivo doesn't currently serve — kept as an instant, purely
 // client-side UX check against whatever text is typed (no need to wait on
@@ -753,9 +756,12 @@ export default function RouteScreen({ navigation, route }) {
           {vehicle === "sedan" || vehicle === "suv" ? (
             <View style={[styles.toggleRow, { marginTop: 6 }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardLabel}>Luxury</Text>
+                <Text style={styles.cardLabel}>{PREMIUM_UPGRADE_LABEL}</Text>
                 <Text style={styles.addonNote}>
-                  Nicer {vehicle === "sedan" ? "Sedan" : "SUV"} for this trip — adds ${LUXURY_LABEL_USD[vehicle]} equivalent
+                  {premiumUpgradeDescription(
+                    vehicle,
+                    premiumUpgradePrice(vehicle, quote?.ngnPerUsd, formatFare)
+                  )}
                 </Text>
               </View>
               <Switch

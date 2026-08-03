@@ -10,6 +10,11 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import {
+  PREMIUM_UPGRADE_LABEL,
+  premiumUpgradeDescription,
+  premiumUpgradePrice,
+} from "../utils/premiumUpgrade";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1); // 1..24
 // Mirrors MAX_FULL_DAY_COUNT in arrivo-backend/services/fare.js — that's a
@@ -36,9 +41,9 @@ function combineDateAndTime(datePart, timePart) {
   return combined;
 }
 
-// Mirrors LUXURY_SURCHARGE_USD in arrivo-backend/services/fare.js — only
-// Sedan/SUV get the toggle, Executive is already the premium tier.
-const LUXURY_LABEL_USD = { sedan: 60, suv: 100 };
+// Only Sedan/SUV get the upgrade toggle, Executive is already the premium
+// tier. Wording and price live in utils/premiumUpgrade.js so this screen and
+// Plan Route stay in step.
 
 // Same vehicle set as RouteScreen (sedan/suv/truck, "truck" labeled
 // "Executive Vehicle") rather than this screen's own previous set
@@ -455,9 +460,12 @@ export default function ChauffeurScreen({ navigation }) {
           {choice === "sedan" || choice === "suv" ? (
             <View style={[styles.row, { marginTop: 4 }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.rowLabel}>Luxury</Text>
+                <Text style={styles.rowLabel}>{PREMIUM_UPGRADE_LABEL}</Text>
                 <Text style={styles.addonNote}>
-                  Nicer {choice === "sedan" ? "Sedan" : "SUV"} — adds ${LUXURY_LABEL_USD[choice]} equivalent
+                  {premiumUpgradeDescription(
+                    choice,
+                    premiumUpgradePrice(choice, quote?.ngnPerUsd, formatFare)
+                  )}
                 </Text>
               </View>
               <Switch
