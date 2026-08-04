@@ -261,7 +261,14 @@ export default function RouteScreen({ navigation, route }) {
     }
   };
 
-  const addStop = () => setStops((s) => [...s, ""]);
+  // The new empty row is the destination now, so the coords we already had
+  // belong to what just became a middle stop. Leaving them set made the screen
+  // think the destination was resolved, so it quoted with a blank address, got
+  // a 400 back and left the ETA showing a dash.
+  const addStop = () => {
+    setStops((s) => [...s, ""]);
+    setDestinationCoords(null);
+  };
   const updateStop = (i, val) => {
     setStops((s) => s.map((v, idx) => (idx === i ? val : v)));
     if (i === stops.length - 1) setDestinationCoords(null); // typing invalidates the resolved destination
@@ -351,6 +358,10 @@ export default function RouteScreen({ navigation, route }) {
     setQuoteError(null);
 
     if (needsCoords && !coordsResolved) return; // nothing to quote yet
+    // The address text and its coords can still drift apart (preset params from
+    // a return booking, for one). A blank destination is a 400 from the backend,
+    // which the rider only ever sees as a dash, so don't bother asking.
+    if (needsCoords && !destination.trim()) return;
     // overCapacity no longer blocks the quote — a bigger group just prices
     // as multiple vehicles (see vehicleCount/adults/children in payload
     // below). groupTooLarge is the one passenger-related case that still
