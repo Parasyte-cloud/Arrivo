@@ -6,10 +6,12 @@ import { COUNTRY_CODES } from "../utils/phoneValidation";
 // The single phone-entry control for the whole app. Every field that takes
 // a phone number uses this so a country code is never optional and never
 // silently missing — see utils/phoneValidation.js for the storage format.
+// Kept identical to arrivo-app/components/PhoneInput.js (same tokens, same
+// behaviour) so a driver and a rider enter a number the same way.
 //
-// tone="dark" is for the post-login glass screens (Profile, Emergency
-// contacts, Route); the default light tone is for Login/Signup, which stay
-// on the cream background.
+// tone="dark" is for the post-login glass screens; the default light tone
+// is for Login/Signup and the driver-profile setup, which stay on the
+// cream background.
 export default function PhoneInput({ dial, national, onChangeDial, onChangeNational, placeholder, tone = "light" }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const selected = COUNTRY_CODES.find((c) => c.dial === dial) || COUNTRY_CODES[0];
