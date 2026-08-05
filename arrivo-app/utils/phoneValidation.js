@@ -1,7 +1,18 @@
 // Shared country calling-code data and phone validation, used anywhere a
-// phone/WhatsApp number is collected (signup, profile). Ported directly
-// from the website's phone-input.js so both platforms validate numbers
-// the same way and never disagree about what's a valid entry.
+// phone/WhatsApp number is collected (signup, profile, emergency contacts,
+// the per-ride emergency contact on RouteScreen). Ported directly from the
+// website's phone-input.js so both platforms validate numbers the same way
+// and never disagree about what's a valid entry.
+//
+// ONE canonical storage format everywhere: E.164 — a leading "+", the
+// country calling code, then the national number, no spaces or
+// punctuation (e.g. "+2348012345678"). Emergency contacts used to be
+// free-text and got saved bare ("08012345678") while the rider's own
+// WhatsApp number went through validatePhone() and got the code, so the
+// two never matched and a bare contact number couldn't be reliably dialled
+// from a different country. Every field now goes through PhoneInput +
+// validatePhone/validateOptionalPhone, and validatePhone().full is the
+// only value that should ever be sent to the backend.
 //
 // Deliberately a plain array, not a phone-number npm library — covers the
 // countries actually relevant to RideArrivo's user mix (Nigeria + its
@@ -32,6 +43,10 @@ export const COUNTRY_CODES = [
   { code: "AE", dial: "+971", name: "United Arab Emirates", minLen: 9, maxLen: 9 },
 ];
 
+// Nigeria is the home market, so it's the sensible starting selection for
+// a picker the rider hasn't touched yet.
+export const DEFAULT_DIAL = "+234";
+
 export function validatePhone(dialCode, nationalNumber) {
   const digitsOnly = (nationalNumber || "").replace(/\D/g, "");
   const country = COUNTRY_CODES.find((c) => c.dial === dialCode);
@@ -48,4 +63,40 @@ export function validatePhone(dialCode, nationalNumber) {
     };
   }
   return { valid: true, full: dialCode + digitsOnly };
+}
+
+// For genuinely optional fields (the extra phone on signup, the per-ride
+// emergency contact) — blank is fine and yields `full: null`, but the
+// moment anything is typed it has to be a real number with a country code
+// like every other field. "Optional" was never meant to mean "unchecked".
+export function validateOptionalPhone(dialCode, nationalNumber) {
+  if (!(nationalNumber || "").replace(/\D/g, "")) return { valid: true, full: null };
+  return validatePhone(dialCode, nationalNumber);
+}
+
+// Inverse of validatePhone().full: takes a stored number and works out
+// which country code to preselect in the picker and what to leave in the
+// national-number box. Needed anywhere an already-saved number is loaded
+// back into a PhoneInput for editing (Profile's WhatsApp number,
+// RouteScreen pre-filling from a saved emergency contact).
+//
+// Longest dial prefix wins, so "+2348012345678" is read as Nigeria and not
+// as some shorter code that happens to be a prefix of +234. Numbers saved
+// before this screen used a country code at all arrive here bare — those
+// fall back to `fallbackDial` with the national trunk "0" stripped
+// ("08012345678" -> +234 / 8012345678), which is what the rider meant and
+// what they'd otherwise have to retype by hand.
+const BY_DIAL_LENGTH_DESC = [...COUNTRY_CODES].sort((a, b) => b.dial.length - a.dial.length);
+
+export function splitPhone(full, fallbackDial = DEFAULT_DIAL) {
+  const raw = (full || "").trim();
+  if (!raw) return { dial: fallbackDial, national: "" };
+
+  if (raw.startsWith("+")) {
+    const compact = "+" + raw.slice(1).replace(/\D/g, "");
+    const match = BY_DIAL_LENGTH_DESC.find((c) => compact.startsWith(c.dial));
+    if (match) return { dial: match.dial, national: compact.slice(match.dial.length) };
+  }
+
+  return { dial: fallbackDial, national: raw.replace(/\D/g, "").replace(/^0/, "") };
 }

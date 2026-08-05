@@ -5,6 +5,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import PhoneInput from "../components/PhoneInput";
+import { validatePhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } from "../services/api";
 
 // Real "Emergency contacts" — this used to be a label on Profile with
@@ -14,11 +16,18 @@ import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } fro
 // here, while staying editable per trip.
 export default function EmergencyContactsScreen() {
   const insets = useSafeAreaInsets();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [contacts, setContacts] = useState(null); // null = loading
   const [loadError, setLoadError] = useState(null);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  // Contact numbers used to be a single free-text field, so they got saved
+  // bare while the rider's own number (signup/profile) went through
+  // validatePhone and kept its country code. Same PhoneInput and same
+  // validation as everywhere else now, so both are stored in one format.
+  // The picker starts on the rider's own country rather than a blanket
+  // default — an emergency contact is usually local to them.
+  const [phoneDial, setPhoneDial] = useState(() => splitPhone(user?.whatsapp_number || user?.phone).dial || DEFAULT_DIAL);
+  const [phoneNational, setPhoneNational] = useState("");
   const [relationship, setRelationship] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -35,20 +44,28 @@ export default function EmergencyContactsScreen() {
 
   const submit = async () => {
     setSaveError(null);
-    if (!name.trim() || !phone.trim()) {
-      setSaveError("Name and phone number are required.");
+    if (!name.trim()) {
+      setSaveError("Please enter a name for this contact.");
+      return;
+    }
+    // Phone errors come from validatePhone itself so they say what's
+    // actually wrong ("A Nigeria number should have 10 digits after the
+    // country code") instead of a generic "required".
+    const phoneResult = validatePhone(phoneDial, phoneNational);
+    if (!phoneResult.valid) {
+      setSaveError(phoneResult.message);
       return;
     }
     setSaving(true);
     try {
       const data = await addEmergencyContact(token, {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: phoneResult.full,
         relationship: relationship.trim() || undefined,
       });
       setContacts((prev) => [...(prev || []), data.contact]);
       setName("");
-      setPhone("");
+      setPhoneNational("");
       setRelationship("");
     } catch (e) {
       setSaveError(e.message || "Couldn't save this contact. Please try again.");
@@ -93,6 +110,13 @@ export default function EmergencyContactsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.contactName}>{c.name}</Text>
                   <Text style={styles.meta}>{c.phone}{c.relationship ? ` · ${c.relationship}` : ""}</Text>
+                  {/* Contacts saved before this screen required a country
+                      code are still stored bare. Nothing here can safely
+                      guess one for them, so say so plainly rather than
+                      showing a number that may not dial from abroad. */}
+                  {c.phone && !c.phone.trim().startsWith("+") ? (
+                    <Text style={styles.legacyHint}>Missing a country code — remove and re-add this contact.</Text>
+                  ) : null}
                 </View>
                 <Pressable onPress={() => remove(c.id)} disabled={deletingId === c.id} hitSlop={8}>
                   {deletingId === c.id ? (
@@ -115,13 +139,13 @@ export default function EmergencyContactsScreen() {
             value={name}
             onChangeText={setName}
           />
-          <TextInput
-            style={styles.input}
+          <PhoneInput
+            tone="dark"
+            dial={phoneDial}
+            national={phoneNational}
+            onChangeDial={setPhoneDial}
+            onChangeNational={setPhoneNational}
             placeholder="Phone number"
-            placeholderTextColor={colors.dark.textMuted}
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
           />
           <TextInput
             style={styles.input}
@@ -150,6 +174,7 @@ const styles = StyleSheet.create({
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   contactName: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
   removeLink: { color: colors.coral, fontSize: 12.5, fontWeight: "600" },
+  legacyHint: { color: colors.amber, fontSize: 11, marginTop: 3 },
   errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   input: {
     backgroundColor: colors.dark.fieldBg,

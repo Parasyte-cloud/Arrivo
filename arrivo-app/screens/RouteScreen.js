@@ -8,6 +8,8 @@ import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import PhoneInput from "../components/PhoneInput";
+import { validateOptionalPhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 import {
@@ -103,7 +105,7 @@ function scheduleDayLabel(offset) {
 const QUOTE_DEBOUNCE_MS = 400;
 
 export default function RouteScreen({ navigation, route }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
 
   // Empty by default — the rider types their own pickup and destination,
@@ -146,21 +148,37 @@ export default function RouteScreen({ navigation, route }) {
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
   const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
   const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  // Country code is picked, never typed — same PhoneInput and same
+  // validation as the saved contacts on Profile -> Emergency contacts and
+  // as the rider's own number, so this field can't be the one that sends a
+  // bare number to dispatch.
+  const riderDial = splitPhone(user?.whatsapp_number || user?.phone).dial || DEFAULT_DIAL;
+  const [emergencyDial, setEmergencyDial] = useState(riderDial);
+  const [emergencyNational, setEmergencyNational] = useState("");
+  // Whether the rider has typed in the number field themselves — the
+  // pre-fill below must not clobber that if the contacts fetch lands late.
+  const emergencyPhoneTouchedRef = useRef(false);
   const linkedRideId = route?.params?.linkedRideId || null;
 
   // Pre-fills this per-ride field from the first contact saved on Profile
   // -> Emergency contacts, instead of the rider retyping the same name and
   // number on every single booking. Still fully editable/clearable per
   // trip — this only sets an initial value, never overwrites anything the
-  // rider's already typed here.
+  // rider's already typed here. splitPhone puts the saved number back into
+  // picker + national parts (and rescues an older bare one by assuming the
+  // rider's own country code), so a pre-filled contact lands in exactly the
+  // state it would be in had it been typed here.
   useEffect(() => {
     getEmergencyContacts(token)
       .then((data) => {
         const first = (data.contacts || [])[0];
         if (first) {
           setEmergencyContactName((prev) => prev || first.name);
-          setEmergencyContactPhone((prev) => prev || first.phone);
+          if (!emergencyPhoneTouchedRef.current) {
+            const { dial, national } = splitPhone(first.phone, riderDial);
+            setEmergencyDial(dial);
+            setEmergencyNational(national);
+          }
         }
       })
       .catch(() => {}); // non-critical — the field just stays blank, same as before this existed
@@ -417,10 +435,14 @@ export default function RouteScreen({ navigation, route }) {
   // required for charter/Chauffeur bookings, which aren't tied to a flight.
   const needsFlightNumber = bookingType === "one_way";
 
+  // Optional field, but a half-typed number is worse than none at all —
+  // it looks like someone can be reached and nobody can. Blank stays fine.
+  const emergencyPhoneResult = validateOptionalPhone(emergencyDial, emergencyNational);
+
   const canConfirm =
     !excludedArea && !groupTooLarge && pickup.trim().length > 0 && destination.trim().length > 0 &&
     (!needsFlightNumber || flightNumber.trim().length > 0) &&
-    scheduledTimeValid &&
+    scheduledTimeValid && emergencyPhoneResult.valid &&
     coordsResolved && !!quote && !quoteLoading;
 
   const confirm = () => {
@@ -442,7 +464,7 @@ export default function RouteScreen({ navigation, route }) {
       fleetSize,
       luxury: luxury && (vehicle === "sedan" || vehicle === "suv"),
       emergencyContactName: emergencyContactName.trim() || undefined,
-      emergencyContactPhone: emergencyContactPhone.trim() || undefined,
+      emergencyContactPhone: emergencyPhoneResult.full || undefined,
       pickupLat: pickupCoords?.lat,
       pickupLng: pickupCoords?.lng,
       destinationLat: destinationCoords?.lat,
@@ -828,13 +850,16 @@ export default function RouteScreen({ navigation, route }) {
             placeholderTextColor={colors.dark.textMuted}
           />
           <View style={{ height: 8 }} />
-          <TextInput
-            style={styles.flightInput}
-            value={emergencyContactPhone}
-            onChangeText={setEmergencyContactPhone}
+          <PhoneInput
+            tone="dark"
+            dial={emergencyDial}
+            national={emergencyNational}
+            onChangeDial={setEmergencyDial}
+            onChangeNational={(value) => {
+              emergencyPhoneTouchedRef.current = true;
+              setEmergencyNational(value);
+            }}
             placeholder="Contact phone number"
-            placeholderTextColor={colors.dark.textMuted}
-            keyboardType="phone-pad"
           />
         </Card>
 
@@ -844,6 +869,8 @@ export default function RouteScreen({ navigation, route }) {
           <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
         ) : !scheduledTimeValid ? (
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+        ) : !emergencyPhoneResult.valid ? (
+          <Text style={styles.warningText}>{emergencyPhoneResult.message}</Text>
         ) : quoteError ? (
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}
