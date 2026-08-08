@@ -464,7 +464,13 @@ textarea.notes::placeholder { color: var(--text-dim); }
     -webkit-backdrop-filter: blur(22px);
     border-bottom: 1px solid var(--glass-border);
     color: var(--text);
-    padding: 14px 18px;
+    /* index.html's viewport-fit=cover (added for PWA/Add-to-Home-Screen
+       support) lets page content extend under the status bar/notch —
+       without this the bar sits right under it and the wordmark/hamburger
+       get visually crushed into the clock/signal icons, like the report
+       screenshot showed. env(...) falls back to 0 on browsers that don't
+       support safe-area insets, so this is a no-op there. */
+    padding: calc(14px + env(safe-area-inset-top)) 18px 14px;
     position: sticky;
     top: 0;
     z-index: 20;
