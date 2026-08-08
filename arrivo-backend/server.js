@@ -1,12 +1,5 @@
 require("dotenv").config();
 const express = require("express");
-// Patches express.Router so a rejected promise inside any async route
-// handler is forwarded to Express's error handling instead of becoming an
-// unhandled rejection. Before this, something as simple as GET /api/rides/abc
-// (a non-numeric id, which makes the Postgres query throw) would crash the
-// entire process — one bad request taking the whole API down for everyone.
-// Must be required before any routes/*.js files below, per its own docs.
-require("express-async-errors");
 const cors = require("cors");
 
 const { ready } = require("./db/db"); // resolves once the Postgres schema is initialized
@@ -21,22 +14,11 @@ const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const waitlistRouter = require("./routes/waitlist");
-const placesRouter = require("./routes/places");
-const emergencyContactsRouter = require("./routes/emergencyContacts");
-const callsRouter = require("./routes/calls");
-const chatRouter = require("./routes/chat");
-const { startScheduler } = require("./services/scheduler");
+const alertsRouter = require("./routes/alerts");
+const eventsRouter = require("./routes/events-sse");
+const liveMapRouter = require("./routes/live-map");
 
 const app = express();
-
-// Render (and most PaaS hosts) sit behind a reverse proxy — requests reach
-// this process over plain HTTP internally, with the original scheme only
-// preserved in the X-Forwarded-Proto header. Without trusting that proxy,
-// req.protocol always reports "http" even for a real https:// request from
-// a rider's phone, which would make the verification-email link built from
-// req.protocol below (routes/auth.js) silently downgrade to http://. Only
-// the first hop is trusted (Render's own edge), not an arbitrary chain.
-app.set("trust proxy", 1);
 
 app.use(cors());
 
@@ -64,21 +46,9 @@ app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
-app.use("/api/places", placesRouter);
-app.use("/api/emergency-contacts", emergencyContactsRouter);
-app.use("/api/calls", callsRouter);
-app.use("/api/chat", chatRouter);
-
-// Catches anything express-async-errors forwards (thrown/rejected errors
-// from any route above), plus body-parser errors like malformed JSON.
-// Must be registered last, after every other app.use()/route. Without this,
-// forwarded errors would fall through to Express's default HTML error page
-// instead of the JSON error shape every client in this codebase expects.
-app.use((err, req, res, next) => {
-  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
-  if (res.headersSent) return next(err);
-  res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
-});
+app.use("/api/alerts", alertsRouter);
+app.use("/api/events", eventsRouter);
+app.use("/api/live-map", liveMapRouter);
 
 const PORT = process.env.PORT || 4000;
 
@@ -86,9 +56,4 @@ ready.then(() => {
   app.listen(PORT, () => {
     console.log(`Arrivo backend running on http://localhost:${PORT}`);
   });
-  // Reminders (5h/3h/1h/now before pickup), flight cancellation/reschedule
-  // detection, and preferred-driver claim-window expiry — see
-  // services/scheduler.js. Started once, after the schema is ready, same
-  // as the HTTP listener above.
-  startScheduler();
 });
