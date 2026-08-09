@@ -26,10 +26,22 @@ class MapboxRoutingProvider extends RoutingProvider {
 
     let res;
     try {
-      res = await this.fetch(url);
+      // This call sits directly in the PATCH /api/drivers/location hot
+      // path (via processTelemetry -> evaluateAndPossiblyReroute) — every
+      // driver's location update would hang waiting on Mapbox without a
+      // hard cap. 8s is generous for a directions lookup but still bounds
+      // the worst case instead of leaving it fully open-ended.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        res = await this.fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
     } catch (e) {
-      // Network failure — explicitly retryable, per the review's
-      // requirement that a provider outage never silently breaks a ride.
+      // Network failure OR timeout — both explicitly retryable, per the
+      // review's requirement that a provider outage never silently break
+      // a ride.
       throw new RoutingProviderError(`Mapbox request failed: ${e.message}`, { retryable: true });
     }
 

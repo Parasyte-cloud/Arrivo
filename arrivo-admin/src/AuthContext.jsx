@@ -65,6 +65,33 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("auth:expired", handleExpired);
   }, []);
 
+  // The `storage` event only fires in OTHER tabs/windows, never the one
+  // that made the change — exactly what's needed to keep multiple open
+  // admin panel tabs in sync. Without this, logging out in one tab still
+  // leaves every other tab fully "logged in" (still polling, still able
+  // to submit mutating actions) until each one independently hits a 401.
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key !== TOKEN_KEY) return;
+      if (!event.newValue) {
+        // Cleared in another tab — a real logout there, or that tab's
+        // session expired. Either way this tab shouldn't stay "logged in".
+        setToken(null);
+        setUser(null);
+        return;
+      }
+      if (event.newValue !== token) {
+        // A login happened in another tab (possibly a different account
+        // entirely) — reload rather than trying to patch this tab's state
+        // in place, since every page here holds its own fetched data that
+        // could otherwise end up mixing two different sessions' results.
+        window.location.reload();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [token]);
+
   const isReadOnly = user?.role === "support";
 
   return (

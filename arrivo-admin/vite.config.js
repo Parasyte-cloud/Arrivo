@@ -14,7 +14,7 @@ export default defineConfig({
       injectRegister: "auto",
       manifest: {
         name: "RideArrivo Ops",
-        short_name: "Arrivo Ops",
+        short_name: "RideArrivo Ops",
         description:
           "Operations dashboard for RideArrivo — riders, drivers, rides, safety alerts, and live calling.",
         start_url: "/",
