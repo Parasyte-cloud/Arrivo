@@ -9,6 +9,8 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { supportedLanguages } from "../i18n";
+import PhoneInput from "../components/PhoneInput";
+import { splitPhone, validatePhone } from "../utils/phoneValidation";
 import { getRideHistory } from "../services/api";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français", zh: "中文", de: "Deutsch", hi: "हिन्दी", es: "Español", pt: "Português" };
@@ -54,7 +56,11 @@ export default function ProfileScreen({ navigation }) {
   const { user, token, logout, updateProfile, resendVerificationEmail } = useAuth();
   const [resendingEmail, setResendingEmail] = useState(false);
   const [resendMessage, setResendMessage] = useState(null);
-  const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
+  // Split on the way in so an already-saved number lands in the picker
+  // properly, including the older ones that have no country code at all.
+  const [whatsappDial, setWhatsappDial] = useState(() => splitPhone(user?.whatsapp_number).dial);
+  const [whatsappNational, setWhatsappNational] = useState(() => splitPhone(user?.whatsapp_number).national);
+  const whatsapp = whatsappNational.trim() ? whatsappDial + whatsappNational.replace(/\D/g, "") : "";
   const [country, setCountry] = useState(user?.country_of_residence || "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -97,8 +103,17 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const saveContactDetails = async () => {
-    setSaving(true);
     setSaveError(null);
+    // Only validate if they've actually put a number in. Clearing the field is
+    // still allowed, same as before.
+    if (whatsappNational.trim()) {
+      const phoneResult = validatePhone(whatsappDial, whatsappNational);
+      if (!phoneResult.valid) {
+        setSaveError(phoneResult.message);
+        return;
+      }
+    }
+    setSaving(true);
     try {
       await updateProfile({ whatsappNumber: whatsapp, countryOfResidence: country });
       // No setSaved(true) needed — isSaved above recomputes automatically
@@ -200,13 +215,13 @@ export default function ProfileScreen({ navigation }) {
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Contact details</Text>
-          <TextInput
-            style={styles.input}
+          <PhoneInput
+            tone="dark"
+            dial={whatsappDial}
+            national={whatsappNational}
+            onChangeDial={setWhatsappDial}
+            onChangeNational={setWhatsappNational}
             placeholder="WhatsApp number"
-            placeholderTextColor={colors.dark.textMuted}
-            value={whatsapp}
-            onChangeText={setWhatsapp}
-            keyboardType="phone-pad"
           />
           <TextInput
             style={styles.input}

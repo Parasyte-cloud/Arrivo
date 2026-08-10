@@ -6,6 +6,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
+import PhoneInput from "../components/PhoneInput";
+import { splitPhone } from "../utils/phoneValidation";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
@@ -143,7 +145,12 @@ export default function RouteScreen({ navigation, route }) {
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
   const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
   const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  // Kept as one object so the prefill below can fill both halves in a single
+  // update and still back off if the rider already typed something.
+  const [emergencyPhone, setEmergencyPhone] = useState({ dial: "+234", national: "" });
+  const emergencyContactPhone = emergencyPhone.national.trim()
+    ? emergencyPhone.dial + emergencyPhone.national.replace(/\D/g, "")
+    : "";
   const linkedRideId = route?.params?.linkedRideId || null;
 
   // Pre-fills this per-ride field from the first contact saved on Profile
@@ -157,7 +164,7 @@ export default function RouteScreen({ navigation, route }) {
         const first = (data.contacts || [])[0];
         if (first) {
           setEmergencyContactName((prev) => prev || first.name);
-          setEmergencyContactPhone((prev) => prev || first.phone);
+          setEmergencyPhone((prev) => (prev.national ? prev : splitPhone(first.phone)));
         }
       })
       .catch(() => {}); // non-critical — the field just stays blank, same as before this existed
@@ -810,13 +817,13 @@ export default function RouteScreen({ navigation, route }) {
             placeholderTextColor={colors.dark.textMuted}
           />
           <View style={{ height: 8 }} />
-          <TextInput
-            style={styles.flightInput}
-            value={emergencyContactPhone}
-            onChangeText={setEmergencyContactPhone}
+          <PhoneInput
+            tone="dark"
+            dial={emergencyPhone.dial}
+            national={emergencyPhone.national}
+            onChangeDial={(dial) => setEmergencyPhone((p) => ({ ...p, dial }))}
+            onChangeNational={(national) => setEmergencyPhone((p) => ({ ...p, national }))}
             placeholder="Contact phone number"
-            placeholderTextColor={colors.dark.textMuted}
-            keyboardType="phone-pad"
           />
         </Card>
 

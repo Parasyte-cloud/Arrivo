@@ -32,6 +32,26 @@ export const COUNTRY_CODES = [
   { code: "AE", dial: "+971", name: "United Arab Emirates", minLen: 9, maxLen: 9 },
 ];
 
+// Turns a stored number back into the two halves the picker needs.
+// Anything without a leading + predates this being enforced. Those are almost
+// all Nigerian local format (08037406085), so treat them as NG and drop the
+// trunk 0, which means the number gets tidied up the next time it's saved.
+export function splitPhone(full) {
+  const value = String(full || "").trim();
+  if (!value) return { dial: "+234", national: "" };
+
+  if (!value.startsWith("+")) {
+    return { dial: "+234", national: value.replace(/\D/g, "").replace(/^0/, "") };
+  }
+  // Longest dial code first, otherwise +1 would swallow numbers that should
+  // have matched a longer code starting with the same digit.
+  const match = COUNTRY_CODES.slice()
+    .sort((a, b) => b.dial.length - a.dial.length)
+    .find((c) => value.startsWith(c.dial));
+  if (!match) return { dial: "+234", national: value.replace(/\D/g, "") };
+  return { dial: match.dial, national: value.slice(match.dial.length).replace(/\D/g, "") };
+}
+
 export function validatePhone(dialCode, nationalNumber) {
   const digitsOnly = (nationalNumber || "").replace(/\D/g, "");
   const country = COUNTRY_CODES.find((c) => c.dial === dialCode);

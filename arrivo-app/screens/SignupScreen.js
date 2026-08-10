@@ -32,7 +32,8 @@ export default function SignupScreen({ navigation }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [passportNumber, setPassportNumber] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phoneDial, setPhoneDial] = useState("+234");
+  const [phoneNational, setPhoneNational] = useState("");
   const [whatsappDial, setWhatsappDial] = useState("+234");
   const [whatsappNational, setWhatsappNational] = useState("");
   const [country, setCountry] = useState("");
@@ -91,6 +92,14 @@ export default function SignupScreen({ navigation }) {
       setError("Passwords do not match.");
       return;
     }
+    // The contact number was a bare text field before, so a rider could sign
+    // up with "08037406085" while their WhatsApp number right below it got
+    // properly validated into +234 form.
+    const contactResult = validatePhone(phoneDial, phoneNational);
+    if (!contactResult.valid) {
+      setError(contactResult.message);
+      return;
+    }
     const phoneResult = validatePhone(whatsappDial, whatsappNational);
     if (!phoneResult.valid) {
       setError(phoneResult.message);
@@ -107,7 +116,7 @@ export default function SignupScreen({ navigation }) {
     setLoading(true);
     try {
       await signup({
-        firstName, lastName, email: email.trim().toLowerCase(), passportNumber, phone,
+        firstName, lastName, email: email.trim().toLowerCase(), passportNumber, phone: contactResult.full,
         password, confirmPassword, agreedToTerms, preferredLanguage: language,
         whatsappNumber: phoneResult.full, countryOfResidence: country.trim(),
         avatarDataUrl: avatarDataUrl || undefined,
@@ -189,13 +198,13 @@ export default function SignupScreen({ navigation }) {
           onChangeText={setPassportNumber}
         />
         <Text style={styles.helperText}>Any government-licensed ID: passport, NIN, etc.</Text>
-        <TextInput
-          style={styles.input}
+        <Text style={styles.label}>{t("auth.phone")}</Text>
+        <PhoneInput
+          dial={phoneDial}
+          national={phoneNational}
+          onChangeDial={setPhoneDial}
+          onChangeNational={setPhoneNational}
           placeholder={t("auth.phone")}
-          placeholderTextColor={colors.textMuted}
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
         />
 
         <Text style={styles.label}>WhatsApp number</Text>

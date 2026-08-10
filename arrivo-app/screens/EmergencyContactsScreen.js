@@ -5,6 +5,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import PhoneInput from "../components/PhoneInput";
+import { validatePhone } from "../utils/phoneValidation";
 import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } from "../services/api";
 
 // Real "Emergency contacts" — this used to be a label on Profile with
@@ -18,7 +20,8 @@ export default function EmergencyContactsScreen() {
   const [contacts, setContacts] = useState(null); // null = loading
   const [loadError, setLoadError] = useState(null);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phoneDial, setPhoneDial] = useState("+234");
+  const [phoneNational, setPhoneNational] = useState("");
   const [relationship, setRelationship] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -35,20 +38,28 @@ export default function EmergencyContactsScreen() {
 
   const submit = async () => {
     setSaveError(null);
-    if (!name.trim() || !phone.trim()) {
-      setSaveError("Name and phone number are required.");
+    if (!name.trim()) {
+      setSaveError("Please enter the contact's name.");
+      return;
+    }
+    // Same check the rider's own number goes through at signup. These were
+    // getting saved as bare local numbers before, so we'd have "08037406085"
+    // sitting next to a "+234..." on the same account.
+    const phoneResult = validatePhone(phoneDial, phoneNational);
+    if (!phoneResult.valid) {
+      setSaveError(phoneResult.message);
       return;
     }
     setSaving(true);
     try {
       const data = await addEmergencyContact(token, {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: phoneResult.full,
         relationship: relationship.trim() || undefined,
       });
       setContacts((prev) => [...(prev || []), data.contact]);
       setName("");
-      setPhone("");
+      setPhoneNational("");
       setRelationship("");
     } catch (e) {
       setSaveError(e.message || "Couldn't save this contact. Please try again.");
@@ -115,13 +126,13 @@ export default function EmergencyContactsScreen() {
             value={name}
             onChangeText={setName}
           />
-          <TextInput
-            style={styles.input}
+          <PhoneInput
+            tone="dark"
+            dial={phoneDial}
+            national={phoneNational}
+            onChangeDial={setPhoneDial}
+            onChangeNational={setPhoneNational}
             placeholder="Phone number"
-            placeholderTextColor={colors.dark.textMuted}
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
           />
           <TextInput
             style={styles.input}
