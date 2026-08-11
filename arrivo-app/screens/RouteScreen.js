@@ -6,6 +6,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
+import { BookingWindowNotice } from "../components/BookingWindowNotice";
+import { isStandardBookingBlocked } from "../utils/bookingWindow";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
@@ -417,10 +419,15 @@ export default function RouteScreen({ navigation, route }) {
   // required for charter/Chauffeur bookings, which aren't tied to a flight.
   const needsFlightNumber = bookingType === "one_way";
 
+  // Only drop-offs carry a date the rider picks. An airport pickup is timed
+  // off the flight, so there's nothing here to measure it against and the rule
+  // can't apply to those yet.
+  const bookingWindowBlocked = needsScheduledTime && isStandardBookingBlocked(scheduledDateObj);
+
   const canConfirm =
     !excludedArea && !groupTooLarge && pickup.trim().length > 0 && destination.trim().length > 0 &&
     (!needsFlightNumber || flightNumber.trim().length > 0) &&
-    scheduledTimeValid &&
+    scheduledTimeValid && !bookingWindowBlocked &&
     coordsResolved && !!quote && !quoteLoading;
 
   const confirm = () => {
@@ -840,6 +847,8 @@ export default function RouteScreen({ navigation, route }) {
 
         {!pickup.trim() || !destination.trim() ? (
           <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
+        ) : bookingWindowBlocked ? (
+          <BookingWindowNotice navigation={navigation} />
         ) : needsFlightNumber && !flightNumber.trim() ? (
           <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
         ) : !scheduledTimeValid ? (

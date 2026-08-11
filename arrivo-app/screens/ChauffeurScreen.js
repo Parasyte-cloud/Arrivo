@@ -10,6 +10,8 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import { BookingWindowNotice } from "../components/BookingWindowNotice";
+import { earliestStandardBooking, isStandardBookingBlocked } from "../utils/bookingWindow";
 import {
   PREMIUM_UPGRADE_LABEL,
   premiumUpgradeDescription,
@@ -116,8 +118,13 @@ export default function ChauffeurScreen({ navigation }) {
   // mirrors RouteScreen's scheduledTimeValid guard, which blocks earlier.
   const scheduledPickupAtValue = combineDateAndTime(dateValue, timeValue);
   const scheduledTimeValid = !dateValue || !timeValue || scheduledPickupAtValue.getTime() > Date.now();
+  // The picker's minimumDate already keeps them out of the blocked window, but
+  // the time half can still drag a same-day booking under the line after the
+  // date's been chosen, so check the combined value too.
+  const bookingWindowBlocked = !!dateValue && !!timeValue && isStandardBookingBlocked(scheduledPickupAtValue);
   const canConfirm =
-    pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && scheduledTimeValid && !!quote && !quoteLoading;
+    pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && scheduledTimeValid &&
+    !bookingWindowBlocked && !!quote && !quoteLoading;
 
   // Same handler as RouteScreen's identical feature: only ever runs on a
   // tap, never on mount, so permission is asked for at the moment it's
@@ -361,7 +368,7 @@ export default function ChauffeurScreen({ navigation }) {
             value={dateValue || new Date()}
             mode="date"
             display="default"
-            minimumDate={new Date()}
+            minimumDate={earliestStandardBooking()}
             onChange={(event, selected) => {
               setShowDatePicker(false);
               if (event.type === "dismissed") return;
@@ -395,7 +402,7 @@ export default function ChauffeurScreen({ navigation }) {
                 value={dateValue || new Date()}
                 mode="date"
                 display="inline"
-                minimumDate={new Date()}
+                minimumDate={earliestStandardBooking()}
                 onChange={(event, selected) => {
                   if (selected) setDateValue(selected);
                 }}
@@ -477,7 +484,9 @@ export default function ChauffeurScreen({ navigation }) {
           ) : null}
         </Card>
 
-        {!canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
+        {bookingWindowBlocked ? (
+          <BookingWindowNotice navigation={navigation} />
+        ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
           quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
