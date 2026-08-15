@@ -343,9 +343,21 @@ export function linkCorporateDelegate(token, delegateEmail) {
   });
 }
 
-// The Support screen's form. type is 'complaint' | 'question' | 'support'.
-// rideId is the rider's most recent booking, sent so support knows which trip
-// they mean without having to ask. Leave it out when they've never booked.
+// On-the-Go: the quick form for riders who need a car within about 12 hours.
+// No fare quote and no payment, ops rings the contact number to confirm a
+// driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
+export function createOnTheGoRequest(token, { pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone }) {
+  return request("/api/on-the-go", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone }),
+  });
+}
+
+// The Support screen's form. type is 'complaint' | 'inquiry' | 'support'.
+// rideId is the trip they're on if one is live, otherwise the last one they
+// booked, sent so support knows which trip they mean without having to ask.
+// Leave it out when they've never booked.
 export function createSupportTicket(token, { type, subject, description, rideId }) {
   return request("/api/support/tickets", {
     method: "POST",

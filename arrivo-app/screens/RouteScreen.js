@@ -10,12 +10,15 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import {
+  PREMIUM_UPGRADE_LABEL,
+  premiumUpgradeDescription,
+  premiumUpgradePrice,
+} from "../utils/premiumUpgrade";
 
-// Luxury toggle only makes sense on Sedan/SUV — Executive is already the
-// premium tier, and this mirrors LUXURY_SURCHARGE_USD in
-// arrivo-backend/services/fare.js (the actual source of truth for the
-// surcharge amount; these labels are just for display before a quote loads).
-const LUXURY_LABEL_USD = { sedan: 60, suv: 100 };
+// The upgrade only makes sense on Sedan/SUV. Executive is already the premium
+// tier and Pickup is a cargo vehicle. Wording and price live in
+// utils/premiumUpgrade.js so this screen and Chauffeur Booking stay in step.
 
 // Areas RideArrivo doesn't currently serve — kept as an instant, purely
 // client-side UX check against whatever text is typed (no need to wait on
@@ -261,7 +264,14 @@ export default function RouteScreen({ navigation, route }) {
     }
   };
 
-  const addStop = () => setStops((s) => [...s, ""]);
+  // The new empty row is the destination now, so the coords we already had
+  // belong to what just became a middle stop. Leaving them set made the screen
+  // think the destination was resolved, so it quoted with a blank address, got
+  // a 400 back and left the ETA showing a dash.
+  const addStop = () => {
+    setStops((s) => [...s, ""]);
+    setDestinationCoords(null);
+  };
   const updateStop = (i, val) => {
     setStops((s) => s.map((v, idx) => (idx === i ? val : v)));
     if (i === stops.length - 1) setDestinationCoords(null); // typing invalidates the resolved destination
@@ -351,6 +361,10 @@ export default function RouteScreen({ navigation, route }) {
     setQuoteError(null);
 
     if (needsCoords && !coordsResolved) return; // nothing to quote yet
+    // The address text and its coords can still drift apart (preset params from
+    // a return booking, for one). A blank destination is a 400 from the backend,
+    // which the rider only ever sees as a dash, so don't bother asking.
+    if (needsCoords && !destination.trim()) return;
     // overCapacity no longer blocks the quote — a bigger group just prices
     // as multiple vehicles (see vehicleCount/adults/children in payload
     // below). groupTooLarge is the one passenger-related case that still
@@ -481,15 +495,14 @@ export default function RouteScreen({ navigation, route }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.stopRow}>
+          <View style={styles.addressRow}>
             <View style={[styles.dot, { backgroundColor: colors.tealBright }]} />
             <AddressAutocomplete
               style={{ flex: 1 }}
-              inputStyle={styles.stopInput}
               value={pickup}
               onChangeText={setPickup}
               onSelect={(resolved) => setPickupCoords(resolved)}
-              placeholder="Pickup address"
+              placeholder="Enter pickup address"
             />
           </View>
           <Pressable onPress={useCurrentLocationForPickup} style={styles.addStop} disabled={locatingPickup}>
@@ -502,25 +515,27 @@ export default function RouteScreen({ navigation, route }) {
           </Pressable>
           {locationError ? <Text style={styles.hintText}>{locationError}</Text> : null}
           {stops.map((stop, i) => (
-            <View key={i} style={styles.stopRow}>
+            <View key={i} style={styles.addressRow}>
               <View style={styles.thread} />
               <View style={[styles.dot, { backgroundColor: i === stops.length - 1 ? colors.coral : colors.amber }]} />
               {i === stops.length - 1 ? (
                 <AddressAutocomplete
                   style={{ flex: 1 }}
-                  inputStyle={styles.stopInput}
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
                   onSelect={(resolved) => setDestinationCoords(resolved)}
-                  placeholder="Destination"
+                  placeholder="Enter destination"
                 />
               ) : (
-                <TextInput
-                  style={styles.stopInput}
+                // Same field, suggestions off. Middle stops never needed coords
+                // and this keeps every address row looking identical.
+                <AddressAutocomplete
+                  style={{ flex: 1 }}
+                  enableSuggestions={false}
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
-                  placeholder={`Stop ${i + 1}`}
-                  placeholderTextColor={colors.dark.textMuted}
+                  onSelect={() => {}}
+                  placeholder={`Enter stop ${i + 1}`}
                 />
               )}
             </View>
@@ -753,9 +768,12 @@ export default function RouteScreen({ navigation, route }) {
           {vehicle === "sedan" || vehicle === "suv" ? (
             <View style={[styles.toggleRow, { marginTop: 6 }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardLabel}>Luxury</Text>
+                <Text style={styles.cardLabel}>{PREMIUM_UPGRADE_LABEL}</Text>
                 <Text style={styles.addonNote}>
-                  Nicer {vehicle === "sedan" ? "Sedan" : "SUV"} for this trip — adds ${LUXURY_LABEL_USD[vehicle]} equivalent
+                  {premiumUpgradeDescription(
+                    vehicle,
+                    premiumUpgradePrice(vehicle, quote?.ngnPerUsd, formatFare)
+                  )}
                 </Text>
               </View>
               <Switch
@@ -854,9 +872,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   title: { fontSize: 18, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
   stopRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  // Same row, just more room under it now the address fields are proper boxes
+  // instead of a line of text. Kept separate because stopRow is shared with the
+  // passenger and luggage rows further down.
+  addressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.sm },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
   thread: { width: 2, height: 16, backgroundColor: "rgba(255,255,255,0.25)", marginLeft: 3.5 },
-  stopInput: { color: colors.dark.text, fontSize: 13, paddingVertical: 6 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   hintText: { color: colors.amber, fontSize: 11, marginTop: 8, marginLeft: 18, lineHeight: 15 },

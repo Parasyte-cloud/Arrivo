@@ -3,6 +3,18 @@ const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../services/imageValidation");
+const { processTelemetry } = require("../services/telemetry/telemetryService");
+const { MapboxRoutingProvider } = require("../services/routing/MapboxRoutingProvider");
+
+// Lazily constructed so a missing MAPBOX_ACCESS_TOKEN doesn't crash
+// server startup — it only matters the moment a reroute is actually
+// attempted, and evaluateAndPossiblyReroute already treats a provider
+// failure as ROUTING_PROVIDER_UNAVAILABLE rather than a hard crash.
+let routingProvider;
+function getRoutingProvider() {
+  if (!routingProvider) routingProvider = new MapboxRoutingProvider();
+  return routingProvider;
+}
 
 const MAX_DOCUMENT_PHOTO_BYTES = 6 * 1024 * 1024; // 6MB — matches the 6MB cap already enforced client-side
 
@@ -169,7 +181,7 @@ router.patch("/status", requireAuth, requireRole("driver"), async (req, res) => 
 // screen and the admin dashboard show a real live position instead of a
 // stylized placeholder.
 router.patch("/location", requireAuth, requireRole("driver"), async (req, res) => {
-  const { lat, lng } = req.body;
+  const { lat, lng, accuracy, speed, heading } = req.body;
   if (typeof lat !== "number" || typeof lng !== "number") {
     return res.status(400).json({ error: "lat and lng must both be numbers" });
   }
@@ -180,11 +192,45 @@ router.patch("/location", requireAuth, requireRole("driver"), async (req, res) =
   const driver = await getDriverForUser(req.user.id);
   if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
 
+  // Unchanged from before — other parts of the app (the admin dashboard's
+  // driver list, for instance) still read drivers.current_lat/lng
+  // directly, so this keeps working exactly as it did.
   await pool.query(
     "UPDATE drivers SET current_lat = $1, current_lng = $2, location_updated_at = now() WHERE id = $3",
     [lat, lng, driver.id]
   );
-  res.json({ ok: true });
+
+  // New: the fleet-tracking pipeline. driver.vehicle_id is already on the
+  // row from getDriverForUser's SELECT * — no second query needed, and
+  // no reliance on any nonexistent reverse reference on vehicles.
+  let telemetryResult = null;
+  try {
+    telemetryResult = await processTelemetry({
+      db: pool,
+      routingProvider: getRoutingProvider(),
+      driverId: driver.id,
+      vehicleId: driver.vehicle_id || null,
+      submittedTelemetry: {
+        lat, lng,
+        accuracyM: accuracy ?? null,
+        speedKmh: speed ?? null,
+        headingDeg: heading ?? null,
+        recordedAt: new Date().toISOString(),
+        source: "driver_phone",
+      },
+    });
+  } catch (e) {
+    // The telemetry pipeline is additive — if it fails for any reason,
+    // the core location update above has already succeeded and the
+    // driver app must not see an error for something it doesn't call
+    // and has no way to react to. Logged, not surfaced.
+    console.error("[telemetry] processTelemetry failed:", e.message);
+  }
+
+  // Base contract preserved exactly: { ok: true } continues to work for
+  // any existing caller that only checks that field. New fields are
+  // additive, not a replacement shape.
+  res.json({ ok: true, ...(telemetryResult || {}) });
 });
 
 // GET /api/drivers/earnings

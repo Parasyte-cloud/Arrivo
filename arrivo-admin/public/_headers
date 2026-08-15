@@ -1,0 +1,21 @@
+# Security headers for static hosts that read this file (Netlify,
+# Cloudflare Pages). If you deploy somewhere else (Vercel, Render static
+# sites, S3+CloudFront, etc.), this file is silently ignored — use
+# vercel.json (already included for Vercel) or your host's equivalent
+# mechanism with these same header values. See README.md's Deploying
+# section for per-host notes.
+#
+# CSP is intentionally not maximally strict on connect-src: Stream's
+# Video/Chat SDK reaches a number of dynamically-selected regional edge
+# servers for calling, not one fixed domain, so pinning connect-src to an
+# exact allowlist risks silently breaking live calls the day Stream
+# rebalances traffic. `https: wss:` still blocks the actual attack this
+# header exists to stop (script-injected exfiltration to a non-https
+# origin) without that fragility.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Robots-Tag: noindex, nofollow
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), interest-cohort=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'

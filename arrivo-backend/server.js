@@ -25,6 +25,10 @@ const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const chatRouter = require("./routes/chat");
+const onTheGoRouter = require("./routes/onTheGo");
+const alertsRouter = require("./routes/alerts");
+const eventsRouter = require("./routes/events-sse");
+const liveMapRouter = require("./routes/live-map");
 const supportRouter = require("./routes/support");
 const { startScheduler } = require("./services/scheduler");
 
@@ -69,6 +73,10 @@ app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/chat", chatRouter);
+app.use("/api/on-the-go", onTheGoRouter);
+app.use("/api/alerts", alertsRouter);
+app.use("/api/events", eventsRouter);
+app.use("/api/live-map", liveMapRouter);
 app.use("/api/support", supportRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors

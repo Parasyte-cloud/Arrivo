@@ -1,0 +1,7 @@
+# This is an internal operations dashboard, not a public-facing site —
+# it should never appear in search results. The login screen is the real
+# access control; this is defense in depth, not a security boundary on
+# its own (see also the noindex meta tag in index.html and the
+# X-Robots-Tag header in public/_headers).
+User-agent: *
+Disallow: /

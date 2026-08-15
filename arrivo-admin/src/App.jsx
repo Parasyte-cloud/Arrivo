@@ -1,26 +1,77 @@
-import { useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { StreamClientProvider } from "./StreamClientContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoginPage } from "./pages/LoginPage";
-import { PanicsPage } from "./pages/PanicsPage";
-import { RidersPage } from "./pages/RidersPage";
-import { DriversPage } from "./pages/DriversPage";
-import { RidesPage } from "./pages/RidesPage";
-import { LiveMapPage } from "./pages/LiveMapPage";
-import { AnalyticsPage } from "./pages/AnalyticsPage";
-import { MembershipsPage } from "./pages/MembershipsPage";
-import { WalletPage } from "./pages/WalletPage";
-import { FlightIssuesPage } from "./pages/FlightIssuesPage";
-import { VehiclesPage } from "./pages/VehiclesPage";
 import { Sidebar } from "./components/Sidebar";
 import wordmarkLight from "./assets/wordmark-light.png";
+
+// Lazy-loaded per page instead of one ~1MB upfront bundle — Leaflet
+// (LiveMapPage) and the Stream Video SDK (pulled in by RidersPage/
+// DriversPage's CallButton) are the two biggest contributors, and most
+// admin sessions only ever touch a handful of these pages. Splitting
+// means the first paint only downloads whichever page is actually
+// opened, not all ten. LoginPage stays a normal import since it's the
+// very first thing an unauthenticated visitor needs — no point deferring
+// something that's needed immediately anyway.
+const PanicsPage = lazy(() => import("./pages/PanicsPage").then((m) => ({ default: m.PanicsPage })));
+const RidersPage = lazy(() => import("./pages/RidersPage").then((m) => ({ default: m.RidersPage })));
+const DriversPage = lazy(() => import("./pages/DriversPage").then((m) => ({ default: m.DriversPage })));
+const RidesPage = lazy(() => import("./pages/RidesPage").then((m) => ({ default: m.RidesPage })));
+const LiveMapPage = lazy(() => import("./pages/LiveMapPage").then((m) => ({ default: m.LiveMapPage })));
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const MembershipsPage = lazy(() => import("./pages/MembershipsPage").then((m) => ({ default: m.MembershipsPage })));
+const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })));
+const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
+const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
+
+// Every page key Dashboard actually knows how to render — used both to
+// validate an incoming URL hash (so a stale/garbage/mistyped link can
+// never leave the app on a blank page) and as the single source of truth
+// for what "a valid page" means.
+const PAGES = [
+  "panics", "riders", "drivers", "rides", "flight-issues",
+  "vehicles", "memberships", "wallet", "live-map", "analytics",
+];
+
+function pageFromHash() {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  return PAGES.includes(hash) ? hash : "panics";
+}
 
 function Dashboard() {
   // Default to Panic Alerts on login — the safety-critical view should be
   // the first thing an ops person sees, not something they have to
-  // remember to check.
-  const [page, setPage] = useState("panics");
+  // remember to check. Reading from the URL hash first (falling back to
+  // "panics") means a refresh, a bookmark, or a link shared with a
+  // teammate all land on the actual page intended, not always the
+  // default — and the hash sync below keeps the two in sync from here on.
+  const [page, setPageState] = useState(pageFromHash);
+
+  const setPage = useCallback((next) => {
+    setPageState(next);
+    if (window.location.hash.replace(/^#\/?/, "") !== next) {
+      window.location.hash = `/${next}`;
+    }
+  }, []);
+
+  // Browser back/forward changes the hash without touching React state on
+  // its own — this is what makes those buttons actually navigate between
+  // admin pages instead of doing nothing (or leaving the visible page out
+  // of sync with the URL).
+  useEffect(() => {
+    const onHashChange = () => setPageState(pageFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // First render: if there was no hash at all (a fresh login, not a
+  // deep link), write one so the address bar reflects reality from the
+  // start rather than only after the first nav click.
+  useEffect(() => {
+    if (!window.location.hash) window.location.hash = `/${page}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Sidebar is always visible on desktop; on narrow (phone) screens it
   // becomes an off-canvas drawer toggled by the hamburger button below —
   // see the .sidebar / .mobile-topbar rules in styles.css for the
@@ -36,16 +87,18 @@ function Dashboard() {
       <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="main">
         <ErrorBoundary resetKey={page}>
-          {page === "panics" && <PanicsPage />}
-          {page === "riders" && <RidersPage />}
-          {page === "drivers" && <DriversPage />}
-          {page === "rides" && <RidesPage />}
-          {page === "flight-issues" && <FlightIssuesPage />}
-          {page === "vehicles" && <VehiclesPage />}
-          {page === "memberships" && <MembershipsPage />}
-          {page === "wallet" && <WalletPage />}
-          {page === "live-map" && <LiveMapPage />}
-          {page === "analytics" && <AnalyticsPage />}
+          <Suspense fallback={<div className="empty-state">Loading…</div>}>
+            {page === "panics" && <PanicsPage />}
+            {page === "riders" && <RidersPage />}
+            {page === "drivers" && <DriversPage />}
+            {page === "rides" && <RidesPage />}
+            {page === "flight-issues" && <FlightIssuesPage />}
+            {page === "vehicles" && <VehiclesPage />}
+            {page === "memberships" && <MembershipsPage />}
+            {page === "wallet" && <WalletPage />}
+            {page === "live-map" && <LiveMapPage />}
+            {page === "analytics" && <AnalyticsPage />}
+          </Suspense>
         </ErrorBoundary>
       </main>
     </div>
