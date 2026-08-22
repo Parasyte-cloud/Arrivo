@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
+import { PRIVACY_SECTIONS, PRIVACY_LAST_UPDATED, PRIVACY_FULL_URL } from "../utils/privacyPolicy";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone } from "../utils/phoneValidation";
@@ -284,11 +285,15 @@ export default function SignupScreen({ navigation }) {
                 </Pressable>
               </View>
               <ScrollView style={styles.modalBody}>
+                <Text style={styles.modalUpdated}>Last updated {PRIVACY_LAST_UPDATED}</Text>
+                {PRIVACY_SECTIONS.map((section) => (
+                  <View key={section.title} style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>{section.title}</Text>
+                    <Text style={styles.modalText}>{section.body}</Text>
+                  </View>
+                ))}
                 <Text style={styles.modalText}>
-                  RideArrivo collects your name, contact details, and (if provided) an identification
-                  number to verify your identity and provide airport pickup and ride services.
-                  Your data is stored securely and is never sold to third parties.{"\n\n"}
-                  For the full policy, visit ridearrivo.com/privacy.html from a browser.
+                  This is a summary. For the full policy, visit {PRIVACY_FULL_URL} from a browser.
                 </Text>
               </ScrollView>
               <Pressable
@@ -405,6 +410,9 @@ const styles = StyleSheet.create({
   modalClose: { fontSize: 18, color: "#888", paddingHorizontal: 8 },
   modalBody: { padding: 20 },
   modalText: { color: colors.ink, fontSize: 13.5, lineHeight: 20 },
+  modalUpdated: { color: "#666", fontSize: 11.5, marginBottom: 14 },
+  modalSection: { marginBottom: 14 },
+  modalSectionTitle: { color: colors.ink, fontWeight: "700", fontSize: 13, marginBottom: 4 },
   modalAgreeBtn: { backgroundColor: colors.amber, margin: 20, marginTop: 0, padding: 14, borderRadius: 12, alignItems: "center" },
   modalAgreeBtnText: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
