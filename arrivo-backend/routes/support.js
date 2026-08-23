@@ -1,10 +1,11 @@
 const express = require("express");
 const { pool } = require("../db/db");
-const { requireAuth, requireAnyRole } = require("../middleware/auth");
+const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 
 const router = express.Router();
 
 const TYPES = ["complaint", "inquiry", "support"];
+const STATUSES = ["open", "closed"];
 const MAX_SUBJECT = 140;
 const MAX_DESCRIPTION = 4000;
 
@@ -64,6 +65,14 @@ router.post("/tickets", requireAuth, async (req, res) => {
 // Nothing in the admin dashboard reads this yet. It's here so tickets aren't
 // write-only until that page gets built.
 router.get("/tickets", requireAuth, requireAnyRole(["admin", "support"]), async (req, res) => {
+  // Optional ?status= filter. It matters more than it looks: the list is
+  // capped at 200 and ordered newest first, so once enough closed tickets
+  // pile up an open one would drop off the end and never be seen again.
+  const { status } = req.query;
+  if (status !== undefined && !STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(", ")}` });
+  }
+
   const result = await pool.query(
     `SELECT support_tickets.*,
             users.name AS user_name,
@@ -71,10 +80,38 @@ router.get("/tickets", requireAuth, requireAnyRole(["admin", "support"]), async 
             users.phone AS user_phone
      FROM support_tickets
      JOIN users ON users.id = support_tickets.user_id
+     WHERE ($1::text IS NULL OR support_tickets.status = $1)
      ORDER BY support_tickets.created_at DESC
      LIMIT 200`
+    , [status === undefined ? null : status]
   );
   res.json({ tickets: result.rows });
+});
+
+// PATCH /api/support/tickets/:id  body: { status }
+// Closing is a mutation, so it needs admin specifically. The router-level
+// requireAnyRole above lets support READ the queue, and per the roles note in
+// ENGINEERING.md that read-only split is not automatic: every mutating route
+// has to check for admin itself, which is what requireRole does here.
+router.patch("/tickets/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  const { status } = req.body;
+  if (!STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(", ")}` });
+  }
+
+  const id = Number(req.params.id);
+  // Same bound as the rideId check above: past INTEGER range the value
+  // reaches the column and throws a 500 instead of answering cleanly.
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+    return res.status(400).json({ error: "That ticket id is not valid." });
+  }
+
+  const result = await pool.query(
+    "UPDATE support_tickets SET status = $1 WHERE id = $2 RETURNING *",
+    [status, id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: "No ticket with that id." });
+  res.json({ ticket: result.rows[0] });
 });
 
 module.exports = router;

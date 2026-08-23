@@ -69,14 +69,28 @@ const fakePool = {
       return { rows: [row] };
     }
 
+    if (s.startsWith("UPDATE support_tickets")) {
+      const [status, id] = params;
+      if (!Number.isInteger(id) || id > 2147483647 || id < -2147483648) {
+        throw new Error(`value "${id}" is out of range for type integer`);
+      }
+      const row = inserted.find((t) => t.id === id);
+      if (!row) return { rows: [] };
+      row.status = status;
+      return { rows: [row] };
+    }
+
     if (s.startsWith("SELECT support_tickets.*")) {
+      const wanted = params[0];
       return {
-        rows: inserted.map((t) => ({
-          ...t,
-          user_name: "Test Rider",
-          user_email: "r@example.com",
-          user_phone: null,
-        })),
+        rows: inserted
+          .filter((t) => wanted == null || t.status === wanted)
+          .map((t) => ({
+            ...t,
+            user_name: "Test Rider",
+            user_email: "r@example.com",
+            user_phone: null,
+          })),
       };
     }
 
@@ -310,6 +324,81 @@ const ok = {
     });
     assert.strictEqual(r.status, 201);
     assert.strictEqual(r.body.ticket.user_id, 2);
+  });
+
+  console.log("");
+  console.log("Closing a ticket is admin only:");
+
+  await test("admin can close a ticket", async () => {
+    const made = await call("/api/support/tickets", { method: "POST", token: RIDER, body: ok });
+    const id = made.body.ticket.id;
+    const r = await call(`/api/support/tickets/${id}`, {
+      method: "PATCH", token: tokenFor(50, "admin"), body: { status: "closed" },
+    });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.ticket.status, "closed");
+  });
+
+  await test("support is read only and cannot close", async () => {
+    const made = await call("/api/support/tickets", { method: "POST", token: RIDER, body: ok });
+    const r = await call(`/api/support/tickets/${made.body.ticket.id}`, {
+      method: "PATCH", token: tokenFor(51, "support"), body: { status: "closed" },
+    });
+    assert.strictEqual(r.status, 403, `got ${r.status}`);
+  });
+
+  await test("a rider cannot close a ticket", async () => {
+    const made = await call("/api/support/tickets", { method: "POST", token: RIDER, body: ok });
+    const r = await call(`/api/support/tickets/${made.body.ticket.id}`, {
+      method: "PATCH", token: RIDER, body: { status: "closed" },
+    });
+    assert.strictEqual(r.status, 403);
+  });
+
+  await test("an unknown status is refused", async () => {
+    const made = await call("/api/support/tickets", { method: "POST", token: RIDER, body: ok });
+    const r = await call(`/api/support/tickets/${made.body.ticket.id}`, {
+      method: "PATCH", token: tokenFor(50, "admin"), body: { status: "resolved" },
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  await test("a ticket that does not exist answers 404", async () => {
+    const r = await call("/api/support/tickets/999999", {
+      method: "PATCH", token: tokenFor(50, "admin"), body: { status: "closed" },
+    });
+    assert.strictEqual(r.status, 404);
+  });
+
+  await test("an out-of-range ticket id answers 400, not 500", async () => {
+    const r = await call("/api/support/tickets/1e12", {
+      method: "PATCH", token: tokenFor(50, "admin"), body: { status: "closed" },
+    });
+    assert.strictEqual(r.status, 400, `got ${r.status}`);
+  });
+
+  console.log("");
+  console.log("Filtering the queue:");
+
+  await test("status filter narrows the list", async () => {
+    const openOnly = await call("/api/support/tickets?status=open", { token: tokenFor(50, "admin") });
+    assert.strictEqual(openOnly.status, 200);
+    assert.ok(openOnly.body.tickets.every((t) => t.status === "open"), "a closed ticket leaked in");
+
+    const closedOnly = await call("/api/support/tickets?status=closed", { token: tokenFor(50, "admin") });
+    assert.ok(closedOnly.body.tickets.every((t) => t.status === "closed"));
+    assert.ok(closedOnly.body.tickets.length > 0, "expected at least one closed ticket by now");
+  });
+
+  await test("no filter returns everything", async () => {
+    const all = await call("/api/support/tickets", { token: tokenFor(50, "admin") });
+    const statuses = new Set(all.body.tickets.map((t) => t.status));
+    assert.ok(statuses.has("open") && statuses.has("closed"), "expected both states unfiltered");
+  });
+
+  await test("a bogus status filter is refused", async () => {
+    const r = await call("/api/support/tickets?status=banana", { token: tokenFor(50, "admin") });
+    assert.strictEqual(r.status, 400);
   });
 
   server.close();

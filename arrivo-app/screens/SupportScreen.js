@@ -150,8 +150,8 @@ export default function SupportScreen() {
             <Card tone="dark" style={{ marginTop: spacing.lg }}>
               <Text style={styles.successTitle}>Thanks, we've got it</Text>
               <Text style={[styles.meta, { marginTop: 6 }]}>
-                Your reference is #{sentTicket.id}. We'll reply by email at the address on your
-                account.
+                Your reference is #{sentTicket.id}. It's with our support team now. Quote that
+                number if you call or message us about it.
               </Text>
               <Button
                 label="Send another message"
