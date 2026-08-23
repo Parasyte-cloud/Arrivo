@@ -1,18 +1,21 @@
-// Shared country calling-code data and phone validation, used anywhere a
-// phone/WhatsApp number is collected (signup, profile, emergency contacts,
-// the per-ride emergency contact on RouteScreen). Ported directly from the
-// website's phone-input.js so both platforms validate numbers the same way
-// and never disagree about what's a valid entry.
+// Country calling-code data and phone validation for the driver app —
+// a byte-for-byte copy of arrivo-app/utils/phoneValidation.js (which was
+// itself ported from the website's phone-input.js). The two Expo projects
+// share no package, so this is duplicated rather than imported, the same
+// way theme/tokens.js and components/UI.js already are. Keep them in step:
+// a driver number and a rider number are compared and dialled by the same
+// backend, so they cannot disagree about what a valid number looks like.
 //
 // ONE canonical storage format everywhere: E.164 — a leading "+", the
 // country calling code, then the national number, no spaces or
-// punctuation (e.g. "+2348012345678"). Emergency contacts used to be
-// free-text and got saved bare ("08012345678") while the rider's own
-// WhatsApp number went through validatePhone() and got the code, so the
-// two never matched and a bare contact number couldn't be reliably dialled
-// from a different country. Every field now goes through PhoneInput +
-// validatePhone/validateOptionalPhone, and validatePhone().full is the
-// only value that should ever be sent to the backend.
+// punctuation (e.g. "+2348012345678"). A driver's number was collected as
+// free text at signup and got saved bare ("08012345678"), which is what
+// the rider app puts behind its "call your driver" button (tel: link in
+// TrackingScreen) — a bare number doesn't dial for a rider whose phone is
+// roaming on a foreign network, which is most of this product's users.
+// Every field now goes through PhoneInput + validatePhone /
+// validateOptionalPhone, and validatePhone().full is the only value that
+// should ever be sent to the backend.
 //
 // Deliberately a plain array, not a phone-number npm library — covers the
 // countries actually relevant to RideArrivo's user mix (Nigeria + its

@@ -5,6 +5,8 @@ import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import PhoneInput from "../components/PhoneInput";
+import { validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons from "../components/OAuthButtons";
 
 export default function SignupScreen({ navigation }) {
@@ -14,7 +16,12 @@ export default function SignupScreen({ navigation }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  // Country code is picked, never typed. A driver's number was free text
+  // here and got stored bare, but it's what the rider app dials behind
+  // "call your driver" — see utils/phoneValidation.js. Same E.164 format
+  // and same check as the rider app uses for every number it collects.
+  const [phoneDial, setPhoneDial] = useState(DEFAULT_DIAL);
+  const [phoneNational, setPhoneNational] = useState("");
   const [password, setPassword] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
@@ -30,13 +37,25 @@ export default function SignupScreen({ navigation }) {
       setError("First name, last name, email, and password are required.");
       return;
     }
+    // Still optional, exactly as before — but the moment anything is typed
+    // it has to be a real number with a country code, rather than being
+    // waved through and stored in a format nothing can dial.
+    const phoneResult = validateOptionalPhone(phoneDial, phoneNational);
+    if (!phoneResult.valid) {
+      setError(phoneResult.message);
+      return;
+    }
     if (!agreedToTerms) {
       setError("You must agree to the data protection and privacy terms to continue.");
       return;
     }
     setLoading(true);
     try {
-      await signup({ firstName, lastName, email: email.trim().toLowerCase(), phone, password, agreedToTerms });
+      await signup({
+        firstName, lastName, email: email.trim().toLowerCase(),
+        phone: phoneResult.full || undefined,
+        password, agreedToTerms,
+      });
       // AuthProvider flips isAuthenticated -> App.js moves to the driver profile setup next.
     } catch (e) {
       setError(e.message || "Something went wrong. Please try again.");
@@ -93,13 +112,12 @@ export default function SignupScreen({ navigation }) {
           autoCapitalize="none"
           keyboardType="email-address"
         />
-        <TextInput
-          style={styles.input}
+        <PhoneInput
+          dial={phoneDial}
+          national={phoneNational}
+          onChangeDial={setPhoneDial}
+          onChangeNational={setPhoneNational}
           placeholder="Phone number"
-          placeholderTextColor={colors.textMuted}
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
         />
         <TextInput
           style={styles.input}
