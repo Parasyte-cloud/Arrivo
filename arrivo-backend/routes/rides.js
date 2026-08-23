@@ -13,6 +13,7 @@ const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
 // refund (see the flight_issue re-payment check in PATCH /:id/status below).
@@ -200,6 +201,13 @@ router.post("/", requireAuth, async (req, res) => {
     }
     if (parsedScheduledPickupAt.getTime() < Date.now()) {
       return res.status(400).json({ error: "scheduledPickupAt must be in the future." });
+    }
+    // The booking window rule. The apps grey the button out before anyone gets
+    // this far, so hitting this means either an old build or someone calling
+    // the API directly. Answers with the On the Go and WhatsApp routes rather
+    // than a dead end, same as the screens do.
+    if (isStandardBookingBlocked(parsedScheduledPickupAt)) {
+      return res.status(400).json(blockedBookingResponse());
     }
   }
   // A linked ride (the arrival pickup this drop-off was booked alongside)
