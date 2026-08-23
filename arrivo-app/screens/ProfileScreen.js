@@ -8,6 +8,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import PhoneInput from "../components/PhoneInput";
+import { validatePhone, splitPhone } from "../utils/phoneValidation";
 import { supportedLanguages } from "../i18n";
 import { getRideHistory } from "../services/api";
 
@@ -54,7 +56,13 @@ export default function ProfileScreen({ navigation }) {
   const { user, token, logout, updateProfile, resendVerificationEmail } = useAuth();
   const [resendingEmail, setResendingEmail] = useState(false);
   const [resendMessage, setResendMessage] = useState(null);
-  const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number || "");
+  // Signup and CompleteProfile both collect this through PhoneInput +
+  // validatePhone, so it arrives here with a country code — but this screen
+  // used to re-open it in a bare text box, which meant editing it was the
+  // one way to strip the code back off again. Same control, same check.
+  const savedWhatsapp = user?.whatsapp_number || "";
+  const [whatsappDial, setWhatsappDial] = useState(() => splitPhone(savedWhatsapp).dial);
+  const [whatsappNational, setWhatsappNational] = useState(() => splitPhone(savedWhatsapp).national);
   const [country, setCountry] = useState(user?.country_of_residence || "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -69,11 +77,16 @@ export default function ProfileScreen({ navigation }) {
   // the current fields match what's actually on `user` (refreshed from
   // AuthContext, which survives this screen remounting) fixes that: it
   // reflects reality regardless of remounts, not a fragile local flag.
-  const hasAnyContactInfo = whatsapp.trim().length > 0 || country.trim().length > 0;
+  //
+  // Comparing the composed E.164 number (not the raw box contents) also
+  // means a number stored bare by an older build reads as unsaved until
+  // it's re-saved with its country code, which is exactly the nudge needed.
+  const whatsappResult = validatePhone(whatsappDial, whatsappNational);
+  const hasAnyContactInfo = whatsappNational.trim().length > 0 || country.trim().length > 0;
   const isSaved =
     !saving &&
     hasAnyContactInfo &&
-    whatsapp === (user?.whatsapp_number || "") &&
+    (whatsappResult.full || "") === savedWhatsapp &&
     country === (user?.country_of_residence || "");
   const [avatarUri, setAvatarUri] = useState(user?.avatar_url || null);
   const [avatarError, setAvatarError] = useState(null);
@@ -97,10 +110,14 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const saveContactDetails = async () => {
-    setSaving(true);
     setSaveError(null);
+    if (!whatsappResult.valid) {
+      setSaveError(whatsappResult.message);
+      return;
+    }
+    setSaving(true);
     try {
-      await updateProfile({ whatsappNumber: whatsapp, countryOfResidence: country });
+      await updateProfile({ whatsappNumber: whatsappResult.full, countryOfResidence: country });
       // No setSaved(true) needed — isSaved above recomputes automatically
       // once updateProfile's setUser(data.user) lands, since it compares
       // against the now-updated user.whatsapp_number/country_of_residence.
@@ -200,13 +217,13 @@ export default function ProfileScreen({ navigation }) {
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Contact details</Text>
-          <TextInput
-            style={styles.input}
+          <PhoneInput
+            tone="dark"
+            dial={whatsappDial}
+            national={whatsappNational}
+            onChangeDial={setWhatsappDial}
+            onChangeNational={setWhatsappNational}
             placeholder="WhatsApp number"
-            placeholderTextColor={colors.dark.textMuted}
-            value={whatsapp}
-            onChangeText={setWhatsapp}
-            keyboardType="phone-pad"
           />
           <TextInput
             style={styles.input}
