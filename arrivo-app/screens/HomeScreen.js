@@ -142,6 +142,12 @@ export default function HomeScreen({ navigation }) {
           tone="dark"
           trailingIcon
         />
+        {/* Deliberately last and quieter than the two above. Most people should
+            book the normal way, this is for when there isn't time. */}
+        <Pressable style={styles.onTheGoRow} onPress={() => navigation.navigate("OnTheGo")}>
+          <Ionicons name="flash-outline" size={15} color={colors.tealBright} />
+          <Text style={styles.onTheGoText}>Travelling in the next few hours? Try On the Go</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -169,6 +175,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   tileText: { color: colors.dark.text, fontWeight: "700", fontSize: 12, textAlign: "center" },
+  onTheGoRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.md },
+  onTheGoText: { color: colors.tealBright, fontSize: 12.5, fontWeight: "600" },
   linkText: { color: "#9FBBEF", fontSize: 11, fontWeight: "600", marginTop: 8 },
   flightRow: {
     flexDirection: "row",

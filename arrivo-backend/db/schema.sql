@@ -496,3 +496,33 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_ride BOOLEAN NOT NULL DEFAULT f
 ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_preference TEXT; -- 'cool' | 'warm' | null (no preference)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS child_seat_required BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL DEFAULT false;
+
+-- ── On-the-Go requests ──
+-- The quick path for someone who needs a car within 12 hours and hasn't got
+-- time for the full Plan Route flow. Only the essentials, no vehicle choice,
+-- no escort or fleet extras.
+--
+-- Deliberately its own table and NOT a row in `rides`. A ride has to be paid
+-- for before it exists (see the payment checks in POST /api/rides), and this
+-- form has no payment step by design, so it can't be a ride yet. It's a
+-- request that ops picks up, confirms a driver for, and takes payment on. Once
+-- that happens they link the ride they created back here via ride_id.
+--
+-- Keeping it separate is also what makes "priority queue" mean anything. These
+-- don't sit in the normal driver claim queue at all, ops works this list
+-- directly.
+CREATE TABLE IF NOT EXISTS on_the_go_requests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  pickup_address TEXT NOT NULL,
+  destination_address TEXT NOT NULL,
+  flight_number TEXT,
+  passenger_count INTEGER NOT NULL DEFAULT 1,
+  contact_phone TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'confirmed' | 'cancelled'
+  ride_id INTEGER REFERENCES rides(id),   -- set once ops turns this into a real booking
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Ops works the pending list oldest first, so that's the index that matters.
+CREATE INDEX IF NOT EXISTS idx_on_the_go_status ON on_the_go_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_on_the_go_user ON on_the_go_requests(user_id, created_at);

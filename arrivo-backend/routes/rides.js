@@ -12,6 +12,7 @@ const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, 
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
+const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
@@ -137,6 +138,11 @@ router.post("/", requireAuth, async (req, res) => {
 
   if (!pickupAddress) {
     return res.status(400).json({ error: "pickupAddress is required" });
+  }
+  // Optional per ride, but if it's there it needs a country code like every
+  // other number we store. This one gets dialled in an actual emergency.
+  if (emergencyContactPhone && !isValidPhone(emergencyContactPhone)) {
+    return res.status(400).json({ error: phoneErrorMessage("Emergency contact phone number") });
   }
   // Unlike POST /quote (which already required this), ride creation itself
   // never checked vehicleType at all — an omitted or garbage value (e.g. a

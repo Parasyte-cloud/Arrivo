@@ -7,6 +7,7 @@ const { requireAuth } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
+const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
 const router = express.Router();
 
@@ -62,6 +63,15 @@ router.post("/signup", async (req, res) => {
   }
   const avatarError = validateAvatarDataUrl(avatarDataUrl);
   if (avatarError) return res.status(400).json({ error: avatarError });
+
+  // Both optional, but if one's given it has to carry a country code. The app
+  // sends them in E.164 already, this stops anything else getting through.
+  if (phone && !isValidPhone(phone)) {
+    return res.status(400).json({ error: phoneErrorMessage("Phone number") });
+  }
+  if (whatsappNumber && !isValidPhone(whatsappNumber)) {
+    return res.status(400).json({ error: phoneErrorMessage("WhatsApp number") });
+  }
 
   const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
   if (existing.rows.length) {
@@ -321,6 +331,14 @@ router.patch("/me", requireAuth, async (req, res) => {
   } = req.body;
   const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
   if (!current) return res.status(404).json({ error: "User not found" });
+
+  // Clearing a number is still fine, but setting one means a country code.
+  if (phone && !isValidPhone(phone)) {
+    return res.status(400).json({ error: phoneErrorMessage("Phone number") });
+  }
+  if (whatsappNumber && !isValidPhone(whatsappNumber)) {
+    return res.status(400).json({ error: phoneErrorMessage("WhatsApp number") });
+  }
 
   if (avatarDataUrl !== undefined) {
     const avatarError = validateAvatarDataUrl(avatarDataUrl);

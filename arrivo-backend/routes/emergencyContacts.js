@@ -1,6 +1,7 @@
 const express = require("express");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
+const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
 const router = express.Router();
 
@@ -26,6 +27,7 @@ router.post("/", requireAuth, async (req, res) => {
   const { name, phone, relationship } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "name is required" });
   if (!phone || !phone.trim()) return res.status(400).json({ error: "phone is required" });
+  if (!isValidPhone(phone)) return res.status(400).json({ error: phoneErrorMessage("Contact phone number") });
 
   const result = await pool.query(
     `INSERT INTO emergency_contacts (user_id, name, phone, relationship)
