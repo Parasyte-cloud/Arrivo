@@ -75,6 +75,10 @@ const required = [
   ["the flight data provider by name", /AviationStack/i],
   ["that data is not sold", /do not sell/i],
   ["the legal threshold for police disclosure", /court order/i],
+  // The approved policy says "legally binding mandate". "request" reads
+  // weaker for the same clause, so pin the approved word.
+  ["the disclosure threshold in the approved wording", /legally binding mandate/i],
+  ["the right to restrict processing, not only object", /object to or restrict/i],
   ["storage outside Nigeria", /outside Nigeria/i],
   ["the data protection contact", /privacy@ridearrivo\.com/i],
   ["the governing law", /NDPA/],

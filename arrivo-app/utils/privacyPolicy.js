@@ -30,7 +30,7 @@ export const PRIVACY_SECTIONS = [
     body:
       "We do not sell your personal data.\n\n" +
       "Your driver sees the name, contact options and locations needed to pick you up and route the trip. Payments run through Paystack and flight status comes from AviationStack.\n\n" +
-      "We give your data or GPS location to police, government bodies or legal authorities only against a valid court order, subpoena or legally binding request under Nigerian law, or where somebody is in immediate physical danger.",
+      "We give your data or GPS location to police, government bodies or legal authorities only when we are shown a valid court order, subpoena or legally binding mandate under Nigerian law, or in an emergency involving an immediate threat to someone's physical safety.",
   },
   {
     title: "Where it is kept",
@@ -45,7 +45,7 @@ export const PRIVACY_SECTIONS = [
   {
     title: "Your rights",
     body:
-      "Under the NDPA you can ask for a copy of your data, correct it, have your account and data deleted, or object to certain processing. Email privacy@ridearrivo.com to do any of that or to reach our Data Protection Officer. You can also complain to the Nigeria Data Protection Commission.",
+      "Under the NDPA you can ask for a copy of your data, correct it, have your account and data deleted, or object to or restrict certain processing. Email privacy@ridearrivo.com to do any of that or to reach our Data Protection Officer. You can also complain to the Nigeria Data Protection Commission.",
   },
   {
     title: "Age",
