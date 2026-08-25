@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
-import { PRIVACY_SECTIONS, PRIVACY_LAST_UPDATED, PRIVACY_FULL_URL } from "../utils/privacyPolicy";
+import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import OAuthButtons from "../components/OAuthButtons";
 
@@ -126,39 +126,14 @@ export default function SignupScreen({ navigation }) {
           </Text>
         </View>
 
-        <Modal visible={privacyModalVisible} animationType="slide" transparent onRequestClose={() => setPrivacyModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Data Protection &amp; Privacy Policy</Text>
-                <Pressable onPress={() => setPrivacyModalVisible(false)}>
-                  <Text style={styles.modalClose}>✕</Text>
-                </Pressable>
-              </View>
-              <ScrollView style={styles.modalBody}>
-                <Text style={styles.modalUpdated}>Last updated {PRIVACY_LAST_UPDATED}</Text>
-                {PRIVACY_SECTIONS.map((section) => (
-                  <View key={section.title} style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>{section.title}</Text>
-                    <Text style={styles.modalText}>{section.body}</Text>
-                  </View>
-                ))}
-                <Text style={styles.modalText}>
-                  This is a summary. For the full policy, visit {PRIVACY_FULL_URL} from a browser.
-                </Text>
-              </ScrollView>
-              <Pressable
-                style={styles.modalAgreeBtn}
-                onPress={() => {
-                  setAgreedToTerms(true);
-                  setPrivacyModalVisible(false);
-                }}
-              >
-                <Text style={styles.modalAgreeBtnText}>I've read this. I agree</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+        <PrivacyPolicyModal
+          visible={privacyModalVisible}
+          onClose={() => setPrivacyModalVisible(false)}
+          onAgree={() => {
+            setAgreedToTerms(true);
+            setPrivacyModalVisible(false);
+          }}
+        />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -217,18 +192,6 @@ const styles = StyleSheet.create({
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   agreeText: { color: colors.textMuted, fontSize: 12.5, flex: 1 },
   agreeLink: { color: colors.tealBright, textDecorationLine: "underline" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.cream, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "75%" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#e5e5e5" },
-  modalTitle: { fontWeight: "700", fontSize: 15, color: colors.ink, flex: 1 },
-  modalClose: { fontSize: 18, color: "#888", paddingHorizontal: 8 },
-  modalBody: { padding: 20 },
-  modalText: { color: colors.ink, fontSize: 13.5, lineHeight: 20 },
-  modalUpdated: { color: "#666", fontSize: 11.5, marginBottom: 14 },
-  modalSection: { marginBottom: 14 },
-  modalSectionTitle: { color: colors.ink, fontWeight: "700", fontSize: 13, marginBottom: 4 },
-  modalAgreeBtn: { backgroundColor: colors.amber, margin: 20, marginTop: 0, padding: 14, borderRadius: 12, alignItems: "center" },
-  modalAgreeBtnText: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
