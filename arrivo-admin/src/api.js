@@ -39,6 +39,16 @@ export const getMe = (token) => request("/api/auth/me", token);
 // videoToken, chatToken }.
 export const getCallToken = (token) => request("/api/calls/token", token, { method: "POST" });
 
+// Support tickets from the rider app. status is optional and narrows the
+// list to "open" or "closed"; the backend caps the list at 200, so filtering
+// server-side keeps open tickets from being pushed off by closed ones.
+export const getSupportTickets = (token, status) =>
+  request(`/api/support/tickets${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);
+
+// Admin only. Support accounts can read the queue but not act on it.
+export const setSupportTicketStatus = (token, id, status) =>
+  request(`/api/support/tickets/${id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
+
 export const getDrivers = (token) => request("/api/admin/drivers", token);
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
