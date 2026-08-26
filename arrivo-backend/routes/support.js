@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 
@@ -6,12 +7,35 @@ const router = express.Router();
 
 const TYPES = ["complaint", "inquiry", "support"];
 const STATUSES = ["open", "closed"];
+
+// Anyone signed in can file a ticket, so the only thing standing between us
+// and a loop is this. Keyed by user id rather than IP on purpose: riders here
+// are on mobile networks that put a lot of people behind one carrier NAT
+// address, and an IP key would have strangers throttling each other.
+// requireAuth runs before this, so req.user is always set.
+//
+// Only the write path is limited. The list and close routes are admin and
+// support only, which is a much smaller and known set of people.
+const submitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.SUPPORT_TICKET_RATE_LIMIT) || 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user.id),
+  // The default handler answers in plain text. Everything else in this API
+  // answers { error }, and the app reads that field to show a message.
+  handler: (req, res) =>
+    res.status(429).json({
+      error:
+        "That's a lot of messages in a short time. Give it a few minutes, or call us if it's urgent.",
+    }),
+});
 const MAX_SUBJECT = 140;
 const MAX_DESCRIPTION = 4000;
 
 // POST /api/support/tickets
 // body: { type, subject, description, rideId? }
-router.post("/tickets", requireAuth, async (req, res) => {
+router.post("/tickets", requireAuth, submitLimiter, async (req, res) => {
   const { type, subject, description, rideId } = req.body;
 
   if (!TYPES.includes(type)) {
@@ -113,5 +137,9 @@ router.patch("/tickets/:id", requireAuth, requireRole("admin"), async (req, res)
   if (!result.rows[0]) return res.status(404).json({ error: "No ticket with that id." });
   res.json({ ticket: result.rows[0] });
 });
+
+// Hung off the router so the tests can clear a key between cases without
+// changing what server.js mounts.
+router.submitLimiter = submitLimiter;
 
 module.exports = router;

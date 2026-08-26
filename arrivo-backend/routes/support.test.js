@@ -123,8 +123,16 @@ function tokenFor(id, role = "rider") {
   return jwt.sign({ id, email: `u${id}@example.com`, role }, process.env.JWT_SECRET);
 }
 
+// Every other test here posts far more than the limit allows, so the helper
+// clears the caller's key first. The rate limit gets its own tests below,
+// which deliberately bypass this.
+function clearLimit(userId) {
+  supportRouter.submitLimiter.resetKey(String(userId));
+}
+
 async function call(path, { method = "GET", token, body } = {}) {
   const { port } = server.address();
+  if (method === "POST") { clearLimit(1); clearLimit(2); }
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
     headers: {
@@ -399,6 +407,48 @@ const ok = {
   await test("a bogus status filter is refused", async () => {
     const r = await call("/api/support/tickets?status=banana", { token: tokenFor(50, "admin") });
     assert.strictEqual(r.status, 400);
+  });
+
+  console.log("");
+  console.log("Rate limiting the submit endpoint:");
+
+  async function rawPost(token, body) {
+    const { port } = server.address();
+    const res = await fetch(`http://127.0.0.1:${port}/api/support/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  await test("a rider is cut off after the limit and told why", async () => {
+    clearLimit(1);
+    const limit = Number(process.env.SUPPORT_TICKET_RATE_LIMIT) || 5;
+    for (let i = 0; i < limit; i++) {
+      const r = await rawPost(RIDER, ok);
+      assert.strictEqual(r.status, 201, `request ${i + 1} should have gone through, got ${r.status}`);
+    }
+    const blocked = await rawPost(RIDER, ok);
+    assert.strictEqual(blocked.status, 429, `expected 429, got ${blocked.status}`);
+    assert.ok(blocked.body.error, "429 should carry an { error } message like every other response");
+    assert.ok(!/^\s*$/.test(blocked.body.error), "the message should not be blank");
+  });
+
+  await test("the limit is per rider, not shared across everyone", async () => {
+    // Rider 1 is still blocked from the test above. A different rider must
+    // not inherit that, which is what an IP-keyed limit would have done to
+    // two people behind the same carrier NAT.
+    clearLimit(2);
+    const other = await rawPost(OTHER_RIDER, ok);
+    assert.strictEqual(other.status, 201, `a second rider should be unaffected, got ${other.status}`);
+  });
+
+  await test("reading the queue is not rate limited", async () => {
+    for (let i = 0; i < 8; i++) {
+      const r = await call("/api/support/tickets", { token: tokenFor(50, "admin") });
+      assert.strictEqual(r.status, 200, `admin read ${i + 1} was blocked`);
+    }
   });
 
   server.close();
