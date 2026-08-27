@@ -79,6 +79,10 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
           rows used to be bare text next to a coloured dot, so riders couldn't
           tell they were tappable at all. */}
       <View style={[styles.field, focused && styles.fieldFocused]}>
+        {/* Suggestions off on purpose. The keyboard strip sits right above
+            this field, and a rider reaching for a Places result can hit a
+            word suggestion instead and rewrite the address they typed. The
+            list below is the only thing that should complete an address. */}
         <TextInput
           style={[styles.input, inputStyle]}
           value={value}
@@ -90,6 +94,12 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
           onBlur={() => setTimeout(() => setFocused(false), 150)} // delay so a suggestion tap registers first
           placeholder={placeholder}
           placeholderTextColor={colors.dark.textMuted}
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          keyboardType="default"
         />
         <Ionicons name="pencil" size={13} color={colors.dark.textMuted} style={styles.pencil} />
       </View>
