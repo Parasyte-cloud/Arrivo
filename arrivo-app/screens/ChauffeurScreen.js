@@ -284,6 +284,11 @@ export default function ChauffeurScreen({ navigation }) {
             onChangeText={setPickupAddress}
             placeholder="Where should your chauffeur meet you?"
             placeholderTextColor={colors.dark.textMuted}
+            autoCorrect={false}
+            spellCheck={false}
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
           />
           <Pressable onPress={useCurrentLocationForPickup} style={styles.useLocationRow} disabled={locatingPickup}>
             {locatingPickup ? (
