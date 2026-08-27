@@ -17,12 +17,7 @@ import {
   premiumUpgradeDescription,
   premiumUpgradePrice,
 } from "../utils/premiumUpgrade";
-import {
-  securityEscortDescription,
-  fleetChipLabel,
-  fleetDescription,
-  FLEET_SIZES,
-} from "../utils/addonPricing";
+import { AddonOptions } from "../components/AddonOptions";
 
 // The upgrade only makes sense on Sedan/SUV. Executive is already the premium
 // tier and Pickup is a cargo vehicle. Wording and price live in
@@ -813,39 +808,14 @@ export default function RouteScreen({ navigation, route }) {
           ) : null}
         </Card>
 
-        <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <View style={styles.toggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardLabel}>Security escort</Text>
-              <Text style={styles.addonNote}>
-                {securityEscortDescription(quote?.ngnPerUsd, formatFare)}
-              </Text>
-            </View>
-            <Switch
-              value={securityEscort}
-              onValueChange={setSecurityEscort}
-              trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
-            />
-          </View>
-        </Card>
-
-        <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Fleet accompaniment</Text>
-          <Text style={styles.addonNote}>{fleetDescription(fleetSize, formatFare)}</Text>
-          <View style={[styles.bookingRow, { marginTop: 8 }]}>
-            {FLEET_SIZES.map((n) => (
-              <Pressable
-                key={n}
-                onPress={() => setFleetSize(n)}
-                style={[styles.bookingChip, fleetSize === n && styles.bookingChipActive]}
-              >
-                <Text style={[styles.bookingChipText, fleetSize === n && styles.bookingChipTextActive]}>
-                  {fleetChipLabel(n, formatFare)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </Card>
+        <AddonOptions
+          securityEscort={securityEscort}
+          onSecurityEscortChange={setSecurityEscort}
+          fleetSize={fleetSize}
+          onFleetSizeChange={setFleetSize}
+          ngnPerUsd={quote?.ngnPerUsd}
+          formatFare={formatFare}
+        />
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Emergency contact (optional)</Text>
