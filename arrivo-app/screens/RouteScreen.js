@@ -17,6 +17,12 @@ import {
   premiumUpgradeDescription,
   premiumUpgradePrice,
 } from "../utils/premiumUpgrade";
+import {
+  securityEscortDescription,
+  fleetChipLabel,
+  fleetDescription,
+  FLEET_SIZES,
+} from "../utils/addonPricing";
 
 // The upgrade only makes sense on Sedan/SUV. Executive is already the premium
 // tier and Pickup is a cargo vehicle. Wording and price live in
@@ -811,7 +817,9 @@ export default function RouteScreen({ navigation, route }) {
           <View style={styles.toggleRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardLabel}>Security escort</Text>
-              <Text style={styles.addonNote}>Adds a dedicated security vehicle</Text>
+              <Text style={styles.addonNote}>
+                {securityEscortDescription(quote?.ngnPerUsd, formatFare)}
+              </Text>
             </View>
             <Switch
               value={securityEscort}
@@ -823,15 +831,16 @@ export default function RouteScreen({ navigation, route }) {
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Fleet accompaniment</Text>
-          <View style={styles.bookingRow}>
-            {[0, 2, 3].map((n) => (
+          <Text style={styles.addonNote}>{fleetDescription(fleetSize, formatFare)}</Text>
+          <View style={[styles.bookingRow, { marginTop: 8 }]}>
+            {FLEET_SIZES.map((n) => (
               <Pressable
                 key={n}
                 onPress={() => setFleetSize(n)}
                 style={[styles.bookingChip, fleetSize === n && styles.bookingChipActive]}
               >
                 <Text style={[styles.bookingChipText, fleetSize === n && styles.bookingChipTextActive]}>
-                  {n === 0 ? "None" : `${n} vehicles`}
+                  {fleetChipLabel(n, formatFare)}
                 </Text>
               </Pressable>
             ))}
