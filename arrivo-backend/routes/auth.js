@@ -9,6 +9,8 @@ const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
+const { findDeletionBlocker, anonymiseAccount } = require("../services/accountDeletion");
+
 const router = express.Router();
 
 const SALT_ROUNDS = 10;
@@ -187,7 +189,7 @@ router.post("/login", async (req, res) => {
 
   const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
   const user = result.rows[0];
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || user.deleted_at || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
@@ -538,6 +540,39 @@ router.post("/reset-password", async (req, res) => {
   );
 
   res.json({ message: "Password updated. You can now log in with your new password." });
+});
+
+// DELETE /api/auth/me
+// body: { confirmEmail }
+//
+// Both app stores require an in-app way to leave, and the privacy policy
+// promises it under NDPA rights. Confirmation is the account email typed back
+// rather than the password, because Google and Apple sign-ins get a random
+// password they have never seen and could not retype.
+router.delete("/me", requireAuth, async (req, res) => {
+  const confirmEmail = String(req.body?.confirmEmail || "").trim().toLowerCase();
+
+  const current = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
+  const account = current.rows[0];
+  if (!account) return res.status(404).json({ error: "No account found." });
+
+  if (!confirmEmail || confirmEmail !== String(account.email).toLowerCase()) {
+    return res
+      .status(400)
+      .json({ error: "Type the email address on your account to confirm." });
+  }
+
+  const blocker = await findDeletionBlocker(pool, req.user.id);
+  if (blocker) {
+    return res.status(409).json({ error: blocker.message, reason: blocker.reason });
+  }
+
+  const deleted = await anonymiseAccount(pool, req.user.id);
+  if (!deleted) return res.status(404).json({ error: "No account found." });
+
+  // The token stays valid until it expires, but requireAuth now checks
+  // deleted_at on every request, so it stops working immediately.
+  res.json({ deleted: true, deletedAt: deleted.deleted_at });
 });
 
 module.exports = router;
