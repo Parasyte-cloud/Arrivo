@@ -1,7 +1,16 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as api from "./api";
 
-const TOKEN_KEY = "arrivo_admin_token";
+const ARRIVOOPS_SURFACE = new URLSearchParams(
+  window.location.search
+).get("surface");
+
+const IS_OPERATIONS_SURFACE =
+  ARRIVOOPS_SURFACE === "operations";
+
+const TOKEN_KEY = IS_OPERATIONS_SURFACE
+  ? "arrivo_operations_token"
+  : "arrivo_admin_token";
 const AuthContext = createContext(null);
 
 // ArrivoOps staff roles:
@@ -12,7 +21,13 @@ const AuthContext = createContext(null);
 // Frontend restrictions are UX controls only. The backend remains the
 // security boundary: operationsReadOnly.js denies Operations by default
 // and permits only explicitly approved read-only operational GET routes.
-const ALLOWED_ROLES = ["admin", "support", "operations"];
+const ALLOWED_ROLES = IS_OPERATIONS_SURFACE
+  ? ["operations"]
+  : ["admin", "support", "operations"];
+
+const ROLE_ERROR = IS_OPERATIONS_SURFACE
+  ? "This ArrivoOps surface requires an Operations account."
+  : "This account isn't an ArrivoOps staff account.";
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
@@ -25,7 +40,7 @@ export function AuthProvider({ children }) {
       if (saved) {
         try {
           const { user: me } = await api.getMe(saved);
-          if (!ALLOWED_ROLES.includes(me.role)) throw new Error("Not an ArrivoOps staff account");
+          if (!ALLOWED_ROLES.includes(me.role)) throw new Error(ROLE_ERROR);
           setToken(saved);
           setUser(me);
         } catch {
@@ -39,7 +54,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const data = await api.login(email, password);
     if (!ALLOWED_ROLES.includes(data.user.role)) {
-      throw new Error("This account isn't an ArrivoOps staff account.");
+      throw new Error(ROLE_ERROR);
     }
     localStorage.setItem(TOKEN_KEY, data.token);
     setToken(data.token);
