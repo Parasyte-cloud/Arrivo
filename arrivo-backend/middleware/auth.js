@@ -1,7 +1,8 @@
+const { pool } = require("../db/db");
 const jwt = require("jsonwebtoken");
 const { enforceOperationsReadOnly } = require("./operationsReadOnly");
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization; // expected: "Bearer <token>"
   const token = header && header.startsWith("Bearer ") ? header.slice(7) : null;
 
@@ -12,6 +13,15 @@ function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.user = payload; // { id, email, role }
+
+    // Tokens last 7 days and nothing here touched the database, so a deleted
+    // account used to keep working for the rest of that week. One lookup by
+    // primary key is cheap next to the work the route is about to do anyway.
+    const live = await pool.query("SELECT deleted_at FROM users WHERE id = $1", [payload.id]);
+    if (!live.rows[0] || live.rows[0].deleted_at) {
+      return res.status(401).json({ error: "This account no longer exists." });
+    }
+
     return enforceOperationsReadOnly(req, res, next);
   } catch (err) {
     return res.status(401).json({ error: "Invalid or expired token" });
