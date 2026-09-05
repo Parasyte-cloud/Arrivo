@@ -24,13 +24,14 @@ const MembershipsPage = lazy(() => import("./pages/MembershipsPage").then((m) =>
 const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })));
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
+const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
 // validate an incoming URL hash (so a stale/garbage/mistyped link can
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "panics", "riders", "drivers", "rides", "flight-issues",
+  "panics", "riders", "drivers", "rides", "support", "flight-issues",
   "vehicles", "memberships", "wallet", "live-map", "analytics",
 ];
 
@@ -97,6 +98,7 @@ function Dashboard() {
             {page === "memberships" && <MembershipsPage />}
             {page === "wallet" && <WalletPage />}
             {page === "live-map" && <LiveMapPage />}
+            {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
           </Suspense>
         </ErrorBoundary>

@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { id: "riders", label: "Riders", icon: "👥" },
   { id: "drivers", label: "Drivers", icon: "🚘" },
   { id: "rides", label: "Rides", icon: "🚗" },
+  { id: "support", label: "Support Tickets", icon: "💬" },
   { id: "flight-issues", label: "Flight Issues", icon: "✈️", badgeColor: "var(--amber)" },
   { id: "vehicles", label: "Vehicles", icon: "🚙" },
   { id: "memberships", label: "Memberships", icon: "🎫" },

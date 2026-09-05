@@ -9,7 +9,7 @@ import { colors, spacing } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
-import { validatePhone } from "../utils/phoneValidation";
+import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons from "../components/OAuthButtons";
 
 const LANGUAGES = [
@@ -33,8 +33,13 @@ export default function SignupScreen({ navigation }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [passportNumber, setPassportNumber] = useState("");
-  const [phone, setPhone] = useState("");
-  const [whatsappDial, setWhatsappDial] = useState("+234");
+  // Optional phone number, but it went through a plain text box while the
+  // WhatsApp number right below it went through PhoneInput — so the same
+  // account could end up holding one number with a country code and one
+  // without. Both use the picker now.
+  const [phoneDial, setPhoneDial] = useState(DEFAULT_DIAL);
+  const [phoneNational, setPhoneNational] = useState("");
+  const [whatsappDial, setWhatsappDial] = useState(DEFAULT_DIAL);
   const [whatsappNational, setWhatsappNational] = useState("");
   const [country, setCountry] = useState("");
   const [password, setPassword] = useState("");
@@ -92,7 +97,12 @@ export default function SignupScreen({ navigation }) {
       setError("Passwords do not match.");
       return;
     }
-    const phoneResult = validatePhone(whatsappDial, whatsappNational);
+    const whatsappResult = validatePhone(whatsappDial, whatsappNational);
+    if (!whatsappResult.valid) {
+      setError(whatsappResult.message);
+      return;
+    }
+    const phoneResult = validateOptionalPhone(phoneDial, phoneNational);
     if (!phoneResult.valid) {
       setError(phoneResult.message);
       return;
@@ -108,9 +118,10 @@ export default function SignupScreen({ navigation }) {
     setLoading(true);
     try {
       await signup({
-        firstName, lastName, email: email.trim().toLowerCase(), passportNumber, phone,
+        firstName, lastName, email: email.trim().toLowerCase(), passportNumber,
+        phone: phoneResult.full || undefined,
         password, confirmPassword, agreedToTerms, preferredLanguage: language,
-        whatsappNumber: phoneResult.full, countryOfResidence: country.trim(),
+        whatsappNumber: whatsappResult.full, countryOfResidence: country.trim(),
         avatarDataUrl: avatarDataUrl || undefined,
       });
     } catch (e) {
@@ -190,13 +201,13 @@ export default function SignupScreen({ navigation }) {
           onChangeText={setPassportNumber}
         />
         <Text style={styles.helperText}>Any government-licensed ID: passport, NIN, etc.</Text>
-        <TextInput
-          style={styles.input}
+        <Text style={styles.label}>{t("auth.phone")}</Text>
+        <PhoneInput
+          dial={phoneDial}
+          national={phoneNational}
+          onChangeDial={setPhoneDial}
+          onChangeNational={setPhoneNational}
           placeholder={t("auth.phone")}
-          placeholderTextColor={colors.textMuted}
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
         />
 
         <Text style={styles.label}>WhatsApp number</Text>
