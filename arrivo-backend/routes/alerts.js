@@ -11,7 +11,7 @@ const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth
 const { transitionAlert, InvalidAlertTransitionError } = require("../services/telemetry/alertService");
 
 const router = express.Router();
-router.use(requireAuth, requireAnyRole(["admin", "support"]));
+router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // GET /api/alerts — list, filtered, paginated.
 // Follows the existing LIMIT-based pagination convention seen in

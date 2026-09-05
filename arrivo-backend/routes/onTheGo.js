@@ -64,7 +64,7 @@ router.get("/mine", requireAuth, async (req, res) => {
 // GET /api/on-the-go — the ops queue. Pending first, oldest first within that,
 // since these are all time-critical and the oldest one has been waiting longest.
 // Nothing in the admin dashboard reads this yet, that page still needs building.
-router.get("/", requireAuth, requireAnyRole(["admin", "support"]), async (req, res) => {
+router.get("/", requireAuth, requireAnyRole(["admin", "support", "operations"]), async (req, res) => {
   const result = await pool.query(
     `SELECT on_the_go_requests.*,
             users.name AS user_name,

@@ -4,16 +4,15 @@ import * as api from "./api";
 const TOKEN_KEY = "arrivo_admin_token";
 const AuthContext = createContext(null);
 
-// Two roles can use this dashboard: "admin" (full access) and "support"
-// (read-only — for customer support staff who need visibility without the
-// ability to verify drivers, resolve panics, or change ride status).
-// IMPORTANT: this only controls what buttons render in this app. The real
-// enforcement has to happen on the backend — every PATCH/POST admin
-// endpoint must independently check the JWT's role and reject support-role
-// tokens, since anyone can bypass frontend-only restrictions via devtools
-// or a direct API call. Treat this as a UX convenience, not a security
-// boundary, until that server-side check exists.
-const ALLOWED_ROLES = ["admin", "support"];
+// ArrivoOps staff roles:
+// - admin: full console access
+// - support: existing read-only support access
+// - operations: strict read-only operational access
+//
+// Frontend restrictions are UX controls only. The backend remains the
+// security boundary: operationsReadOnly.js denies Operations by default
+// and permits only explicitly approved read-only operational GET routes.
+const ALLOWED_ROLES = ["admin", "support", "operations"];
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
@@ -26,7 +25,7 @@ export function AuthProvider({ children }) {
       if (saved) {
         try {
           const { user: me } = await api.getMe(saved);
-          if (!ALLOWED_ROLES.includes(me.role)) throw new Error("Not an admin or support account");
+          if (!ALLOWED_ROLES.includes(me.role)) throw new Error("Not an ArrivoOps staff account");
           setToken(saved);
           setUser(me);
         } catch {
@@ -40,7 +39,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const data = await api.login(email, password);
     if (!ALLOWED_ROLES.includes(data.user.role)) {
-      throw new Error("This account isn't an admin or support account.");
+      throw new Error("This account isn't an ArrivoOps staff account.");
     }
     localStorage.setItem(TOKEN_KEY, data.token);
     setToken(data.token);
@@ -92,10 +91,11 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [token]);
 
-  const isReadOnly = user?.role === "support";
+  const isOperations = user?.role === "operations";
+  const isReadOnly = user?.role === "support" || isOperations;
 
   return (
-    <AuthContext.Provider value={{ token, user, initializing, login, logout, isAuthenticated: !!token, isReadOnly }}>
+    <AuthContext.Provider value={{ token, user, initializing, login, logout, isAuthenticated: !!token, isReadOnly, isOperations }}>
       {children}
     </AuthContext.Provider>
   );

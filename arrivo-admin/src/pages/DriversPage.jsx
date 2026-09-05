@@ -28,7 +28,7 @@ function exportDriversCsv(drivers) {
 }
 
 export function DriversPage() {
-  const { token, isReadOnly } = useAuth();
+  const { token, isReadOnly, isOperations } = useAuth();
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -138,7 +138,7 @@ export function DriversPage() {
                           NOT usable as a Stream user id. d.user_id is the
                           driver's actual users.id, joined server-side (see
                           arrivo-backend/routes/admin.js GET /drivers). */}
-                      <CallButton calleeUserId={d.user_id} calleeName={d.name} />
+                      {!isOperations ? (<CallButton calleeUserId={d.user_id} calleeName={d.name} />) : null}
                     </div>
                   </td>
                   <td>

@@ -17,8 +17,19 @@ const NAV_ITEMS = [
   { id: "analytics", label: "Analytics", icon: "📊" },
 ];
 
+const OPERATIONS_NAV_IDS = new Set([
+  "panics",
+  "drivers",
+  "rides",
+  "flight-issues",
+  "vehicles",
+  "live-map",
+  "analytics",
+]);
+
+
 export function Sidebar({ page, setPage, open, onClose }) {
-  const { user, token, logout, isReadOnly } = useAuth();
+  const { user, token, logout, isReadOnly, isOperations } = useAuth();
   const [panicCount, setPanicCount] = useState(0);
   const [flightIssueCount, setFlightIssueCount] = useState(0);
 
@@ -38,6 +49,9 @@ export function Sidebar({ page, setPage, open, onClose }) {
   }, [token]);
 
   const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
+  const visibleNavItems = isOperations
+    ? NAV_ITEMS.filter((item) => OPERATIONS_NAV_IDS.has(item.id))
+    : NAV_ITEMS;
 
   return (
     <>
@@ -51,12 +65,12 @@ export function Sidebar({ page, setPage, open, onClose }) {
           borderRadius: 999, fontSize: 10.5, fontWeight: 700, color: "var(--amber)",
           textAlign: "center", letterSpacing: "0.04em",
         }}>
-          READ-ONLY · SUPPORT
+          READ-ONLY · {isOperations ? "OPERATIONS" : "SUPPORT"}
         </div>
       ) : null}
 
       <nav>
-        {NAV_ITEMS.map((item) => {
+        {visibleNavItems.map((item) => {
           const count = badgeCounts[item.id] || 0;
           return (
             <button

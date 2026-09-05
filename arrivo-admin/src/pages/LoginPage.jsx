@@ -31,7 +31,7 @@ export function LoginPage() {
         <input
           className="field"
           type="email"
-          placeholder="Admin email"
+          placeholder="Staff email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoFocus

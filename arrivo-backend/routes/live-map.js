@@ -13,7 +13,7 @@ const { requireAuth, requireAnyRole } = require("../middleware/auth");
 const { classifyGpsHealth } = require("../services/telemetry/vehicleStateService");
 
 const router = express.Router();
-router.use(requireAuth, requireAnyRole(["admin", "support"]));
+router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 router.get("/snapshot", async (req, res) => {
   const { filter, search } = req.query;

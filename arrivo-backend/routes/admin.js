@@ -9,7 +9,7 @@ const router = express.Router();
 // mutating routes below additionally require requireRole("admin") on top
 // of this, so a 'support' token can GET any of these but gets a 403 on
 // anything that changes data (verify a driver, resolve a panic, edit a ride).
-router.use(requireAuth, requireAnyRole(["admin", "support"]));
+router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
