@@ -286,7 +286,7 @@ export function RidesPage() {
                           />
                           {isReadOnly ? (
                             <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 8, fontStyle: "italic" }}>
-                              Support view is read-only. Ask an admin to add notes or cancel this ride.
+                              Read-only view. Ask an administrator to add notes or cancel this ride.
                             </p>
                           ) : (
                             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>

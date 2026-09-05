@@ -125,7 +125,7 @@ export function PanicsPage() {
 
               {isReadOnly ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 12.5, fontStyle: "italic" }}>
-                  Support view is read-only. Call the numbers above, then ask an admin to mark this resolved.
+                  Read-only view. Contact an administrator to mark this panic resolved.
                 </p>
               ) : (
                 <>

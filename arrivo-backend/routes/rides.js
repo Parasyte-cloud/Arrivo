@@ -1098,7 +1098,7 @@ router.get("/:id/fleet", requireAuth, async (req, res) => {
   // logins (see AuthContext.jsx isReadOnly) — "support" was missing here,
   // so a support-role staffer got a silent 403 that RidesPage.jsx's .catch()
   // masked as an empty "No escort vehicles loaded yet." companion list.
-  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
+  if (!isRider && !isAssignedDriver && !["admin", "support", "operations"].includes(req.user.role)) {
     return res.status(403).json({ error: "You don't have access to this ride" });
   }
 

@@ -35,44 +35,97 @@ const PAGES = [
   "vehicles", "memberships", "wallet", "live-map", "analytics",
 ];
 
-function pageFromHash() {
+const OPERATIONS_PAGES = [
+  "panics",
+  "drivers",
+  "rides",
+  "flight-issues",
+  "vehicles",
+  "live-map",
+  "analytics",
+];
+
+
+function pageFromHash(allowedPages = PAGES) {
   const hash = window.location.hash.replace(/^#\/?/, "");
-  return PAGES.includes(hash) ? hash : "panics";
+  return allowedPages.includes(hash) ? hash : "panics";
 }
 
 function Dashboard() {
+  const { isOperations } = useAuth();
+  const allowedPages = isOperations
+    ? OPERATIONS_PAGES
+    : PAGES;
+
   // Default to Panic Alerts on login — the safety-critical view should be
   // the first thing an ops person sees, not something they have to
   // remember to check. Reading from the URL hash first (falling back to
   // "panics") means a refresh, a bookmark, or a link shared with a
   // teammate all land on the actual page intended, not always the
   // default — and the hash sync below keeps the two in sync from here on.
-  const [page, setPageState] = useState(pageFromHash);
+  const [page, setPageState] = useState(() => pageFromHash(allowedPages));
 
   const setPage = useCallback((next) => {
+    if (!allowedPages.includes(next)) return;
+
     setPageState(next);
-    if (window.location.hash.replace(/^#\/?/, "") !== next) {
+
+    if (
+      window.location.hash.replace(/^#\/?/, "")
+      !== next
+    ) {
       window.location.hash = `/${next}`;
     }
-  }, []);
+  }, [allowedPages]);
 
   // Browser back/forward changes the hash without touching React state on
   // its own — this is what makes those buttons actually navigate between
   // admin pages instead of doing nothing (or leaving the visible page out
   // of sync with the URL).
   useEffect(() => {
-    const onHashChange = () => setPageState(pageFromHash());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    const onHashChange = () => {
+      const raw =
+        window.location.hash.replace(/^#\/?/, "");
+
+      const next =
+        pageFromHash(allowedPages);
+
+      setPageState(next);
+
+      if (
+        raw
+        && !allowedPages.includes(raw)
+      ) {
+        window.location.hash = `/${next}`;
+      }
+    };
+
+    window.addEventListener(
+      "hashchange",
+      onHashChange
+    );
+
+    return () =>
+      window.removeEventListener(
+        "hashchange",
+        onHashChange
+      );
+  }, [allowedPages]);
 
   // First render: if there was no hash at all (a fresh login, not a
   // deep link), write one so the address bar reflects reality from the
   // start rather than only after the first nav click.
   useEffect(() => {
-    if (!window.location.hash) window.location.hash = `/${page}`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const raw =
+      window.location.hash.replace(/^#\/?/, "");
+
+    if (
+      !raw
+      || !allowedPages.includes(raw)
+    ) {
+      window.location.hash = `/${page}`;
+    }
+  }, [allowedPages, page]);
   // Sidebar is always visible on desktop; on narrow (phone) screens it
   // becomes an off-canvas drawer toggled by the hamburger button below —
   // see the .sidebar / .mobile-topbar rules in styles.css for the
@@ -108,18 +161,34 @@ function Dashboard() {
 }
 
 function Root() {
-  const { isAuthenticated, initializing } = useAuth();
+  const {
+    isAuthenticated,
+    initializing,
+    isOperations,
+  } = useAuth();
 
   if (initializing) {
-    return <div className="login-screen"><div style={{ color: "var(--text-muted)" }}>Loading…</div></div>;
+    return (
+      <div className="login-screen">
+        <div style={{ color: "var(--text-muted)" }}>
+          Loading...
+        </div>
+      </div>
+    );
   }
 
-  return isAuthenticated ? (
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  if (isOperations) {
+    return <Dashboard />;
+  }
+
+  return (
     <StreamClientProvider>
       <Dashboard />
     </StreamClientProvider>
-  ) : (
-    <LoginPage />
   );
 }
 
