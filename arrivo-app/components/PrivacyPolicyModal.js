@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Linking } from "react-native";
 import { colors } from "../theme/tokens";
 import { PRIVACY_SECTIONS, PRIVACY_LAST_UPDATED, PRIVACY_FULL_URL } from "../utils/privacyPolicy";
 
@@ -12,6 +12,13 @@ import { PRIVACY_SECTIONS, PRIVACY_LAST_UPDATED, PRIVACY_FULL_URL } from "../uti
 // The agree button sits outside the ScrollView on purpose. The copy is long
 // enough to scroll and the button has to stay reachable without hunting for
 // the bottom.
+
+// The URL was plain text, so tapping it did nothing. Opens in the phone's
+// browser now. Swallow the rejection: openURL throws when nothing can handle
+// the link, and there is nothing useful to tell the rider at that point.
+function openFullPolicy() {
+  Linking.openURL(`https://${PRIVACY_FULL_URL}`).catch(() => {});
+}
 
 export function PrivacyPolicyModal({ visible, onClose, onAgree }) {
   return (
@@ -34,7 +41,11 @@ export function PrivacyPolicyModal({ visible, onClose, onAgree }) {
               </View>
             ))}
             <Text style={styles.modalText}>
-              This is a summary. For the full policy, visit {PRIVACY_FULL_URL} from a browser.
+              This is a summary. For the full policy, visit{" "}
+              <Text style={styles.modalLink} onPress={openFullPolicy}>
+                {PRIVACY_FULL_URL}
+              </Text>
+              .
             </Text>
           </ScrollView>
 
@@ -56,6 +67,7 @@ const styles = StyleSheet.create({
   modalBody: { flexShrink: 1 },
   modalBodyContent: { padding: 20 },
   modalText: { color: colors.ink, fontSize: 13.5, lineHeight: 20 },
+  modalLink: { color: colors.ink, fontWeight: "700", textDecorationLine: "underline" },
   modalUpdated: { color: "#666", fontSize: 11.5, marginBottom: 14 },
   modalSection: { marginBottom: 14 },
   modalSectionTitle: { color: colors.ink, fontWeight: "700", fontSize: 13, marginBottom: 4 },
