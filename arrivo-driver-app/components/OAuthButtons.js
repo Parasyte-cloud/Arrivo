@@ -82,7 +82,14 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      onAppleResult({ identityToken: credential.identityToken, fullName: credential.fullName });
+      // authorizationCode is one-time and only useful right now: the backend
+      // swaps it for a refresh token, which is the only thing that can revoke
+      // this Apple authorization when the account is deleted.
+      onAppleResult({
+        identityToken: credential.identityToken,
+        fullName: credential.fullName,
+        authorizationCode: credential.authorizationCode,
+      });
     } catch (e) {
       if (e.code === "ERR_REQUEST_CANCELED") return;
       onAppleResult({ error: e.message || "Apple sign-in failed. Please try again." });
