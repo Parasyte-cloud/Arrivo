@@ -6,8 +6,10 @@
 // build points at staging; if the submitted build points at production, this
 // has to run against production or the reviewer gets an invalid login.
 //
-//   node scripts/create-review-account.js
-//   node scripts/create-review-account.js "some-password"
+//   REVIEW_ACCOUNT_PASSWORD=... node scripts/create-review-account.js
+//   node scripts/create-review-account.js "a-strong-private-password"
+//
+// There is no default password. Supply one or it refuses to run.
 //
 // Safe to re-run. It resets the password and re-verifies the accounts rather
 // than erroring on the second run, which is what you want the week before a
@@ -22,15 +24,33 @@
 
 require("dotenv").config();
 const bcrypt = require("bcryptjs");
-const { pool, ready } = require("../db/db");
 
 const RIDER_EMAIL = "appreview.rider@ridearrivo.com";
 const DRIVER_EMAIL = "appreview.driver@ridearrivo.com";
 
-// Overridable so you can rotate it after a review round without editing this
-// file. Long enough that the stores do not complain, no characters that get
-// mangled when pasted into a web form.
-const password = process.argv[2] || "ArrivoReview2026";
+// Supplied, never defaulted. A fallback baked into a public repository is a
+// working login for two real accounts on production, so this fails closed
+// instead. Pick something long, and rotate it between review rounds.
+//
+//   REVIEW_ACCOUNT_PASSWORD=... node scripts/create-review-account.js
+//   node scripts/create-review-account.js "a-strong-private-password"
+const password = process.env.REVIEW_ACCOUNT_PASSWORD || process.argv[2];
+
+if (!password) {
+  console.error(
+    "REVIEW_ACCOUNT_PASSWORD or a password argument is required. Refusing to use a default."
+  );
+  process.exit(1);
+}
+
+// Short passwords get bounced by the stores and by our own signup rules.
+if (String(password).length < 12) {
+  console.error("That password is too short. Use at least 12 characters.");
+  process.exit(1);
+}
+
+// Only now, so a missing password is reported instead of a database error.
+const { pool, ready } = require("../db/db");
 
 async function upsertReviewUser({ email, name, role, phone }) {
   const passwordHash = bcrypt.hashSync(password, 10);
@@ -108,8 +128,9 @@ async function upsertReviewUser({ email, name, role, phone }) {
   console.log("");
   console.log("Paste these into App Store Connect and Play Console:");
   console.log("");
-  console.log(`  Rider   ${RIDER_EMAIL}  /  ${password}`);
-  console.log(`  Driver  ${DRIVER_EMAIL}  /  ${password}`);
+  console.log(`  Rider   ${RIDER_EMAIL}`);
+  console.log(`  Driver  ${DRIVER_EMAIL}`);
+  console.log("  Password: the one you just supplied, not printed here.");
   console.log("");
   console.log("Both are email-verified so no inbox is needed. Neither is an admin.");
   console.log("");
