@@ -59,9 +59,14 @@ export function DeleteAccountSection() {
             <Text style={styles.title}>Delete your account?</Text>
 
             <Text style={styles.body}>
-              Your name, contact details and any ID you uploaded are removed, and you won't be able
-              to sign in again. Trips you've already taken stay on file without your details, because
-              we're required to keep billing records for 7 years.
+              Your name, contact details, any ID you uploaded, your saved emergency contacts and
+              anything you wrote to support are removed, and you won't be able to sign in again.
+            </Text>
+            <Text style={[styles.body, { marginTop: 10 }]}>
+              Past trips stay on file for 7 years because we're required to keep billing records:
+              the date, the fare, and the pickup and destination addresses. The exact map
+              coordinates, your rating comments and your emergency contact details are removed from
+              those too.
             </Text>
 
             <Text style={styles.label}>Type {accountEmail} to confirm</Text>
