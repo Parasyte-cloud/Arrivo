@@ -59,10 +59,14 @@ export function DeleteAccountSection() {
             <Text style={styles.title}>Delete your account?</Text>
 
             <Text style={styles.body}>
-              Your name, contact details, licence and LASDRI numbers and any documents you
-              uploaded are removed, and you won't be able to sign in again. Trips you've already
-              driven stay on file without your details, because we're required to keep billing
-              records for 7 years.
+              Your name, contact details, licence, LASDRI and insurance numbers, your photos and
+              vehicle documents, the vehicle owner's details and your emergency contact are all
+              removed, and you won't be able to sign in again.
+            </Text>
+            <Text style={[styles.body, { marginTop: 10 }]}>
+              Trips you've already driven stay on file for 7 years because we're required to keep
+              billing records: the date, the fare, and the addresses. Your last known location and
+              the exact map coordinates are removed.
             </Text>
 
             <Text style={styles.label}>Type {accountEmail} to confirm</Text>
