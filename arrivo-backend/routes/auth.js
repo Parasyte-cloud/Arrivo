@@ -9,6 +9,18 @@ const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
+const {
+  findDeletionBlocker,
+  anonymiseAccount,
+  DeletionBlocked,
+  SERIALIZATION_FAILURE,
+} = require("../services/accountDeletion");
+const {
+  isAppleRevocationConfigured,
+  exchangeAuthorizationCode,
+  revokeAppleAuthorization,
+} = require("../services/appleRevoke");
+
 const router = express.Router();
 
 const SALT_ROUNDS = 10;
@@ -187,7 +199,7 @@ router.post("/login", async (req, res) => {
 
   const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
   const user = result.rows[0];
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || user.deleted_at || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
@@ -265,6 +277,18 @@ router.post("/google", async (req, res) => {
     if (user.role !== role) {
       return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
     }
+    // Swap the one-time code for a refresh token and keep it. It is the only
+    // thing that can revoke this authorization when the account is deleted,
+    // and Apple requires deletion to actually revoke. Best effort: a failure
+    // here must not stop somebody signing in.
+    const appleRefreshToken = await exchangeAuthorizationCode(authorizationCode);
+    if (appleRefreshToken) {
+      await pool.query("UPDATE users SET apple_refresh_token = $1 WHERE id = $2", [
+        appleRefreshToken,
+        user.id,
+      ]);
+    }
+
     const token = signToken(user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
@@ -278,7 +302,7 @@ router.post("/google", async (req, res) => {
 // app — the client has to capture it right then and forward it here, since
 // there's no way to fetch it again later.
 router.post("/apple", async (req, res) => {
-  const { identityToken, fullName, role = "rider", agreedToTerms } = req.body;
+  const { identityToken, fullName, role = "rider", agreedToTerms, authorizationCode } = req.body;
   if (!identityToken) return res.status(400).json({ error: "identityToken is required" });
 
   let payload;
@@ -538,6 +562,95 @@ router.post("/reset-password", async (req, res) => {
   );
 
   res.json({ message: "Password updated. You can now log in with your new password." });
+});
+
+// DELETE /api/auth/me
+// body: { confirmEmail }
+//
+// Both app stores require an in-app way to leave, and the privacy policy
+// promises it under NDPA rights. Confirmation is the account email typed back
+// rather than the password, because Google and Apple sign-ins get a random
+// password they have never seen and could not retype.
+router.delete("/me", requireAuth, async (req, res) => {
+  const confirmEmail = String(req.body?.confirmEmail || "").trim().toLowerCase();
+
+  const current = await pool.query(
+    "SELECT email, apple_id, apple_refresh_token FROM users WHERE id = $1",
+    [req.user.id]
+  );
+  const account = current.rows[0];
+  if (!account) return res.status(404).json({ error: "No account found." });
+
+  if (!confirmEmail || confirmEmail !== String(account.email).toLowerCase()) {
+    return res
+      .status(400)
+      .json({ error: "Type the email address on your account to confirm." });
+  }
+
+  // Cheap pre-check so an obvious blocker comes back without opening a
+  // transaction. The authoritative check is inside anonymiseAccount.
+  const blocker = await findDeletionBlocker(pool, req.user.id);
+  if (blocker) {
+    return res.status(409).json({ error: blocker.message, reason: blocker.reason });
+  }
+
+  // Apple has to be revoked BEFORE the row is scrubbed, for two reasons: the
+  // refresh token is on the row we are about to empty, and deletion must not
+  // report success while an Apple authorization is still live. If revocation
+  // fails we stop and say so rather than deleting anyway.
+  if (account.apple_id) {
+    if (!isAppleRevocationConfigured()) {
+      console.error(
+        "Account deletion blocked: user %s signed in with Apple but Apple revocation is not configured " +
+          "(APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY, APPLE_CLIENT_ID).",
+        req.user.id
+      );
+      return res.status(503).json({
+        error:
+          "We can't finish deleting an Apple sign-in account right now. Please contact support and we'll do it for you.",
+        reason: "apple_revocation_unavailable",
+      });
+    }
+
+    const revocation = await revokeAppleAuthorization(account.apple_refresh_token);
+    if (!revocation.revoked) {
+      console.error(
+        "Apple revocation failed for user %s: %s %s",
+        req.user.id,
+        revocation.reason,
+        revocation.detail || ""
+      );
+      return res.status(502).json({
+        error:
+          "We couldn't revoke your Apple sign-in, so we've stopped rather than half-delete your account. Please try again, or contact support.",
+        reason: `apple_revocation_${revocation.reason}`,
+      });
+    }
+  }
+
+  try {
+    const deleted = await anonymiseAccount(pool, req.user.id);
+    if (!deleted) return res.status(404).json({ error: "No account found." });
+
+    // The token stays valid until it expires, but requireAuth checks
+    // deleted_at on every request, so it stops working immediately.
+    return res.json({ deleted: true, deletedAt: deleted.deleted_at });
+  } catch (error) {
+    // Raised by the guards re-checked inside the transaction, where they are
+    // safe from a concurrent top-up or a new ride landing mid-delete.
+    if (error instanceof DeletionBlocked) {
+      return res.status(409).json({ error: error.message, reason: error.reason });
+    }
+    // SERIALIZABLE refused the transaction because something else was writing
+    // at the same time. Nothing was changed, so trying again is safe.
+    if (error?.code === SERIALIZATION_FAILURE) {
+      return res.status(409).json({
+        error: "Something else was updating your account just then. Please try again.",
+        reason: "concurrent_update",
+      });
+    }
+    throw error;
+  }
 });
 
 module.exports = router;

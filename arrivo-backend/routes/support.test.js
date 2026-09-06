@@ -41,6 +41,12 @@ const fakePool = {
   async query(sql, params = []) {
     const s = sql.replace(/\s+/g, " ").trim();
 
+    // requireAuth now confirms the account has not been deleted, on every
+    // request, so the stand-in has to answer that too.
+    if (s.startsWith("SELECT deleted_at FROM users")) {
+      return { rows: [{ deleted_at: null }] };
+    }
+
     if (s.startsWith("SELECT id FROM rides")) {
       const [id, riderId] = params;
       // Mirror Postgres: an out-of-range value never reaches a real INTEGER

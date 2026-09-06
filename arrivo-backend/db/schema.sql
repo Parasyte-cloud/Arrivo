@@ -497,6 +497,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_preference TEXT; -- 'cool
 ALTER TABLE users ADD COLUMN IF NOT EXISTS child_seat_required BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL DEFAULT false;
 
+-- Set when someone deletes their account. The row stays because nine tables
+-- reference users(id) and the retention policy keeps transactional records
+-- for seven years, so the person is stripped out instead of the row going.
+-- Anything reading users for a live person has to exclude these.
+-- Handed back by Apple when we exchange the authorization code at sign-in.
+-- Deleting an account has to revoke the Apple authorization, and this is the
+-- only thing that can be revoked with. Null for anyone who signed in with
+-- Apple before we started collecting it, and for everybody else.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_refresh_token TEXT;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
+
 -- ── Support tickets ──
 -- Support used to be an email link and a list of FAQs, so a rider had no way
 -- to tell us what was actually wrong and we had nothing on file. This is what

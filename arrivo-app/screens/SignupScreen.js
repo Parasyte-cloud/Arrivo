@@ -148,7 +148,7 @@ export default function SignupScreen({ navigation }) {
     }
   };
 
-  const handleAppleResult = async ({ identityToken, fullName, error: appleError }) => {
+  const handleAppleResult = async ({ identityToken, fullName, authorizationCode, error: appleError }) => {
     if (appleError) {
       setError(appleError);
       return;
@@ -156,7 +156,7 @@ export default function SignupScreen({ navigation }) {
     setError(null);
     setOauthBusy(true);
     try {
-      await loginWithApple({ identityToken, fullName, agreedToTerms });
+      await loginWithApple({ identityToken, fullName, authorizationCode, agreedToTerms });
     } catch (e) {
       setError(e.message || "Couldn't sign you in with Apple. Please try again.");
     } finally {
