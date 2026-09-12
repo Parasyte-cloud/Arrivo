@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
+import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
@@ -285,35 +286,14 @@ export default function SignupScreen({ navigation }) {
           </Text>
         </View>
 
-        <Modal visible={privacyModalVisible} animationType="slide" transparent onRequestClose={() => setPrivacyModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Data Protection &amp; Privacy Policy</Text>
-                <Pressable onPress={() => setPrivacyModalVisible(false)}>
-                  <Text style={styles.modalClose}>✕</Text>
-                </Pressable>
-              </View>
-              <ScrollView style={styles.modalBody}>
-                <Text style={styles.modalText}>
-                  RideArrivo collects your name, contact details, and (if provided) an identification
-                  number to verify your identity and provide airport pickup and ride services.
-                  Your data is stored securely and is never sold to third parties.{"\n\n"}
-                  For the full policy, visit ridearrivo.com/privacy.html from a browser.
-                </Text>
-              </ScrollView>
-              <Pressable
-                style={styles.modalAgreeBtn}
-                onPress={() => {
-                  setAgreedToTerms(true);
-                  setPrivacyModalVisible(false);
-                }}
-              >
-                <Text style={styles.modalAgreeBtnText}>I've read this. I agree</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+        <PrivacyPolicyModal
+          visible={privacyModalVisible}
+          onClose={() => setPrivacyModalVisible(false)}
+          onAgree={() => {
+            setAgreedToTerms(true);
+            setPrivacyModalVisible(false);
+          }}
+        />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -389,6 +369,7 @@ const styles = StyleSheet.create({
   },
   langSelectorText: { color: colors.ink, fontSize: 14, fontWeight: "600" },
   langSelectorChevron: { color: colors.textMuted, fontSize: 16, fontWeight: "700" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   langModalCard: { backgroundColor: colors.cream, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20, maxHeight: "75%" },
   langModalTitle: { fontWeight: "700", fontSize: 15, color: colors.ink, padding: 20, paddingBottom: 10 },
   langModalRow: {
@@ -409,15 +390,6 @@ const styles = StyleSheet.create({
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   agreeText: { color: colors.textMuted, fontSize: 12.5, flex: 1 },
   agreeLink: { color: colors.tealBright, textDecorationLine: "underline" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.cream, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "75%" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#e5e5e5" },
-  modalTitle: { fontWeight: "700", fontSize: 15, color: colors.ink, flex: 1 },
-  modalClose: { fontSize: 18, color: "#888", paddingHorizontal: 8 },
-  modalBody: { padding: 20 },
-  modalText: { color: colors.ink, fontSize: 13.5, lineHeight: 20 },
-  modalAgreeBtn: { backgroundColor: colors.amber, margin: 20, marginTop: 0, padding: 14, borderRadius: 12, alignItems: "center" },
-  modalAgreeBtnText: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
