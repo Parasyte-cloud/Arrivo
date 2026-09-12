@@ -48,13 +48,26 @@ async function verifyGoogleIdToken(idToken) {
   };
 }
 
-// Comma-separated list of bundle IDs allowed as the audience for Apple
-// tokens — one per app, e.g. "com.arrivo.app,com.arrivo.driver".
+// The bundle IDs Apple can put in a token audience. These are ios.bundleIdentifier
+// from each app.json, and they are baked in rather than left to config because
+// they are a fixed property of the apps in this repo, not something that differs
+// per environment. Leaving them to an env var is what broke this: production had
+// the ANDROID package names in it (com.arrivo.app, com.arrivo.driver), which can
+// never appear in an Apple token, so Sign in with Apple failed on both iOS apps.
+//
+// If either app.json changes ios.bundleIdentifier, change it here too.
+const APP_BUNDLE_IDS = ["com.ridearrivo.rider", "com.ridearrivo.driver"];
+
+// APPLE_BUNDLE_IDS still works, but it now ADDS to the list rather than
+// replacing it, so a stale or wrong value cannot take Apple sign-in down again.
+// Use it for anything not in this repo, like a web Services ID.
 function getAppleBundleIds() {
-  return (process.env.APPLE_BUNDLE_IDS || "")
+  const extra = (process.env.APPLE_BUNDLE_IDS || "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+
+  return [...new Set([...APP_BUNDLE_IDS, ...extra])];
 }
 
 const appleJwks = jwksClient({
@@ -79,7 +92,7 @@ function verifyAppleIdentityToken(identityToken) {
   const audience = getAppleBundleIds();
   if (!audience.length) {
     throw new Error(
-      "Sign in with Apple isn't configured on the server yet (APPLE_BUNDLE_IDS is missing)."
+      "Sign in with Apple isn't configured on the server yet."
     );
   }
   return new Promise((resolve, reject) => {
