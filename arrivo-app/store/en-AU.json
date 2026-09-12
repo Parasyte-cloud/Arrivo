@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "App Store listing copy. Push it with:",
+    "  node scripts/appstore.mjs metadata",
+    "",
+    "Kept in the repo so the listing is reviewable and re-pushable rather than",
+    "living only in a web form. en-AU because that is the primary language on the",
+    "App Store Connect record, odd though that is for a Lagos service.",
+    "",
+    "Apple limits: description 4000, keywords 100, promotionalText 170.",
+    "House rule: no em dashes in anything a customer reads.",
+    "",
+    "Every feature named here was checked against the app source before being",
+    "claimed. Languages are deliberately not mentioned: the app ships seven, but",
+    "ENGINEERING.md says only English is maintained and the rest are unverified."
+  ],
+
+  "description": "RideArrivo is airport pickup and private car hire, built for Lagos.\n\nBook your car before you land. Add your flight number and we track the flight for you, so a delayed landing moves your pickup time automatically and your driver is already waiting when you clear arrivals.\n\nWHAT YOU CAN BOOK\n\nAirport pickup, timed to when you actually land\nAirport drop off, scheduled around your departure\nA ride anywhere in the city\nA chauffeur for a full day, or for several days\nOn the Go, for when you need a car within the next few hours\n\nCHOOSE THE CAR\n\nPick a saloon or an SUV, and add a Premium Trim Upgrade for a higher spec version of the same vehicle. Travelling as a group or carrying luggage? RideArrivo suggests what will fit, and you can add extra vehicles to travel alongside you.\n\nTRAVELLING SAFELY\n\nEvery driver is checked before they carry a passenger, including licence, LASDRI and insurance documents. Follow your car on a live map, message your driver in the app, and save an emergency contact we can reach if we cannot reach you. A personal security escort can be added to any booking.\n\nCLEAR PRICING\n\nSee the full fare before you confirm. Every extra shows what it costs, so there are no surprises at the end of the trip. Pay by card, from your RideArrivo wallet, or with a membership.\n\nRideArrivo is operated by RICHATHAOIR LIMITED, registered in Nigeria under CAC RC 1654710.\n\nNeed a hand? Email info@ridearrivo.com or reach us on WhatsApp from inside the app.",
+
+  "keywords": "airport,pickup,lagos,ride,taxi,chauffeur,flight,transfer,driver,car,booking,nigeria,travel",
+
+  "promotionalText": "Add your flight number and we track it. Land late and your pickup moves with you. Airport transfers, city rides and chauffeur hire across Lagos.",
+
+  "supportUrl": "https://ridearrivo.com/",
+
+  "marketingUrl": "https://ridearrivo.com/"
+}

@@ -10,7 +10,9 @@
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "autoIncrement": true
@@ -21,7 +23,10 @@
       "ios": {
         "appleId": "biolalawaljr@aol.com",
         "ascAppId": "6794482846",
-        "appleTeamId": "HWH9692XYK"
+        "appleTeamId": "HWH9692XYK",
+        "ascApiKeyPath": "./private/AuthKey.p8",
+        "ascApiKeyIssuerId": "c03ec1dd-114d-46a2-a8a1-216ec3ea9dd4",
+        "ascApiKeyId": "XHB6D6J9AG"
       },
       "android": {
         "serviceAccountKeyPath": "./google-play-service-account.json",
