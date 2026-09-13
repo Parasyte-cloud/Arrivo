@@ -518,6 +518,75 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status, created_at);
 
+
+-- ── Support-assisted bookings ──
+--
+-- A trusted RideArrivo Workspace employee may create a booking for an
+-- existing Arrivo rider without ever receiving or impersonating the
+-- rider's password/JWT.
+--
+-- actor_employee_id is the Workspace employee UUID.
+-- rider_id is the Arrivo users.id INTEGER.
+--
+-- actor_request_id is the signed Workspace actor JWT jti and provides
+-- a second replay boundary in addition to the client idempotency key.
+
+CREATE TABLE IF NOT EXISTS support_assisted_bookings (
+  id SERIAL PRIMARY KEY,
+  -- Bound only after verified customer payment creates the real ride.
+  ride_id INTEGER UNIQUE
+    REFERENCES rides(id) ON DELETE RESTRICT,
+  rider_id INTEGER NOT NULL
+    REFERENCES users(id) ON DELETE RESTRICT,
+  actor_employee_id UUID NOT NULL,
+  actor_role TEXT NOT NULL
+    CHECK (actor_role IN ('support','admin')),
+  actor_request_id UUID NOT NULL UNIQUE,
+  idempotency_key UUID NOT NULL UNIQUE,
+  request_fingerprint TEXT NOT NULL
+    CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+  source TEXT NOT NULL DEFAULT 'support_assisted'
+    CHECK (source = 'support_assisted'),
+  payment_method TEXT NOT NULL DEFAULT 'card'
+    CHECK (payment_method = 'card'),
+  payment_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      payment_status IN (
+        'pending',
+        'paid',
+        'failed',
+        'cancelled'
+      )
+    ),
+  payment_status_at_creation TEXT NOT NULL DEFAULT 'pending'
+    CHECK (payment_status_at_creation = 'pending'),
+  booking_request JSONB NOT NULL
+    CHECK (jsonb_typeof(booking_request) = 'object'),
+  fare_naira INTEGER NOT NULL
+    CHECK (fare_naira > 0),
+  quoted_ngn_per_usd NUMERIC(14,4) NOT NULL
+    CHECK (quoted_ngn_per_usd > 0),
+  quoted_usd_amount NUMERIC(14,2) NOT NULL
+    CHECK (quoted_usd_amount >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_rider
+ON support_assisted_bookings(
+  rider_id,
+  created_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_actor
+ON support_assisted_bookings(
+  actor_employee_id,
+  created_at
+);
+
+
 -- ── On-the-Go requests ──
 -- The quick path for someone who needs a car within 12 hours and hasn't got
 -- time for the full Plan Route flow. Only the essentials, no vehicle choice,
