@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
@@ -17,6 +18,70 @@ const TOKEN_EXPIRY = "7d";
 function signToken(user) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
 }
+
+// These routes run before requireAuth (there's no logged-in user yet), so
+// they can't be keyed by user id the way routes/support.js's submitLimiter
+// is. Keyed by IP + the email in the request body instead of IP alone —
+// same reasoning as that file's comment on carrier NAT: a lot of Nigerian
+// mobile traffic shares a handful of IPs behind one carrier gateway, so an
+// IP-only key would let one attacker's lockout collateral-damage everyone
+// else on the same network. Falls back to IP alone when there's no email
+// in the body (nothing else to key on). req.ip is trustworthy here because
+// server.js already sets `trust proxy` to 1.
+function keyByIpAndEmail(req) {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  return email ? `${req.ip}:${email}` : req.ip;
+}
+
+function authRateLimiter({ windowMs, limit, message }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: keyByIpAndEmail,
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+
+// Login is the highest-value brute-force target in this router — no OTP,
+// no CAPTCHA, just email+password. 10 attempts per 15 minutes per IP+email
+// is generous enough for a real user who mistypes their password a few
+// times, but stops a credential-stuffing script from running through a
+// password list against one account.
+const loginLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+
+// forgot-password/reset-password: forgot-password always returns the same
+// generic response (see below) specifically so it can't be used to check
+// which emails have accounts — but without a rate limit, that same
+// endpoint could still be hammered to mass-spam an inbox with reset
+// emails, or reset-password's token could be brute-forced (it's a random
+// 32-byte hex value, effectively infeasible to guess, but there's no
+// reason to leave the door open to trying).
+const forgotPasswordLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  message: "Too many password reset requests. Please wait a few minutes and try again.",
+});
+const resetPasswordLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  message: "Too many attempts. Please wait a few minutes and try again.",
+});
+
+// signup/guest: both create accounts with no email verification required
+// up front, so without a limit either is a way to mass-create accounts
+// (spam, or working around the wallet_topup/membership abuse checks that
+// key off a single account).
+const signupLimiter = authRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  message: "Too many signup attempts from this connection. Please wait a while and try again.",
+});
 
 // Registration photos arrive as a base64 data URL from the browser/app
 // (avoids needing separate multipart upload handling and cloud storage for
@@ -38,7 +103,7 @@ function publicUser(user) {
 //         confirmPassword, agreedToTerms, preferredLanguage?, role? }
 // This is the real account/profile flow (as opposed to /guest, which is
 // the lightweight no-password path used by the website's booking checkout).
-router.post("/signup", async (req, res) => {
+router.post("/signup", signupLimiter, async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
     password, confirmPassword, agreedToTerms, avatarDataUrl,
@@ -179,7 +244,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
@@ -457,7 +522,7 @@ router.post("/push-token", requireAuth, async (req, res) => {
 // New email -> silently create a real rider account (random password the
 // guest never sees) and log them in. Existing email -> refuse; otherwise
 // anyone could "book as" an existing rider with no password check at all.
-router.post("/guest", async (req, res) => {
+router.post("/guest", signupLimiter, async (req, res) => {
   const { name, email, phone, whatsappNumber, countryOfResidence, agreedToTerms, preferredLanguage = "en" } = req.body;
 
   if (!name || !email) {
@@ -494,7 +559,7 @@ router.post("/guest", async (req, res) => {
 // body: { email }
 // Always responds the same way whether or not the email exists — otherwise
 // this endpoint becomes a way to check which emails have accounts.
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "email is required" });
 
@@ -519,7 +584,7 @@ router.post("/forgot-password", async (req, res) => {
 
 // POST /api/auth/reset-password
 // body: { token, newPassword }
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
   if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
