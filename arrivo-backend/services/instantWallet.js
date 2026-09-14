@@ -122,7 +122,7 @@ async function refundRequestWithinTransaction(
       request.rider_id,
       fareNaira,
       newBalance,
-      `ArrivoNow refund — request #${request.id}: ${reason}`,
+      `ArrivoExpress refund — request #${request.id}: ${reason}`,
     ]
   );
 
@@ -194,7 +194,7 @@ async function createWalletFundedRequest({
   try {
     await client.query("BEGIN");
 
-    // Serialises competing ArrivoNow creation attempts for one rider.
+    // Serialises competing ArrivoExpress creation attempts for one rider.
     const userResult = await client.query(
       `SELECT
          role,
@@ -217,7 +217,7 @@ async function createWalletFundedRequest({
 
     if (user.role !== "rider") {
       throw new InstantWalletError(
-        "Only rider accounts can request ArrivoNow.",
+        "Only rider accounts can request ArrivoExpress.",
         403,
         "RIDER_ROLE_REQUIRED"
       );
@@ -240,7 +240,7 @@ async function createWalletFundedRequest({
 
     if (existingRequest.rows[0]) {
       throw new InstantWalletError(
-        "You already have an active ArrivoNow request.",
+        "You already have an active ArrivoExpress request.",
         409,
         "ACTIVE_INSTANT_REQUEST",
         {
@@ -284,7 +284,7 @@ async function createWalletFundedRequest({
 
     if (balance < fareNaira) {
       throw new InstantWalletError(
-        "Insufficient wallet balance for this ArrivoNow ride.",
+        "Insufficient wallet balance for this ArrivoExpress ride.",
         400,
         "INSUFFICIENT_WALLET",
         {
@@ -396,7 +396,7 @@ async function createWalletFundedRequest({
         riderId,
         -fareNaira,
         newBalance,
-        `ArrivoNow request #${request.id} (${trip.pickupAddress})`,
+        `ArrivoExpress request #${request.id} (${trip.pickupAddress})`,
       ]
     );
 
@@ -453,7 +453,7 @@ async function cancelWalletFundedRequest(
 
     if (!request) {
       throw new InstantWalletError(
-        "ArrivoNow request not found.",
+        "ArrivoExpress request not found.",
         404,
         "REQUEST_NOT_FOUND"
       );
@@ -480,7 +480,7 @@ async function cancelWalletFundedRequest(
       || request.ride_id
     ) {
       throw new InstantWalletError(
-        "This ArrivoNow request has already been matched. Use the normal ride cancellation flow.",
+        "This ArrivoExpress request has already been matched. Use the normal ride cancellation flow.",
         409,
         "REQUEST_ALREADY_MATCHED"
       );
@@ -535,7 +535,7 @@ async function expireInstantRequestsWithRefund(
         client,
         request,
         "expired",
-        "no driver was matched before the ArrivoNow request expired"
+        "no driver was matched before the ArrivoExpress request expired"
       );
 
     expired += 1;

@@ -366,15 +366,15 @@ export function createSupportTicket(token, { type, subject, description, rideId 
   });
 }
 
-// ArrivoNow: RideArrivo's on-demand, metered point-to-point ride option —
+// ArrivoExpress: RideArrivo's on-demand, metered point-to-point ride option —
 // separate from On-the-Go above (which is a manual, no-quote, ops-confirms
 // concierge flow) and separate from the scheduled Route/Chauffeur booking
 // flows. See arrivo-backend/routes/instantRides.js for the full contract.
 // Every call here requires the rider (or driver) to already be signed in.
 
 // Feature flag + which payment rails are currently enabled. The app should
-// hide the ArrivoNow entry point entirely when enabled is false, rather
-// than show a dead-end button — ArrivoNow ships behind a rollout gate.
+// hide the ArrivoExpress entry point entirely when enabled is false, rather
+// than show a dead-end button — ArrivoExpress ships behind a rollout gate.
 export function getInstantStatus(token) {
   return request("/api/instant-rides/status", {
     headers: { Authorization: `Bearer ${token}` },
@@ -382,7 +382,7 @@ export function getInstantStatus(token) {
 }
 
 // Economy/Comfort/XL/Premium — the "choose your vehicle" step. Available
-// even while ArrivoNow itself is disabled, so this can safely be prefetched.
+// even while ArrivoExpress itself is disabled, so this can safely be prefetched.
 export function getInstantTiers(token) {
   return request("/api/instant-rides/tiers", {
     headers: { Authorization: `Bearer ${token}` },

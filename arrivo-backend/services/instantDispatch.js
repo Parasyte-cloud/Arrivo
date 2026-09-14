@@ -377,7 +377,7 @@ async function createOfferBatch(requestId, options = {}) {
   for (const offer of createdOffers) {
     sendPushNotification(
       offer.push_token,
-      "ArrivoNow request nearby",
+      "ArrivoExpress request nearby",
       "A new RideArrivo trip is available near you.",
       {
         type: "arrivo_now_offer",

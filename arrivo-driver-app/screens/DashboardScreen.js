@@ -17,7 +17,7 @@ import {
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
-// ArrivoNow offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
+// ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
 // default 20s) so they're polled on their own, quicker cadence below.
 const INSTANT_POLL_INTERVAL_MS = 4000;
 
@@ -33,8 +33,8 @@ export default function DashboardScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef(null);
 
-  // ArrivoNow: a separate opt-in from the main online switch above --
-  // a driver must be both online AND opted into ArrivoNow to receive
+  // ArrivoExpress: a separate opt-in from the main online switch above --
+  // a driver must be both online AND opted into ArrivoExpress to receive
   // these offers (see arrivo-backend routes/instantRides.js).
   const [instantEnabled, setInstantEnabled] = useState(false);
   const [instantVerified, setInstantVerified] = useState(false);
@@ -188,7 +188,7 @@ export default function DashboardScreen({ navigation }) {
     }
   }, [token]);
 
-  // Poll ArrivoNow offers only while genuinely eligible to receive them:
+  // Poll ArrivoExpress offers only while genuinely eligible to receive them:
   // online, opted in, verified, and not already mid-trip.
   useEffect(() => {
     if (isOnline && acceptsInstant && instantVerified && !activeRide) {
@@ -203,7 +203,7 @@ export default function DashboardScreen({ navigation }) {
 
   // Drives the live per-offer countdown text -- only ticks while there's
   // actually something to count down, so this never runs for drivers who
-  // haven't opted into ArrivoNow.
+  // haven't opted into ArrivoExpress.
   useEffect(() => {
     if (instantOffers.length === 0) return undefined;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -330,7 +330,7 @@ export default function DashboardScreen({ navigation }) {
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <View style={styles.rowBetween}>
               <View style={{ flex: 1, marginRight: spacing.sm }}>
-                <Text style={styles.cardTitleLight}>ArrivoNow requests</Text>
+                <Text style={styles.cardTitleLight}>ArrivoExpress requests</Text>
                 <Text style={styles.meta}>
                   {instantVerified
                     ? "Get on-demand ride requests alongside your scheduled bookings."
@@ -357,7 +357,7 @@ export default function DashboardScreen({ navigation }) {
           <>
             {acceptsInstant ? (
               <>
-                <Text style={styles.sectionLabel}>ArrivoNow requests</Text>
+                <Text style={styles.sectionLabel}>ArrivoExpress requests</Text>
                 {instantOffers.map((offer) => (
                   <InstantOfferCard
                     key={offer.offer_id}
@@ -489,7 +489,7 @@ function InstantOfferCard({ offer, now, busy, disabled, onAccept, onDecline }) {
   return (
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
-        <Tag label="ArrivoNow" tone="amber" />
+        <Tag label="ArrivoExpress" tone="amber" />
         <Text style={styles.fare}>₦{offer.estimated_fare_naira?.toLocaleString()}</Text>
       </View>
       <Text style={styles.tripTitle}>{offer.pickup_address}</Text>

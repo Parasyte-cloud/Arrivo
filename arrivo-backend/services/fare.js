@@ -217,7 +217,7 @@ const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
 // Yellow zone keywords — the same corridors already priced at the Yellow
 // zone rate in AREA_PRICING above (further out / heavier traffic than the
 // Green zone core). Extracted into their own list (rather than only living
-// inside AREA_PRICING) so other pricing models — like ArrivoNow's metered
+// inside AREA_PRICING) so other pricing models — like ArrivoExpress's metered
 // point-to-point fare in services/instantFare.js — can apply a corridor
 // multiplier without re-deriving a fixed price per neighbourhood.
 const YELLOW_ZONE_KEYWORDS = [

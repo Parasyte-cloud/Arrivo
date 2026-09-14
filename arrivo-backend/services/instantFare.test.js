@@ -1,4 +1,4 @@
-// Tests for the ArrivoNow metered fare engine. Uses Node's built-in assert
+// Tests for the ArrivoExpress metered fare engine. Uses Node's built-in assert
 // — no new test framework dependency, matching the convention already
 // established by services/routeDeviation.test.js. Run directly with:
 //   node services/instantFare.test.js

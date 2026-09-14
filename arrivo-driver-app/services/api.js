@@ -107,9 +107,9 @@ export function getRideChatChannel(token, rideId) {
   return request("/api/chat/ride-channel", authed(token, { method: "POST", body: JSON.stringify({ rideId }) }));
 }
 
-// ArrivoNow: on-demand, metered rides — a separate availability toggle and
+// ArrivoExpress: on-demand, metered rides — a separate availability toggle and
 // offer queue from the scheduled getAvailableRides() above, so an
-// unmatched ArrivoNow request can never leak into the normal claim queue
+// unmatched ArrivoExpress request can never leak into the normal claim queue
 // (see arrivo-backend routes/instantRides.js).
 export function getInstantStatus(token) {
   return request("/api/instant-rides/status", authed(token));

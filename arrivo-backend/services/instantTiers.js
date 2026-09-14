@@ -1,7 +1,7 @@
-// ArrivoNow rider-facing vehicle tiers — the "pick your vehicle" step of
+// ArrivoExpress rider-facing vehicle tiers — the "pick your vehicle" step of
 // on-demand booking. Each tier maps onto the SAME vehicles/vehicle_type
 // data RideArrivo's scheduled bookings already use (see db/schema.sql and
-// services/fare.js) — there is no separate ArrivoNow fleet.
+// services/fare.js) — there is no separate ArrivoExpress fleet.
 //
 // XL is the one tier that is not a distinct vehicle_type: it is an SUV
 // with enough seats (vehicles.seats) to actually carry more people than a
@@ -9,22 +9,22 @@
 // but was not previously filtered on for matching — see minSeats handling
 // in services/instantDispatch.js findEligibleDrivers.
 //
-// Pricing knobs here are ArrivoNow-specific (see services/instantFare.js)
+// Pricing knobs here are ArrivoExpress-specific (see services/instantFare.js)
 // and deliberately separate from services/fare.js's flat airport-transfer
-// pricing table — ArrivoNow is metered point-to-point, not a fixed price
+// pricing table — ArrivoExpress is metered point-to-point, not a fixed price
 // per named neighbourhood, since neither trip endpoint is reliably the
 // airport the way RideArrivo's core product assumes.
 //
 // PRICING NOTE: baseFareNaira / perKmNaira / perMinNaira / minimumFareNaira
 // below are starting placeholders, not researched market rates — they need
 // to be checked against real driver fuel/maintenance economics and
-// competitor pricing (Bolt, inDrive) before ArrivoNow leaves the
+// competitor pricing (Bolt, inDrive) before ArrivoExpress leaves the
 // ARRIVO_NOW_ENABLED=false rollout gate.
 const ARRIVONOW_TIERS = {
   economy: {
     key: "economy",
     label: "Economy",
-    description: "Everyday sedan rides — the most affordable ArrivoNow tier.",
+    description: "Everyday sedan rides — the most affordable ArrivoExpress tier.",
     vehicleType: "sedan",
     minSeats: 1,
     baseFareNaira: 500,

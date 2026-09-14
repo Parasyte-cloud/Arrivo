@@ -149,9 +149,9 @@ async function quoteInstantRide(input) {
   let fare;
 
   try {
-    // ArrivoNow has its own metered, point-to-point fare model — see
+    // ArrivoExpress has its own metered, point-to-point fare model — see
     // services/instantFare.js. Unlike RideArrivo's scheduled one-way
-    // trips, an ArrivoNow ride is not reliably to/from the airport, so the
+    // trips, an ArrivoExpress ride is not reliably to/from the airport, so the
     // flat per-neighbourhood pricing in services/fare.js does not apply
     // here.
     fare = computeInstantFare({

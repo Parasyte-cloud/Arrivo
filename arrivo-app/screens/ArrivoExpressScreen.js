@@ -28,7 +28,7 @@ import {
 
 // One poll every 4s while searching — snappier than Tracking's 10s
 // interval (see TrackingScreen.js) because "did a driver just accept" is
-// the single most time-sensitive question in the whole ArrivoNow flow.
+// the single most time-sensitive question in the whole ArrivoExpress flow.
 const SEARCH_POLL_MS = 4000;
 
 const TIER_ICONS = {
@@ -45,14 +45,14 @@ function requestStatusLabel(status) {
   return "Working on it…";
 }
 
-// ArrivoNow: on-demand, metered point-to-point rides (Economy / Comfort /
+// ArrivoExpress: on-demand, metered point-to-point rides (Economy / Comfort /
 // XL / Premium) — RideArrivo's Uber-style option, separate from the
 // scheduled Route/Chauffeur flows and from the manual On-the-Go concierge
 // request. See arrivo-backend/routes/instantRides.js for the contract this
 // screen talks to. Once a driver is matched, the ride becomes a normal
 // RideArrivo `rides` row, so this hands off straight to the existing
 // Tracking screen instead of building a second live-tracking experience.
-export default function ArrivoNowScreen({ navigation }) {
+export default function ArrivoExpressScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatFare } = useCurrency(token);
@@ -86,7 +86,7 @@ export default function ArrivoNowScreen({ navigation }) {
     }
   }, []);
 
-  // Bootstrap: is ArrivoNow even on, do we already have a request in
+  // Bootstrap: is ArrivoExpress even on, do we already have a request in
   // flight (app restart, screen re-entry), and what tiers can they pick.
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +130,7 @@ export default function ArrivoNowScreen({ navigation }) {
         setLoadError(
           isNetworkError(e)
             ? "Couldn't reach RideArrivo. Check your connection and try again."
-            : e.message || "Something went wrong loading ArrivoNow."
+            : e.message || "Something went wrong loading ArrivoExpress."
         );
         setPhase("error");
       }
@@ -233,7 +233,7 @@ export default function ArrivoNowScreen({ navigation }) {
       if (e.message && /insufficient/i.test(e.message)) {
         Alert.alert(
           "Not enough wallet balance",
-          "Top up your RideArrivo Wallet to book this ArrivoNow ride.",
+          "Top up your RideArrivo Wallet to book this ArrivoExpress ride.",
           [
             { text: "Not now", style: "cancel" },
             { text: "Top up wallet", onPress: () => navigation.navigate("Wallet") },
@@ -299,10 +299,10 @@ export default function ArrivoNowScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoNow</Text>
+          <Text style={styles.title}>ArrivoExpress</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
             <Text style={styles.meta}>
-              ArrivoNow isn't switched on for your account yet. Try Book a Ride or On the Go instead,
+              ArrivoExpress isn't switched on for your account yet. Try Book a Ride or On the Go instead,
               or check back soon.
             </Text>
           </Card>
@@ -316,7 +316,7 @@ export default function ArrivoNowScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoNow</Text>
+          <Text style={styles.title}>ArrivoExpress</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
             <Text style={styles.errorText}>{loadError}</Text>
             <Button
@@ -338,7 +338,7 @@ export default function ArrivoNowScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoNow</Text>
+          <Text style={styles.title}>ArrivoExpress</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg, alignItems: "center", paddingVertical: spacing.lg }}>
             <ActivityIndicator color={colors.amber} size="large" />
             <Text style={[styles.successTitle, { marginTop: spacing.md }]}>
@@ -428,7 +428,7 @@ export default function ArrivoNowScreen({ navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={insetsStyle} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>ArrivoNow</Text>
+        <Text style={styles.title}>ArrivoExpress</Text>
         <Text style={styles.meta}>
           On-demand rides, priced by distance and time — pick a vehicle, see your fare, and we'll
           match you with a nearby driver.

@@ -256,7 +256,7 @@ async function acceptInstantOffer({
           client,
           request,
           "expired",
-          "driver attempted acceptance after the ArrivoNow request expired"
+          "driver attempted acceptance after the ArrivoExpress request expired"
         );
 
       await client.query("COMMIT");
@@ -309,7 +309,7 @@ async function acceptInstantOffer({
       };
     }
 
-    // Serialize competing ArrivoNow accept attempts by this same driver.
+    // Serialize competing ArrivoExpress accept attempts by this same driver.
     const driverResult = await client.query(
       `SELECT
          d.id,
@@ -420,7 +420,7 @@ async function acceptInstantOffer({
       };
     }
 
-    // No canonical ride is created unless the ArrivoNow payment is still
+    // No canonical ride is created unless the ArrivoExpress payment is still
     // secured. Card is intentionally not enabled in this rollout yet.
     if (
       request.payment_method !== "wallet"
@@ -574,7 +574,7 @@ async function acceptInstantOffer({
           RETURNING id`,
         [
           ride.id,
-          `ArrivoNow Ride #${ride.id} (${request.pickup_address})`,
+          `ArrivoExpress Ride #${ride.id} (${request.pickup_address})`,
           request.wallet_transaction_id,
           request.rider_id,
         ]
@@ -584,7 +584,7 @@ async function acceptInstantOffer({
       walletAttachResult.rowCount !== 1
     ) {
       throw new Error(
-        "ArrivoNow wallet charge could not be attached to the canonical ride."
+        "ArrivoExpress wallet charge could not be attached to the canonical ride."
       );
     }
 
@@ -615,7 +615,7 @@ async function acceptInstantOffer({
       matchedRequestResult.rowCount !== 1
     ) {
       throw new Error(
-        "ArrivoNow request could not be atomically matched."
+        "ArrivoExpress request could not be atomically matched."
       );
     }
 
@@ -640,7 +640,7 @@ async function acceptInstantOffer({
       winningOfferResult.rowCount !== 1
     ) {
       throw new Error(
-        "ArrivoNow winning offer could not be atomically accepted."
+        "ArrivoExpress winning offer could not be atomically accepted."
       );
     }
 

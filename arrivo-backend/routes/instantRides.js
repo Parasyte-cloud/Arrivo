@@ -102,7 +102,7 @@ async function notifyInstantMatch(
   sendPushNotification(
     ride.rider_push_token,
     "Driver on the way",
-    `${driverName} accepted your ArrivoNow ride and is heading your way.`,
+    `${driverName} accepted your ArrivoExpress ride and is heading your way.`,
     {
       rideId: ride.id,
       type: "ride_accepted",
@@ -134,12 +134,12 @@ async function notifyInstantMatch(
 // GET /api/instant-rides/status
 //
 // Shared capability endpoint for rider and driver applications.
-// ArrivoNow fails closed unless the backend flag is explicitly true.
+// ArrivoExpress fails closed unless the backend flag is explicitly true.
 router.get("/status", requireAuth, (req, res) => {
   const enabled = isArrivoNowEnabled();
 
   res.json({
-    service: "ArrivoNow",
+    service: "ArrivoExpress",
     serviceMode: "instant",
     enabled,
     paymentMethods: enabled ? ["wallet"] : [],
@@ -169,7 +169,7 @@ router.post(
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
-        error: "ArrivoNow is not available yet.",
+        error: "ArrivoExpress is not available yet.",
       });
     }
 
@@ -204,7 +204,7 @@ router.post(
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
-        error: "ArrivoNow is not available yet.",
+        error: "ArrivoExpress is not available yet.",
       });
     }
 
@@ -214,7 +214,7 @@ router.post(
     ) {
       return res.status(400).json({
         error:
-          "Only RideArrivo Wallet is enabled for ArrivoNow during this rollout.",
+          "Only RideArrivo Wallet is enabled for ArrivoExpress during this rollout.",
         code: "PAYMENT_METHOD_NOT_ENABLED",
       });
     }
@@ -240,7 +240,7 @@ router.post(
         // duplicate or reverse money based on a transient dispatch error.
         // The request remains searchable and can still be cancelled/refunded.
         console.error(
-          `ArrivoNow dispatch kick failed for request #${funded.request.id}:`,
+          `ArrivoExpress dispatch kick failed for request #${funded.request.id}:`,
           error.message
         );
 
@@ -275,7 +275,7 @@ router.post(
       if (error?.code === "23505") {
         return res.status(409).json({
           error:
-            "You already have an active ArrivoNow request.",
+            "You already have an active ArrivoExpress request.",
           code: "ACTIVE_INSTANT_REQUEST",
         });
       }
@@ -331,7 +331,7 @@ router.post(
 // PATCH /api/instant-rides/driver/availability
 //
 // This preference is separate from the driver's normal online/offline state.
-// A driver must be BOTH online and opted into ArrivoNow to receive offers.
+// A driver must be BOTH online and opted into ArrivoExpress to receive offers.
 router.patch(
   "/driver/availability",
   requireAuth,
@@ -356,7 +356,7 @@ router.patch(
     if (acceptsInstant && !driver.is_verified) {
       return res.status(403).json({
         error:
-          "Your driver profile must be verified before enabling ArrivoNow.",
+          "Your driver profile must be verified before enabling ArrivoExpress.",
       });
     }
 
@@ -369,7 +369,7 @@ router.patch(
 
     res.json({
       acceptsInstant,
-      arrivoNowEnabled: isArrivoNowEnabled(),
+      arrivoExpressEnabled: isArrivoNowEnabled(),
     });
   }
 );
@@ -377,7 +377,7 @@ router.patch(
 // GET /api/instant-rides/driver/offers
 //
 // Deliberately separate from GET /api/rides/available so an unmatched
-// ArrivoNow request can never leak into the scheduled/general claim queue.
+// ArrivoExpress request can never leak into the scheduled/general claim queue.
 router.get(
   "/driver/offers",
   requireAuth,
@@ -401,7 +401,7 @@ router.get(
     if (!driver.is_verified) {
       return res.status(403).json({
         error:
-          "Your driver profile must be verified before receiving ArrivoNow offers.",
+          "Your driver profile must be verified before receiving ArrivoExpress offers.",
       });
     }
 
@@ -417,7 +417,7 @@ router.get(
 
 // POST /api/instant-rides/driver/offers/:offerId/accept
 //
-// The winning transaction converts an already-funded ArrivoNow request into
+// The winning transaction converts an already-funded ArrivoExpress request into
 // a normal paid RideArrivo ride. No client-provided fare or rider id is used.
 router.post(
   "/driver/offers/:offerId/accept",
@@ -426,7 +426,7 @@ router.post(
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
-        error: "ArrivoNow is not available yet.",
+        error: "ArrivoExpress is not available yet.",
       });
     }
 
@@ -475,7 +475,7 @@ router.post(
           driver.id
         ).catch((error) => {
           console.error(
-            `ArrivoNow match notification failed for Ride #${result.ride.id}:`,
+            `ArrivoExpress match notification failed for Ride #${result.ride.id}:`,
             error.message
           );
         });
@@ -491,7 +491,7 @@ router.post(
     ) {
       return res.status(404).json({
         error:
-          "ArrivoNow offer not found",
+          "ArrivoExpress offer not found",
         code:
           "ARRIVONOW_OFFER_NOT_FOUND",
       });
@@ -504,7 +504,7 @@ router.post(
     ) {
       return res.status(410).json({
         error:
-          "This ArrivoNow offer has expired.",
+          "This ArrivoExpress offer has expired.",
         code:
           "ARRIVONOW_OFFER_EXPIRED",
         ...result,
@@ -516,7 +516,7 @@ router.post(
     ) {
       return res.status(409).json({
         error:
-          "Another driver already accepted this ArrivoNow request.",
+          "Another driver already accepted this ArrivoExpress request.",
         code:
           "ARRIVONOW_ALREADY_MATCHED",
         ...result,
@@ -528,7 +528,7 @@ router.post(
     ) {
       return res.status(409).json({
         error:
-          "The rider cancelled this ArrivoNow request.",
+          "The rider cancelled this ArrivoExpress request.",
         code:
           "ARRIVONOW_CANCELLED",
       });
@@ -551,7 +551,7 @@ router.post(
     ) {
       return res.status(409).json({
         error:
-          "You are no longer eligible to accept this ArrivoNow offer.",
+          "You are no longer eligible to accept this ArrivoExpress offer.",
         code:
           "DRIVER_NOT_ELIGIBLE",
       });
@@ -562,7 +562,7 @@ router.post(
     ) {
       return res.status(409).json({
         error:
-          "This ArrivoNow request no longer has a secured payment.",
+          "This ArrivoExpress request no longer has a secured payment.",
         code:
           "ARRIVONOW_PAYMENT_NOT_SECURED",
       });
@@ -570,7 +570,7 @@ router.post(
 
     return res.status(409).json({
       error:
-        "This ArrivoNow offer is no longer active.",
+        "This ArrivoExpress offer is no longer active.",
       code:
         "ARRIVONOW_OFFER_INACTIVE",
       ...result,
@@ -607,13 +607,13 @@ router.post(
 
     if (result.status === "not_found") {
       return res.status(404).json({
-        error: "ArrivoNow offer not found",
+        error: "ArrivoExpress offer not found",
       });
     }
 
     if (result.status === "already_responded") {
       return res.status(409).json({
-        error: "This ArrivoNow offer is no longer active.",
+        error: "This ArrivoExpress offer is no longer active.",
         offerStatus: result.offerStatus,
       });
     }
@@ -639,7 +639,7 @@ router.get(
     }
 
     // This also performs any due wallet refund atomically before the
-    // rider sees their current ArrivoNow state.
+    // rider sees their current ArrivoExpress state.
     await expireStaleOffers(pool);
 
     const result = await pool.query(

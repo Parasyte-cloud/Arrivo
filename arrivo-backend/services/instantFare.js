@@ -23,7 +23,7 @@ const NIGHT_MULTIPLIER = 1.2;
 
 // A busier/traffic-heavy corridor costs a bit more per km — this is NOT a
 // surge multiplier (surge reacts to live demand/supply and is explicitly
-// out of scope for ArrivoNow V1; see the engineering brief). It is a
+// out of scope for ArrivoExpress V1; see the engineering brief). It is a
 // fixed, publishable rate difference tied to the zone itself, so riders in
 // the same area always see the same multiplier regardless of time or
 // demand — predictable, the way RideArrivo's Chauffeur product already
@@ -52,14 +52,14 @@ function computeInstantFare({
   const tierConfig = getTier(tier);
 
   if (!tierConfig) {
-    throw new InstantFareError(`Unknown ArrivoNow tier '${tier}'`, 400, "UNKNOWN_TIER");
+    throw new InstantFareError(`Unknown ArrivoExpress tier '${tier}'`, 400, "UNKNOWN_TIER");
   }
 
   const excluded = findExcludedArea(destinationAddress) || findExcludedArea(pickupAddress);
 
   if (excluded) {
     throw new InstantFareError(
-      `ArrivoNow doesn't currently operate in ${excluded.name}.`,
+      `ArrivoExpress doesn't currently operate in ${excluded.name}.`,
       422,
       "AREA_NOT_SERVICED"
     );
