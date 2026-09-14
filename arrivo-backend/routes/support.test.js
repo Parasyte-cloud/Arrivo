@@ -41,10 +41,10 @@ const fakePool = {
   async query(sql, params = []) {
     const s = sql.replace(/\s+/g, " ").trim();
 
-    // requireAuth now confirms the account has not been deleted, on every
-    // request, so the stand-in has to answer that too.
-    if (s.startsWith("SELECT deleted_at FROM users")) {
-      return { rows: [{ deleted_at: null }] };
+    // requireAuth now confirms the account is neither deleted nor part way
+    // through being deleted, on every request, so the stand-in answers that too.
+    if (s.startsWith("SELECT deleted_at")) {
+      return { rows: [{ deleted_at: null, deletion_started_at: null }] };
     }
 
     if (s.startsWith("SELECT id FROM rides")) {
