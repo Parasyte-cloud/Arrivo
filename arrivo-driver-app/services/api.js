@@ -106,3 +106,23 @@ export function getCallToken(token) {
 export function getRideChatChannel(token, rideId) {
   return request("/api/chat/ride-channel", authed(token, { method: "POST", body: JSON.stringify({ rideId }) }));
 }
+
+// ArrivoNow: on-demand, metered rides — a separate availability toggle and
+// offer queue from the scheduled getAvailableRides() above, so an
+// unmatched ArrivoNow request can never leak into the normal claim queue
+// (see arrivo-backend routes/instantRides.js).
+export function getInstantStatus(token) {
+  return request("/api/instant-rides/status", authed(token));
+}
+export function setInstantAvailability(token, acceptsInstant) {
+  return request("/api/instant-rides/driver/availability", authed(token, { method: "PATCH", body: JSON.stringify({ acceptsInstant }) }));
+}
+export function getInstantOffers(token) {
+  return request("/api/instant-rides/driver/offers", authed(token));
+}
+export function acceptInstantOffer(token, offerId) {
+  return request(`/api/instant-rides/driver/offers/${offerId}/accept`, authed(token, { method: "POST" }));
+}
+export function declineInstantOffer(token, offerId) {
+  return request(`/api/instant-rides/driver/offers/${offerId}/decline`, authed(token, { method: "POST" }));
+}
