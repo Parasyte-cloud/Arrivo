@@ -506,6 +506,16 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL D
 -- only thing that can be revoked with. Null for anyone who signed in with
 -- Apple before we started collecting it, and for everybody else.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_refresh_token TEXT;
+-- Which Apple client the refresh token above was issued to. Rider and driver
+-- are separate clients, and Apple requires revocation to use the same client
+-- id as the original authorization, so one global setting cannot serve both.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_client_id TEXT;
+-- Set while a deletion is running and cleared if it is abandoned. Deleting
+-- spans an external call to Apple and a database transaction, which cannot be
+-- atomic together, so this marks the account as in progress: mutations are
+-- refused meanwhile and an interrupted deletion can be retried rather than
+-- leaving a live account whose Apple authorization is already revoked.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_started_at TIMESTAMPTZ;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
