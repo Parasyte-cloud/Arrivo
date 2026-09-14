@@ -28,7 +28,7 @@ async function requireAuth(req, res, next) {
   // to the login screen and hide the real fault.
   let live;
   try {
-    live = await pool.query("SELECT deleted_at FROM users WHERE id = $1", [payload.id]);
+    live = await pool.query("SELECT deleted_at, deletion_started_at FROM users WHERE id = $1", [payload.id]);
   } catch (err) {
     console.error("Could not check account status for user %s:", payload.id, err.message);
     return res.status(503).json({ error: "We're having trouble right now. Please try again." });
@@ -36,6 +36,19 @@ async function requireAuth(req, res, next) {
 
   if (!live.rows[0] || live.rows[0].deleted_at) {
     return res.status(401).json({ error: "This account no longer exists." });
+  }
+
+  // A deletion that got as far as revoking Apple but not as far as scrubbing.
+  // Nothing new should attach to an account on its way out, so everything is
+  // refused except another go at the deletion itself, which finishes the job.
+  if (live.rows[0].deletion_started_at) {
+    const retryingDeletion = req.method === "DELETE" && req.path === "/me";
+    if (!retryingDeletion) {
+      return res.status(423).json({
+        error: "This account is being deleted.",
+        reason: "deletion_in_progress",
+      });
+    }
   }
 
   return enforceOperationsReadOnly(req, res, next);

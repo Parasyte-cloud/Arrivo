@@ -15,9 +15,12 @@
 // not a diary. So a ride keeps what an invoice would carry:
 //
 //   kept     fare, currency, dates, status, vehicle type, ride id
-//   kept     pickup and destination ADDRESSES, since a dispute is usually about
+//   kept     pickup address and stops, the addresses the trip ran between,
+//            since a dispute is usually about
 //            whether the trip we billed for is the trip that happened
 //   scrubbed precise coordinates, which are finer than any invoice needs
+//   scrubbed flight number, which identifies a person's movements and is not
+//            needed in order to bill for a trip that already happened
 //   scrubbed the rider's free-text rating comment, an opinion with no tax or
 //            accounting purpose
 //   scrubbed emergency contact name and phone, which belong to a third party
@@ -109,6 +112,84 @@ async function findDeletionBlocker(pool, userId) {
 // user row serialises anything that touches the balance, and SERIALIZABLE makes
 // Postgres refuse the transaction outright if a concurrent ride insert would
 // have changed the answer.
+// Phase one of three. Deleting spans an Apple HTTP call and a database
+// transaction, and those cannot be made atomic with each other. So the account
+// is marked in progress first, under the same guards and the same lock as the
+// scrub itself. While the mark is set, requireAuth refuses anything except
+// another deletion attempt, so nothing new can be added to an account that is
+// on its way out.
+//
+// Returns what revocation needs, read inside the lock so it cannot change
+// underneath the caller.
+async function beginDeletion(pool, userId) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+
+    const locked = await client.query(
+      `SELECT wallet_balance_naira, deleted_at, apple_id, apple_refresh_token, apple_client_id
+         FROM users WHERE id = $1 FOR UPDATE`,
+      [userId]
+    );
+    const account = locked.rows[0];
+    if (!account || account.deleted_at) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const active = await client.query(
+      `SELECT rides.id
+         FROM rides
+         LEFT JOIN drivers ON drivers.id = rides.driver_id
+        WHERE (rides.rider_id = $1 OR drivers.user_id = $1)
+          AND rides.ride_status = ANY($2)
+        LIMIT 1`,
+      [userId, ACTIVE_RIDE_STATUSES]
+    );
+    if (active.rows[0]) {
+      throw new DeletionBlocked(
+        BLOCKED_ACTIVE_RIDE,
+        "You have a trip that hasn't finished yet. Once it's completed or cancelled you can delete your account."
+      );
+    }
+
+    if (Number(account.wallet_balance_naira || 0) > 0) {
+      throw new DeletionBlocked(
+        BLOCKED_WALLET_BALANCE,
+        "There's still money in your wallet. Spend it or contact support to withdraw it, then you can delete your account."
+      );
+    }
+
+    await client.query(
+      "UPDATE users SET deletion_started_at = now() WHERE id = $1 AND deleted_at IS NULL",
+      [userId]
+    );
+    await client.query("COMMIT");
+
+    return {
+      appleId: account.apple_id,
+      appleRefreshToken: account.apple_refresh_token,
+      appleClientId: account.apple_client_id,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Nothing has been scrubbed yet at this point, so letting the account go back
+// to normal is safe. Used when revocation fails and we stop rather than
+// half-delete somebody.
+async function abortDeletion(pool, userId) {
+  await pool.query(
+    "UPDATE users SET deletion_started_at = NULL WHERE id = $1 AND deleted_at IS NULL",
+    [userId]
+  );
+}
+
 async function anonymiseAccount(pool, userId) {
   const client = await pool.connect();
 
@@ -174,6 +255,7 @@ async function anonymiseAccount(pool, userId) {
           SET emergency_contact_name = NULL,
               emergency_contact_phone = NULL,
               rider_rating_comment = NULL,
+              flight_number = NULL,
               pickup_lat = NULL,
               pickup_lng = NULL,
               destination_lat = NULL,
@@ -266,6 +348,8 @@ async function anonymiseAccount(pool, userId) {
 
 module.exports = {
   ACTIVE_RIDE_STATUSES,
+  beginDeletion,
+  abortDeletion,
   BLOCKED_ACTIVE_RIDE,
   BLOCKED_WALLET_BALANCE,
   SERIALIZATION_FAILURE,
