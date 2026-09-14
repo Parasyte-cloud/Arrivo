@@ -12,7 +12,11 @@
 //   APPLE_TEAM_ID       10 characters, top right of developer.apple.com
 //   APPLE_KEY_ID        10 characters, from the "Sign in with Apple" key
 //   APPLE_PRIVATE_KEY   contents of the .p8 file for that key, newlines and all
-//   APPLE_CLIENT_ID     the bundle id the token was issued to
+//
+// There is deliberately no APPLE_CLIENT_ID. The client id comes from the
+// verified token at sign-in and is stored next to the refresh token, because
+// rider and driver are separate Apple clients and a token issued to one
+// cannot be revoked with the other.
 //
 // Create the key at developer.apple.com under Certificates, Identifiers and
 // Profiles, Keys, enabling "Sign in with Apple". Apple lets you download the
@@ -42,19 +46,22 @@ function config() {
     // Env vars cannot hold real newlines, so the .p8 is normally pasted with
     // \n escapes. Turn those back into newlines or the key will not parse.
     privateKey: (process.env.APPLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
-    clientId: process.env.APPLE_CLIENT_ID || (process.env.APPLE_BUNDLE_IDS || "").split(",")[0].trim(),
   };
 }
 
 function isAppleRevocationConfigured() {
   const c = config();
-  return Boolean(c.teamId && c.keyId && c.privateKey && c.clientId);
+  return Boolean(c.teamId && c.keyId && c.privateKey);
 }
 
 // Apple does not take a static secret. It wants a short-lived ES256 JWT signed
 // with the .p8 key, with Apple itself as the audience.
-function buildClientSecret() {
+// The client id is passed in, not read from config. Apple ties a refresh
+// token to the client that obtained it, and rider and driver are different
+// clients, so one global value could only ever revoke one of the two.
+function buildClientSecret(clientId) {
   const c = config();
+  if (!clientId) throw new Error("An Apple client id is required to build a client secret.");
   const now = Math.floor(Date.now() / 1000);
 
   return jwt.sign(
@@ -63,7 +70,7 @@ function buildClientSecret() {
       iat: now,
       exp: now + 300,
       aud: "https://appleid.apple.com",
-      sub: c.clientId,
+      sub: clientId,
     },
     c.privateKey,
     { algorithm: "ES256", keyid: c.keyId }
@@ -74,13 +81,13 @@ function buildClientSecret() {
 // token, which is the thing that can later be revoked. Returns null rather than
 // throwing when it cannot: failing sign-in because revocation groundwork did
 // not work would be the wrong trade.
-async function exchangeAuthorizationCode(code) {
-  if (!code || !isAppleRevocationConfigured()) return null;
+async function exchangeAuthorizationCode(code, clientId) {
+  if (!code || !clientId || !isAppleRevocationConfigured()) return null;
 
   try {
     const body = new URLSearchParams({
-      client_id: config().clientId,
-      client_secret: buildClientSecret(),
+      client_id: clientId,
+      client_secret: buildClientSecret(clientId),
       code,
       grant_type: "authorization_code",
     });
@@ -102,18 +109,23 @@ async function exchangeAuthorizationCode(code) {
 // Tells the caller exactly what happened rather than a bare boolean, because
 // "we had nothing to revoke" and "Apple said no" need different handling and
 // deletion must not claim success while an authorization is still live.
-async function revokeAppleAuthorization(refreshToken) {
+// clientId is the one persisted alongside the refresh token at sign-in, so
+// revocation reuses exactly the client that was authorized.
+async function revokeAppleAuthorization(refreshToken, clientId) {
   if (!isAppleRevocationConfigured()) {
     return { revoked: false, reason: "not_configured" };
   }
   if (!refreshToken) {
     return { revoked: false, reason: "no_token" };
   }
+  if (!clientId) {
+    return { revoked: false, reason: "no_client_id" };
+  }
 
   try {
     const body = new URLSearchParams({
-      client_id: config().clientId,
-      client_secret: buildClientSecret(),
+      client_id: clientId,
+      client_secret: buildClientSecret(clientId),
       token: refreshToken,
       token_type_hint: "refresh_token",
     });
