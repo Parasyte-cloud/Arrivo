@@ -89,8 +89,8 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="flash" size={18} color={colors.ink} />
             </IconBadge>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
-              <Text style={styles.arrivoExpressTitle}>Ride Now with ArrivoExpress</Text>
-              <Text style={styles.arrivoExpressSubtitle}>On-demand rides, priced by distance — matched in minutes.</Text>
+              <Text style={styles.arrivoExpressTitle}>{t("arrivoExpress.homeBannerTitle")}</Text>
+              <Text style={styles.arrivoExpressSubtitle}>{t("arrivoExpress.homeBannerSubtitle")}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.dark.text} />
           </Pressable>

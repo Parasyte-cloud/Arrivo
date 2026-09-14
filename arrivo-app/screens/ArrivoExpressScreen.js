@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
@@ -38,11 +39,11 @@ const TIER_ICONS = {
   premium: "diamond-outline",
 };
 
-function requestStatusLabel(status) {
-  if (status === "searching") return "Looking for a nearby driver…";
-  if (status === "offering") return "Confirming with a nearby driver…";
-  if (status === "matched") return "Driver found!";
-  return "Working on it…";
+function requestStatusLabel(status, t) {
+  if (status === "searching") return t("arrivoExpress.statusSearching");
+  if (status === "offering") return t("arrivoExpress.statusOffering");
+  if (status === "matched") return t("arrivoExpress.statusMatched");
+  return t("arrivoExpress.statusDefault");
 }
 
 // ArrivoExpress: on-demand, metered point-to-point rides (Economy / Comfort /
@@ -56,6 +57,7 @@ export default function ArrivoExpressScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatFare } = useCurrency(token);
+  const { t } = useTranslation();
 
   // "loading" -> "unavailable" | "picker" | "quoted" | "searching"
   const [phase, setPhase] = useState("loading");
@@ -129,8 +131,8 @@ export default function ArrivoExpressScreen({ navigation }) {
         if (cancelled) return;
         setLoadError(
           isNetworkError(e)
-            ? "Couldn't reach RideArrivo. Check your connection and try again."
-            : e.message || "Something went wrong loading ArrivoExpress."
+            ? t("arrivoExpress.networkError")
+            : e.message || t("arrivoExpress.loadError")
         );
         setPhase("error");
       }
@@ -163,8 +165,8 @@ export default function ArrivoExpressScreen({ navigation }) {
           setActiveRequest(null);
           setPhase("picker");
           Alert.alert(
-            "No driver found in time",
-            "We couldn't match you with a driver before your request expired. Any wallet charge has been refunded."
+            t("arrivoExpress.expiredTitle"),
+            t("arrivoExpress.expiredBody")
           );
           return;
         }
@@ -198,15 +200,15 @@ export default function ArrivoExpressScreen({ navigation }) {
     setError(null);
 
     if (!selectedTier) {
-      setError("Choose a vehicle to continue.");
+      setError(t("arrivoExpress.chooseVehicleError"));
       return;
     }
     if (!pickup.trim() || !pickupCoords) {
-      setError("Select your pickup address from the suggestions.");
+      setError(t("arrivoExpress.selectPickupError"));
       return;
     }
     if (!destination.trim() || !destCoords) {
-      setError("Select your destination from the suggestions.");
+      setError(t("arrivoExpress.selectDestinationError"));
       return;
     }
 
@@ -216,7 +218,7 @@ export default function ArrivoExpressScreen({ navigation }) {
       setQuote(q);
       setPhase("quoted");
     } catch (e) {
-      setError(e.message || "Couldn't get a fare for that trip. Please try again.");
+      setError(e.message || t("arrivoExpress.fareError"));
     } finally {
       setQuoting(false);
     }
@@ -232,11 +234,11 @@ export default function ArrivoExpressScreen({ navigation }) {
     } catch (e) {
       if (e.message && /insufficient/i.test(e.message)) {
         Alert.alert(
-          "Not enough wallet balance",
-          "Top up your RideArrivo Wallet to book this ArrivoExpress ride.",
+          t("arrivoExpress.insufficientWalletTitle"),
+          t("arrivoExpress.insufficientWalletBody"),
           [
-            { text: "Not now", style: "cancel" },
-            { text: "Top up wallet", onPress: () => navigation.navigate("Wallet") },
+            { text: t("arrivoExpress.notNow"), style: "cancel" },
+            { text: t("arrivoExpress.topUpWallet"), onPress: () => navigation.navigate("Wallet") },
           ]
         );
       } else if (e.message && /already have an active/i.test(e.message)) {
@@ -254,7 +256,7 @@ export default function ArrivoExpressScreen({ navigation }) {
           setError(e.message);
         }
       } else {
-        setError(e.message || "Couldn't book this ride. Please try again.");
+        setError(e.message || t("arrivoExpress.bookError"));
       }
     } finally {
       setConfirming(false);
@@ -271,7 +273,7 @@ export default function ArrivoExpressScreen({ navigation }) {
       setQuote(null);
       setPhase("picker");
     } catch (e) {
-      Alert.alert("Couldn't cancel", e.message || "Please try again in a moment.");
+      Alert.alert(t("arrivoExpress.cantCancelTitle"), e.message || t("arrivoExpress.cantCancelBody"));
     } finally {
       setCancelling(false);
     }
@@ -299,12 +301,9 @@ export default function ArrivoExpressScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoExpress</Text>
+          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
-            <Text style={styles.meta}>
-              ArrivoExpress isn't switched on for your account yet. Try Book a Ride or On the Go instead,
-              or check back soon.
-            </Text>
+            <Text style={styles.meta}>{t("arrivoExpress.unavailableBody")}</Text>
           </Card>
         </ScrollView>
       </View>
@@ -316,11 +315,11 @@ export default function ArrivoExpressScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoExpress</Text>
+          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
             <Text style={styles.errorText}>{loadError}</Text>
             <Button
-              label="Try again"
+              label={t("arrivoExpress.tryAgain")}
               onPress={() => {
                 setPhase("loading");
                 setLoadError(null);
@@ -338,11 +337,11 @@ export default function ArrivoExpressScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>ArrivoExpress</Text>
+          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
           <Card tone="dark" style={{ marginTop: spacing.lg, alignItems: "center", paddingVertical: spacing.lg }}>
             <ActivityIndicator color={colors.amber} size="large" />
             <Text style={[styles.successTitle, { marginTop: spacing.md }]}>
-              {requestStatusLabel(activeRequest?.status)}
+              {requestStatusLabel(activeRequest?.status, t)}
             </Text>
             <Text style={[styles.meta, { textAlign: "center", marginTop: 6 }]}>
               {activeRequest?.pickup_address} → {activeRequest?.destination_address}
@@ -358,7 +357,7 @@ export default function ArrivoExpressScreen({ navigation }) {
             <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
           ) : (
             <Button
-              label="Cancel request"
+              label={t("arrivoExpress.cancelRequest")}
               variant="ghost"
               tone="dark"
               style={{ marginTop: spacing.lg }}
@@ -376,27 +375,27 @@ export default function ArrivoExpressScreen({ navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>Confirm your ride</Text>
+          <Text style={styles.title}>{t("arrivoExpress.confirmTitle")}</Text>
 
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
             <View style={styles.rowBetween}>
               <Text style={styles.cardLabel}>{tierConfig?.label || selectedTier}</Text>
-              {quote.zone === "yellow" ? <Tag label="High-traffic area" tone="amber" /> : null}
+              {quote.zone === "yellow" ? <Tag label={t("arrivoExpress.highTrafficArea")} tone="amber" /> : null}
             </View>
             <Text style={styles.meta}>{pickup} → {destination}</Text>
             <View style={[styles.rowBetween, { marginTop: spacing.md }]}>
-              <Text style={styles.meta}>Estimated distance</Text>
-              <Text style={styles.metaStrong}>{quote.distanceKm?.toFixed?.(1)} km</Text>
+              <Text style={styles.meta}>{t("arrivoExpress.estimatedDistance")}</Text>
+              <Text style={styles.metaStrong}>{t("arrivoExpress.distanceKm", { distance: quote.distanceKm?.toFixed?.(1) })}</Text>
             </View>
             <View style={styles.rowBetween}>
-              <Text style={styles.meta}>Estimated time</Text>
-              <Text style={styles.metaStrong}>{Math.round(quote.durationMin)} min</Text>
+              <Text style={styles.meta}>{t("arrivoExpress.estimatedTime")}</Text>
+              <Text style={styles.metaStrong}>{t("arrivoExpress.durationMin", { duration: Math.round(quote.durationMin) })}</Text>
             </View>
             <View style={[styles.rowBetween, { marginTop: spacing.sm }]}>
-              <Text style={styles.cardLabel}>Total fare</Text>
+              <Text style={styles.cardLabel}>{t("arrivoExpress.totalFare")}</Text>
               <Text style={styles.fareText}>{formatFare(quote.fareNaira)}</Text>
             </View>
-            <Text style={styles.smallMeta}>Charged to your RideArrivo Wallet on confirmation.</Text>
+            <Text style={styles.smallMeta}>{t("arrivoExpress.walletChargeNote")}</Text>
           </Card>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -405,9 +404,9 @@ export default function ArrivoExpressScreen({ navigation }) {
             <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
           ) : (
             <>
-              <Button label="Confirm & find a driver" onPress={confirmRide} style={{ marginTop: spacing.lg }} />
+              <Button label={t("arrivoExpress.confirmFindDriver")} onPress={confirmRide} style={{ marginTop: spacing.lg }} />
               <Button
-                label="Back"
+                label={t("arrivoExpress.back")}
                 variant="ghost"
                 tone="dark"
                 style={{ marginTop: spacing.sm }}
@@ -428,14 +427,11 @@ export default function ArrivoExpressScreen({ navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={insetsStyle} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>ArrivoExpress</Text>
-        <Text style={styles.meta}>
-          On-demand rides, priced by distance and time — pick a vehicle, see your fare, and we'll
-          match you with a nearby driver.
-        </Text>
+        <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
+        <Text style={styles.meta}>{t("arrivoExpress.tagline")}</Text>
 
         <Card tone="dark" style={{ marginTop: spacing.lg }}>
-          <Text style={styles.cardLabel}>Choose your ride</Text>
+          <Text style={styles.cardLabel}>{t("arrivoExpress.chooseYourRide")}</Text>
           {tiers.map((tier) => {
             const active = tier.key === selectedTier;
             return (
@@ -460,7 +456,7 @@ export default function ArrivoExpressScreen({ navigation }) {
         </Card>
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
-          <Text style={styles.cardLabel}>Where to?</Text>
+          <Text style={styles.cardLabel}>{t("arrivoExpress.whereTo")}</Text>
           <AddressAutocomplete
             style={{ marginBottom: spacing.sm }}
             value={pickup}
@@ -472,7 +468,7 @@ export default function ArrivoExpressScreen({ navigation }) {
               setPickup(address);
               setPickupCoords({ lat, lng });
             }}
-            placeholder="Pickup address"
+            placeholder={t("arrivoExpress.pickupPlaceholder")}
           />
           <AddressAutocomplete
             value={destination}
@@ -484,7 +480,7 @@ export default function ArrivoExpressScreen({ navigation }) {
               setDestination(address);
               setDestCoords({ lat, lng });
             }}
-            placeholder="Destination"
+            placeholder={t("arrivoExpress.destinationPlaceholder")}
           />
         </Card>
 
@@ -493,7 +489,7 @@ export default function ArrivoExpressScreen({ navigation }) {
         {quoting ? (
           <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
         ) : (
-          <Button label="See fare" onPress={getFare} style={{ marginTop: spacing.lg }} />
+          <Button label={t("arrivoExpress.seeFare")} onPress={getFare} style={{ marginTop: spacing.lg }} />
         )}
       </ScrollView>
     </View>
