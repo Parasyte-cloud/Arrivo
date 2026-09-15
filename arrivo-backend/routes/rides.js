@@ -13,6 +13,7 @@ const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const { creditMembershipCashback } = require("../services/membershipCashback");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
@@ -346,9 +347,13 @@ router.post("/", requireAuth, async (req, res) => {
   // point of the plan. Verified server-side against a real active
   // membership row, never just trusted because the client asked for it.
   if (paymentMethod === "membership") {
+    // 'premium' / 'executive' — the member's own plan; 'executive_profile'
+    // — a profile user linked under someone else's Executive plan (see
+    // routes/memberships.js). All three ride free, covered by whichever
+    // membership applies.
     const membership = await pool.query(
       `SELECT * FROM memberships WHERE user_id = $1 AND status = 'active' AND expires_at > now()
-       AND plan_type IN ('individual_annual', 'corporate_delegate') LIMIT 1`,
+       AND plan_type IN ('premium', 'executive', 'executive_profile') LIMIT 1`,
       [req.user.id]
     );
     if (!membership.rows[0]) {
@@ -855,6 +860,17 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     } finally {
       client.release();
     }
+  }
+
+  // Membership cashback — Premium/Executive members (and their linked
+  // profile users) get a percentage of every completed, paid trip's fare
+  // credited straight back to their wallet, automatically. Keyed off
+  // payment_status === 'paid' rather than payment method, so it applies
+  // the same way to a card/wallet-paid trip and to a trip covered outright
+  // by the membership itself (payment_method === 'membership', charged
+  // above) — see services/membershipCashback.js.
+  if (status === "completed" && ride.payment_status === "paid") {
+    await creditMembershipCashback(ride, pool);
   }
 
   const notification = STATUS_NOTIFICATION[status];
