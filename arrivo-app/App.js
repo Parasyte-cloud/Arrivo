@@ -25,6 +25,7 @@ import CheckoutScreen from "./screens/CheckoutScreen";
 import TrackingScreen from "./screens/TrackingScreen";
 import ChauffeurScreen from "./screens/ChauffeurScreen";
 import OnTheGoScreen from "./screens/OnTheGoScreen";
+import ArrivoExpressScreen from "./screens/ArrivoExpressScreen";
 import OwnerScreen from "./screens/OwnerScreen";
 import MembershipScreen from "./screens/MembershipScreen";
 import ScanScreen from "./screens/ScanScreen";
@@ -90,6 +91,7 @@ function HomeStack() {
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Message driver" }} />
       <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
       <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: "On the Go" }} />
+      <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: "Membership" }} />
       <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />

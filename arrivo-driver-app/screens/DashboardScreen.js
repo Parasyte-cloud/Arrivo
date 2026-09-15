@@ -9,10 +9,17 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice, getDriverProfile } from "../services/api";
+import {
+  setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
+  triggerPanic, activateListeningDevice, getDriverProfile,
+  getInstantStatus, setInstantAvailability, getInstantOffers, acceptInstantOffer, declineInstantOffer,
+} from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
+// ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
+// default 20s) so they're polled on their own, quicker cadence below.
+const INSTANT_POLL_INTERVAL_MS = 4000;
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -25,6 +32,18 @@ export default function DashboardScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef(null);
+
+  // ArrivoExpress: a separate opt-in from the main online switch above --
+  // a driver must be both online AND opted into ArrivoExpress to receive
+  // these offers (see arrivo-backend routes/instantRides.js).
+  const [instantEnabled, setInstantEnabled] = useState(false);
+  const [instantVerified, setInstantVerified] = useState(false);
+  const [acceptsInstant, setAcceptsInstant] = useState(false);
+  const [instantOffers, setInstantOffers] = useState([]);
+  const [instantBusyOfferId, setInstantBusyOfferId] = useState(null);
+  const [instantError, setInstantError] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const instantPollRef = useRef(null);
 
   // While online (whether waiting for a request or mid-trip), periodically
   // report this phone's GPS position to the backend. This is what makes
@@ -86,11 +105,21 @@ export default function DashboardScreen({ navigation }) {
       try {
         const { driver } = await getDriverProfile(token);
         if (driver && driver.is_online) setIsOnline(true);
+        if (driver) {
+          setInstantVerified(!!driver.is_verified);
+          setAcceptsInstant(!!driver.accepts_instant);
+        }
       } catch (e) {
         // Non-fatal — worst case the driver has to flip the switch
         // themselves, same as before this fix existed.
       }
     })();
+  }, [token]);
+
+  useEffect(() => {
+    getInstantStatus(token)
+      .then((status) => setInstantEnabled(!!status.enabled))
+      .catch(() => {});
   }, [token]);
 
   // On screen focus, check whether this driver already has an active ride
@@ -136,6 +165,82 @@ export default function DashboardScreen({ navigation }) {
     } catch (e) {
       setIsOnline(!value); // revert on failure
       setError(e.message);
+    }
+  };
+
+  const toggleInstant = async (value) => {
+    setAcceptsInstant(value); // optimistic
+    setInstantError(null);
+    try {
+      await setInstantAvailability(token, value);
+    } catch (e) {
+      setAcceptsInstant(!value); // revert on failure
+      setInstantError(e.message);
+    }
+  };
+
+  const refreshInstantOffers = useCallback(async () => {
+    try {
+      const { offers } = await getInstantOffers(token);
+      setInstantOffers(offers || []);
+    } catch (e) {
+      // Non-fatal like refreshAvailable above — just try again next tick.
+    }
+  }, [token]);
+
+  // Poll ArrivoExpress offers only while genuinely eligible to receive them:
+  // online, opted in, verified, and not already mid-trip.
+  useEffect(() => {
+    if (isOnline && acceptsInstant && instantVerified && !activeRide) {
+      refreshInstantOffers();
+      instantPollRef.current = setInterval(refreshInstantOffers, INSTANT_POLL_INTERVAL_MS);
+    } else {
+      clearInterval(instantPollRef.current);
+      setInstantOffers([]);
+    }
+    return () => clearInterval(instantPollRef.current);
+  }, [isOnline, acceptsInstant, instantVerified, activeRide, refreshInstantOffers]);
+
+  // Drives the live per-offer countdown text -- only ticks while there's
+  // actually something to count down, so this never runs for drivers who
+  // haven't opted into ArrivoExpress.
+  useEffect(() => {
+    if (instantOffers.length === 0) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [instantOffers.length]);
+
+  const handleAcceptInstant = async (offerId) => {
+    setInstantBusyOfferId(offerId);
+    setInstantError(null);
+    try {
+      const result = await acceptInstantOffer(token, offerId);
+      if (result.status === "accepted" && result.ride) {
+        setActiveRide(result.ride);
+        setInstantOffers([]);
+      } else {
+        refreshInstantOffers();
+      }
+    } catch (e) {
+      // e.g. another driver already accepted, or it expired -- either way
+      // the offer is gone, refresh so the list matches reality.
+      setInstantError(e.message);
+      refreshInstantOffers();
+    } finally {
+      setInstantBusyOfferId(null);
+    }
+  };
+
+  const handleDeclineInstant = async (offerId) => {
+    setInstantBusyOfferId(offerId);
+    try {
+      await declineInstantOffer(token, offerId);
+    } catch (e) {
+      // Already resolved one way or another -- fine either way, the
+      // refresh below is what actually matters.
+    } finally {
+      setInstantBusyOfferId(null);
+      refreshInstantOffers();
     }
   };
 
@@ -221,12 +326,52 @@ export default function DashboardScreen({ navigation }) {
           />
         </View>
 
+        {instantEnabled ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.cardTitleLight}>ArrivoExpress requests</Text>
+                <Text style={styles.meta}>
+                  {instantVerified
+                    ? "Get on-demand ride requests alongside your scheduled bookings."
+                    : "Your driver profile must be verified before you can enable this."}
+                </Text>
+              </View>
+              <Switch
+                value={acceptsInstant}
+                onValueChange={toggleInstant}
+                disabled={!!activeRide || !instantVerified}
+                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                thumbColor="#fff"
+              />
+            </View>
+          </Card>
+        ) : null}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
           <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
+            {acceptsInstant ? (
+              <>
+                <Text style={styles.sectionLabel}>ArrivoExpress requests</Text>
+                {instantOffers.map((offer) => (
+                  <InstantOfferCard
+                    key={offer.offer_id}
+                    offer={offer}
+                    now={now}
+                    busy={instantBusyOfferId === offer.offer_id}
+                    disabled={instantBusyOfferId !== null && instantBusyOfferId !== offer.offer_id}
+                    onAccept={() => handleAcceptInstant(offer.offer_id)}
+                    onDecline={() => handleDeclineInstant(offer.offer_id)}
+                  />
+                ))}
+              </>
+            ) : null}
+
             <Text style={styles.sectionLabel}>Nearby requests</Text>
             {available.length === 0 ? (
               <Card tone="dark">
@@ -330,6 +475,49 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
       <View style={{ height: spacing.sm }} />
       {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} disabled={disabled} trailingIcon />}
+    </Card>
+  );
+}
+
+
+// Shows a live "Xs" countdown to the offer's expiry, ticking off the
+// `now` state DashboardScreen updates every second while any offer is
+// visible — this reads that instead of running its own timer so every
+// visible offer's countdown updates in lockstep.
+function InstantOfferCard({ offer, now, busy, disabled, onAccept, onDecline }) {
+  const secondsLeft = Math.max(0, Math.round((new Date(offer.expires_at).getTime() - now) / 1000));
+  return (
+    <Card tone="dark" style={{ marginBottom: spacing.sm }}>
+      <View style={styles.rowBetween}>
+        <Tag label="ArrivoExpress" tone="amber" />
+        <Text style={styles.fare}>₦{offer.estimated_fare_naira?.toLocaleString()}</Text>
+      </View>
+      <Text style={styles.tripTitle}>{offer.pickup_address}</Text>
+      <Text style={styles.meta}>→ {offer.destination_address}</Text>
+      <Text style={styles.meta}>
+        {offer.distance_to_pickup_km != null ? `${offer.distance_to_pickup_km.toFixed(1)} km to pickup` : ""}
+        {offer.eta_to_pickup_min != null ? ` · ~${Math.round(offer.eta_to_pickup_min)} min away` : ""}
+      </Text>
+      <Text style={styles.meta}>Rider: {offer.rider_name}</Text>
+      <Text style={secondsLeft <= 5 ? styles.countdownUrgent : styles.countdownText}>
+        Responds within {secondsLeft}s
+      </Text>
+      <View style={{ height: spacing.sm }} />
+      {busy ? (
+        <ActivityIndicator color={colors.amber} />
+      ) : (
+        <View style={styles.rowBetween}>
+          <Button
+            label="Decline"
+            variant="ghost"
+            tone="dark"
+            style={{ flex: 1, marginRight: spacing.sm }}
+            disabled={disabled}
+            onPress={onDecline}
+          />
+          <Button label="Accept" style={{ flex: 1 }} disabled={disabled} onPress={onAccept} />
+        </View>
+      )}
     </Card>
   );
 }
@@ -586,6 +774,9 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
   scheduledText: { color: colors.amber, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
   error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  cardTitleLight: { color: colors.dark.text, fontWeight: "700", fontSize: 13.5 },
+  countdownText: { color: colors.dark.textMuted, fontSize: 11, marginTop: 6, fontWeight: "600" },
+  countdownUrgent: { color: "#FF9B8A", fontSize: 11, marginTop: 6, fontWeight: "700" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
   panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },
   panicCountingText: { color: "#FF9B8A", fontSize: 13, fontWeight: "700" },

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Card, Button, Tag, IconBadge } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
-import { getFlightStatus } from "../services/api";
+import { getFlightStatus, getInstantStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 export default function HomeScreen({ navigation }) {
@@ -15,6 +15,23 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [flight, setFlight] = useState(null);
+  const [arrivoExpressEnabled, setArrivoExpressEnabled] = useState(false);
+
+  // ArrivoExpress ships behind a rollout gate (see arrivo-backend routes/
+  // instantRides.js) — this tile only appears once it's actually switched
+  // on, so Home never shows a dead-end feature to riders.
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!token) return undefined;
+    getInstantStatus(token)
+      .then((status) => {
+        if (!cancelled) setArrivoExpressEnabled(!!status.enabled);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const trackFlight = async () => {
     if (!flightNumber.trim()) return;
@@ -65,6 +82,19 @@ export default function HomeScreen({ navigation }) {
             </View>
           ) : null}
         </View>
+
+        {arrivoExpressEnabled ? (
+          <Pressable style={styles.arrivoExpressBanner} onPress={() => navigation.navigate("ArrivoExpress")}>
+            <IconBadge tone="amber" size={36}>
+              <Ionicons name="flash" size={18} color={colors.ink} />
+            </IconBadge>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={styles.arrivoExpressTitle}>{t("arrivoExpress.homeBannerTitle")}</Text>
+              <Text style={styles.arrivoExpressSubtitle}>{t("arrivoExpress.homeBannerSubtitle")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.dark.text} />
+          </Pressable>
+        ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.row}>
@@ -164,6 +194,18 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   cardTitle: { color: colors.dark.text, fontWeight: "600", fontSize: 13 },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  arrivoExpressBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.dark.surface,
+    borderColor: colors.dark.surfaceBorder,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  arrivoExpressTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 13.5 },
+  arrivoExpressSubtitle: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tile: {
     flex: 1,
     backgroundColor: colors.dark.surface,

@@ -214,6 +214,31 @@ function computeVehicleCount(passengerCount, vehicleType) {
 // comfort tier.
 const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
 
+// Yellow zone keywords — the same corridors already priced at the Yellow
+// zone rate in AREA_PRICING above (further out / heavier traffic than the
+// Green zone core). Extracted into their own list (rather than only living
+// inside AREA_PRICING) so other pricing models — like ArrivoExpress's metered
+// point-to-point fare in services/instantFare.js — can apply a corridor
+// multiplier without re-deriving a fixed price per neighbourhood.
+const YELLOW_ZONE_KEYWORDS = [
+  "iyana-ipaja", "iyana ipaja", "egbeda", "akowonjo", "idimu", "ipaja",
+  "ayobo", "baruwa", "alimosho", "command", "abule egba", "ijaiye",
+  "oko oba", "dopemu", "shasha", "lekki", "ajah", "ikorodu", "festac",
+  "satellite town",
+];
+
+// Classifies a free-text address into a pricing zone: 'red' (excluded —
+// see EXCLUDED_AREAS), 'yellow' (a traffic corridor, see
+// YELLOW_ZONE_KEYWORDS above), or 'green' (everything else, including
+// unlisted addresses — deliberately not a fourth "unknown" bucket, since an
+// address that hasn't been specifically classified as busier shouldn't be
+// charged more by default).
+function classifyZone(address) {
+  if (findExcludedArea(address)) return "red";
+  if (matchesAny(address, YELLOW_ZONE_KEYWORDS)) return "yellow";
+  return "green";
+}
+
 // pickupAddress/destinationAddress are the free-text addresses the rider
 // entered (or picked via autocomplete) — these, not lat/lng, are what
 // determine price now. lat/lng are still collected by the apps/website for
@@ -322,6 +347,8 @@ module.exports = {
   findAreaPrice,
   isAirportAddress,
   isLagosNightTime,
+  classifyZone,
+  YELLOW_ZONE_KEYWORDS,
   SECURITY_ESCORT_PRICE_USD,
   FLEET_PRICE_NAIRA,
   FLEET_ESCORT_PAYOUT_USD,
