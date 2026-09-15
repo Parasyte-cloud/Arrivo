@@ -365,3 +365,70 @@ export function createSupportTicket(token, { type, subject, description, rideId 
     body: JSON.stringify({ type, subject, description, rideId }),
   });
 }
+
+// ArrivoExpress: RideArrivo's on-demand, metered point-to-point ride option —
+// separate from On-the-Go above (which is a manual, no-quote, ops-confirms
+// concierge flow) and separate from the scheduled Route/Chauffeur booking
+// flows. See arrivo-backend/routes/instantRides.js for the full contract.
+// Every call here requires the rider (or driver) to already be signed in.
+
+// Feature flag + which payment rails are currently enabled. The app should
+// hide the ArrivoExpress entry point entirely when enabled is false, rather
+// than show a dead-end button — ArrivoExpress ships behind a rollout gate.
+export function getInstantStatus(token) {
+  return request("/api/instant-rides/status", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Economy/Comfort/XL/Premium — the "choose your vehicle" step. Available
+// even while ArrivoExpress itself is disabled, so this can safely be prefetched.
+export function getInstantTiers(token) {
+  return request("/api/instant-rides/tiers", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// The fare shown here is always recalculated by the server at request time
+// too — this call is purely so the rider can see the price before paying.
+export function getInstantQuote(token, trip) {
+  return request("/api/instant-rides/quote", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(trip),
+  });
+}
+
+// Charges the rider's RideArrivo Wallet immediately and kicks off driver
+// dispatch. Throws with code INSUFFICIENT_WALLET (plus balanceNaira/
+// fareNaira in the error) when the wallet can't cover the fare — the
+// screen should offer a "Top up wallet" action in that case, not just show
+// the raw message. Throws with code ACTIVE_INSTANT_REQUEST if the rider
+// already has one in flight.
+export function createInstantRide(token, trip) {
+  return request("/api/instant-rides", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(trip),
+  });
+}
+
+// Only works before a driver has matched (status searching/offering) — once
+// matched, cancelling is the normal ride-cancellation flow on the resulting
+// ride (see getRideDetails/Tracking), not this endpoint.
+export function cancelInstantRequest(token, requestId) {
+  return request(`/api/instant-rides/rider/requests/${requestId}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Poll this while waiting for a match. request.status moves
+// searching -> offering -> matched (at which point request.ride_id is set
+// — hand off to the normal Tracking screen with that id) or -> null once
+// cancelled/expired/refunded.
+export function getActiveInstantRequest(token) {
+  return request("/api/instant-rides/rider/active", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

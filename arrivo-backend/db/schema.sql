@@ -547,3 +547,300 @@ CREATE TABLE IF NOT EXISTS on_the_go_requests (
 -- Ops works the pending list oldest first, so that's the index that matters.
 CREATE INDEX IF NOT EXISTS idx_on_the_go_status ON on_the_go_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_on_the_go_user ON on_the_go_requests(user_id, created_at);
+
+
+-- ============================================================
+-- ARRIVONOW_FOUNDATION_V1
+-- Isolated on-demand ride dispatch foundation.
+--
+-- Existing RideArrivo bookings remain "scheduled".
+-- Drivers remain excluded from ArrivoNow unless explicitly enabled.
+-- No ArrivoNow request becomes a canonical rides row until matching.
+-- ============================================================
+
+ALTER TABLE rides
+  ADD COLUMN IF NOT EXISTS service_mode TEXT NOT NULL DEFAULT 'scheduled';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'rides_service_mode_check'
+       AND conrelid = 'rides'::regclass
+  ) THEN
+    ALTER TABLE rides
+      ADD CONSTRAINT rides_service_mode_check
+      CHECK (service_mode IN ('scheduled', 'instant'));
+  END IF;
+END
+$$;
+
+ALTER TABLE drivers
+  ADD COLUMN IF NOT EXISTS accepts_instant BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS instant_ride_requests (
+  id SERIAL PRIMARY KEY,
+
+  rider_id INTEGER NOT NULL REFERENCES users(id),
+
+  pickup_address TEXT NOT NULL,
+  pickup_lat NUMERIC(10, 7) NOT NULL,
+  pickup_lng NUMERIC(10, 7) NOT NULL,
+
+  destination_address TEXT NOT NULL,
+  destination_lat NUMERIC(10, 7) NOT NULL,
+  destination_lng NUMERIC(10, 7) NOT NULL,
+
+  vehicle_type TEXT,
+
+  estimated_fare_naira INTEGER,
+  estimated_distance_km NUMERIC(10, 2),
+  estimated_duration_min INTEGER,
+
+  status TEXT NOT NULL DEFAULT 'searching',
+
+  matched_driver_id INTEGER REFERENCES drivers(id),
+  ride_id INTEGER REFERENCES rides(id),
+
+  expires_at TIMESTAMPTZ NOT NULL
+    DEFAULT (now() + INTERVAL '5 minutes'),
+
+  matched_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  CONSTRAINT instant_ride_requests_status_check
+    CHECK (
+      status IN (
+        'searching',
+        'offering',
+        'matched',
+        'cancelled',
+        'expired'
+      )
+    )
+);
+
+CREATE TABLE IF NOT EXISTS instant_ride_offers (
+  id SERIAL PRIMARY KEY,
+
+  request_id INTEGER NOT NULL
+    REFERENCES instant_ride_requests(id)
+    ON DELETE CASCADE,
+
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+
+  status TEXT NOT NULL DEFAULT 'offered',
+
+  distance_to_pickup_km NUMERIC(10, 2),
+  eta_to_pickup_min INTEGER,
+
+  offered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+
+  responded_at TIMESTAMPTZ,
+
+  CONSTRAINT instant_ride_offers_status_check
+    CHECK (
+      status IN (
+        'offered',
+        'accepted',
+        'declined',
+        'expired',
+        'lost'
+      )
+    ),
+
+  CONSTRAINT instant_ride_offers_request_driver_unique
+    UNIQUE (request_id, driver_id)
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_instant_ride_requests_rider_status
+ON instant_ride_requests (
+  rider_id,
+  status,
+  created_at DESC
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_instant_ride_requests_dispatch
+ON instant_ride_requests (
+  status,
+  expires_at,
+  created_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_instant_ride_offers_driver_status
+ON instant_ride_offers (
+  driver_id,
+  status,
+  expires_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_instant_ride_offers_request_status
+ON instant_ride_offers (
+  request_id,
+  status,
+  expires_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_drivers_arrivonow_dispatch
+ON drivers (
+  accepts_instant,
+  is_online,
+  is_verified,
+  location_updated_at
+);
+
+-- ============================================================
+-- END ARRIVONOW_FOUNDATION_V1
+-- ============================================================
+
+
+-- ============================================================
+-- ARRIVONOW_WALLET_LIFECYCLE_V1
+--
+-- ArrivoNow payment is secured before dispatch begins.
+-- Wallet funds are refunded if an unmatched request is cancelled
+-- or expires before a canonical RideArrivo ride is created.
+-- ============================================================
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS payment_method TEXT;
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS payment_status TEXT
+  NOT NULL DEFAULT 'unpaid';
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS wallet_transaction_id INTEGER
+  REFERENCES wallet_transactions(id);
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS refund_wallet_transaction_id INTEGER
+  REFERENCES wallet_transactions(id);
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname =
+       'instant_ride_requests_payment_method_check'
+       AND conrelid =
+         'instant_ride_requests'::regclass
+  ) THEN
+    ALTER TABLE instant_ride_requests
+      ADD CONSTRAINT
+        instant_ride_requests_payment_method_check
+      CHECK (
+        payment_method IS NULL
+        OR payment_method IN ('wallet', 'card')
+      );
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname =
+       'instant_ride_requests_payment_status_check'
+       AND conrelid =
+         'instant_ride_requests'::regclass
+  ) THEN
+    ALTER TABLE instant_ride_requests
+      ADD CONSTRAINT
+        instant_ride_requests_payment_status_check
+      CHECK (
+        payment_status IN (
+          'unpaid',
+          'pending',
+          'paid',
+          'refunded'
+        )
+      );
+  END IF;
+END
+$$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_instant_requests_wallet_transaction
+ON instant_ride_requests (wallet_transaction_id)
+WHERE wallet_transaction_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_instant_requests_refund_transaction
+ON instant_ride_requests (refund_wallet_transaction_id)
+WHERE refund_wallet_transaction_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_instant_requests_one_unconverted_rider
+ON instant_ride_requests (rider_id)
+WHERE status IN ('searching', 'offering', 'matched')
+  AND ride_id IS NULL;
+
+-- ============================================================
+-- END ARRIVONOW_WALLET_LIFECYCLE_V1
+-- ============================================================
+
+
+-- ============================================================
+-- ARRIVONOW_TIERS_V1
+--
+-- Rider-facing vehicle tiers (Economy/Comfort/XL/Premium — see
+-- services/instantTiers.js) and the real distance+time metered fare that
+-- replaced reusing RideArrivo's flat airport-transfer pricing for
+-- ArrivoNow quotes (see services/instantFare.js). tier is a
+-- labelling/pricing concern; vehicle_type is still what actually gets
+-- matched against a driver's vehicle in services/instantDispatch.js.
+-- ============================================================
+
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS tier TEXT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'instant_ride_requests_tier_check'
+       AND conrelid = 'instant_ride_requests'::regclass
+  ) THEN
+    ALTER TABLE instant_ride_requests
+      ADD CONSTRAINT instant_ride_requests_tier_check
+      CHECK (tier IS NULL OR tier IN ('economy', 'comfort', 'xl', 'premium'));
+  END IF;
+END
+$$;
+
+-- Minimum seats a matched vehicle must have — how the XL tier is
+-- distinguished from Comfort despite both using vehicle_type = 'suv'.
+-- Defaults to 1 (no extra requirement) for every other tier.
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS min_seats INTEGER NOT NULL DEFAULT 1;
+
+-- Itemised base/distance/time/zone breakdown for the rider's receipt — the
+-- same "itemised digital receipt" pattern called out in the Uber teardown
+-- brief (Payments, Ratings & Loyalty section).
+ALTER TABLE instant_ride_requests
+  ADD COLUMN IF NOT EXISTS fare_breakdown JSONB;
+
+-- ============================================================
+-- END ARRIVONOW_TIERS_V1
+-- ============================================================
