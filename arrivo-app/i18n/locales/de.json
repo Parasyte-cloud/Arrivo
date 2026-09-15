@@ -12,7 +12,7 @@
     "listVehicle": "Fahrzeug für Abholungen registrieren →",
     "bookAirportPickup": "Flughafenabholung buchen",
     "bookAirportDropoff": "Flughafen-Abgabe buchen",
-    "flightNotFound": "Dieser Flug wurde nicht gefunden. Bitte Nummer prüfen und erneut versuchen.",
+    "flightNotFound": "Dieser Flug wurde noch nicht gefunden. Wenn die Nummer stimmt, ist das vor dem Boarding normal — wir prüfen weiter.",
     "landing": "Landung {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Ankunft in {{airport}}"

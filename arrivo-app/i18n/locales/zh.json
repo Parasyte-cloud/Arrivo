@@ -12,7 +12,7 @@
     "listVehicle": "登记您的车辆接单 →",
     "bookAirportPickup": "预订机场接送",
     "bookAirportDropoff": "预订机场送机",
-    "flightNotFound": "未找到该航班。请检查航班号后重试。",
+    "flightNotFound": "暂时未找到该航班。如果航班号正确，这在登机前是正常的——我们会持续查询。",
     "landing": "降落时间 {{time}}",
     "terminal": "航站楼 {{terminal}}",
     "arrivingAt": "抵达 {{airport}}"
