@@ -12,7 +12,7 @@
     "listVehicle": "Registra tu vehículo para recogidas →",
     "bookAirportPickup": "Reservar recogida en el aeropuerto",
     "bookAirportDropoff": "Reservar salida al aeropuerto",
-    "flightNotFound": "No se encontró ese vuelo. Verifica el número e inténtalo de nuevo.",
+    "flightNotFound": "Aún no se encontró ese vuelo. Si el número es correcto, esto es normal antes del embarque — seguiremos verificando.",
     "landing": "Aterrizaje {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Llegando a {{airport}}"

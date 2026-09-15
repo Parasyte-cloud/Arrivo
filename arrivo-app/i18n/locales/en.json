@@ -12,7 +12,7 @@
     "listVehicle": "List your vehicle for pickups →",
     "bookAirportPickup": "Book Airport Pickup",
     "bookAirportDropoff": "Book Airport Drop-off",
-    "flightNotFound": "Couldn't find that flight. Check the number and try again.",
+    "flightNotFound": "Couldn't find that flight yet. If the number's right, this is normal before boarding — we'll keep checking.",
     "landing": "Landing {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Arriving at {{airport}}"
