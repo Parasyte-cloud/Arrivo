@@ -36,7 +36,7 @@ function fakePool({ activeRide = false, balance = 0 } = {}) {
   return {
     async query(sql) {
       const s = sql.replace(/\s+/g, " ").trim();
-      if (s.startsWith("SELECT rides.id")) return { rows: activeRide ? [{ id: 1 }] : [] };
+      if (s.includes("FROM rides")) return { rows: activeRide ? [{ id: 1 }] : [] };
       if (s.startsWith("SELECT wallet_balance_naira")) return { rows: [{ wallet_balance_naira: balance }] };
       throw new Error(`unexpected query: ${s}`);
     },
@@ -56,7 +56,7 @@ function recordingPool({ activeRide = false, balance = 0, alreadyDeleted = false
           rows: [{ wallet_balance_naira: balance, deleted_at: alreadyDeleted ? "2026-01-01" : null }],
         };
       }
-      if (s.startsWith("SELECT rides.id")) return { rows: activeRide ? [{ id: 1 }] : [] };
+      if (s.includes("FROM rides")) return { rows: activeRide ? [{ id: 1 }] : [] };
       if (s.startsWith("UPDATE users")) {
         return { rows: [{ id: params[0], deleted_at: "2026-09-06T00:00:00Z" }] };
       }
@@ -172,7 +172,7 @@ await test("rolls back, rethrows and still releases when the scrub fails", async
       if (s.startsWith("SELECT wallet_balance_naira")) {
         return { rows: [{ wallet_balance_naira: 0, deleted_at: null }] };
       }
-      if (s.startsWith("SELECT rides.id")) return { rows: [] };
+      if (s.includes("FROM rides")) return { rows: [] };
       if (s.startsWith("UPDATE users")) throw new Error("boom");
       return { rows: [] };
     },

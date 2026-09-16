@@ -33,6 +33,8 @@ const express = require("express");
 require("express-async-errors");
 const { pool } = require("../db/db");
 const oauth = require("../services/oauth");
+const { createWalletFundedRequest, cancelWalletFundedRequest } = require("../services/instantWallet");
+const { findDeletionBlocker } = require("../services/accountDeletion");
 
 let passed = 0;
 function test(name, fn) {
@@ -261,6 +263,61 @@ await test("a ride created mid-delete is not left with a deleted rider", async (
   }
   const row = await pool.query("SELECT deleted_at FROM users WHERE id = $1", [u.user.id]);
   assert.strictEqual(row.rows[0].deleted_at, null, "must not be deleted with a live ride");
+});
+
+// ArrivoExpress takes the fare out of the wallet when the request is made,
+// long before there is a ride. So the balance reads zero and there is no
+// active ride, and both older guards would wave the deletion through. The
+// refund would then land on a deleted account, or a driver would accept a
+// ride for somebody who no longer exists.
+async function openInstantRequest(u) {
+  await pool.query("UPDATE users SET wallet_balance_naira = 3000 WHERE id = $1", [u.user.id]);
+  const { request } = await createWalletFundedRequest({
+    riderId: u.user.id,
+    trip: {
+      pickupAddress: "Murtala Muhammed Airport", pickupLat: 6.5774, pickupLng: 3.3212,
+      destinationAddress: "Victoria Island", destinationLat: 6.4281, destinationLng: 3.4219,
+      vehicleType: null, tier: "economy",
+    },
+    quote: { fareNaira: 3000, distanceKm: 24.5, durationMin: 41 },
+  });
+  const balance = await pool.query("SELECT wallet_balance_naira FROM users WHERE id = $1", [u.user.id]);
+  assert.strictEqual(Number(balance.rows[0].wallet_balance_naira), 0, "fare should have left the wallet");
+  return request;
+}
+
+await test("a paid ArrivoExpress request blocks deletion", async () => {
+  const u = await signup("instant");
+  const request = await openInstantRequest(u);
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: u.token, body: { confirmEmail: u.email } });
+  assert.strictEqual(del.status, 409, `expected 409, got ${del.status}: ${JSON.stringify(del.body)}`);
+  assert.strictEqual(del.body.reason, "active_ride");
+
+  const row = await pool.query("SELECT deleted_at, deletion_started_at FROM users WHERE id = $1", [u.user.id]);
+  assert.strictEqual(row.rows[0].deleted_at, null, "deleted while a paid request was open");
+  assert.strictEqual(row.rows[0].deletion_started_at, null, "left half way through deleting");
+
+  const still = await pool.query("SELECT status, payment_status FROM instant_ride_requests WHERE id = $1", [request.id]);
+  assert.strictEqual(still.rows[0].payment_status, "paid");
+});
+
+await test("the app is told up front, before the rider types their email", async () => {
+  const u = await signup("instant-pre");
+  await openInstantRequest(u);
+  const check = await findDeletionBlocker(pool, u.user.id);
+  assert.ok(check, "pre-check missed the open request");
+  assert.strictEqual(check.reason, "active_ride");
+});
+
+await test("once the request is cancelled, the refund is what blocks it", async () => {
+  const u = await signup("instant-done");
+  const request = await openInstantRequest(u);
+  await cancelWalletFundedRequest(u.user.id, request.id);
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: u.token, body: { confirmEmail: u.email } });
+  assert.strictEqual(del.status, 409, JSON.stringify(del.body));
+  assert.strictEqual(del.body.reason, "wallet_balance", "the refunded fare should be what stops it now");
 });
 
 console.log("");
