@@ -46,6 +46,10 @@ const crypto = require("crypto");
 // strip the driver's contact details while somebody is still in the car.
 const ACTIVE_RIDE_STATUSES = ["requested", "accepted", "in_progress"];
 
+// An ArrivoExpress request that is still waiting for a driver. The rider has
+// already paid for it.
+const OPEN_INSTANT_STATUSES = ["searching", "offering", "matched"];
+
 const BLOCKED_ACTIVE_RIDE = "active_ride";
 const BLOCKED_WALLET_BALANCE = "wallet_balance";
 
@@ -68,22 +72,37 @@ function tombstoneEmail(userId) {
   return `deleted+${userId}@deleted.invalid`;
 }
 
+// A trip that is running, or about to. ArrivoExpress takes the fare when the
+// request is made, before any ride exists, so an open request is checked as
+// well: the wallet reads zero and there is no ride yet, and without this the
+// refund would land on a deleted account or a driver would pick up somebody
+// who no longer exists. A matched request already has its ride, so the first
+// half covers it.
+async function hasActiveTrip(db, userId) {
+  const result = await db.query(
+    `SELECT 1
+       FROM rides
+       LEFT JOIN drivers ON drivers.id = rides.driver_id
+      WHERE (rides.rider_id = $1 OR drivers.user_id = $1)
+        AND rides.ride_status = ANY($2)
+     UNION ALL
+     SELECT 1
+       FROM instant_ride_requests
+      WHERE rider_id = $1
+        AND status = ANY($3)
+        AND ride_id IS NULL
+      LIMIT 1`,
+    [userId, ACTIVE_RIDE_STATUSES, OPEN_INSTANT_STATUSES]
+  );
+  return result.rows.length > 0;
+}
+
 // Read-only pre-check, used to tell the app why the button will not work before
 // somebody types their email out. The authoritative check is the one inside the
 // transaction below, because anything checked out here can change before the
 // write lands.
 async function findDeletionBlocker(pool, userId) {
-  const active = await pool.query(
-    `SELECT rides.id
-       FROM rides
-       LEFT JOIN drivers ON drivers.id = rides.driver_id
-      WHERE (rides.rider_id = $1 OR drivers.user_id = $1)
-        AND rides.ride_status = ANY($2)
-      LIMIT 1`,
-    [userId, ACTIVE_RIDE_STATUSES]
-  );
-
-  if (active.rows[0]) {
+  if (await hasActiveTrip(pool, userId)) {
     return {
       reason: BLOCKED_ACTIVE_RIDE,
       message:
@@ -138,16 +157,7 @@ async function beginDeletion(pool, userId) {
       return null;
     }
 
-    const active = await client.query(
-      `SELECT rides.id
-         FROM rides
-         LEFT JOIN drivers ON drivers.id = rides.driver_id
-        WHERE (rides.rider_id = $1 OR drivers.user_id = $1)
-          AND rides.ride_status = ANY($2)
-        LIMIT 1`,
-      [userId, ACTIVE_RIDE_STATUSES]
-    );
-    if (active.rows[0]) {
+    if (await hasActiveTrip(client, userId)) {
       throw new DeletionBlocked(
         BLOCKED_ACTIVE_RIDE,
         "You have a trip that hasn't finished yet. Once it's completed or cancelled you can delete your account."
@@ -208,16 +218,7 @@ async function anonymiseAccount(pool, userId) {
 
     // Re-checked here rather than trusted from the pre-check, now that nothing
     // else can move underneath us.
-    const active = await client.query(
-      `SELECT rides.id
-         FROM rides
-         LEFT JOIN drivers ON drivers.id = rides.driver_id
-        WHERE (rides.rider_id = $1 OR drivers.user_id = $1)
-          AND rides.ride_status = ANY($2)
-        LIMIT 1`,
-      [userId, ACTIVE_RIDE_STATUSES]
-    );
-    if (active.rows[0]) {
+    if (await hasActiveTrip(client, userId)) {
       throw new DeletionBlocked(
         BLOCKED_ACTIVE_RIDE,
         "You have a trip that hasn't finished yet. Once it's completed or cancelled you can delete your account."
