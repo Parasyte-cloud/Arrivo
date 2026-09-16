@@ -247,7 +247,7 @@ export default function RouteScreen({ navigation, route }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setLocationError("Location permission denied — you can still type your pickup address above.");
+        setLocationError("Location permission denied. You can still type your pickup address above.");
         return;
       }
       let position;
@@ -269,7 +269,7 @@ export default function RouteScreen({ navigation, route }) {
         // couldn't resolve to an address) so the wording actually points
         // at what went wrong, instead of one generic catch-all hiding
         // which of the two very different failure modes actually happened.
-        setLocationError("Couldn't get a GPS signal — try again near a window or outdoors, or type your pickup address above.");
+        setLocationError("Couldn't get a GPS signal. Try again near a window or outdoors, or type your pickup address above.");
         return;
       }
 
@@ -278,7 +278,7 @@ export default function RouteScreen({ navigation, route }) {
         setPickup(result.address);
         setPickupCoords({ lat: result.lat, lng: result.lng });
       } catch (e) {
-        setLocationError("Got your location, but couldn't look up an address for it — you can still type your pickup address above.");
+        setLocationError("Got your location, but couldn't look up an address for it. You can still type your pickup address above.");
       }
     } finally {
       setLocatingPickup(false);
@@ -591,7 +591,7 @@ export default function RouteScreen({ navigation, route }) {
         {needsCoords && pickup.trim() && destination.trim() && !coordsResolved ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.hintText}>
-              Tap one of the suggested addresses that appears under pickup/destination as you type — typing an
+              Tap one of the suggested addresses that appears under pickup/destination as you type. Typing an
               address without selecting a suggestion won't let us calculate your fare or confirm the booking.
             </Text>
           </Card>
@@ -601,7 +601,7 @@ export default function RouteScreen({ navigation, route }) {
           <Text style={styles.cardLabel}>Flight number{needsFlightNumber ? "" : " (optional)"}</Text>
           {needsFlightNumber ? (
             <Text style={styles.addonNote}>
-              Required — this is how we track your flight and know your real arrival time.
+              Required: this is how we track your flight and know your real arrival time.
             </Text>
           ) : bookingType === "dropoff" ? (
             <Text style={styles.addonNote}>
@@ -683,7 +683,7 @@ export default function RouteScreen({ navigation, route }) {
         <LiveMap
           pickup={pickupCoords ? { ...pickupCoords, label: "Pickup" } : null}
           destination={destinationCoords ? { ...destinationCoords, label: "Destination" } : null}
-          etaLabel={quote ? `ETA ~${Math.round(quote.durationMin)} min` : "ETA —"}
+          etaLabel={quote ? `ETA ~${Math.round(quote.durationMin)} min` : "ETA --"}
           distanceLabel={
             quote && quote.distanceKm != null
               ? `${stops.length} stop${stops.length > 1 ? "s" : ""} · ${quote.distanceKm.toFixed(1)}km`
@@ -719,7 +719,7 @@ export default function RouteScreen({ navigation, route }) {
             </Text>
           ) : needsMultipleVehicles ? (
             <Text style={styles.hintText}>
-              This vehicle fits up to {maxForVehicle} — we'll book {vehicleCount} × {VEHICLES.find((v) => v.id === vehicle).label} to fit all {passengerCount} passengers, and the fare covers all {vehicleCount}.
+              This vehicle fits up to {maxForVehicle}: we'll book {vehicleCount} × {VEHICLES.find((v) => v.id === vehicle).label} to fit all {passengerCount} passengers, and the fare covers all {vehicleCount}.
             </Text>
           ) : null}
         </Card>

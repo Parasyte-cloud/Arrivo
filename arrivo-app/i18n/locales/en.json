@@ -12,7 +12,7 @@
     "listVehicle": "List your vehicle for pickups →",
     "bookAirportPickup": "Book Airport Pickup",
     "bookAirportDropoff": "Book Airport Drop-off",
-    "flightNotFound": "Couldn't find that flight. Check the number and try again.",
+    "flightNotFound": "Couldn't find that flight yet. If the number's right, this is normal before boarding. We'll keep checking.",
     "landing": "Landing {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Arriving at {{airport}}"
@@ -54,7 +54,7 @@
   },
   "arrivoExpress": {
     "title": "ArrivoExpress",
-    "tagline": "On-demand rides, priced by distance and time — pick a vehicle, see your fare, and we'll match you with a nearby driver.",
+    "tagline": "On-demand rides, priced by distance and time. Pick a vehicle, see your fare, and we'll match you with a nearby driver.",
     "unavailableBody": "ArrivoExpress isn't switched on for your account yet. Try Book a Ride or On the Go instead, or check back soon.",
     "tryAgain": "Try again",
     "networkError": "Couldn't reach RideArrivo. Check your connection and try again.",
@@ -93,6 +93,6 @@
     "distanceKm": "{{distance}} km",
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Ride Now with ArrivoExpress",
-    "homeBannerSubtitle": "On-demand rides, priced by distance — matched in minutes."
+    "homeBannerSubtitle": "On-demand rides, priced by distance, matched in minutes."
   }
 }

@@ -71,7 +71,7 @@ export default function TrackingScreen({ route, navigation }) {
   const [fleetCompanions, setFleetCompanions] = useState([]);
   const [offlineMode, setOfflineMode] = useState(!!offlinePending);
   const [offlineNotice, setOfflineNotice] = useState(
-    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine — no SIM data needed." : null
+    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine, no SIM data needed." : null
   );
   const flushingRef = useRef(false);
   // Bumped whenever flushPendingScan lands a confirmed ride — lets fetchRide
@@ -274,7 +274,7 @@ export default function TrackingScreen({ route, navigation }) {
         // ignore — share the text-only message below instead
       }
       await Share.share({
-        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "—"}.${linkPart}`,
+        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "an address not on file"}.${linkPart}`,
       });
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));
@@ -296,7 +296,7 @@ export default function TrackingScreen({ route, navigation }) {
       return;
     }
     if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
       return;
     }
     try {
@@ -589,8 +589,8 @@ export default function TrackingScreen({ route, navigation }) {
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.cardLabel}>✈️ Flight {ride.flight_issue === "cancelled" ? "cancelled" : "rescheduled"}</Text>
             <Text style={styles.meta}>
-              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet —
-              top up to at least{" "}
+              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet.
+              Top up to at least{" "}
               {flightIssueWalletMinimum ? formatFare(flightIssueWalletMinimum.minWalletBalanceNaira) : "$100"} to keep this
               ride booked. You'll be charged the fare again at drop-off.
             </Text>
@@ -614,7 +614,7 @@ export default function TrackingScreen({ route, navigation }) {
             {flightStatus ? (
               <>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                  <Text style={styles.meta}>{flightStatus.airline || "—"}</Text>
+                  <Text style={styles.meta}>{flightStatus.airline || "Unknown"}</Text>
                   <Tag
                     label={(flightStatus.status || "unknown").toUpperCase()}
                     tone={flightStatus.status === "landed" ? "teal" : "amber"}
@@ -624,7 +624,7 @@ export default function TrackingScreen({ route, navigation }) {
                   Estimated landing:{" "}
                   {flightStatus.arrival?.estimated
                     ? new Date(flightStatus.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                    : "—"}
+                    : "--:--"}
                   {flightStatus.arrival?.terminal ? ` · Terminal ${flightStatus.arrival.terminal}` : ""}
                 </Text>
               </>
@@ -686,7 +686,7 @@ export default function TrackingScreen({ route, navigation }) {
             {ride.rider_rating ? (
               <Text style={styles.meta}>
                 You rated this trip {"★".repeat(ride.rider_rating)}{"☆".repeat(5 - ride.rider_rating)}
-                {ride.rider_rating_comment ? ` — "${ride.rider_rating_comment}"` : ""}
+                {ride.rider_rating_comment ? `: "${ride.rider_rating_comment}"` : ""}
               </Text>
             ) : (
               <>
@@ -741,7 +741,7 @@ export default function TrackingScreen({ route, navigation }) {
             <Text style={styles.cardLabel}>Extra time charge</Text>
             {ride.overage_payment_method ? (
               <Text style={styles.meta}>
-                This trip ran longer than the {Number(ride.included_hours_per_day)}h booked, so an extra {formatFare(ride.overage_naira)} was charged. Paid — thanks.
+                This trip ran longer than the {Number(ride.included_hours_per_day)}h booked, so an extra {formatFare(ride.overage_naira)} was charged. Paid. Thanks.
               </Text>
             ) : (
               <>
@@ -767,7 +767,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
-                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid — thank you.</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid. Thank you.</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {overageStatus === "opening" || overageStatus === "verifying" ? (
@@ -793,7 +793,7 @@ export default function TrackingScreen({ route, navigation }) {
             ) : (
               <>
                 <Text style={styles.meta}>
-                  Entirely optional — 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
+                  Entirely optional: 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>
@@ -845,7 +845,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
-                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent — thank you!</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent. Thank you!</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {tipStatus === "opening" || tipStatus === "verifying" ? (

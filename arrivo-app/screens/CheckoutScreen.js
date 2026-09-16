@@ -128,7 +128,7 @@ export default function CheckoutScreen({ route, navigation }) {
           setStatus("error");
           setMessage(
             `Your payment went through, but we couldn't finish booking your ride (${createErr.message || "please try again"}). ` +
-              `You were charged — contact support with reference ${reference} and we'll sort it out.`
+              `You were charged. Contact support with reference ${reference} and we'll sort it out.`
           );
         }
       } else {
@@ -246,7 +246,7 @@ export default function CheckoutScreen({ route, navigation }) {
           <Card tone="dark" tinted style={{ marginTop: spacing.md, marginBottom: spacing.lg }}>
             <Text style={styles.cardLabel}>Know when you're flying back?</Text>
             <Text style={styles.note}>
-              Book your airport drop-off now and we'll have it all set — or come back and book it any time under "Book a Ride" once you know your return date and time.
+              Book your airport drop-off now and we'll have it all set, or come back and book it any time under "Book a Ride" once you know your return date and time.
             </Text>
           </Card>
           <Button label="Add my return drop-off" onPress={bookReturnDropoff} trailingIcon />
@@ -278,7 +278,7 @@ export default function CheckoutScreen({ route, navigation }) {
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>How would you like to pay?</Text>
           <Text style={styles.note}>
-            Every ride is paid in full now, like a plane ticket — never cash, and never at the end of the trip. You
+            Every ride is paid in full now, like a plane ticket: never cash, and never at the end of the trip. You
             can still tip your driver afterwards if you'd like.
           </Text>
           <View style={{ height: 8 }} />

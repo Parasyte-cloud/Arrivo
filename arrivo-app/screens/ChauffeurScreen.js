@@ -137,7 +137,7 @@ export default function ChauffeurScreen({ navigation }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setLocationError("Location permission denied — you can still type your pickup address above.");
+        setLocationError("Location permission denied. You can still type your pickup address above.");
         return;
       }
       let position;
@@ -156,7 +156,7 @@ export default function ChauffeurScreen({ navigation }) {
         // couldn't resolve to an address) so the wording actually points
         // at what went wrong, instead of one generic catch-all hiding
         // which of the two very different failure modes actually happened.
-        setLocationError("Couldn't get a GPS signal — try again near a window or outdoors, or type your pickup address above.");
+        setLocationError("Couldn't get a GPS signal. Try again near a window or outdoors, or type your pickup address above.");
         return;
       }
 
@@ -164,7 +164,7 @@ export default function ChauffeurScreen({ navigation }) {
         const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
         setPickupAddress(result.address);
       } catch (e) {
-        setLocationError("Got your location, but couldn't look up an address for it — you can still type your pickup address above.");
+        setLocationError("Got your location, but couldn't look up an address for it. You can still type your pickup address above.");
       }
     } finally {
       setLocatingPickup(false);
@@ -203,7 +203,7 @@ export default function ChauffeurScreen({ navigation }) {
     const scheduledPickupAt = scheduledPickupAtValue;
     navigation.navigate("Checkout", {
       amountNaira: quote.fareNaira,
-      label: `Chauffeur — ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
+      label: `Chauffeur: ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,

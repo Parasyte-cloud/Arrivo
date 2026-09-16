@@ -122,7 +122,7 @@ export default function OwnerScreen() {
               </View>
             </View>
             <Text style={styles.noteText}>
-              {data.tripsCompleted} completed trips total. Payouts are handled directly by the RideArrivo team for now — this is trip activity, not an automated payout figure.
+              {data.tripsCompleted} completed trips total. Payouts are handled directly by the RideArrivo team for now. This is trip activity, not an automated payout figure.
             </Text>
           </Card>
         ) : null}

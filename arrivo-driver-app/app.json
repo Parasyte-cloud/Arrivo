@@ -17,7 +17,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location, even while the app is in the background, so riders can see you en route on their live map.",
         "UIBackgroundModes": [
           "location"
         ],
@@ -97,7 +97,7 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "RideArrivo Driver uses your location to match you with nearby pickups.",
-          "locationAlwaysAndWhenInUsePermission": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+          "locationAlwaysAndWhenInUsePermission": "RideArrivo Driver uses your location, even while the app is in the background, so riders can see you en route on their live map.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true

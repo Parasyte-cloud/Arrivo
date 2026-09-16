@@ -104,7 +104,7 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
 // GET /api/drivers/me
 router.get("/me", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverWithVehicle(req.user.id);
-  if (!driver) return res.status(404).json({ error: "No driver profile yet — complete it via POST /api/drivers/profile" });
+  if (!driver) return res.status(404).json({ error: "No driver profile yet. Complete it via POST /api/drivers/profile" });
   res.json({ driver });
 });
 

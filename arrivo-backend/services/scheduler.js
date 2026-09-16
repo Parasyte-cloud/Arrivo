@@ -44,7 +44,7 @@ const REMINDER_THRESHOLDS = [
 
 function riderReminderCopy(label, ride) {
   const tripWord = ride.booking_type === "dropoff" ? "airport drop-off" : "airport pickup";
-  if (label === "now") return `It's time — your ${tripWord} is starting now.`;
+  if (label === "now") return `It's time: your ${tripWord} is starting now.`;
   return `Reminder: your ${tripWord} is in ${label}.`;
 }
 
@@ -196,7 +196,7 @@ async function flagFlightIssue(ride, issue) {
       await client.query(
         `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
          VALUES ($1, 'refund', 'completed', $2, $3, $4, $5)`,
-        [ride.rider_id, ride.fare_naira, newBalance, ride.id, `Refund — flight ${ride.flight_number} ${issue}, Ride #${ride.id}`]
+        [ride.rider_id, ride.fare_naira, newBalance, ride.id, `Refund: flight ${ride.flight_number} ${issue}, Ride #${ride.id}`]
       );
     }
 
@@ -217,7 +217,7 @@ async function flagFlightIssue(ride, issue) {
     sendPushNotification(
       ride.rider_push_token,
       "Flight change detected",
-      `Your flight ${ride.flight_number} was ${issue}. Your fare was refunded to your wallet — top up to at least $100 to keep your ride booked.`,
+      `Your flight ${ride.flight_number} was ${issue}. Your fare was refunded to your wallet. Top up to at least $100 to keep your ride booked.`,
       { rideId: ride.id, type: "flight_issue" }
     ).catch(() => {});
   }
@@ -256,7 +256,7 @@ async function sweepPreferredDriverExpiry() {
         sendPushNotification(
           ride.rider_push_token,
           "A quick update on your driver",
-          `We couldn't keep the same driver for this trip — ${reason}. We've opened it up to our other verified drivers.`,
+          `We couldn't keep the same driver for this trip: ${reason}. We've opened it up to our other verified drivers.`,
           { rideId: ride.id, type: "driver_changed" }
         ).catch(() => {});
       }

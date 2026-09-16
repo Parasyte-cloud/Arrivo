@@ -131,7 +131,7 @@ export default function HomeScreen({ navigation }) {
                 <Tag label={(flight.status || "unknown").toUpperCase()} tone={flight.status === "landed" ? "teal" : "amber"} />
               </View>
               <Text style={styles.flightMeta}>
-                {t("home.landing", { time: flight.arrival?.estimated ? new Date(flight.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—" })}
+                {t("home.landing", { time: flight.arrival?.estimated ? new Date(flight.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--" })}
                 {flight.arrival?.terminal ? ` · ${t("home.terminal", { terminal: flight.arrival.terminal })}` : ""}
               </Text>
               <Text style={styles.flightMeta}>{t("home.arrivingAt", { airport: flight.arrival?.airport })}</Text>
