@@ -636,7 +636,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
       return;
     }
     if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
       return;
     }
     try {
@@ -728,7 +728,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
         <>
           <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
           {listeningError ? (
-            <Button label="Couldn't confirm — tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
+            <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
           ) : null}
         </>
       ) : (

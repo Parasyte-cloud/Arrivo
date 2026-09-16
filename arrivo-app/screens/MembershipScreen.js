@@ -155,7 +155,7 @@ export default function MembershipScreen({ navigation }) {
               <Text style={styles.meta}>Ride without paying per trip. Billed from your wallet balance.</Text>
               {walletBalance != null && walletBalance < 250000 ? (
                 <Text style={styles.warningText}>
-                  Wallet balance is {formatNaira(walletBalance)} — top up at least {formatNaira(250000 - walletBalance)} more to subscribe.
+                  Wallet balance is {formatNaira(walletBalance)}: top up at least {formatNaira(250000 - walletBalance)} more to subscribe.
                 </Text>
               ) : null}
               <View style={{ height: spacing.sm }} />
@@ -175,10 +175,10 @@ export default function MembershipScreen({ navigation }) {
             <Card tone="dark" style={{ marginBottom: spacing.md }}>
               <Text style={styles.cardLabel}>Corporate</Text>
               <Text style={styles.price}>{formatNaira(1500000)}/year</Text>
-              <Text style={styles.meta}>Link your team as delegates — their rides bill to your company account.</Text>
+              <Text style={styles.meta}>Link your team as delegates: their rides bill to your company account.</Text>
               {walletBalance != null && walletBalance < 1500000 ? (
                 <Text style={styles.warningText}>
-                  Wallet balance is {formatNaira(walletBalance)} — top up at least {formatNaira(1500000 - walletBalance)} more to subscribe.
+                  Wallet balance is {formatNaira(walletBalance)}: top up at least {formatNaira(1500000 - walletBalance)} more to subscribe.
                 </Text>
               ) : null}
               <View style={{ height: spacing.sm }} />

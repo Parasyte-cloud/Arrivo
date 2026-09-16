@@ -240,7 +240,7 @@ router.post("/", requireAuth, async (req, res) => {
       if (driverInfo.rows[0]) {
         preferredDriverId = driverInfo.rows[0].id;
         preferredVehicleSnapshot = driverInfo.rows[0].make_model
-          ? `${driverInfo.rows[0].make_model}${driverInfo.rows[0].plate_number ? " — " + driverInfo.rows[0].plate_number : ""}`
+          ? `${driverInfo.rows[0].make_model}${driverInfo.rows[0].plate_number ? " (" + driverInfo.rows[0].plate_number + ")" : ""}`
           : null;
       }
     }
@@ -672,7 +672,7 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     [driver.id]
   );
   const vehicleLabel = vehicleInfo.rows[0]?.make_model
-    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " — " + vehicleInfo.rows[0].plate_number : ""}`
+    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
     : null;
   if (ride.rider_whatsapp_number) {
     sendWhatsAppMessage(ride.rider_whatsapp_number, driverAssignedMessage(ride, driverName, vehicleLabel)).catch(() => {});

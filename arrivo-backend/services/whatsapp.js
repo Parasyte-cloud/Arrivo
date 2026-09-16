@@ -70,7 +70,7 @@ async function sendWhatsAppMessage(to, body) {
 // and anything else that ends up sending a similar message later.
 function driverAssignedMessage(ride, driverName, vehicleLabel) {
   return (
-    `🚗 *RideArrivo* — your driver is confirmed!\n\n` +
+    `🚗 *RideArrivo*: your driver is confirmed!\n\n` +
     `Driver: ${driverName}\n` +
     `Vehicle: ${vehicleLabel || "Details coming shortly"}\n` +
     `Pickup: ${ride.pickup_address}\n` +
@@ -82,18 +82,18 @@ function driverAssignedMessage(ride, driverName, vehicleLabel) {
 function flightIssueMessage(ride, reason) {
   const reasonText = reason === "cancelled" ? "has been cancelled" : "has been rescheduled";
   return (
-    `✈️ *RideArrivo* — heads up about your flight\n\n` +
+    `✈️ *RideArrivo*: heads up about your flight\n\n` +
     `We noticed flight ${ride.flight_number} ${reasonText}. Your original charge has been refunded to your RideArrivo wallet.\n\n` +
-    `To keep your ride booked, please make sure you have at least $100 (or its naira equivalent) in your wallet — this covers the trip, which will now be charged when you're dropped off instead of upfront. ` +
+    `To keep your ride booked, please make sure you have at least $100 (or its naira equivalent) in your wallet. This covers the trip, which will now be charged when you're dropped off instead of upfront. ` +
     `Once your new travel time is confirmed, update it in the app or on ridearrivo.com.`
   );
 }
 
 function driverChangedMessage(ride, reason) {
   return (
-    `ℹ️ *RideArrivo* — a quick update on your driver\n\n` +
+    `ℹ️ *RideArrivo*: a quick update on your driver\n\n` +
     `We couldn't keep the same driver for this trip: ${reason || "they weren't available in time for this pickup."}\n\n` +
-    `Don't worry — we've matched you with another verified RideArrivo driver, and you'll get their details as soon as they accept.`
+    `Don't worry, we've matched you with another verified RideArrivo driver, and you'll get their details as soon as they accept.`
   );
 }
 

@@ -32,7 +32,7 @@ const ARRIVONOW_TIERS = {
   economy: {
     key: "economy",
     label: "Economy",
-    description: "Everyday sedan rides — the most affordable ArrivoExpress tier.",
+    description: "Everyday sedan rides: the most affordable ArrivoExpress tier.",
     vehicleType: "sedan",
     minSeats: 1,
     baseFareNaira: 400,

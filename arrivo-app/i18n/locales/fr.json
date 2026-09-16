@@ -12,7 +12,7 @@
     "listVehicle": "Inscrivez votre véhicule →",
     "bookAirportPickup": "Réserver la prise en charge",
     "bookAirportDropoff": "Réserver la dépose à l'aéroport",
-    "flightNotFound": "Vol introuvable pour l'instant. Si le numéro est bon, c'est normal avant l'embarquement — nous continuerons à vérifier.",
+    "flightNotFound": "Vol introuvable pour l'instant. Si le numéro est bon, c'est normal avant l'embarquement. Nous continuerons à vérifier.",
     "landing": "Atterrissage à {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Arrivée à {{airport}}"
@@ -54,7 +54,7 @@
   },
   "arrivoExpress": {
     "title": "ArrivoExpress",
-    "tagline": "Courses à la demande, tarifées selon la distance et la durée — choisissez un véhicule, consultez votre tarif, et nous vous mettrons en relation avec un chauffeur à proximité.",
+    "tagline": "Courses à la demande, tarifées selon la distance et la durée. Choisissez un véhicule, consultez votre tarif, et nous vous mettrons en relation avec un chauffeur à proximité.",
     "unavailableBody": "ArrivoExpress n'est pas encore activé pour votre compte. Essayez Réserver une course ou À la demande, ou revenez bientôt.",
     "tryAgain": "Réessayer",
     "networkError": "Impossible de contacter RideArrivo. Vérifiez votre connexion et réessayez.",
@@ -93,6 +93,6 @@
     "distanceKm": "{{distance}} km",
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Roulez maintenant avec ArrivoExpress",
-    "homeBannerSubtitle": "Courses à la demande, tarifées à la distance — un chauffeur trouvé en quelques minutes."
+    "homeBannerSubtitle": "Courses à la demande, tarifées à la distance, un chauffeur trouvé en quelques minutes."
   }
 }

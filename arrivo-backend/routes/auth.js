@@ -124,7 +124,7 @@ router.post("/signup", signupLimiter, async (req, res) => {
     return res.status(400).json({ error: "You must agree to the data protection and privacy terms to create a profile" });
   }
   if (!["rider", "driver", "owner"].includes(role)) {
-    return res.status(400).json({ error: "Invalid role. Admin accounts can't be created via signup — see scripts/create-admin.js" });
+    return res.status(400).json({ error: "Invalid role. Admin accounts can't be created via signup. See scripts/create-admin.js" });
   }
   const avatarError = validateAvatarDataUrl(avatarDataUrl);
   if (avatarError) return res.status(400).json({ error: avatarError });
@@ -207,7 +207,7 @@ function verifyEmailPage({ ok, message }) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${ok ? "Email verified" : "Verification failed"} — RideArrivo</title>
+<title>RideArrivo: ${ok ? "Email verified" : "Verification failed"}</title>
 <style>
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
          background: #12123B; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }

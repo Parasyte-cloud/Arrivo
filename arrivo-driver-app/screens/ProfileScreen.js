@@ -69,7 +69,7 @@ export default function ProfileScreen() {
           <>
             {loadError ? (
               <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: colors.coral, borderWidth: 1 }}>
-                <Text style={styles.rowMuted}>Couldn't refresh your profile just now — showing your last-loaded info.</Text>
+                <Text style={styles.rowMuted}>Couldn't refresh your profile just now. Showing your last-loaded info.</Text>
               </Card>
             ) : null}
             <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -80,7 +80,7 @@ export default function ProfileScreen() {
                   <Text style={styles.rowMuted}>{profile.vehicle_type?.toUpperCase()} · {profile.seats} seats</Text>
                 </>
               ) : (
-                <Text style={styles.rowMuted}>No vehicle assigned yet — RideArrivo will assign you one before your first ride.</Text>
+                <Text style={styles.rowMuted}>No vehicle assigned yet. RideArrivo will assign you one before your first ride.</Text>
               )}
               <View style={{ height: spacing.sm }} />
               <Text style={styles.cardLabel}>Languages</Text>

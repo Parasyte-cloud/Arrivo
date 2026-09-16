@@ -91,7 +91,7 @@ export default function VerifyIdScreen() {
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.statusHeading}>⏳ Under review</Text>
             <Text style={styles.meta}>
-              We've received your ID and a team member will review it shortly. This usually doesn't take long — you don't need to do anything else right now.
+              We've received your ID and a team member will review it shortly. This usually doesn't take long. You don't need to do anything else right now.
             </Text>
           </Card>
         ) : (
@@ -107,7 +107,7 @@ export default function VerifyIdScreen() {
               <Card tone="dark" style={{ marginBottom: spacing.md }}>
                 <Text style={styles.meta}>
                   Verifying your ID helps keep every trip safer for riders and drivers alike. Take a clear photo of a
-                  valid government ID (passport, driver's license, or national ID) — make sure your name and photo are
+                  valid government ID (passport, driver's license, or national ID). Make sure your name and photo are
                   visible and not blurry.
                 </Text>
               </Card>

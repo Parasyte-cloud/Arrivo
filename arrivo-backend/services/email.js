@@ -130,7 +130,7 @@ function sendDriverAssignedEmail(to, ride, driverName, vehicleLabel) {
     to,
     subject: "Your RideArrivo driver is confirmed",
     html: wrapper(`
-      <p>Good news — a driver has been matched to your ride.</p>
+      <p>Good news: a driver has been matched to your ride.</p>
       <p><strong>Driver:</strong> ${escapeHtml(driverName)}</p>
       <p><strong>Vehicle:</strong> ${vehicleLabel ? escapeHtml(vehicleLabel) : "Details coming shortly"}</p>
       <p><strong>Pickup:</strong> ${escapeHtml(ride.pickup_address)}</p>
@@ -149,10 +149,10 @@ function sendFlightIssueEmail(to, ride, reason) {
   const reasonText = reason === "cancelled" ? "has been cancelled" : "has been rescheduled";
   return sendEmail({
     to,
-    subject: `Your flight ${ride.flight_number || ""} ${reasonText} — quick update on your RideArrivo booking`,
+    subject: `Your flight ${ride.flight_number || ""} ${reasonText}: quick update on your RideArrivo booking`,
     html: wrapper(`
-      <p>We noticed flight <strong>${escapeHtml(ride.flight_number) || "—"}</strong> ${reasonText}.</p>
-      <p>Your original fare has been refunded to your RideArrivo wallet. To keep your ride booked, please make sure you have at least <strong>$100</strong> (or its naira equivalent) in your wallet — this covers the trip, which will now be charged when you're dropped off instead of upfront.</p>
+      <p>We noticed flight <strong>${escapeHtml(ride.flight_number) || "N/A"}</strong> ${reasonText}.</p>
+      <p>Your original fare has been refunded to your RideArrivo wallet. To keep your ride booked, please make sure you have at least <strong>$100</strong> (or its naira equivalent) in your wallet. This covers the trip, which will now be charged when you're dropped off instead of upfront.</p>
       <p style="color:#6b6b85;font-size:13px;">Once your new travel time is confirmed, you can update it from the app or ridearrivo.com. Questions? Just reply to this email.</p>
     `),
   });
@@ -168,7 +168,7 @@ function sendDriverChangedEmail(to, ride, reason) {
     subject: "A quick update on your RideArrivo driver",
     html: wrapper(`
       <p>We tried to keep the same driver for your return trip, but couldn't: ${reason || "they weren't available in time for this pickup."}</p>
-      <p>Don't worry — we've opened this ride up to our other verified drivers, and you'll get their details as soon as one accepts.</p>
+      <p>Don't worry, we've opened this ride up to our other verified drivers, and you'll get their details as soon as one accepts.</p>
     `),
   });
 }

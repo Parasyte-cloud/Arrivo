@@ -94,7 +94,7 @@ async function notifyInstantMatch(
     driver.make_model
       ? `${driver.make_model}${
           driver.plate_number
-            ? ` — ${driver.plate_number}`
+            ? ` (${driver.plate_number})`
             : ""
         }`
       : null;

@@ -12,7 +12,7 @@
     "listVehicle": "Cadastre seu veículo para buscas →",
     "bookAirportPickup": "Reservar busca no aeroporto",
     "bookAirportDropoff": "Reservar saída para o aeroporto",
-    "flightNotFound": "Ainda não encontramos esse voo. Se o número estiver certo, isso é normal antes do embarque — continuaremos verificando.",
+    "flightNotFound": "Ainda não encontramos esse voo. Se o número estiver certo, isso é normal antes do embarque. Continuaremos verificando.",
     "landing": "Pouso {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Chegando em {{airport}}"
@@ -54,7 +54,7 @@
   },
   "arrivoExpress": {
     "title": "ArrivoExpress",
-    "tagline": "Corridas sob demanda, com tarifa calculada pela distância e pelo tempo — escolha um veículo, veja sua tarifa e nós o conectaremos a um motorista próximo.",
+    "tagline": "Corridas sob demanda, com tarifa calculada pela distância e pelo tempo. Escolha um veículo, veja sua tarifa e nós o conectaremos a um motorista próximo.",
     "unavailableBody": "O ArrivoExpress ainda não está ativado para sua conta. Experimente Reservar uma corrida ou On the Go, ou volte a verificar em breve.",
     "tryAgain": "Tentar novamente",
     "networkError": "Não foi possível conectar ao RideArrivo. Verifique sua conexão e tente novamente.",
@@ -93,6 +93,6 @@
     "distanceKm": "{{distance}} km",
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Viaje agora com o ArrivoExpress",
-    "homeBannerSubtitle": "Corridas sob demanda, com tarifa pela distância — motorista em minutos."
+    "homeBannerSubtitle": "Corridas sob demanda, com tarifa pela distância, motorista em minutos."
   }
 }
