@@ -265,6 +265,9 @@ await test("a ride created mid-delete is not left with a deleted rider", async (
   assert.strictEqual(row.rows[0].deleted_at, null, "must not be deleted with a live ride");
 });
 
+console.log("");
+console.log("ArrivoExpress holds the fare before there is a ride:");
+
 // ArrivoExpress takes the fare out of the wallet when the request is made,
 // long before there is a ride. So the balance reads zero and there is no
 // active ride, and both older guards would wave the deletion through. The
