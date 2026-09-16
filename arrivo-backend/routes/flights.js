@@ -28,13 +28,44 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
   if (!flightNumber) return null;
   if (!process.env.AVIATIONSTACK_KEY || process.env.AVIATIONSTACK_KEY === "replace_me") return null;
 
-  const response = await axios.get("http://api.aviationstack.com/v1/flights", {
+  // Normalized here too, not just in the two callers (website booking.js /
+  // app HomeScreen.js already trim+uppercase before sending) — this is the
+  // single choke point every lookup goes through (including the
+  // scheduler's background jobs, which never pass through client code at
+  // all), so it's the right place to guarantee it rather than trusting
+  // every caller to have done it.
+  const normalizedFlightNumber = String(flightNumber).trim().toUpperCase();
+  if (!normalizedFlightNumber) return null;
+
+  // HTTPS, not HTTP — aviationstack's free plan has included HTTPS for a
+  // while now, so there's no remaining reason to send the access_key in
+  // the query string of a plaintext request.
+  const response = await axios.get("https://api.aviationstack.com/v1/flights", {
     params: {
       access_key: process.env.AVIATIONSTACK_KEY,
-      flight_iata: flightNumber,
+      flight_iata: normalizedFlightNumber,
       arr_iata: arrIata,
     },
   });
+
+  // aviationstack answers a bad/expired key, an exhausted monthly quota, or
+  // a plan-restricted parameter with HTTP 200 and an `error` object in the
+  // body — not an HTTP error status. Treating that the same as "zero
+  // results" (the previous behavior: `response.data?.data?.[0]` is simply
+  // undefined either way) silently disguised a real account/config problem
+  // as if the rider had mistyped a valid flight number. Throw instead, so
+  // it surfaces as a 502 to the rider and an actual error line in logs —
+  // both existing callers of this function (the /status route below, and
+  // services/scheduler.js's two background sweeps) already wrap this call
+  // in try/catch and log err.message, so this is a strictly more useful
+  // failure than the silent null was, not a new crash risk.
+  if (response.data?.error) {
+    const err = new Error(
+      response.data.error.message || response.data.error.info || response.data.error.type || "aviationstack API error"
+    );
+    err.aviationstack = response.data.error;
+    throw err;
+  }
 
   const flight = response.data?.data?.[0];
   if (!flight) return null;
@@ -80,12 +111,24 @@ router.get("/status", requireAuth, async (req, res) => {
   try {
     const result = await lookupFlightStatus(flightNumber, arrIata);
     if (!result) {
-      return res.status(404).json({ error: "No matching flight found for that number/airport/date" });
+      // aviationstack's free plan only carries REAL-TIME flights — a
+      // flight that hasn't started boarding yet (the common case: riders
+      // usually track a flight while booking a pickup days or hours
+      // ahead) genuinely won't be in its data yet, and that's the normal
+      // outcome here, not a sign the rider mistyped anything. The old copy
+      // ("No matching flight found... double-check the number") pointed
+      // the blame at the rider even when the number was perfectly correct
+      // — this doesn't block booking either way (see book.html/
+      // booking.js's flightContinue handler and RouteScreen.js, neither of
+      // which requires a successful Track before proceeding), so say so.
+      return res.status(404).json({
+        error: "We couldn't pull live status for that flight yet. If the number's right, this is normal for a flight that hasn't started boarding — we'll keep checking as your trip gets closer, and your booking isn't affected.",
+      });
     }
     res.json(result);
   } catch (err) {
-    console.error("Flight lookup failed:", err.response?.data || err.message);
-    res.status(502).json({ error: "Flight lookup failed. Please try again." });
+    console.error("Flight lookup failed:", err.aviationstack || err.response?.data || err.message);
+    res.status(502).json({ error: "Flight lookup is temporarily unavailable. Please try again shortly." });
   }
 });
 
