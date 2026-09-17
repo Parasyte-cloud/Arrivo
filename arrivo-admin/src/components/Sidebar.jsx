@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { id: "vehicles", label: "Vehicles", icon: "🚙" },
   { id: "memberships", label: "Memberships", icon: "🎫" },
   { id: "wallet", label: "Wallet", icon: "👛" },
+  { id: "arrivo-express", label: "Arrivo Express", icon: "🛡️" },
   { id: "live-map", label: "Live Map", icon: "📍" },
   { id: "analytics", label: "Analytics", icon: "📊" },
 ];

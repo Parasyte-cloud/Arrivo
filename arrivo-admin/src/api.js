@@ -125,3 +125,12 @@ export const getWaitlist = (token) => request("/api/admin/waitlist", token);
 export const getPanics = (token) => request("/api/admin/panics", token);
 export const resolvePanic = (token, rideId, notes) =>
   request(`/api/admin/panics/${rideId}/resolve`, token, { method: "PATCH", body: JSON.stringify({ notes }) });
+
+// ── Arrivo Express Phase 1 ──────────────────────────────────────────────
+export const getSystemConfig = (token) => request("/api/admin/config", token);
+export const updateSystemConfig = (token, key, value) =>
+  request(`/api/admin/config/${key}`, token, { method: "PATCH", body: JSON.stringify({ value }) });
+
+export const getRideCancellations = (token) => request("/api/admin/ride-cancellations", token);
+
+export const getFamilyPlans = (token) => request("/api/admin/family-plans", token);
