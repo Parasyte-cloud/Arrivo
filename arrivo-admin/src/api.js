@@ -137,3 +137,12 @@ export const getFamilyPlans = (token) => request("/api/admin/family-plans", toke
 
 // ── Arrivo Express Phase 2 (launch promos) ──────────────────────────────
 export const getLaunchPromos = (token) => request("/api/admin/launch-promos", token);
+
+// ── Arrivo Express Phase 3 (Arrivo Share, Grotto x RideArrivo) ──────────
+export const getArrivoShare = (token) => request("/api/admin/arrivo-share", token);
+
+export const getPartnerVenues = (token) => request("/api/admin/partner-venues", token);
+export const createPartnerVenue = (token, venue) =>
+  request("/api/admin/partner-venues", token, { method: "POST", body: JSON.stringify(venue) });
+export const updatePartnerVenue = (token, id, updates) =>
+  request(`/api/admin/partner-venues/${id}`, token, { method: "PATCH", body: JSON.stringify(updates) });
