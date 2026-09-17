@@ -144,6 +144,16 @@ export default function RouteScreen({ navigation, route }) {
   ); // coords for the LAST stop only — fare is priced pickup-to-final-destination
   const [vehicle, setVehicle] = useState("suv");
   const [bookingType, setBookingType] = useState(route?.params?.presetBookingType || "one_way");
+  // Arrivo Express Phase 3 -- Grotto x RideArrivo. Arriving here from
+  // PartnerVenuesScreen already set presetPickupAddress/Lat/Lng and
+  // presetBookingType above to the venue's own details -- these three are
+  // just carried through to Checkout/createRide so the backend can tag the
+  // ride with which venue it's reserved from (the backend independently
+  // re-verifies and re-fills the pickup from the venue record either way,
+  // so nothing here is trusted for pricing or routing, only display).
+  const partnerVenueId = route?.params?.partnerVenueId || null;
+  const partnerVenueName = route?.params?.partnerVenueName || null;
+  const partnerVenuePerk = route?.params?.partnerVenuePerk || null;
   const [adults, setAdults] = useState("1");
   const [children, setChildren] = useState("0");
   const [securityEscort, setSecurityEscort] = useState(false);
@@ -481,6 +491,9 @@ export default function RouteScreen({ navigation, route }) {
       destinationLng: destinationCoords?.lng,
       scheduledPickupAt: needsScheduledTime ? scheduledDateObj.toISOString() : undefined,
       linkedRideId: linkedRideId || undefined,
+      partnerVenueId: partnerVenueId || undefined,
+      partnerVenueName: partnerVenueName || undefined,
+      partnerVenuePerk: partnerVenuePerk || undefined,
     });
   };
 
@@ -494,6 +507,16 @@ export default function RouteScreen({ navigation, route }) {
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Set your route</Text>
+
+        {partnerVenueId ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🍸 Reserved pickup — {partnerVenueName}</Text>
+            <Text style={styles.partnerVenueHint}>
+              Your pickup is set to {partnerVenueName}. Just pick your time below.
+              {partnerVenuePerk ? ` ${partnerVenuePerk}` : ""}
+            </Text>
+          </Card>
+        ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Booking type</Text>
@@ -942,6 +965,7 @@ const styles = StyleSheet.create({
   },
   toggleRow: { flexDirection: "row", alignItems: "center" },
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
+  partnerVenueHint: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 6, lineHeight: 17 },
   warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
   promoText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },

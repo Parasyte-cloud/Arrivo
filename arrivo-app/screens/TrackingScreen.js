@@ -12,6 +12,7 @@ import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
+  addRideShareParticipant, removeRideShareParticipant,
 } from "../services/api";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
@@ -121,6 +122,13 @@ export default function TrackingScreen({ route, navigation }) {
   const [overageMessage, setOverageMessage] = useState(null);
   const pendingOverageRef = useRef(null);
 
+  // Arrivo Express Phase 3 -- Arrivo Share. Add/remove a co-rider on a ride
+  // YOU booked and paid for -- only shown to the organizer (ride.rider_id
+  // === user.id), and only before the trip starts.
+  const [shareInput, setShareInput] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState(null);
+
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
     const generationAtStart = confirmedGenerationRef.current;
@@ -152,6 +160,40 @@ export default function TrackingScreen({ route, navigation }) {
       setLoading(false);
     }
   }, [token, rideId, offlineMode]);
+
+  // Arrivo Express Phase 3 -- Arrivo Share. phone or email, whichever looks
+  // right -- same "@" heuristic isn't needed since addRideShareParticipant
+  // takes both and the backend only uses whichever is non-empty; here we
+  // just decide which field to send based on whether it looks like an email.
+  const addShareParticipant = async () => {
+    const value = shareInput.trim();
+    if (!value) return;
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const isEmail = value.includes("@");
+      await addRideShareParticipant(token, rideId, isEmail ? { email: value } : { phone: value });
+      setShareInput("");
+      await fetchRide();
+    } catch (e) {
+      setShareError(e.message || "Couldn't add that person to this ride.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const removeShareParticipant = async (participantId) => {
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      await removeRideShareParticipant(token, rideId, participantId);
+      await fetchRide();
+    } catch (e) {
+      setShareError(e.message || "Couldn't remove that person.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   // Fleet Accompaniment convoy — a no-op fetch (empty companions array) for
   // the vast majority of rides that aren't fleet bookings, so this is safe
@@ -617,6 +659,78 @@ export default function TrackingScreen({ route, navigation }) {
               {ride.promo_code === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"}
             </Text>
             <Text style={styles.meta}>Discount applied — you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
+          </Card>
+        ) : null}
+
+        {ride?.partner_venue_id ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🍸 Reserved pickup — {ride.partner_venue_name}</Text>
+            {ride.partner_venue_perk ? <Text style={styles.meta}>{ride.partner_venue_perk}</Text> : null}
+          </Card>
+        ) : null}
+
+        {ride?.is_arrivo_share ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Arrivo Share</Text>
+            {(ride.shareParticipants || []).length === 0 ? (
+              <Text style={styles.meta}>No one else added yet.</Text>
+            ) : (
+              (ride.shareParticipants || []).map((p) => (
+                <View key={p.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xs }}>
+                  <Text style={styles.meta}>{p.name}{p.phone ? ` · ${p.phone}` : ""}</Text>
+                  {ride.rider_id === user?.id && ["requested", "accepted"].includes(ride.ride_status) ? (
+                    <Pressable onPress={() => removeShareParticipant(p.id)} disabled={shareBusy} hitSlop={8}>
+                      <Text style={{ color: colors.coral, fontSize: 12.5, fontWeight: "600" }}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))
+            )}
+            {ride.rider_id === user?.id && ["requested", "accepted"].includes(ride.ride_status) ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Add by phone or email"
+                  placeholderTextColor={colors.dark.textMuted}
+                  autoCapitalize="none"
+                  value={shareInput}
+                  onChangeText={setShareInput}
+                />
+                {shareError ? <Text style={{ color: colors.coral, fontSize: 12, marginTop: 6 }}>{shareError}</Text> : null}
+                <Button
+                  label={shareBusy ? "Adding…" : "Add to this ride"}
+                  variant="ghost"
+                  tone="dark"
+                  onPress={addShareParticipant}
+                  disabled={shareBusy || !shareInput.trim()}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            ) : null}
+          </Card>
+        ) : ride?.rider_id === user?.id && ["requested", "accepted"].includes(ride?.ride_status) && !ride?.partner_venue_id ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Riding with people you know?</Text>
+            <Text style={styles.meta}>Add them to this ride with Arrivo Share -- they'll be able to track it too.</Text>
+            <View style={{ marginTop: spacing.sm }}>
+              <TextInput
+                style={styles.input}
+                placeholder="Add by phone or email"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="none"
+                value={shareInput}
+                onChangeText={setShareInput}
+              />
+              {shareError ? <Text style={{ color: colors.coral, fontSize: 12, marginTop: 6 }}>{shareError}</Text> : null}
+              <Button
+                label={shareBusy ? "Adding…" : "Add to this ride"}
+                variant="ghost"
+                tone="dark"
+                onPress={addShareParticipant}
+                disabled={shareBusy || !shareInput.trim()}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
           </Card>
         ) : null}
 

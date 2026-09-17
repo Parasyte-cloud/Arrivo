@@ -19,6 +19,7 @@ export default function CheckoutScreen({ route, navigation }) {
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
     appliedPromo = null, appliedPromoDiscountNaira = 0,
+    partnerVenueId = null, partnerVenueName = null, partnerVenuePerk = null,
   } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
@@ -129,6 +130,7 @@ export default function CheckoutScreen({ route, navigation }) {
             emergencyContactName, emergencyContactPhone, dashCamConsent,
             distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
             scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
+            partnerVenueId: partnerVenueId || undefined,
           });
           setStatus("success");
           onRideCreated(ride);
@@ -217,6 +219,7 @@ export default function CheckoutScreen({ route, navigation }) {
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
         scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
+        partnerVenueId: partnerVenueId || undefined,
         // Only meaningful for family_wallet — the backend ignores it (and
         // defaults to the caller) for every other payment method, and
         // 403s if the caller isn't actually that member's plan admin.
@@ -289,6 +292,11 @@ export default function CheckoutScreen({ route, navigation }) {
             <Text style={styles.promoAppliedText}>
               {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied — you
               saved {formatFare(appliedPromoDiscountNaira)}
+            </Text>
+          ) : null}
+          {partnerVenueId ? (
+            <Text style={styles.promoAppliedText}>
+              🍸 Reserved pickup — {partnerVenueName}{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
             </Text>
           ) : null}
         </Card>

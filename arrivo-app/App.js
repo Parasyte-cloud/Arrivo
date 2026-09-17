@@ -29,6 +29,7 @@ import ArrivoExpressScreen from "./screens/ArrivoExpressScreen";
 import OwnerScreen from "./screens/OwnerScreen";
 import MembershipScreen from "./screens/MembershipScreen";
 import FamilyPlanScreen from "./screens/FamilyPlanScreen";
+import PartnerVenuesScreen from "./screens/PartnerVenuesScreen";
 import ScanScreen from "./screens/ScanScreen";
 import ActivityScreen from "./screens/ActivityScreen";
 import WalletScreen from "./screens/WalletScreen";
@@ -96,6 +97,7 @@ function HomeStack() {
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: "Membership" }} />
       <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: "Family Plan" }} />
+      <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: "Reserved Pickups" }} />
       <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />
     </Stack.Navigator>
   );

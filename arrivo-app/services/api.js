@@ -491,3 +491,37 @@ export function cancelRideWithReason(token, rideId, reason) {
     body: JSON.stringify({ reason }),
   });
 }
+
+// ── Arrivo Express Phase 3: Arrivo Share ────────────────────────────────────
+// Add/remove a co-rider on a ride you organized (and paid for) -- every
+// co-rider must already have a RideArrivo account, looked up the same way
+// Family Plan members are (POST /api/family/plans/:id/members).
+export function addRideShareParticipant(token, rideId, { phone, email }) {
+  return request(`/api/rides/${rideId}/share-participants`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ phone, email }),
+  });
+}
+
+export function removeRideShareParticipant(token, rideId, participantId) {
+  return request(`/api/rides/${rideId}/share-participants/${participantId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Rides you're riding on as a co-rider (not the organizer/payer) -- shows
+// up separately from getRideHistory, which is your own booked/paid rides.
+export function getSharedWithMeRides(token) {
+  return request("/api/rides/shared-with-me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// ── Arrivo Express Phase 3: Grotto x RideArrivo (partner venues) ───────────
+export function getPartnerVenues(token) {
+  return request("/api/partner-venues", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
