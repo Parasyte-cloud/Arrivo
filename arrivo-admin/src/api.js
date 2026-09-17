@@ -134,3 +134,6 @@ export const updateSystemConfig = (token, key, value) =>
 export const getRideCancellations = (token) => request("/api/admin/ride-cancellations", token);
 
 export const getFamilyPlans = (token) => request("/api/admin/family-plans", token);
+
+// ── Arrivo Express Phase 2 (launch promos) ──────────────────────────────
+export const getLaunchPromos = (token) => request("/api/admin/launch-promos", token);

@@ -8,6 +8,7 @@ const TABS = [
   { id: "config", label: "Config" },
   { id: "cancellations", label: "Ride Guarantee" },
   { id: "family-plans", label: "Family Plan" },
+  { id: "launch-promos", label: "Launch Promos" },
 ];
 
 function planLabel(planType) {
@@ -15,6 +16,12 @@ function planLabel(planType) {
   if (planType === "plus") return "Family Plus";
   if (planType === "max") return "Family Max";
   return planType;
+}
+
+function promoLabel(promoCode) {
+  if (promoCode === "early_bird") return "🌅 Arrivo Early Bird";
+  if (promoCode === "morning_commuter") return "⏰ Arrivo Morning Commuter";
+  return promoCode;
 }
 
 function reasonLabel(reason) {
@@ -283,6 +290,119 @@ function FamilyPlansTab({ token }) {
   );
 }
 
+// Launch Promos tab -- Phase 2's 30-day acquisition test (Early Bird,
+// Morning Commuter, Midday Lucky Ride). Shows ride counts and total
+// discount cost per time-window promo, plus the Lucky Ride draw history
+// so support can confirm a winner actually got refunded on a given day.
+function LaunchPromosTab({ token }) {
+  const [byPromo, setByPromo] = useState([]);
+  const [luckyRideDraws, setLuckyRideDraws] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.getLaunchPromos(token)
+      .then(({ byPromo, luckyRideDraws }) => {
+        setByPromo(byPromo);
+        setLuckyRideDraws(luckyRideDraws);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const totalDiscountNaira = byPromo.reduce((sum, p) => sum + Number(p.total_discount_naira || 0), 0);
+  const totalPromoRides = byPromo.reduce((sum, p) => sum + Number(p.ride_count || 0), 0);
+  const totalLuckyWinners = luckyRideDraws.filter((d) => d.winning_ride_id).length;
+
+  return (
+    <div>
+      <div className="stat-grid" style={{ marginBottom: 24 }}>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--teal)" }}>{totalPromoRides}</div>
+          <div className="stat-label">Early Bird + Morning Commuter rides</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--coral)" }}>₦{totalDiscountNaira.toLocaleString()}</div>
+          <div className="stat-label">Total discount absorbed (drivers paid in full)</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--amber)" }}>{totalLuckyWinners}</div>
+          <div className="stat-label">Lucky Ride winners drawn</div>
+        </div>
+      </div>
+
+      {error ? <div className="error-text">{error}</div> : null}
+
+      <h3 style={{ margin: "0 0 12px" }}>Early Bird &amp; Morning Commuter</h3>
+      <div className="table-wrap" style={{ marginBottom: 32 }}>
+        {loading ? (
+          <div className="empty-state">Loading launch promos…</div>
+        ) : byPromo.length === 0 ? (
+          <div className="empty-state">No Early Bird or Morning Commuter rides yet.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Promo</th>
+                <th>Rides</th>
+                <th>Total discount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byPromo.map((p) => (
+                <tr key={p.promo_code}>
+                  <td>{promoLabel(p.promo_code)}</td>
+                  <td>{p.ride_count}</td>
+                  <td>₦{Number(p.total_discount_naira).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h3 style={{ margin: "0 0 12px" }}>Midday Lucky Ride — daily draws</h3>
+      <div className="table-wrap">
+        {loading ? (
+          <div className="empty-state">Loading draw history…</div>
+        ) : luckyRideDraws.length === 0 ? (
+          <div className="empty-state">No Lucky Ride draws yet — the scheduler runs the first draw after 1pm Lagos time.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Winner</th>
+                <th>Fare refunded</th>
+                <th>Entries</th>
+              </tr>
+            </thead>
+            <tbody>
+              {luckyRideDraws.map((d) => (
+                <tr key={d.draw_date}>
+                  <td>{d.draw_date}</td>
+                  <td>
+                    {d.winner_name ? (
+                      <>
+                        <div style={{ fontWeight: 600 }}>{d.winner_name}</div>
+                        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{d.winner_email}</div>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>No qualifying entries</span>
+                    )}
+                  </td>
+                  <td>{d.winning_fare_naira ? `₦${Number(d.winning_fare_naira).toLocaleString()}` : "—"}</td>
+                  <td>{d.entries_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Arrivo Express Phase 1 -- one page covering all three features from the
 // 2026-09-17 engineering brief that shipped together: Ride Guarantee,
 // Fair Fare, and Family Plan. Grouped as tabs under a single nav entry
@@ -317,6 +437,7 @@ export function ArrivoExpressPage() {
       {tab === "config" ? <ConfigTab token={token} isReadOnly={isReadOnly} /> : null}
       {tab === "cancellations" ? <CancellationsTab token={token} /> : null}
       {tab === "family-plans" ? <FamilyPlansTab token={token} /> : null}
+      {tab === "launch-promos" ? <LaunchPromosTab token={token} /> : null}
     </div>
   );
 }
