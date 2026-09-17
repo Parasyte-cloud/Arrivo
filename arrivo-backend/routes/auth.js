@@ -114,8 +114,8 @@ router.post("/signup", signupLimiter, async (req, res) => {
   if (!firstName || !lastName || !email || !password) {
     return res.status(400).json({ error: "firstName, lastName, email, and password are required" });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
   if (confirmPassword !== undefined && password !== confirmPassword) {
     return res.status(400).json({ error: "Passwords do not match" });
@@ -587,7 +587,7 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
 router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
-  if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   const result = await pool.query(
     "SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > now()",
