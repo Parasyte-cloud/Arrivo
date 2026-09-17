@@ -27,7 +27,7 @@ export default function DashboardScreen({ navigation }) {
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
-  // Arrivo Express Phase 3 -- Grotto x RideArrivo area lock. Non-null while
+  // Arrivo Express Phase 3 -- the Partner Venues program area lock. Non-null while
   // this driver is mid-reserved-pickup from a partner venue, per whatever
   // GET /available's areaLockedToVenue field says this cycle -- see
   // routes/rides.js for why the queue narrows during that window.
@@ -498,9 +498,11 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
-      {/* Arrivo Express Phase 3 -- Grotto x RideArrivo: this reserved
+      {/* Arrivo Express Phase 3 -- the Partner Venues program: this reserved
           pickup came from a partner venue, not the rider's own address. */}
-      {ride.partner_venue_id ? <Tag label="🍸 Reserved (partner venue)" tone="amber" /> : null}
+      {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
       {/* Arrivo Express Phase 3 -- Arrivo Share: named co-riders on top of
           the organizer, so the driver knows who to expect at pickup. */}
       {ride.is_arrivo_share && ride.shareParticipants?.length ? (
@@ -743,7 +745,9 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
-        {ride.partner_venue_id ? <Tag label="🍸 Reserved (partner venue)" tone="amber" /> : null}
+        {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
         {ride.is_arrivo_share && ride.shareParticipants?.length ? (
           <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
         ) : null}
