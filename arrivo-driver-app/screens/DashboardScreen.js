@@ -27,6 +27,11 @@ export default function DashboardScreen({ navigation }) {
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
+  // Arrivo Express Phase 3 -- Grotto x RideArrivo area lock. Non-null while
+  // this driver is mid-reserved-pickup from a partner venue, per whatever
+  // GET /available's areaLockedToVenue field says this cycle -- see
+  // routes/rides.js for why the queue narrows during that window.
+  const [areaLockedToVenue, setAreaLockedToVenue] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
@@ -86,8 +91,9 @@ export default function DashboardScreen({ navigation }) {
 
   const refreshAvailable = useCallback(async () => {
     try {
-      const { rides } = await getAvailableRides(token);
+      const { rides, areaLockedToVenue: lockedVenue } = await getAvailableRides(token);
       setAvailable(rides);
+      setAreaLockedToVenue(lockedVenue || null);
     } catch (e) {
       setError(e.message);
     }
@@ -384,6 +390,14 @@ export default function DashboardScreen({ navigation }) {
             ) : null}
 
             <Text style={styles.sectionLabel}>Nearby requests</Text>
+            {areaLockedToVenue ? (
+              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
+                <Text style={styles.meta}>
+                  🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup — you'll see the full
+                  queue again once it's done.
+                </Text>
+              </Card>
+            ) : null}
             {available.length === 0 ? (
               <Card tone="dark">
                 <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
@@ -484,6 +498,16 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+      {/* Arrivo Express Phase 3 -- Grotto x RideArrivo: this reserved
+          pickup came from a partner venue, not the rider's own address. */}
+      {ride.partner_venue_id ? <Tag label="🍸 Reserved (partner venue)" tone="amber" /> : null}
+      {/* Arrivo Express Phase 3 -- Arrivo Share: named co-riders on top of
+          the organizer, so the driver knows who to expect at pickup. */}
+      {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+        <Text style={styles.meta}>
+          Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}
+        </Text>
+      ) : null}
       <View style={{ height: spacing.sm }} />
       {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} disabled={disabled} trailingIcon />}
     </Card>
@@ -719,6 +743,10 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
+        {ride.partner_venue_id ? <Tag label="🍸 Reserved (partner venue)" tone="amber" /> : null}
+        {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+          <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
+        ) : null}
         <Pressable onPress={callRiderInApp}>
           <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
         </Pressable>
