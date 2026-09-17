@@ -337,12 +337,41 @@ function computeOverageNaira({ vehicleType, includedHoursPerDay, elapsedHours, f
   return cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
 }
 
+
+// ── Fair Fare (traffic-delay overage) ──
+// "Traffic shouldn't punish you twice." Scoped to one-way, distance-quoted
+// bookings only (booking_type = 'one_way' with a real duration_min quote --
+// see the schema.sql comment on rides.duration_min). A delay up to the
+// configured free allowance costs the rider nothing extra; only the minutes
+// beyond that allowance are billed, at the configured per-minute rate. Both
+// numbers are remotely configurable (services/systemConfig.js) rather than
+// hard-coded here, per the engineering brief's explicit "Config vs.
+// hard-code" requirement -- Finance/Ops haven't picked a final allowance
+// value yet (candidates: 10/15/20/25 min), so this reads whatever is
+// currently configured, defaulting to the brief's own worked example (20
+// min) if nothing has been set.
+const MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE = 2; // same sanity cap reasoning as the chauffeur overage above
+
+function computeFairFareOverageNaira({ quotedDurationMin, elapsedMinutes, freeAllowanceMinutes, perMinuteNaira, fareNaira }) {
+  if (!quotedDurationMin || quotedDurationMin <= 0) return { overageNaira: 0, delayMinutes: 0, billableMinutes: 0 };
+
+  const delayMinutes = Math.max(0, elapsedMinutes - quotedDurationMin);
+  const billableMinutes = Math.max(0, delayMinutes - (freeAllowanceMinutes || 0));
+  if (billableMinutes <= 0) return { overageNaira: 0, delayMinutes, billableMinutes: 0 };
+
+  const rawOverage = Math.round(billableMinutes * (perMinuteNaira || 0));
+  const cap = Math.round((fareNaira || 0) * MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE);
+  const overageNaira = cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
+  return { overageNaira, delayMinutes, billableMinutes };
+}
+
 module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
   computeVehicleCount,
   computeOverageNaira,
+  computeFairFareOverageNaira,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,

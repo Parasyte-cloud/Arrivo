@@ -844,3 +844,120 @@ ALTER TABLE instant_ride_requests
 -- ============================================================
 -- END ARRIVONOW_TIERS_V1
 -- ============================================================
+
+-- ============================================================
+-- ARRIVO EXPRESS PHASE 1 (2026-09-17 engineering brief)
+-- Ride Guarantee, Fair Fare, Family Plan
+-- ============================================================
+
+-- ── Remotely-configurable parameters ──
+-- See services/systemConfig.js for the known keys, their shipped
+-- defaults, and why this is a plain key/value table rather than bespoke
+-- columns: several of these numbers (Fair Fare's threshold and rate,
+-- Family Plan pricing) are explicitly "not yet finalised" per the brief,
+-- and need to be editable from the admin dashboard without a deploy.
+CREATE TABLE IF NOT EXISTS system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by INTEGER REFERENCES users(id)
+);
+
+-- ── Arrivo Ride Guarantee ──
+-- "Only company support staff may cancel an accepted trip -- not the
+-- driver app directly." A driver can no longer free-cancel an accepted
+-- ride from PATCH /:id/status (see routes/rides.js); instead POST
+-- /:id/cancel-request requires one of a fixed set of valid reasons, and
+-- every attempt -- accepted or rejected -- is logged here for support
+-- visibility. A valid cancellation resets the ride to 'requested' with
+-- driver_id cleared (see rides.reassignment_priority below) rather than a
+-- terminal 'cancelled', so the rider is never left needing to re-search.
+CREATE TABLE IF NOT EXISTS ride_cancellations (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  driver_id INTEGER REFERENCES drivers(id),
+  reason TEXT NOT NULL, -- 'vehicle_breakdown' | 'safety_concern' | 'emergency' | 'incorrect_pickup_info'
+  reassigned BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_cancellations_ride ON ride_cancellations(ride_id);
+
+-- Bumped every time a ride is reset for reassignment after a valid driver
+-- cancellation, so GET /api/rides/available can surface a previously-
+-- cancelled ride ahead of brand-new requests -- it's already waited once.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reassignment_priority INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS previously_cancelled_at TIMESTAMPTZ;
+
+-- ── Arrivo Fair Fare ──
+-- overage_naira/overage_payment_method/overage_payment_reference already
+-- exist (chauffeur time-overage, see the ALTER above them). overage_reason
+-- distinguishes which feature produced the charge so the rider-facing
+-- copy and receipt can be accurate; overage_breakdown is the itemised
+-- numbers behind it (mirrors instant_ride_requests.fare_breakdown), so
+-- "why was I charged extra" always has a real, inspectable answer instead
+-- of a bare total.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_reason TEXT; -- 'chauffeur_hours' | 'traffic_delay'
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_breakdown JSONB;
+
+-- ── Arrivo Family Plan ──
+-- "One account. Your whole family." plan_type gates max_members (lite=2,
+-- plus=3, max=5 -- see routes/family.js PLAN_LIMITS). price_naira is
+-- captured at creation time (not re-read live from system_config every
+-- month) so a later price change doesn't retroactively alter what an
+-- existing family agreed to pay -- same reasoning as memberships.price_naira.
+CREATE TABLE IF NOT EXISTS family_plans (
+  id SERIAL PRIMARY KEY,
+  admin_user_id INTEGER NOT NULL REFERENCES users(id),
+  plan_type TEXT NOT NULL, -- 'lite' | 'plus' | 'max'
+  max_members INTEGER NOT NULL,
+  price_naira NUMERIC NOT NULL,
+  wallet_balance_naira NUMERIC NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'cancelled'
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  renews_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_family_plans_admin ON family_plans(admin_user_id);
+
+-- A user can belong to at most one active family plan (as admin or
+-- member) -- enforced in routes/family.js at write time; the partial
+-- unique index below is the real backstop against a race creating two.
+CREATE TABLE IF NOT EXISTS family_members (
+  id SERIAL PRIMARY KEY,
+  family_plan_id INTEGER NOT NULL REFERENCES family_plans(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  member_role TEXT NOT NULL DEFAULT 'member', -- 'admin' | 'member'
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'removed'
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  removed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_family_members_plan ON family_members(family_plan_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_family_members_one_active_plan
+  ON family_members(user_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS family_wallet_transactions (
+  id SERIAL PRIMARY KEY,
+  family_plan_id INTEGER NOT NULL REFERENCES family_plans(id),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id), -- who triggered it (admin funding, or a member spending on a ride)
+  type TEXT NOT NULL, -- 'topup' | 'ride_charge'
+  status TEXT NOT NULL DEFAULT 'completed',
+  amount_naira NUMERIC NOT NULL, -- positive for topup, negative for a ride charge
+  balance_after_naira NUMERIC,
+  paystack_reference TEXT UNIQUE,
+  ride_id INTEGER REFERENCES rides(id),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_family_wallet_tx_plan ON family_wallet_transactions(family_plan_id, created_at DESC);
+
+-- A family-wallet-paid ride tracks which plan paid for it and, when the
+-- admin booked on a member's behalf rather than the member booking for
+-- themselves, who actually placed the order -- both purely informational
+-- (admin visibility, notifications), never used for authorization after
+-- the fact.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS booked_via_family_plan_id INTEGER REFERENCES family_plans(id);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS booked_by_user_id INTEGER REFERENCES users(id);
+
+-- ============================================================
+-- END ARRIVO EXPRESS PHASE 1
+-- ============================================================

@@ -2,6 +2,7 @@ const express = require("express");
 const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
+const { listConfig, setConfig } = require("../services/systemConfig");
 
 const router = express.Router();
 
@@ -515,6 +516,63 @@ router.get("/analytics", async (req, res) => {
     totalRevenueNaira: revenue,
     revenueThisMonthNaira: revenueThisMonth,
   });
+});
+
+
+// ── Arrivo Express Phase 1: remotely-configurable parameters ──────────────
+// Fair Fare's allowance/rate and Family Plan's placeholder pricing, all
+// backed by services/systemConfig.js. GET is available to support/
+// operations (read-only), PATCH is admin-only since it changes what
+// riders are charged.
+router.get("/config", async (req, res) => {
+  const config = await listConfig();
+  res.json({ config });
+});
+
+router.patch("/config/:key", requireRole("admin"), async (req, res) => {
+  const { value } = req.body;
+  if (value === undefined || value === null || value === "") {
+    return res.status(400).json({ error: "value is required" });
+  }
+  try {
+    await setConfig(req.params.key, value, req.user.id);
+    const config = await listConfig();
+    res.json({ config: config.find((c) => c.key === req.params.key) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Arrivo Ride Guarantee: cancellation log ────────────────────────────────
+// Every driver cancel-request attempt (routes/rides.js POST
+// /:id/cancel-request), valid or not, for support to review patterns
+// (a driver citing "vehicle breakdown" every other trip, say).
+router.get("/ride-cancellations", async (req, res) => {
+  const result = await pool.query(
+    `SELECT ride_cancellations.*, rides.pickup_address, rides.rider_id,
+            driver_users.name AS driver_name, rider_users.name AS rider_name
+       FROM ride_cancellations
+       JOIN rides ON rides.id = ride_cancellations.ride_id
+       LEFT JOIN drivers ON drivers.id = ride_cancellations.driver_id
+       LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+       LEFT JOIN users rider_users ON rider_users.id = rides.rider_id
+      ORDER BY ride_cancellations.created_at DESC
+      LIMIT 200`
+  );
+  res.json({ cancellations: result.rows });
+});
+
+// ── Arrivo Family Plan: admin visibility ───────────────────────────────────
+router.get("/family-plans", async (req, res) => {
+  const result = await pool.query(
+    `SELECT fp.*, admin_user.name AS admin_name, admin_user.email AS admin_email,
+            (SELECT COUNT(*) FROM family_members WHERE family_plan_id = fp.id AND status = 'active') AS member_count
+       FROM family_plans fp
+       JOIN users admin_user ON admin_user.id = fp.admin_user_id
+      ORDER BY fp.created_at DESC
+      LIMIT 200`
+  );
+  res.json({ familyPlans: result.rows });
 });
 
 module.exports = router;
