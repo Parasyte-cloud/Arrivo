@@ -34,6 +34,25 @@ async function getActivePlanForUser(userId) {
   return getActivePlanForUserShared(pool, userId);
 }
 
+// GET /api/family/pricing -- current monthly price for each tier, so the
+// app can show real numbers on the "choose a plan" screen without
+// hard-coding them (they're explicitly "not yet finalised" per the
+// brief, and system_config is the single source of truth).
+router.get("/pricing", requireAuth, async (req, res) => {
+  const [lite, plus, max] = await Promise.all([
+    getPlanPriceNaira("lite"),
+    getPlanPriceNaira("plus"),
+    getPlanPriceNaira("max"),
+  ]);
+  res.json({
+    tiers: [
+      { planType: "lite", maxMembers: PLAN_LIMITS.lite, priceNaira: lite },
+      { planType: "plus", maxMembers: PLAN_LIMITS.plus, priceNaira: plus },
+      { planType: "max", maxMembers: PLAN_LIMITS.max, priceNaira: max },
+    ],
+  });
+});
+
 // GET /api/family/mine -- the caller's plan (as admin or member), its
 // members, and wallet balance. Empty plan: null, not an error -- most
 // riders simply aren't in one.

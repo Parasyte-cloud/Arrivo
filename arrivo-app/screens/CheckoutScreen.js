@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linki
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
-import { initializePayment, verifyPayment, createRide, getWallet, getMembership } from "../services/api";
+import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getMyFamilyPlan } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 
@@ -24,8 +24,11 @@ export default function CheckoutScreen({ route, navigation }) {
 
   const [walletBalance, setWalletBalance] = useState(null);
   const [hasMembership, setHasMembership] = useState(false);
+  const [familyPlan, setFamilyPlan] = useState(null); // { walletBalanceNaira, myRole, ... } or null if not in a family plan
+  const [familyMembers, setFamilyMembers] = useState([]); // only populated when myRole === "admin" — who the admin can book for
+  const [familyMemberUserId, setFamilyMemberUserId] = useState(null); // null = booking for self
   const [loadingOptions, setLoadingOptions] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership
+  const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership | family_wallet
 
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [message, setMessage] = useState(null);
@@ -41,14 +44,17 @@ export default function CheckoutScreen({ route, navigation }) {
   useEffect(() => {
     (async () => {
       try {
-        const [wallet, membership] = await Promise.all([getWallet(token), getMembership(token)]);
+        const [wallet, membership, family] = await Promise.all([getWallet(token), getMembership(token), getMyFamilyPlan(token)]);
         setWalletBalance(wallet.balanceNaira);
         setHasMembership(!!membership.membership);
+        setFamilyPlan(family.plan);
+        setFamilyMembers(family.plan && family.plan.myRole === "admin" ? (family.members || []) : []);
         // Default to whichever payment method is genuinely usable, so
         // someone with an active membership or enough wallet balance
         // isn't stuck manually switching off "card" every time.
         if (membership.membership) setPaymentMethod("membership");
         else if (wallet.balanceNaira >= amountNaira) setPaymentMethod("wallet");
+        else if (family.plan && family.plan.walletBalanceNaira >= amountNaira) setPaymentMethod("family_wallet");
       } catch (e) {
         // Payment options are a convenience layer on top of card payment,
         // which always works — a failed lookup here shouldn't block
@@ -60,6 +66,7 @@ export default function CheckoutScreen({ route, navigation }) {
   }, [token, amountNaira]);
 
   const walletSufficient = walletBalance != null && walletBalance >= amountNaira;
+  const familyWalletSufficient = familyPlan != null && familyPlan.walletBalanceNaira >= amountNaira;
 
   const pendingPaymentRef = useRef(null); // holds the reference we're waiting to verify once the user returns from the browser
   // Synchronous double-tap guard for payWithWalletOrMembership, mirroring
@@ -209,6 +216,10 @@ export default function CheckoutScreen({ route, navigation }) {
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
         scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
+        // Only meaningful for family_wallet — the backend ignores it (and
+        // defaults to the caller) for every other payment method, and
+        // 403s if the caller isn't actually that member's plan admin.
+        ...(paymentMethod === "family_wallet" && familyMemberUserId ? { familyMemberUserId } : {}),
       });
       setStatus("success");
       onRideCreated(ride);
@@ -312,8 +323,51 @@ export default function CheckoutScreen({ route, navigation }) {
                   <Text style={styles.payOptionLabel}>{paymentMethod === "membership" ? "● " : "○ "}Membership (no charge)</Text>
                 </Pressable>
               ) : null}
+              {familyPlan ? (
+                <Pressable
+                  onPress={() => familyWalletSufficient && setPaymentMethod("family_wallet")}
+                  disabled={!familyWalletSufficient}
+                  style={[styles.payOption, paymentMethod === "family_wallet" && styles.payOptionActive, !familyWalletSufficient && { opacity: 0.4 }]}
+                >
+                  <Text style={styles.payOptionLabel}>
+                    {paymentMethod === "family_wallet" ? "● " : "○ "}Family Wallet ({formatNaira(familyPlan.walletBalanceNaira)})
+                  </Text>
+                  {!familyWalletSufficient ? (
+                    <Text style={styles.payOptionNote}>Your Family Wallet is empty. Top up to continue riding.</Text>
+                  ) : null}
+                </Pressable>
+              ) : null}
             </View>
           )}
+
+          {paymentMethod === "family_wallet" && familyPlan?.myRole === "admin" && familyMembers.length > 0 ? (
+            <View style={{ marginTop: spacing.md }}>
+              <Text style={styles.note}>Who is this ride for?</Text>
+              <View style={[styles.bookingRow, { marginTop: spacing.sm }]}>
+                <Pressable
+                  onPress={() => setFamilyMemberUserId(null)}
+                  style={[styles.bookingChip, familyMemberUserId === null && styles.bookingChipActive]}
+                >
+                  <Text style={[styles.bookingChipText, familyMemberUserId === null && styles.bookingChipTextActive]}>
+                    Me
+                  </Text>
+                </Pressable>
+                {familyMembers
+                  .filter((m) => m.user_id !== user?.id)
+                  .map((m) => (
+                    <Pressable
+                      key={m.user_id}
+                      onPress={() => setFamilyMemberUserId(m.user_id)}
+                      style={[styles.bookingChip, familyMemberUserId === m.user_id && styles.bookingChipActive]}
+                    >
+                      <Text style={[styles.bookingChipText, familyMemberUserId === m.user_id && styles.bookingChipTextActive]}>
+                        {m.name || m.phone || "Member"}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </View>
+            </View>
+          ) : null}
         </Card>
 
         {paymentMethod === "card" ? (

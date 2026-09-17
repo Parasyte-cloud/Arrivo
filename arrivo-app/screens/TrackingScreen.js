@@ -551,7 +551,16 @@ export default function TrackingScreen({ route, navigation }) {
     );
   }
 
-  const statusLabel = STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
+  // Arrivo Ride Guarantee: a driver-side cancel-request (vehicle breakdown,
+  // safety concern, emergency, wrong pickup info) resets the ride back to
+  // "requested" with driver_id cleared and previously_cancelled_at stamped,
+  // rather than dumping the rider back to square one. This distinguishes
+  // that reassignment case from a brand-new, never-yet-accepted ride so we
+  // can say "we're on it" instead of the generic "looking for a driver".
+  const isReassigning = ride?.ride_status === "requested" && !!ride?.previously_cancelled_at;
+  const statusLabel = isReassigning
+    ? "Finding you a new driver…"
+    : STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
   const hasDriver = !!ride?.driver_name;
   const hasVehicle = !!(ride?.make_model && ride?.plate_number);
 
@@ -582,6 +591,16 @@ export default function TrackingScreen({ route, navigation }) {
         {loadError ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.warningText}>{loadError}</Text>
+          </Card>
+        ) : null}
+
+        {isReassigning ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🛡️ Arrivo Ride Guarantee</Text>
+            <Text style={styles.meta}>
+              Your driver had a last-minute issue and can't continue the trip. We're finding you a new driver right
+              now — no need to rebook, your pickup and destination are already set.
+            </Text>
           </Card>
         ) : null}
 
@@ -738,15 +757,21 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: ride.overage_payment_method ? 0 : 1 }}>
-            <Text style={styles.cardLabel}>Extra time charge</Text>
+            <Text style={styles.cardLabel}>
+              {ride.overage_reason === "traffic_delay" ? "Arrivo Fair Fare — traffic delay" : "Extra time charge"}
+            </Text>
             {ride.overage_payment_method ? (
               <Text style={styles.meta}>
-                This trip ran longer than the {Number(ride.included_hours_per_day)}h booked, so an extra {formatFare(ride.overage_naira)} was charged. Paid. Thanks.
+                {ride.overage_reason === "traffic_delay"
+                  ? `Traffic pushed this trip ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time. The first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of that was on us — the remaining ${ride.overage_breakdown?.billableMinutes ?? ""} min added ${formatFare(ride.overage_naira)}. Paid. Thanks.`
+                  : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h booked, so an extra ${formatFare(ride.overage_naira)} was charged. Paid. Thanks.`}
               </Text>
             ) : (
               <>
                 <Text style={styles.meta}>
-                  This trip ran longer than the {Number(ride.included_hours_per_day)}h you booked, so there's an extra {formatFare(ride.overage_naira)} to settle for the additional time.
+                  {ride.overage_reason === "traffic_delay"
+                    ? `Traffic shouldn't punish you twice — but this trip ran ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time, and only the first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of delay is free. That leaves ${ride.overage_breakdown?.billableMinutes ?? ""} min at ${ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : ""}/min — an extra ${formatFare(ride.overage_naira)} to settle.`
+                    : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h you booked, so there's an extra ${formatFare(ride.overage_naira)} to settle for the additional time.`}
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>

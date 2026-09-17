@@ -432,3 +432,62 @@ export function getActiveInstantRequest(token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+// ── Arrivo Family Plan ──────────────────────────────────────────────────
+export function getFamilyPlanPricing(token) {
+  return request("/api/family/pricing", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function getMyFamilyPlan(token) {
+  return request("/api/family/mine", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function createFamilyPlan(token, planType) {
+  return request("/api/family/plans", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ planType }),
+  });
+}
+
+export function addFamilyMember(token, planId, { phone, email }) {
+  return request(`/api/family/plans/${planId}/members`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ phone, email }),
+  });
+}
+
+export function removeFamilyMember(token, planId, memberId) {
+  return request(`/api/family/plans/${planId}/members/${memberId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function verifyFamilyWalletTopup(token, planId, reference) {
+  return request(`/api/family/plans/${planId}/wallet/topup/verify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reference }),
+  });
+}
+
+export function getFamilyPlanRides(token, planId) {
+  return request(`/api/family/plans/${planId}/rides`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// ── Arrivo Ride Guarantee (driver-side) ────────────────────────────────────
+export function cancelRideWithReason(token, rideId, reason) {
+  return request(`/api/rides/${rideId}/cancel-request`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason }),
+  });
+}

@@ -158,6 +158,14 @@ export default function WalletScreen({ navigation }) {
           style={{ marginBottom: spacing.md }}
         />
 
+        <Button
+          label="Family Plan"
+          variant="ghost"
+          tone="dark"
+          onPress={() => navigation.navigate("Home", { screen: "FamilyPlan" })}
+          style={{ marginBottom: spacing.md }}
+        />
+
         {!showTopUp ? (
           <Button label="Top Up Wallet" onPress={() => setShowTopUp(true)} trailingIcon />
         ) : (
