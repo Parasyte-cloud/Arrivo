@@ -575,4 +575,32 @@ router.get("/family-plans", async (req, res) => {
   res.json({ familyPlans: result.rows });
 });
 
+// ── Arrivo Express Phase 2: 30-day launch promos ───────────────────────────
+// Per-promo volume/discount totals (Early Bird, Morning Commuter) plus the
+// Lucky Ride draw history -- "designed to prove demand and generate
+// content" per the brief, so ops needs to see this without a DB query.
+router.get("/launch-promos", async (req, res) => {
+  const byPromo = await pool.query(
+    `SELECT promo_code,
+            COUNT(*) as ride_count,
+            COALESCE(SUM(promo_discount_naira), 0) as total_discount_naira
+       FROM rides
+      WHERE promo_code IN ('early_bird', 'morning_commuter')
+        AND ride_status != 'cancelled'
+      GROUP BY promo_code`
+  );
+
+  const luckyRideDraws = await pool.query(
+    `SELECT lucky_ride_draws.*, rides.fare_naira as winning_fare_naira,
+            users.name as winner_name, users.email as winner_email
+       FROM lucky_ride_draws
+       LEFT JOIN rides ON rides.id = lucky_ride_draws.winning_ride_id
+       LEFT JOIN users ON users.id = rides.rider_id
+      ORDER BY lucky_ride_draws.draw_date DESC
+      LIMIT 30`
+  );
+
+  res.json({ byPromo: byPromo.rows, luckyRideDraws: luckyRideDraws.rows });
+});
+
 module.exports = router;

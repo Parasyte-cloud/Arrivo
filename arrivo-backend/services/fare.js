@@ -365,6 +365,61 @@ function computeFairFareOverageNaira({ quotedDurationMin, elapsedMinutes, freeAl
   return { overageNaira, delayMinutes, billableMinutes };
 }
 
+// ── Arrivo Express Phase 2 (30-day launch test, 2026-09-17 brief) ──
+// Early Bird (4:30am-7:00am, up to 50% off) and Morning Commuter
+// (7:00am-9:00am, 20% off) are automatic percentage discounts based on
+// Lagos-local time -- no entry, no raffle, every qualifying one-way ride
+// gets it. Midday Lucky Ride (12:00pm-1:00pm) is NOT a discount computed
+// here: only one rider wins per day, which isn't knowable at booking time
+// -- see isLuckyRideWindow below and services/scheduler.js's
+// sweepLuckyRideDraw for how that's actually resolved. All three windows
+// reuse isLagosNightTime's technique (fixed UTC+1 offset, no DST, no
+// timezone library needed).
+const EARLY_BIRD_START_MIN = 4 * 60 + 30; // 4:30am
+const EARLY_BIRD_END_MIN = 7 * 60; // 7:00am (exclusive -- Morning Commuter starts here)
+const MORNING_COMMUTER_START_MIN = 7 * 60; // 7:00am
+const MORNING_COMMUTER_END_MIN = 9 * 60; // 9:00am
+const LUCKY_RIDE_START_MIN = 12 * 60; // 12:00pm
+const LUCKY_RIDE_END_MIN = 13 * 60; // 1:00pm
+
+function lagosMinutesOfDay(date = new Date()) {
+  const lagosHour = (date.getUTCHours() + 1) % 24;
+  return lagosHour * 60 + date.getUTCMinutes();
+}
+
+// Calendar date (Africa/Lagos) as "YYYY-MM-DD" -- what "one entry per
+// customer per day" and "one winner per day" both key off.
+function lagosDateString(date = new Date()) {
+  return new Date(date.getTime() + 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function activeLaunchPromo(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  if (minutes >= EARLY_BIRD_START_MIN && minutes < EARLY_BIRD_END_MIN) return "early_bird";
+  if (minutes >= MORNING_COMMUTER_START_MIN && minutes < MORNING_COMMUTER_END_MIN) return "morning_commuter";
+  return null;
+}
+
+function isLuckyRideWindow(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  return minutes >= LUCKY_RIDE_START_MIN && minutes < LUCKY_RIDE_END_MIN;
+}
+
+// Pure function, same shape as computeFairFareOverageNaira above --
+// returns enough detail (originalFareNaira alongside the discounted
+// fareNaira) that the caller can persist promo_discount_naira without
+// recomputing anything.
+function applyLaunchPromoDiscount({ fareNaira, date = new Date(), earlyBirdPercent, morningCommuterPercent }) {
+  const promo = activeLaunchPromo(date);
+  const percent = promo === "early_bird" ? earlyBirdPercent : promo === "morning_commuter" ? morningCommuterPercent : 0;
+  if (!promo || !percent || percent <= 0) {
+    return { fareNaira, promo: null, discountPercent: 0, originalFareNaira: fareNaira };
+  }
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+  const discountedFareNaira = Math.round(fareNaira * (1 - clampedPercent / 100));
+  return { fareNaira: discountedFareNaira, promo, discountPercent: clampedPercent, originalFareNaira: fareNaira };
+}
+
 module.exports = {
   computeFare,
   computeOneWayFare,
@@ -372,6 +427,12 @@ module.exports = {
   computeVehicleCount,
   computeOverageNaira,
   computeFairFareOverageNaira,
+  lagosMinutesOfDay,
+  lagosDateString,
+  activeLaunchPromo,
+  isLuckyRideWindow,
+  applyLaunchPromoDiscount,
+  LUCKY_RIDE_END_MIN,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,

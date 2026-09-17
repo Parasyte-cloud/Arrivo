@@ -5,7 +5,21 @@
 //   node services/fare.test.js
 
 const assert = require("assert");
-const { computeFairFareOverageNaira } = require("./fare");
+const {
+  computeFairFareOverageNaira,
+  activeLaunchPromo,
+  isLuckyRideWindow,
+  applyLaunchPromoDiscount,
+  lagosDateString,
+} = require("./fare");
+
+// Builds a UTC Date that corresponds to a given Africa/Lagos (UTC+1) local
+// time, so the promo-window tests below read as "at 5am Lagos time" rather
+// than juggling UTC offsets inline.
+function lagosTime(hour, minute = 0) {
+  const utcHour = (hour - 1 + 24) % 24;
+  return new Date(Date.UTC(2026, 0, 1, utcHour, minute));
+}
 
 let passed = 0;
 function test(name, fn) {
@@ -93,6 +107,93 @@ test("zero free allowance still works (a candidate value under consideration)", 
   });
   assert.strictEqual(result.billableMinutes, 5);
   assert.strictEqual(result.overageNaira, 250);
+});
+
+// ── Arrivo Express Phase 2 — launch promo windows ──
+
+test("4:30am Lagos time is the start of Early Bird (inclusive)", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(4, 30)), "early_bird");
+});
+
+test("4:29am Lagos time is not yet Early Bird", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(4, 29)), null);
+});
+
+test("6:59am Lagos time is still Early Bird", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(6, 59)), "early_bird");
+});
+
+test("exactly 7:00am Lagos time is Morning Commuter, not Early Bird (boundary is exclusive/inclusive)", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(7, 0)), "morning_commuter");
+});
+
+test("8:59am Lagos time is still Morning Commuter", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(8, 59)), "morning_commuter");
+});
+
+test("9:00am Lagos time is outside every promo window", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(9, 0)), null);
+});
+
+test("2pm Lagos time (outside all windows) gets no promo", () => {
+  assert.strictEqual(activeLaunchPromo(lagosTime(14, 0)), null);
+});
+
+test("applyLaunchPromoDiscount halves the fare during Early Bird at the brief's 50%", () => {
+  const result = applyLaunchPromoDiscount({
+    fareNaira: 4000,
+    date: lagosTime(5, 0),
+    earlyBirdPercent: 50,
+    morningCommuterPercent: 20,
+  });
+  assert.strictEqual(result.promo, "early_bird");
+  assert.strictEqual(result.fareNaira, 2000);
+  assert.strictEqual(result.originalFareNaira, 4000);
+  assert.strictEqual(result.discountPercent, 50);
+});
+
+test("applyLaunchPromoDiscount takes 20% off during Morning Commuter", () => {
+  const result = applyLaunchPromoDiscount({
+    fareNaira: 4000,
+    date: lagosTime(8, 0),
+    earlyBirdPercent: 50,
+    morningCommuterPercent: 20,
+  });
+  assert.strictEqual(result.promo, "morning_commuter");
+  assert.strictEqual(result.fareNaira, 3200);
+});
+
+test("applyLaunchPromoDiscount leaves the fare untouched outside any window", () => {
+  const result = applyLaunchPromoDiscount({
+    fareNaira: 4000,
+    date: lagosTime(14, 0),
+    earlyBirdPercent: 50,
+    morningCommuterPercent: 20,
+  });
+  assert.strictEqual(result.promo, null);
+  assert.strictEqual(result.fareNaira, 4000);
+});
+
+test("applyLaunchPromoDiscount is a no-op if the configured percent is 0 (promo effectively off)", () => {
+  const result = applyLaunchPromoDiscount({
+    fareNaira: 4000,
+    date: lagosTime(5, 0),
+    earlyBirdPercent: 0,
+    morningCommuterPercent: 20,
+  });
+  assert.strictEqual(result.promo, null);
+  assert.strictEqual(result.fareNaira, 4000);
+});
+
+test("isLuckyRideWindow is true at 12:30pm Lagos time and false right at 1:00pm", () => {
+  assert.strictEqual(isLuckyRideWindow(lagosTime(12, 30)), true);
+  assert.strictEqual(isLuckyRideWindow(lagosTime(13, 0)), false);
+});
+
+test("lagosDateString reflects the Lagos calendar day, not the UTC one, near midnight", () => {
+  // 11:30pm UTC on Jan 1 is 12:30am Lagos time on Jan 2.
+  const almostMidnightUtc = new Date(Date.UTC(2026, 0, 1, 23, 30));
+  assert.strictEqual(lagosDateString(almostMidnightUtc), "2026-01-02");
 });
 
 console.log(`${passed} passed`);

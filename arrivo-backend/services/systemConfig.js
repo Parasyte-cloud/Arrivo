@@ -30,6 +30,17 @@ const DEFAULTS = {
   family_plan_lite_price_naira: "15000",
   family_plan_plus_price_naira: "22000",
   family_plan_max_price_naira: "30000",
+  // Arrivo Express Phase 2 -- 30-day launch promos. Percentages and the
+  // Lucky Ride distance cap are the brief's own stated numbers (Early Bird
+  // "up to 50%", Morning Commuter "20%"); the distance cap has no number
+  // in the brief at all ("capped trip distance"), so 12km is a placeholder
+  // pending Ops sign-off, same as the Phase 1 placeholders above.
+  // launch_promos_enabled is the single kill switch for all three --
+  // flip it to "false" to end the 30-day test without a deploy.
+  launch_promos_enabled: "true",
+  early_bird_discount_percent: "50",
+  morning_commuter_discount_percent: "20",
+  lucky_ride_max_distance_km: "12",
 };
 
 const DESCRIPTIONS = {
@@ -38,6 +49,10 @@ const DESCRIPTIONS = {
   family_plan_lite_price_naira: "Family Plan Lite (2 members): monthly price in naira.",
   family_plan_plus_price_naira: "Family Plan Plus (3 members): monthly price in naira.",
   family_plan_max_price_naira: "Family Plan Max (5 members): monthly price in naira.",
+  launch_promos_enabled: "Master switch for the 30-day launch promos (Early Bird, Morning Commuter, Lucky Ride). Set to \"false\" to turn all three off immediately.",
+  early_bird_discount_percent: "Early Bird (4:30am-7:00am): percent off the fare, automatically applied.",
+  morning_commuter_discount_percent: "Morning Commuter (7:00am-9:00am): percent off the fare, automatically applied.",
+  lucky_ride_max_distance_km: "Midday Lucky Ride (12:00pm-1:00pm): maximum trip distance (km) eligible to enter the daily draw.",
 };
 
 // Reads straight from the DB every call rather than caching -- these
@@ -55,6 +70,11 @@ async function getConfigNumber(key, fallback) {
 async function getConfigString(key, fallback) {
   const result = await pool.query("SELECT value FROM system_config WHERE key = $1", [key]);
   return result.rows[0]?.value ?? DEFAULTS[key] ?? fallback;
+}
+
+async function getConfigBool(key, fallback) {
+  const raw = await getConfigString(key, fallback ? "true" : "false");
+  return raw === "true";
 }
 
 // Returns every known config key with its current value (DB value if set,
@@ -84,4 +104,4 @@ async function setConfig(key, value, adminUserId) {
   );
 }
 
-module.exports = { getConfigNumber, getConfigString, listConfig, setConfig, DEFAULTS, DESCRIPTIONS };
+module.exports = { getConfigNumber, getConfigString, getConfigBool, listConfig, setConfig, DEFAULTS, DESCRIPTIONS };

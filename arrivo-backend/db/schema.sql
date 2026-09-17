@@ -961,3 +961,52 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS booked_by_user_id INTEGER REFERENCES 
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 1
 -- ============================================================
+
+-- ============================================================
+-- ARRIVO EXPRESS PHASE 2 (2026-09-17 engineering brief)
+-- 30-day launch test: Early Bird, Morning Commuter, Midday Lucky Ride
+-- ============================================================
+
+-- promo_code identifies which (if any) launch promo a ride booked under:
+-- 'early_bird' | 'morning_commuter' | 'lucky_ride_entry' | 'lucky_ride_winner'.
+-- promo_discount_naira is ONLY ever nonzero for early_bird/morning_commuter
+-- -- the naira amount fare_naira was reduced by at booking. Lucky Ride
+-- never touches fare_naira (a winner is refunded via a wallet_transactions
+-- credit instead, see services/scheduler.js), so it's always 0 for those
+-- rides. This split matters for routes/drivers.js GET /earnings, which
+-- sums fare_naira + promo_discount_naira so a driver's payout reconstructs
+-- what the trip would have earned without the promo -- Arrivo absorbs
+-- these discounts, not the driver (the brief's own "model economics
+-- carefully" caution for Morning Commuter, the heaviest-demand window).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS promo_discount_naira NUMERIC NOT NULL DEFAULT 0;
+
+-- One row per rider per calendar day (Africa/Lagos) who booked a
+-- qualifying one-way ride inside the 12:00-1:00pm window under the
+-- configured distance cap -- "one entry per customer," enforced by the
+-- unique index below rather than in application code, so it holds even
+-- under concurrent requests.
+CREATE TABLE IF NOT EXISTS lucky_ride_entries (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  rider_id INTEGER NOT NULL REFERENCES users(id),
+  entry_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lucky_ride_one_entry_per_rider_per_day ON lucky_ride_entries(rider_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_lucky_ride_entries_date ON lucky_ride_entries(entry_date);
+
+-- One row per calendar day once services/scheduler.js's Lucky Ride draw
+-- has run for that day -- winning_ride_id is NULL when the window closed
+-- with zero entries. draw_date as the primary key is what makes the draw
+-- idempotent: the sweep re-checks every 5 minutes but only ever draws once.
+CREATE TABLE IF NOT EXISTS lucky_ride_draws (
+  draw_date DATE PRIMARY KEY,
+  winning_ride_id INTEGER REFERENCES rides(id),
+  entries_count INTEGER NOT NULL DEFAULT 0,
+  drawn_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- END ARRIVO EXPRESS PHASE 2
+-- ============================================================

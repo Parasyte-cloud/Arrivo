@@ -8,14 +8,17 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, computeFairFareOverageNaira, FLEET_ESCORT_PAYOUT_USD } = require("../services/fare");
+const {
+  computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, computeFairFareOverageNaira,
+  FLEET_ESCORT_PAYOUT_USD, applyLaunchPromoDiscount, isLuckyRideWindow, lagosDateString,
+} = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { getActivePlanForUser } = require("../services/familyPlan");
-const { getConfigNumber } = require("../services/systemConfig");
+const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
 // refund (see the flight_issue re-payment check in PATCH /:id/status below).
@@ -73,6 +76,24 @@ async function createFleetCompanions(dbClient, primaryRide) {
       ]
     );
   }
+}
+
+// Arrivo Express Phase 2 -- Midday Lucky Ride. Called (inside the same
+// transaction as the ride insert, so it's atomic with booking) whenever a
+// ride qualified as today's raffle entry: one_way, booked in the
+// 12:00-1:00pm Lagos window, distance under the configured cap. The
+// unique index on (rider_id, entry_date) is what actually enforces "one
+// entry per customer" -- ON CONFLICT DO NOTHING means a rider's second
+// qualifying ride the same day just doesn't become a second entry, no
+// error, no special-casing needed here. entryDate is null for any ride
+// that didn't qualify, in which case this is a no-op.
+async function recordLuckyRideEntry(dbClient, ride, entryDate) {
+  if (!entryDate) return;
+  await dbClient.query(
+    `INSERT INTO lucky_ride_entries (ride_id, rider_id, entry_date) VALUES ($1, $2, $3)
+     ON CONFLICT (rider_id, entry_date) DO NOTHING`,
+    [ride.id, ride.rider_id, entryDate]
+  );
 }
 
 // POST /api/rides — create a new ride/booking (requires auth)
@@ -279,6 +300,13 @@ router.post("/", requireAuth, async (req, res) => {
   let durationMin = clientDurationMin ?? null;
   let fareNaira;
   let vehicleCount;
+  // Arrivo Express Phase 2 -- set below (one_way/dropoff bookings only)
+  // when a launch promo actually applies. promoCode/promoDiscountNaira are
+  // persisted on the ride; luckyRideEntryDate (Africa/Lagos "YYYY-MM-DD")
+  // drives recordLuckyRideEntry after the ride is inserted.
+  let promoCode = null;
+  let promoDiscountNaira = 0;
+  let luckyRideEntryDate = null;
   // Recomputed independently of computeFare below (same passengerCount +
   // vehicleType inputs) purely so it can be stored on the ride and returned
   // to the rider — computeFare already applies this same number internally.
@@ -307,6 +335,43 @@ router.post("/", requireAuth, async (req, res) => {
         durationMin = distance.durationMin;
       } catch (err) {
         console.error("Distance lookup failed during ride creation (informational only, not blocking):", err.message);
+      }
+    }
+
+    // ── Arrivo Express Phase 2 (30-day launch test, 2026-09-17 brief) ──
+    // Early Bird / Morning Commuter: an automatic discount off the fare
+    // just computed above, based on Lagos-local time — the scheduled
+    // pickup time for a booked-ahead 'dropoff' return leg, otherwise the
+    // moment of booking. Applies uniformly regardless of payment method
+    // (card/wallet/membership/family_wallet all read the same, already-
+    // discounted fareNaira below) — see routes/drivers.js GET /earnings
+    // for how a driver's payout is protected from this discount.
+    //
+    // Midday Lucky Ride is NOT a discount applied here — only one rider
+    // wins per day, decided after the window closes by
+    // services/scheduler.js's sweepLuckyRideDraw, since there's no way to
+    // know the winner at booking time. A qualifying ride here (in the
+    // window, distance under the configured cap) just registers as
+    // today's entry — still charged full fare now, refunded later only if
+    // it wins.
+    if (await getConfigBool("launch_promos_enabled", true)) {
+      const promoDate = parsedScheduledPickupAt || new Date();
+      const promoResult = applyLaunchPromoDiscount({
+        fareNaira,
+        date: promoDate,
+        earlyBirdPercent: await getConfigNumber("early_bird_discount_percent", 50),
+        morningCommuterPercent: await getConfigNumber("morning_commuter_discount_percent", 20),
+      });
+      if (promoResult.promo) {
+        promoCode = promoResult.promo;
+        promoDiscountNaira = promoResult.originalFareNaira - promoResult.fareNaira;
+        fareNaira = promoResult.fareNaira;
+      } else if (isLuckyRideWindow(promoDate)) {
+        const luckyRideMaxDistanceKm = await getConfigNumber("lucky_ride_max_distance_km", 12);
+        if (distanceKm != null && distanceKm <= luckyRideMaxDistanceKm) {
+          luckyRideEntryDate = lagosDateString(promoDate);
+          promoCode = "lucky_ride_entry";
+        }
       }
     }
   } else {
@@ -365,11 +430,12 @@ router.post("/", requireAuth, async (req, res) => {
     try {
       await membershipClient.query("BEGIN");
       const inserted = await membershipClient.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira]
       );
       await createFleetCompanions(membershipClient, inserted.rows[0]);
+      await recordLuckyRideEntry(membershipClient, inserted.rows[0], luckyRideEntryDate);
       await membershipClient.query("COMMIT");
       return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
     } catch (err) {
@@ -423,9 +489,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, booked_via_family_plan_id, booked_by_user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'family_wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING *`,
-        [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, booked_via_family_plan_id, booked_by_user_id, promo_code, promo_discount_naira)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'family_wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35) RETURNING *`,
+        [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id, promoCode, promoDiscountNaira]
       );
       const ride = rideResult.rows[0];
 
@@ -442,6 +508,7 @@ router.post("/", requireAuth, async (req, res) => {
       );
 
       await createFleetCompanions(client, ride);
+      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
 
       await client.query("COMMIT");
 
@@ -476,9 +543,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira]
       );
       const ride = rideResult.rows[0];
 
@@ -495,6 +562,7 @@ router.post("/", requireAuth, async (req, res) => {
       );
 
       await createFleetCompanions(client, ride);
+      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
 
       await client.query("COMMIT");
       return res.status(201).json({ ride: withParsedStops(ride) });
@@ -514,11 +582,12 @@ router.post("/", requireAuth, async (req, res) => {
   try {
     await cardClient.query("BEGIN");
     const inserted = await cardClient.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira]
     );
     await createFleetCompanions(cardClient, inserted.rows[0]);
+    await recordLuckyRideEntry(cardClient, inserted.rows[0], luckyRideEntryDate);
     await cardClient.query("COMMIT");
     res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   } catch (err) {
@@ -534,9 +603,10 @@ router.post("/", requireAuth, async (req, res) => {
 // Uses the exact same formula (services/fare.js) that ride creation above
 // re-verifies against, so what a rider sees here is what they'll be
 // charged. One-way fares are a flat per-location price (see
-// services/fare.js) — deterministic, not distance-based — so the only way
+// services/fare.js) — deterministic, not distance-based — so the main way
 // this quote differs from the eventual charge is if the 8pm–5am night rate
-// boundary is crossed between quoting and booking.
+// boundary, or an Arrivo Express Phase 2 launch-promo window boundary
+// (Early Bird/Morning Commuter), is crossed between quoting and booking.
 // body: { bookingType?, vehicleType, securityEscort?, fleetSize?, luxury?,
 //         pickupAddress?, destinationAddress?,
 //         pickupLat?, pickupLng?, destinationLat?, destinationLng? }
@@ -608,7 +678,24 @@ router.post("/quote", requireAuth, async (req, res) => {
         console.error("Distance lookup failed during quote (informational only, not blocking):", err.message);
       }
     }
-    return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin, vehicleCount });
+    let promo = null;
+    let promoDiscountPercent = 0;
+    let originalFareNaira = fareNaira;
+    if (await getConfigBool("launch_promos_enabled", true)) {
+      const promoResult = applyLaunchPromoDiscount({
+        fareNaira,
+        earlyBirdPercent: await getConfigNumber("early_bird_discount_percent", 50),
+        morningCommuterPercent: await getConfigNumber("morning_commuter_discount_percent", 20),
+      });
+      fareNaira = promoResult.fareNaira;
+      promo = promoResult.promo;
+      promoDiscountPercent = promoResult.discountPercent;
+      originalFareNaira = promoResult.originalFareNaira;
+    }
+    return res.json({
+      fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin, vehicleCount,
+      promo, promoDiscountPercent, originalFareNaira,
+    });
   }
 
   const allowedCharterTypes = ["full_day", "full_week", "full_month"];
