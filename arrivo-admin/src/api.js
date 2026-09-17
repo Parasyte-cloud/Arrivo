@@ -138,7 +138,7 @@ export const getFamilyPlans = (token) => request("/api/admin/family-plans", toke
 // ── Arrivo Express Phase 2 (launch promos) ──────────────────────────────
 export const getLaunchPromos = (token) => request("/api/admin/launch-promos", token);
 
-// ── Arrivo Express Phase 3 (Arrivo Share, Grotto x RideArrivo) ──────────
+// ── Arrivo Express Phase 3 (Arrivo Share, the Partner Venues program) ──────────
 export const getArrivoShare = (token) => request("/api/admin/arrivo-share", token);
 
 export const getPartnerVenues = (token) => request("/api/admin/partner-venues", token);

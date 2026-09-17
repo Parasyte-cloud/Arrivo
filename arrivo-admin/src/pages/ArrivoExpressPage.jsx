@@ -484,7 +484,7 @@ const VENUE_CATEGORIES = [
   { id: "other", label: "Other" },
 ];
 
-// Partner Venues tab -- Grotto x RideArrivo's admin CRUD. Full create +
+// Partner Venues tab -- full admin CRUD for the partner-venue program. Full create +
 // inline edit (name/category/address/perk/active), same inline-editable
 // spirit as ConfigTab above -- support/operations can see this list (the
 // page-wide requireAnyRole), only "admin" tokens can actually create/edit
@@ -497,7 +497,7 @@ function PartnerVenuesTab({ token, isReadOnly }) {
   const [savingId, setSavingId] = useState(null);
   const [rowError, setRowError] = useState({});
 
-  const [newVenue, setNewVenue] = useState({ name: "", category: "club", address: "", perkDescription: "" });
+  const [newVenue, setNewVenue] = useState({ name: "", category: "club", address: "", perkDescription: "", lat: "", lng: "" });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
@@ -532,6 +532,8 @@ function PartnerVenuesTab({ token, isReadOnly }) {
         name: draft.name !== undefined ? draft.name : venue.name,
         category: draft.category !== undefined ? draft.category : venue.category,
         address: draft.address !== undefined ? draft.address : venue.address,
+        lat: draft.lat !== undefined ? draft.lat : venue.lat,
+        lng: draft.lng !== undefined ? draft.lng : venue.lng,
         perkDescription: draft.perk_description !== undefined ? draft.perk_description : venue.perk_description,
         isActive: draft.is_active !== undefined ? draft.is_active : venue.is_active,
       });
@@ -561,11 +563,15 @@ function PartnerVenuesTab({ token, isReadOnly }) {
       setCreateError("Name and address are required.");
       return;
     }
+    if (newVenue.lat === "" || newVenue.lng === "" || !Number.isFinite(Number(newVenue.lat)) || !Number.isFinite(Number(newVenue.lng))) {
+      setCreateError("Lat/lng are required — without them, drivers never get area-locked to this venue and its reserved rides won't show a pickup location on the map.");
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     try {
       await api.createPartnerVenue(token, newVenue);
-      setNewVenue({ name: "", category: "club", address: "", perkDescription: "" });
+      setNewVenue({ name: "", category: "club", address: "", perkDescription: "", lat: "", lng: "" });
       await load();
     } catch (e) {
       setCreateError(e.message);
@@ -582,7 +588,16 @@ function PartnerVenuesTab({ token, isReadOnly }) {
         </p>
       ) : (
         <div className="table-wrap" style={{ marginBottom: 24, padding: 16 }}>
-          <div style={{ fontWeight: 600, marginBottom: 12 }}>Add a partner venue</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Add a partner venue</div>
+          {newVenue.name.trim() ? (
+            <div style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 12 }}>
+              Shows in the apps as: <strong>{newVenue.name.trim()} x RideArrivo</strong>
+            </div>
+          ) : (
+            <div style={{ color: "var(--text-muted)", fontSize: 12.5, marginBottom: 12 }}>
+              Whatever name you enter here is what riders and drivers see, as "&lt;name&gt; x RideArrivo".
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
             <input className="field" placeholder="Name" style={{ flex: "1 1 160px" }}
               value={newVenue.name} onChange={(e) => setNewVenue((v) => ({ ...v, name: e.target.value }))} />
@@ -592,6 +607,16 @@ function PartnerVenuesTab({ token, isReadOnly }) {
             </select>
             <input className="field" placeholder="Address" style={{ flex: "2 1 240px" }}
               value={newVenue.address} onChange={(e) => setNewVenue((v) => ({ ...v, address: e.target.value }))} />
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input className="field" placeholder="Latitude (e.g. 6.4550)" style={{ flex: "1 1 160px" }}
+              value={newVenue.lat} onChange={(e) => setNewVenue((v) => ({ ...v, lat: e.target.value }))} />
+            <input className="field" placeholder="Longitude (e.g. 3.3941)" style={{ flex: "1 1 160px" }}
+              value={newVenue.lng} onChange={(e) => setNewVenue((v) => ({ ...v, lng: e.target.value }))} />
+          </div>
+          <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 8 }}>
+            Look up the venue on Google Maps, right-click the pin, and copy the coordinates shown at the top of the menu.
+            Required — without coordinates, drivers reserved to this venue won't get the area-locked queue.
           </div>
           <input className="field" placeholder="Perk for riders (e.g. 'Skip the queue')" style={{ width: "100%", marginBottom: 8 }}
             value={newVenue.perkDescription} onChange={(e) => setNewVenue((v) => ({ ...v, perkDescription: e.target.value }))} />
@@ -615,6 +640,7 @@ function PartnerVenuesTab({ token, isReadOnly }) {
                 <th>Name</th>
                 <th>Category</th>
                 <th>Address</th>
+                <th>Coordinates</th>
                 <th>Perk</th>
                 <th>Status</th>
                 <th></th>
@@ -628,6 +654,9 @@ function PartnerVenuesTab({ token, isReadOnly }) {
                     <td>
                       <input className="field" style={{ width: 140 }} value={draftFor(venue, "name")}
                         disabled={isReadOnly} onChange={(e) => setDraft(venue, "name", e.target.value)} />
+                      <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 2 }}>
+                        {draftFor(venue, "name")} x RideArrivo
+                      </div>
                     </td>
                     <td>
                       <select className="field" value={draftFor(venue, "category")}
@@ -638,6 +667,19 @@ function PartnerVenuesTab({ token, isReadOnly }) {
                     <td>
                       <input className="field" style={{ width: 200 }} value={draftFor(venue, "address")}
                         disabled={isReadOnly} onChange={(e) => setDraft(venue, "address", e.target.value)} />
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input className="field" placeholder="lat" style={{ width: 80 }} value={draftFor(venue, "lat") ?? ""}
+                          disabled={isReadOnly} onChange={(e) => setDraft(venue, "lat", e.target.value)} />
+                        <input className="field" placeholder="lng" style={{ width: 80 }} value={draftFor(venue, "lng") ?? ""}
+                          disabled={isReadOnly} onChange={(e) => setDraft(venue, "lng", e.target.value)} />
+                      </div>
+                      {(draftFor(venue, "lat") == null || draftFor(venue, "lat") === "" || draftFor(venue, "lng") == null || draftFor(venue, "lng") === "") ? (
+                        <div style={{ color: "var(--warn, #C9862D)", fontSize: 11, marginTop: 2 }}>
+                          Missing — area lock won't work for this venue
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       <input className="field" style={{ width: 180 }} value={draftFor(venue, "perk_description") || ""}
