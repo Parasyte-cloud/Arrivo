@@ -49,7 +49,7 @@ function haversineMeters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Arrivo Express Phase 3 -- Grotto x RideArrivo area lock. True if a
+// Arrivo Express Phase 3 -- the Partner Venues program area lock. True if a
 // candidate ride's pickup point is within radiusKm of the partner venue a
 // driver is currently locked to (see routes/rides.js GET /available).
 // Missing coordinates on either side fail closed (false) -- a ride/venue

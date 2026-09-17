@@ -156,7 +156,7 @@ router.post("/", requireAuth, async (req, res) => {
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
     familyMemberUserId, partnerVenueId,
   } = req.body;
-  // Arrivo Express Phase 3 (Grotto x RideArrivo) -- a partner-venue
+  // Arrivo Express Phase 3 (the Partner Venues program) -- a partner-venue
   // reserved ride overrides whatever pickup the client sent with the
   // venue's own verified address/coordinates (see the validation block
   // below), so these need to be reassignable rather than the plain
@@ -271,7 +271,7 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json(blockedBookingResponse());
     }
   }
-  // Arrivo Express Phase 3 -- Grotto x RideArrivo. A reserved pickup from
+  // Arrivo Express Phase 3 -- the Partner Venues program. A reserved pickup from
   // a partner venue is just a normal scheduled 'dropoff' booking (see
   // scheduled_pickup_at above -- "we close 4am, pick me up" is exactly
   // that use case) tagged with which venue it's picking up from. The
@@ -802,7 +802,13 @@ router.get("/wallet-minimum", requireAuth, async (req, res) => {
 
 // GET /api/rides/mine — the signed-in rider's ride history
 router.get("/mine", requireAuth, async (req, res) => {
-  const result = await pool.query("SELECT * FROM rides WHERE rider_id = $1 ORDER BY created_at DESC", [req.user.id]);
+  const result = await pool.query(
+    `SELECT rides.*, partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
+     FROM rides
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
+     WHERE rides.rider_id = $1 ORDER BY rides.created_at DESC`,
+    [req.user.id]
+  );
   const rides = await attachShareParticipants(result.rows);
   res.json({ rides: rides.map(withParsedStops) });
 });
@@ -815,10 +821,12 @@ router.get("/mine", requireAuth, async (req, res) => {
 // /:id/share-participants below.
 router.get("/shared-with-me", requireAuth, async (req, res) => {
   const result = await pool.query(
-    `SELECT rides.*, riders.name as rider_name, riders.phone as rider_phone
+    `SELECT rides.*, riders.name as rider_name, riders.phone as rider_phone,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
      FROM rides
      JOIN ride_share_participants ON ride_share_participants.ride_id = rides.id
      JOIN users riders ON riders.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE ride_share_participants.user_id = $1
      ORDER BY rides.created_at DESC`,
     [req.user.id]
@@ -849,7 +857,7 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   const driver = await getDriverForUser(req.user.id);
   const driverId = driver?.id || null;
 
-  // Arrivo Express Phase 3 -- Grotto x RideArrivo area lock. "The driver
+  // Arrivo Express Phase 3 -- the Partner Venues program area lock. "The driver
   // will only get orders around the area for as long as they are online
   // and have accepted the ride [from a partner venue]" -- while this
   // driver has an active (accepted/in_progress) reserved pickup from a
@@ -881,9 +889,11 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   // exist further down the unfiltered list.
   const result = await pool.query(
     `SELECT rides.*, users.name as rider_name, users.phone as rider_phone,
-            (rides.preferred_driver_id = $1) as is_preferred_for_you
+            (rides.preferred_driver_id = $1) as is_preferred_for_you,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
      FROM rides
      JOIN users ON users.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.ride_status = 'requested' AND rides.driver_id IS NULL
        AND (rides.preferred_driver_id IS NULL OR rides.preferred_driver_id = $1)
        AND (
@@ -1299,8 +1309,11 @@ router.get("/driver/mine", requireAuth, requireRole("driver"), async (req, res) 
   if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
 
   const result = await pool.query(
-    `SELECT rides.*, users.name as rider_name, users.phone as rider_phone
-     FROM rides JOIN users ON users.id = rides.rider_id
+    `SELECT rides.*, users.name as rider_name, users.phone as rider_phone,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
+     FROM rides
+     JOIN users ON users.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.driver_id = $1 ORDER BY rides.created_at DESC`,
     [driver.id]
   );
@@ -1529,16 +1542,6 @@ router.post("/:id/share-participants", requireAuth, async (req, res) => {
   const { phone, email } = req.body;
   if (!phone && !email) return res.status(400).json({ error: "phone or email is required" });
 
-  const rideResult = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
-  const ride = rideResult.rows[0];
-  if (!ride) return res.status(404).json({ error: "Ride not found" });
-  if (ride.rider_id !== req.user.id) {
-    return res.status(403).json({ error: "Only the person who booked this ride can add people to share it." });
-  }
-  if (!["requested", "accepted"].includes(ride.ride_status)) {
-    return res.status(400).json({ error: "Co-riders can only be added before the trip starts." });
-  }
-
   const userResult = await pool.query(
     phone ? "SELECT * FROM users WHERE phone = $1" : "SELECT * FROM users WHERE LOWER(email) = LOWER($1)",
     [phone || email]
@@ -1547,30 +1550,65 @@ router.post("/:id/share-participants", requireAuth, async (req, res) => {
   if (!targetUser) {
     return res.status(404).json({ error: "No RideArrivo account found with that " + (phone ? "phone number" : "email") + "." });
   }
-  if (targetUser.id === req.user.id) {
-    return res.status(400).json({ error: "You're already on this ride." });
-  }
 
-  const countResult = await pool.query("SELECT COUNT(*) FROM ride_share_participants WHERE ride_id = $1", [ride.id]);
-  if (!hasRoomForAnotherShareParticipant(ride.vehicle_type, Number(countResult.rows[0].count))) {
-    const capacity = MAX_PASSENGERS[ride.vehicle_type] || 1;
-    return res.status(400).json({ error: `This ${ride.vehicle_type} seats ${capacity} — it's already full.` });
-  }
-
-  let inserted;
+  // Row-locked (SELECT ... FOR UPDATE on the ride) so two concurrent add
+  // requests for the same ride can't both read the same participant count,
+  // both pass the capacity check, and jointly overshoot the vehicle's real
+  // seat count -- same lock-before-check-then-act pattern already used for
+  // the wallet-debit paths in this file (e.g. the flight-issue
+  // charge-at-drop-off block above).
+  const client = await pool.connect();
+  let ride, inserted;
   try {
-    inserted = await pool.query(
-      `INSERT INTO ride_share_participants (ride_id, user_id, added_by_user_id) VALUES ($1, $2, $3) RETURNING *`,
-      [ride.id, targetUser.id, req.user.id]
-    );
-  } catch (err) {
-    if (err.code === "23505") { // unique_violation — the (ride_id, user_id) index
-      return res.status(400).json({ error: `${targetUser.name} is already on this ride.` });
+    await client.query("BEGIN");
+    const rideResult = await client.query("SELECT * FROM rides WHERE id = $1 FOR UPDATE", [req.params.id]);
+    ride = rideResult.rows[0];
+    if (!ride) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Ride not found" });
     }
-    throw err;
-  }
+    if (ride.rider_id !== req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Only the person who booked this ride can add people to share it." });
+    }
+    if (!["requested", "accepted"].includes(ride.ride_status)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Co-riders can only be added before the trip starts." });
+    }
+    if (targetUser.id === req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "You're already on this ride." });
+    }
 
-  await pool.query("UPDATE rides SET is_arrivo_share = true, updated_at = now() WHERE id = $1", [ride.id]);
+    const countResult = await client.query("SELECT COUNT(*) FROM ride_share_participants WHERE ride_id = $1", [ride.id]);
+    if (!hasRoomForAnotherShareParticipant(ride.vehicle_type, Number(countResult.rows[0].count))) {
+      await client.query("ROLLBACK");
+      const capacity = MAX_PASSENGERS[ride.vehicle_type] || 1;
+      return res.status(400).json({ error: `This ${ride.vehicle_type} seats ${capacity} — it's already full.` });
+    }
+
+    try {
+      inserted = await client.query(
+        `INSERT INTO ride_share_participants (ride_id, user_id, added_by_user_id) VALUES ($1, $2, $3) RETURNING *`,
+        [ride.id, targetUser.id, req.user.id]
+      );
+    } catch (err) {
+      if (err.code === "23505") { // unique_violation — the (ride_id, user_id) index
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: `${targetUser.name} is already on this ride.` });
+      }
+      throw err;
+    }
+
+    await client.query("UPDATE rides SET is_arrivo_share = true, updated_at = now() WHERE id = $1", [ride.id]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("share-participants add failed:", err.message);
+    return res.status(500).json({ error: "Could not add this rider. Please try again." });
+  } finally {
+    client.release();
+  }
 
   sendPushNotification(
     targetUser.push_token,
@@ -1578,6 +1616,24 @@ router.post("/:id/share-participants", requireAuth, async (req, res) => {
     `You've been added to an Arrivo ride from ${ride.pickup_address}. Track it in the app.`,
     { rideId: ride.id, type: "arrivo_share_added" }
   ).catch(() => {});
+
+  // Symmetry with every other mid-trip change a driver needs to know about
+  // (reassignment, cancellation, etc.) -- a driver who has already accepted
+  // this ride should find out who's actually going to be in the car now,
+  // not discover it for the first time at pickup.
+  if (ride.ride_status === "accepted" && ride.driver_id) {
+    pool.query(
+      `SELECT users.push_token FROM drivers JOIN users ON users.id = drivers.user_id WHERE drivers.id = $1`,
+      [ride.driver_id]
+    ).then((driverResult) => {
+      sendPushNotification(
+        driverResult.rows[0]?.push_token,
+        "A co-rider was added to your pickup",
+        `${targetUser.name} will be riding along on this trip.`,
+        { rideId: ride.id, type: "arrivo_share_participant_added" }
+      ).catch(() => {});
+    }).catch(() => {});
+  }
 
   res.status(201).json({
     participant: { id: inserted.rows[0].id, userId: targetUser.id, name: targetUser.name, phone: targetUser.phone },
@@ -1587,21 +1643,57 @@ router.post("/:id/share-participants", requireAuth, async (req, res) => {
 // DELETE /api/rides/:id/share-participants/:participantId — organizer
 // removes a co-rider before the trip starts (same status gate as adding).
 router.delete("/:id/share-participants/:participantId", requireAuth, async (req, res) => {
-  const rideResult = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
-  const ride = rideResult.rows[0];
-  if (!ride) return res.status(404).json({ error: "Ride not found" });
-  if (ride.rider_id !== req.user.id) {
-    return res.status(403).json({ error: "Only the person who booked this ride can manage who's sharing it." });
-  }
-  if (!["requested", "accepted"].includes(ride.ride_status)) {
-    return res.status(400).json({ error: "Co-riders can only be removed before the trip starts." });
+  const client = await pool.connect();
+  let ride, removedParticipant;
+  try {
+    await client.query("BEGIN");
+    const rideResult = await client.query("SELECT * FROM rides WHERE id = $1 FOR UPDATE", [req.params.id]);
+    ride = rideResult.rows[0];
+    if (!ride) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Ride not found" });
+    }
+    if (ride.rider_id !== req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Only the person who booked this ride can manage who's sharing it." });
+    }
+    if (!["requested", "accepted"].includes(ride.ride_status)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Co-riders can only be removed before the trip starts." });
+    }
+
+    const deleteResult = await client.query(
+      "DELETE FROM ride_share_participants WHERE id = $1 AND ride_id = $2 RETURNING *",
+      [req.params.participantId, ride.id]
+    );
+    if (deleteResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Participant not found on this ride." });
+    }
+    removedParticipant = deleteResult.rows[0];
+
+    const countResult = await client.query("SELECT COUNT(*) FROM ride_share_participants WHERE ride_id = $1", [ride.id]);
+    if (Number(countResult.rows[0].count) === 0) {
+      // No co-riders left -- this is a normal solo booking again, not an
+      // Arrivo Share ride, so it shouldn't keep showing Share badges/UI.
+      await client.query("UPDATE rides SET is_arrivo_share = false, updated_at = now() WHERE id = $1", [ride.id]);
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("share-participants remove failed:", err.message);
+    return res.status(500).json({ error: "Could not remove this rider. Please try again." });
+  } finally {
+    client.release();
   }
 
-  const result = await pool.query(
-    "DELETE FROM ride_share_participants WHERE id = $1 AND ride_id = $2",
-    [req.params.participantId, ride.id]
-  );
-  if (result.rowCount === 0) return res.status(404).json({ error: "Participant not found on this ride." });
+  const removedUser = await pool.query("SELECT push_token FROM users WHERE id = $1", [removedParticipant.user_id]);
+  sendPushNotification(
+    removedUser.rows[0]?.push_token,
+    "You've been removed from a shared ride",
+    "The trip organizer removed you from an Arrivo Share ride.",
+    { rideId: ride.id, type: "arrivo_share_removed" }
+  ).catch(() => {});
 
   res.json({ removed: true });
 });

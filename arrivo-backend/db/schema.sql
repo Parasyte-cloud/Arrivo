@@ -1014,7 +1014,7 @@ CREATE TABLE IF NOT EXISTS lucky_ride_draws (
 -- ============================================================
 -- ARRIVO EXPRESS PHASE 3 (2026-09-17 engineering brief)
 -- Arrivo Share (ride with people you know, one fare, one payer) and the
--- Grotto x RideArrivo partner-venue program (reserved pickups from
+-- the Partner Venues program (reserved pickups from
 -- partnered clubs/restaurants).
 -- ============================================================
 
@@ -1041,12 +1041,12 @@ CREATE TABLE IF NOT EXISTS ride_share_participants (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_share_participant_once ON ride_share_participants(ride_id, user_id);
 
 -- Cheap flag for filtering/reporting/UI without a join -- set true the
--- moment the first co-rider is added, never unset (matches the
--- security_escort/dash_cam_consent style of "what kind of ride was this"
--- flags already on this table).
+-- moment the first co-rider is added, and reset to false if the organizer
+-- removes everyone (routes/rides.js DELETE .../share-participants/:id) so
+-- a ride that's back to solo doesn't keep showing Share badges/UI.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_arrivo_share BOOLEAN NOT NULL DEFAULT false;
 
--- ── Grotto x RideArrivo (partner venues) ──
+-- ── Partner Venues program ──
 -- Clubs/restaurants RideArrivo partners with: riders get a reserved
 -- pickup (book it now, e.g. "we close 4am, pick me up") and the venue
 -- gets guests who arrive/leave safely and reliably -- a real perk for the
@@ -1072,6 +1072,18 @@ CREATE TABLE IF NOT EXISTS partner_venues (
 -- partner venue it's picking up from. Nothing else about ride creation,
 -- pricing, or payment changes.
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS partner_venue_id INTEGER REFERENCES partner_venues(id);
+
+-- ── Audit follow-up indexes (2026-09-17) ──
+-- Postgres never auto-indexes a foreign key column, and this table had no
+-- indexes on driver_id/ride_status/partner_venue_id at all before Phase 3.
+-- GET /api/rides/available's area-lock check
+-- (driver_id = $1 AND ride_status IN (...) AND partner_venue_id IS NOT NULL)
+-- is a new, frequent per-request lookup, so it needs one; the partial
+-- index below also speeds every other place that joins on
+-- rides.partner_venue_id (GET /:id, GET /mine, GET /driver/mine, the admin
+-- Arrivo Share report).
+CREATE INDEX IF NOT EXISTS idx_rides_driver_status ON rides(driver_id, ride_status);
+CREATE INDEX IF NOT EXISTS idx_rides_partner_venue ON rides(partner_venue_id) WHERE partner_venue_id IS NOT NULL;
 
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 3

@@ -1,4 +1,4 @@
-// Arrivo Express Phase 3 — Grotto x RideArrivo. Public-ish (any signed-in
+// Arrivo Express Phase 3 — the Partner Venues program. Public-ish (any signed-in
 // rider) read access to the active partner-venue list, so the booking
 // screen can offer "reserve a pickup from..." as a picker. Admin
 // create/edit/deactivate lives in routes/admin.js instead — this file is

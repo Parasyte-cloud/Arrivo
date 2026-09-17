@@ -1,5 +1,5 @@
-// Tests for Arrivo Express Phase 3 (Arrivo Share capacity, Grotto x
-// RideArrivo area-lock radius). Run directly:
+// Tests for Arrivo Express Phase 3 (Arrivo Share capacity, the Partner
+// Venues program's area-lock radius). Run directly:
 //   node services/arrivoExpressPhase3.test.js
 const assert = require("assert");
 const { hasRoomForAnotherShareParticipant, MAX_PASSENGERS } = require("./fare");
@@ -43,7 +43,7 @@ test("unknown vehicle type defaults to capacity 1 (organizer only, no co-riders)
   assert.strictEqual(hasRoomForAnotherShareParticipant("helicopter", 0), false);
 });
 
-console.log("\nGrotto x RideArrivo -- area-lock radius:");
+console.log("\nthe Partner Venues program -- area-lock radius:");
 
 const VENUE = { lat: 6.4281, lng: 3.4219 }; // Lekki Phase 1, roughly
 const NEARBY_PICKUP = { lat: 6.4310, lng: 3.4250 }; // a few hundred meters away

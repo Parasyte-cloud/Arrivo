@@ -634,7 +634,7 @@ router.get("/arrivo-share", async (req, res) => {
   res.json({ summary: summary.rows[0], recentShared: recentShared.rows });
 });
 
-// ── Grotto x RideArrivo: partner venues ────────────────────────────────────
+// ── Partner Venues program: admin CRUD ──────────────────────────────────
 // Full CRUD, admin-only for anything that mutates (matches the config
 // endpoints above) -- support/operations can still see the list via the
 // router-wide requireAnyRole, since they're the ones fielding a rider's
@@ -644,6 +644,20 @@ router.get("/partner-venues", async (req, res) => {
   res.json({ venues: result.rows });
 });
 
+// Same "never trust unvalidated coordinates" principle as the fare/dispatch
+// code -- a bad lat/lng here would silently break the partner-venue area-lock
+// radius check and the pickup-address override in POST /api/rides for
+// every rider booking from this venue. Returns an error string, or null
+// if the value is fine (undefined/null is fine -- coordinates are optional).
+function invalidCoordinate(value, label) {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return `${label} must be a number.`;
+  if (label === "lat" && (num < -90 || num > 90)) return "lat must be between -90 and 90.";
+  if (label === "lng" && (num < -180 || num > 180)) return "lng must be between -180 and 180.";
+  return null;
+}
+
 router.post("/partner-venues", requireRole("admin"), async (req, res) => {
   const { name, category, address, lat, lng, perkDescription } = req.body;
   if (!name || !address) return res.status(400).json({ error: "name and address are required" });
@@ -651,10 +665,14 @@ router.post("/partner-venues", requireRole("admin"), async (req, res) => {
   if (category && !allowedCategories.includes(category)) {
     return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
   }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
   const inserted = await pool.query(
     `INSERT INTO partner_venues (name, category, address, lat, lng, perk_description)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [name, category || "other", address, lat ?? null, lng ?? null, perkDescription || null]
+    [name, category || "other", address, lat === undefined || lat === "" ? null : lat, lng === undefined || lng === "" ? null : lng, perkDescription || null]
   );
   res.status(201).json({ venue: inserted.rows[0] });
 });
@@ -665,6 +683,10 @@ router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
   if (category && !allowedCategories.includes(category)) {
     return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
   }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
   const existing = await pool.query("SELECT * FROM partner_venues WHERE id = $1", [req.params.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: "Partner venue not found." });
   const current = existing.rows[0];

@@ -2,7 +2,7 @@
 // configurable, not hard-coded" parameter called out in the Arrivo Express
 // engineering brief (Fair Fare's free-allowance minutes and per-minute
 // rate, Family Plan's placeholder monthly prices, and anything future
-// phases add -- Arrivo Share's fare split, Grotto's redemption rules).
+// phases add -- Arrivo Share's fare split, the Partner Venues program's redemption rules).
 // Deliberately a plain key/value table rather than a bespoke column per
 // setting: Finance/Ops are still modelling several of these values (see
 // the brief's "Before kickoff" slide), so new parameters need to be
@@ -43,9 +43,9 @@ const DEFAULTS = {
   lucky_ride_max_distance_km: "12",
   // Arrivo Express Phase 3 -- Arrivo Share needs no config of its own (its
   // per-vehicle passenger cap already lives in services/fare.js's
-  // MAX_PASSENGERS, shared with every other booking flow). Grotto x
-  // RideArrivo's one real knob is how far a driver mid-reserved-ride stays
-  // locked to that venue's area -- see GET /api/rides/available.
+  // MAX_PASSENGERS, shared with every other booking flow). The Partner
+  // Venues program's one real knob is how far a driver mid-reserved-ride
+  // stays locked to that venue's area -- see GET /api/rides/available.
   grotto_program_enabled: "true",
   partner_venue_dispatch_radius_km: "5",
 };
@@ -60,8 +60,8 @@ const DESCRIPTIONS = {
   early_bird_discount_percent: "Early Bird (4:30am-7:00am): percent off the fare, automatically applied.",
   morning_commuter_discount_percent: "Morning Commuter (7:00am-9:00am): percent off the fare, automatically applied.",
   lucky_ride_max_distance_km: "Midday Lucky Ride (12:00pm-1:00pm): maximum trip distance (km) eligible to enter the daily draw.",
-  grotto_program_enabled: "Master switch for the Grotto x RideArrivo partner-venue program. Set to \"false\" to stop the area-lock behavior and hide partner venues immediately.",
-  partner_venue_dispatch_radius_km: "Grotto x RideArrivo: while a driver has an active reserved pickup from a partner venue, only show them other rides within this many km of that venue.",
+  grotto_program_enabled: "Master switch for the the Partner Venues program partner-venue program. Set to \"false\" to stop the area-lock behavior and hide partner venues immediately.",
+  partner_venue_dispatch_radius_km: "the Partner Venues program: while a driver has an active reserved pickup from a partner venue, only show them other rides within this many km of that venue.",
 };
 
 // Reads straight from the DB every call rather than caching -- these
