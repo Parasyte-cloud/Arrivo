@@ -1,4 +1,4 @@
-// Arrivo Express Phase 3 — Grotto x RideArrivo. Clubs/restaurants RideArrivo
+// Arrivo Express Phase 3 — the Partner Venues program. Clubs/restaurants RideArrivo
 // partners with: pick a venue, book a reserved pickup from it ("we close
 // 4am, pick me up" is exactly the scheduled Airport Drop-off flow already
 // built — see RouteScreen's "dropoff" booking type — just pointed at a
@@ -81,7 +81,9 @@ export default function PartnerVenuesScreen({ navigation }) {
                   <Ionicons name={CATEGORY_ICONS[venue.category] || "location-outline"} size={20} color={colors.amber} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.venueName}>{venue.name}</Text>
+                  <Text style={styles.venueName}>
+                    {venue.name} <Text style={styles.venueBrandSuffix}>x RideArrivo</Text>
+                  </Text>
                   <Tag label={CATEGORY_LABELS[venue.category] || "Venue"} tone="teal" />
                 </View>
               </View>
@@ -113,6 +115,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginRight: spacing.sm,
   },
   venueName: { color: colors.dark.text, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
+  venueBrandSuffix: { color: colors.dark.textMuted, fontSize: 13, fontWeight: "500" },
   venueAddress: { color: colors.dark.textMuted, fontSize: 13, lineHeight: 18 },
   venuePerk: { color: "#8FD9C4", fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
   errorText: { color: colors.coral, fontSize: 14 },

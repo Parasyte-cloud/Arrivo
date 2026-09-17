@@ -519,7 +519,7 @@ export function getSharedWithMeRides(token) {
   });
 }
 
-// ── Arrivo Express Phase 3: Grotto x RideArrivo (partner venues) ───────────
+// ── Arrivo Express Phase 3: the Partner Venues program (partner venues) ───────────
 export function getPartnerVenues(token) {
   return request("/api/partner-venues", {
     headers: { Authorization: `Bearer ${token}` },

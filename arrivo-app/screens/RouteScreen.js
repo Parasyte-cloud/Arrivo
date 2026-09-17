@@ -144,7 +144,7 @@ export default function RouteScreen({ navigation, route }) {
   ); // coords for the LAST stop only — fare is priced pickup-to-final-destination
   const [vehicle, setVehicle] = useState("suv");
   const [bookingType, setBookingType] = useState(route?.params?.presetBookingType || "one_way");
-  // Arrivo Express Phase 3 -- Grotto x RideArrivo. Arriving here from
+  // Arrivo Express Phase 3 -- the Partner Venues program. Arriving here from
   // PartnerVenuesScreen already set presetPickupAddress/Lat/Lng and
   // presetBookingType above to the venue's own details -- these three are
   // just carried through to Checkout/createRide so the backend can tag the
@@ -510,9 +510,13 @@ export default function RouteScreen({ navigation, route }) {
 
         {partnerVenueId ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>🍸 Reserved pickup — {partnerVenueName}</Text>
+            {/* Co-branded per venue -- the name shown here always comes
+                straight from partner_venues.name, which the partnerships
+                team edits from the admin dashboard, so onboarding a new
+                venue never needs an app change or a copy update. */}
+            <Text style={styles.cardLabel}>🍸 {partnerVenueName} x RideArrivo</Text>
             <Text style={styles.partnerVenueHint}>
-              Your pickup is set to {partnerVenueName}. Just pick your time below.
+              Reserved pickup from {partnerVenueName}. Just pick your time below.
               {partnerVenuePerk ? ` ${partnerVenuePerk}` : ""}
             </Text>
           </Card>

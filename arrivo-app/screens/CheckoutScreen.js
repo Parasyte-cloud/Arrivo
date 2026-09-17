@@ -296,7 +296,7 @@ export default function CheckoutScreen({ route, navigation }) {
           ) : null}
           {partnerVenueId ? (
             <Text style={styles.promoAppliedText}>
-              🍸 Reserved pickup — {partnerVenueName}{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
+              🍸 {partnerVenueName} x RideArrivo — reserved pickup{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
             </Text>
           ) : null}
         </Card>

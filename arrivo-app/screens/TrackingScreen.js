@@ -664,7 +664,9 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.partner_venue_id ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>🍸 Reserved pickup — {ride.partner_venue_name}</Text>
+            <Text style={styles.cardLabel}>
+              🍸 {ride.partner_venue_name ? `${ride.partner_venue_name} x RideArrivo` : "Reserved pickup"}
+            </Text>
             {ride.partner_venue_perk ? <Text style={styles.meta}>{ride.partner_venue_perk}</Text> : null}
           </Card>
         ) : null}
