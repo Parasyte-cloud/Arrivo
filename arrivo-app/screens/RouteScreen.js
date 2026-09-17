@@ -459,6 +459,8 @@ export default function RouteScreen({ navigation, route }) {
       amountNaira: quote.fareNaira,
       distanceKm: quote.distanceKm,
       durationMin: quote.durationMin,
+      appliedPromo: quote.promo || null,
+      appliedPromoDiscountNaira: quote.promo ? quote.originalFareNaira - quote.fareNaira : 0,
       label: `${VEHICLES.find((v) => v.id === vehicle).label}${needsMultipleVehicles ? ` × ${vehicleCount}` : ""}. ${selectedBooking.label}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""}`,
       pickupAddress: pickup,
       stops,
@@ -863,6 +865,13 @@ export default function RouteScreen({ navigation, route }) {
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}
 
+        {!quoteLoading && quote?.promo ? (
+          <Text style={styles.promoText}>
+            {quote.promo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} — {quote.promoDiscountPercent}% off
+            applied, you saved {formatFare(quote.originalFareNaira - quote.fareNaira)}
+          </Text>
+        ) : null}
+
         <View style={{ height: spacing.lg }} />
         {quoteLoading ? (
           <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
@@ -935,4 +944,5 @@ const styles = StyleSheet.create({
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
+  promoText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
 });

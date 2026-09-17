@@ -18,6 +18,7 @@ export default function CheckoutScreen({ route, navigation }) {
     securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
+    appliedPromo = null, appliedPromoDiscountNaira = 0,
   } = route?.params || {};
   const { user, token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
@@ -284,6 +285,12 @@ export default function CheckoutScreen({ route, navigation }) {
               {!isNigeria ? ` (${formatNaira(amountNaira)})` : ""}
             </Text>
           </View>
+          {appliedPromo && appliedPromoDiscountNaira > 0 ? (
+            <Text style={styles.promoAppliedText}>
+              {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied — you
+              saved {formatFare(appliedPromoDiscountNaira)}
+            </Text>
+          ) : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -437,6 +444,7 @@ const styles = StyleSheet.create({
   label: { color: colors.dark.text, fontSize: 14, fontWeight: "600", flexShrink: 1, flexBasis: "60%", paddingRight: 8 },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700", flexShrink: 0 },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
+  promoAppliedText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 8 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {

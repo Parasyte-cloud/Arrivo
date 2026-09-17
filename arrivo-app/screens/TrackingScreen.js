@@ -604,6 +604,22 @@ export default function TrackingScreen({ route, navigation }) {
           </Card>
         ) : null}
 
+        {ride?.promo_code === "lucky_ride_winner" ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🎉 You won today's Arrivo Lucky Ride!</Text>
+            <Text style={styles.meta}>
+              {formatFare(ride.fare_naira)} for this trip has been refunded to your wallet. Congratulations!
+            </Text>
+          </Card>
+        ) : ride?.promo_code === "early_bird" || ride?.promo_code === "morning_commuter" ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#8FD9C4", borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>
+              {ride.promo_code === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"}
+            </Text>
+            <Text style={styles.meta}>Discount applied — you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
+          </Card>
+        ) : null}
+
         {hasFlightIssue ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.cardLabel}>✈️ Flight {ride.flight_issue === "cancelled" ? "cancelled" : "rescheduled"}</Text>
