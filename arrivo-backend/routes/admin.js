@@ -603,4 +603,88 @@ router.get("/launch-promos", async (req, res) => {
   res.json({ byPromo: byPromo.rows, luckyRideDraws: luckyRideDraws.rows });
 });
 
+// ── Arrivo Express Phase 3: Arrivo Share reporting ─────────────────────────
+// Just visibility, not management -- Arrivo Share has no admin-editable
+// settings of its own (its passenger cap already lives in
+// services/fare.js's MAX_PASSENGERS, shared with every other booking).
+router.get("/arrivo-share", async (req, res) => {
+  const summary = await pool.query(
+    `SELECT COUNT(*) as shared_ride_count,
+            COALESCE(SUM(participant_counts.count), 0) as total_co_riders
+       FROM rides
+       LEFT JOIN (
+         SELECT ride_id, COUNT(*) as count FROM ride_share_participants GROUP BY ride_id
+       ) participant_counts ON participant_counts.ride_id = rides.id
+      WHERE rides.is_arrivo_share = true AND rides.ride_status != 'cancelled'`
+  );
+  const recentShared = await pool.query(
+    `SELECT rides.id, rides.pickup_address, rides.vehicle_type, rides.ride_status, rides.created_at,
+            organizer.name as organizer_name,
+            COALESCE(json_agg(json_build_object('name', co_riders.name, 'phone', co_riders.phone))
+                     FILTER (WHERE co_riders.id IS NOT NULL), '[]') as co_riders
+       FROM rides
+       JOIN users organizer ON organizer.id = rides.rider_id
+       LEFT JOIN ride_share_participants ON ride_share_participants.ride_id = rides.id
+       LEFT JOIN users co_riders ON co_riders.id = ride_share_participants.user_id
+      WHERE rides.is_arrivo_share = true
+      GROUP BY rides.id, organizer.name
+      ORDER BY rides.created_at DESC
+      LIMIT 30`
+  );
+  res.json({ summary: summary.rows[0], recentShared: recentShared.rows });
+});
+
+// ── Grotto x RideArrivo: partner venues ────────────────────────────────────
+// Full CRUD, admin-only for anything that mutates (matches the config
+// endpoints above) -- support/operations can still see the list via the
+// router-wide requireAnyRole, since they're the ones fielding a rider's
+// "why didn't my reserved pickup show a perk" question.
+router.get("/partner-venues", async (req, res) => {
+  const result = await pool.query("SELECT * FROM partner_venues ORDER BY name ASC");
+  res.json({ venues: result.rows });
+});
+
+router.post("/partner-venues", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription } = req.body;
+  if (!name || !address) return res.status(400).json({ error: "name and address are required" });
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const inserted = await pool.query(
+    `INSERT INTO partner_venues (name, category, address, lat, lng, perk_description)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [name, category || "other", address, lat ?? null, lng ?? null, perkDescription || null]
+  );
+  res.status(201).json({ venue: inserted.rows[0] });
+});
+
+router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription, isActive } = req.body;
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const existing = await pool.query("SELECT * FROM partner_venues WHERE id = $1", [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: "Partner venue not found." });
+  const current = existing.rows[0];
+
+  const updated = await pool.query(
+    `UPDATE partner_venues SET
+       name = $1, category = $2, address = $3, lat = $4, lng = $5, perk_description = $6, is_active = $7, updated_at = now()
+     WHERE id = $8 RETURNING *`,
+    [
+      name ?? current.name,
+      category ?? current.category,
+      address ?? current.address,
+      lat !== undefined ? lat : current.lat,
+      lng !== undefined ? lng : current.lng,
+      perkDescription !== undefined ? perkDescription : current.perk_description,
+      isActive !== undefined ? isActive : current.is_active,
+      req.params.id,
+    ]
+  );
+  res.json({ venue: updated.rows[0] });
+});
+
 module.exports = router;

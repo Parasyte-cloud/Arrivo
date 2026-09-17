@@ -204,6 +204,18 @@ function computeVehicleCount(passengerCount, vehicleType) {
   return count;
 }
 
+// Arrivo Express Phase 3 -- Arrivo Share. True if there's room for one
+// more named co-rider in this vehicle, beyond the organizer's own seat --
+// reuses the exact same MAX_PASSENGERS cap as every other passenger-count
+// check in this file (computeVehicleCount above, the booking form's own
+// group-size limit), so "ride together in ONE vehicle" always means that
+// vehicle's real capacity, never a separate or looser number invented just
+// for this feature.
+function hasRoomForAnotherShareParticipant(vehicleType, currentParticipantCount) {
+  const capacity = MAX_PASSENGERS[vehicleType] || 1;
+  return currentParticipantCount + 1 < capacity; // +1 reserves the organizer's own seat
+}
+
 // "Luxury" toggle — a flat surcharge on top of the normal per-location
 // (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
 // Sedan/SUV without switching to the Executive tier. Priced in USD per the
@@ -425,6 +437,8 @@ module.exports = {
   computeOneWayFare,
   computeCharterFare,
   computeVehicleCount,
+  MAX_PASSENGERS,
+  hasRoomForAnotherShareParticipant,
   computeOverageNaira,
   computeFairFareOverageNaira,
   lagosMinutesOfDay,

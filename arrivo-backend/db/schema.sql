@@ -1010,3 +1010,69 @@ CREATE TABLE IF NOT EXISTS lucky_ride_draws (
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 2
 -- ============================================================
+
+-- ============================================================
+-- ARRIVO EXPRESS PHASE 3 (2026-09-17 engineering brief)
+-- Arrivo Share (ride with people you know, one fare, one payer) and the
+-- Grotto x RideArrivo partner-venue program (reserved pickups from
+-- partnered clubs/restaurants).
+-- ============================================================
+
+-- ── Arrivo Share ──
+-- "People working together in areas not far from each other, who know
+-- each other and don't mind sharing a ride" -- NOT anonymous stranger
+-- pooling. The organizer books and pays for the ride exactly as before
+-- (adults/vehicle_type/fare are all unchanged -- see services/fare.js's
+-- existing MAX_PASSENGERS/computeVehicleCount, which already caps a
+-- single vehicle at 3-5 people depending on type, exactly matching the
+-- brief's "maximum of 5 depending on the vehicle type"). This table only
+-- adds real identities to seats the organizer already paid for, so the
+-- driver knows who to expect and each co-rider can track the trip
+-- themselves. Every co-rider must already have a RideArrivo account
+-- (same constraint as Family Plan members) -- looked up by phone/email,
+-- never a free-text name, so tracking/safety/notifications all work.
+CREATE TABLE IF NOT EXISTS ride_share_participants (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  added_by_user_id INTEGER NOT NULL REFERENCES users(id), -- the organizer (rides.rider_id) at the time of adding
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_share_participant_once ON ride_share_participants(ride_id, user_id);
+
+-- Cheap flag for filtering/reporting/UI without a join -- set true the
+-- moment the first co-rider is added, never unset (matches the
+-- security_escort/dash_cam_consent style of "what kind of ride was this"
+-- flags already on this table).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_arrivo_share BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Grotto x RideArrivo (partner venues) ──
+-- Clubs/restaurants RideArrivo partners with: riders get a reserved
+-- pickup (book it now, e.g. "we close 4am, pick me up") and the venue
+-- gets guests who arrive/leave safely and reliably -- a real perk for the
+-- rider is the incentive, not a discount, so it's stored as free text
+-- shown at booking/tracking time ("skip the queue", "10% off your bill"),
+-- not wired into the fare engine.
+CREATE TABLE IF NOT EXISTS partner_venues (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other', -- 'club' | 'restaurant' | 'other'
+  address TEXT NOT NULL,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  perk_description TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A reserved ride is just an existing 'dropoff'-style scheduled booking
+-- (see scheduled_pickup_at above -- "the rider tells us directly when
+-- they need picking up", already exactly this use case) tagged with which
+-- partner venue it's picking up from. Nothing else about ride creation,
+-- pricing, or payment changes.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS partner_venue_id INTEGER REFERENCES partner_venues(id);
+
+-- ============================================================
+-- END ARRIVO EXPRESS PHASE 3
+-- ============================================================

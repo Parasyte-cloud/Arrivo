@@ -49,6 +49,19 @@ function haversineMeters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// Arrivo Express Phase 3 -- Grotto x RideArrivo area lock. True if a
+// candidate ride's pickup point is within radiusKm of the partner venue a
+// driver is currently locked to (see routes/rides.js GET /available).
+// Missing coordinates on either side fail closed (false) -- a ride/venue
+// we can't actually place on the map is excluded rather than guessed at,
+// same "don't show what we can't verify" principle used elsewhere in this
+// codebase for a client-submitted fare or distance.
+function isWithinRadiusKm(pointA, pointB, radiusKm) {
+  if (!pointA || !pointB) return false;
+  if (pointA.lat == null || pointA.lng == null || pointB.lat == null || pointB.lng == null) return false;
+  return haversineMeters(pointA, pointB) / 1000 <= radiusKm;
+}
+
 function distanceToPolylineMeters(point, polyline) {
   if (!polyline || polyline.length === 0) return null;
   if (polyline.length === 1) return haversineMeters(point, polyline[0]);
@@ -179,6 +192,7 @@ function evaluateTelemetry({ telemetry, route, destination, currentState, thresh
 module.exports = {
   THRESHOLDS,
   haversineMeters,
+  isWithinRadiusKm,
   distanceToPolylineMeters,
   bearingDeg,
   headingDeltaDeg,
