@@ -517,4 +517,80 @@ router.get("/analytics", async (req, res) => {
   });
 });
 
+// ── Partner Venues program: admin CRUD (standalone cherry-pick, 2026-09-18) ──
+// Full CRUD, admin-only for anything that mutates (matches the config
+// endpoints elsewhere in this file) -- support/operations can still see
+// the list via the router-wide requireAnyRole, since they're the ones
+// fielding a rider's "why didn't my reserved pickup show a perk" question.
+// Cherry-picked in isolation from feat/arrivo-express-phase1 -- just this
+// table + these routes, nothing else from that branch.
+router.get("/partner-venues", async (req, res) => {
+  const result = await pool.query("SELECT * FROM partner_venues ORDER BY name ASC");
+  res.json({ venues: result.rows });
+});
+
+// Same "never trust unvalidated coordinates" principle as the fare/dispatch
+// code -- a bad lat/lng here would silently break downstream consumers of
+// this table. Returns an error string, or null if the value is fine
+// (undefined/null is fine -- coordinates are optional).
+function invalidCoordinate(value, label) {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return `${label} must be a number.`;
+  if (label === "lat" && (num < -90 || num > 90)) return "lat must be between -90 and 90.";
+  if (label === "lng" && (num < -180 || num > 180)) return "lng must be between -180 and 180.";
+  return null;
+}
+
+router.post("/partner-venues", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription } = req.body;
+  if (!name || !address) return res.status(400).json({ error: "name and address are required" });
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
+  const inserted = await pool.query(
+    `INSERT INTO partner_venues (name, category, address, lat, lng, perk_description)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [name, category || "other", address, lat === undefined || lat === "" ? null : lat, lng === undefined || lng === "" ? null : lng, perkDescription || null]
+  );
+  res.status(201).json({ venue: inserted.rows[0] });
+});
+
+router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription, isActive } = req.body;
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
+  const existing = await pool.query("SELECT * FROM partner_venues WHERE id = $1", [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: "Partner venue not found." });
+  const current = existing.rows[0];
+
+  const updated = await pool.query(
+    `UPDATE partner_venues SET
+       name = $1, category = $2, address = $3, lat = $4, lng = $5, perk_description = $6, is_active = $7, updated_at = now()
+     WHERE id = $8 RETURNING *`,
+    [
+      name ?? current.name,
+      category ?? current.category,
+      address ?? current.address,
+      lat !== undefined ? lat : current.lat,
+      lng !== undefined ? lng : current.lng,
+      perkDescription !== undefined ? perkDescription : current.perk_description,
+      isActive !== undefined ? isActive : current.is_active,
+      req.params.id,
+    ]
+  );
+  res.json({ venue: updated.rows[0] });
+});
+
 module.exports = router;
