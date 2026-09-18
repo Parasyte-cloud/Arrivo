@@ -31,7 +31,13 @@ export function formatTime(isoString) {
 // Riders/Drivers/Rides don't each reimplement blob+anchor download logic.
 export function downloadCsv(filename, rows, columns) {
   const escape = (val) => {
-    const s = val === null || val === undefined ? "" : String(val);
+    let s = val === null || val === undefined ? "" : String(val);
+    // Guard against CSV-formula injection: a value starting with =, +, -,
+    // or @ is interpreted as a live formula by Excel/Sheets when the file
+    // is opened, not plain text. Prefixing with a single quote is the
+    // standard mitigation -- it neutralizes the formula and is invisible
+    // in every spreadsheet app's rendered view.
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const header = columns.map((c) => c.label).join(",");
