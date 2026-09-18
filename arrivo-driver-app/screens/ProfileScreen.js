@@ -6,6 +6,7 @@ import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import { getDriverProfile } from "../services/api";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français" };
@@ -98,6 +99,8 @@ export default function ProfileScreen() {
         ) : null}
 
         <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />
+
+        <DeleteAccountSection />
       </ScrollView>
     </View>
   );

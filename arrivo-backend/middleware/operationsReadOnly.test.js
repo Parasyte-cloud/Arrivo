@@ -1,12 +1,29 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const jwt = require("jsonwebtoken");
+
+// requireAuth now checks the account still exists on every request. This
+// suite is about the operations gate, so the lookup always finds a live one.
+const dbPath = require.resolve("../db/db");
+require.cache[dbPath] = {
+  id: dbPath,
+  filename: dbPath,
+  loaded: true,
+  exports: {
+    pool: {
+      async query() {
+        return { rows: [{ deleted_at: null, deletion_started_at: null }] };
+      },
+    },
+  },
+};
+
 const { requireAuth } = require("./auth");
 
 const previousSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "operations-rbac-local-test-secret";
 
-function requestFor(role, method, originalUrl) {
+async function requestFor(role, method, originalUrl) {
   const token = jwt.sign(
     {
       id: 999,
@@ -41,7 +58,7 @@ function requestFor(role, method, originalUrl) {
     },
   };
 
-  requireAuth(req, res, () => {
+  await requireAuth(req, res, () => {
     nextCalled = true;
   });
 
@@ -69,9 +86,9 @@ const allowedOperationsGets = [
   "/api/rides/ride-123/fleet",
 ];
 
-test("operations may access approved read-only GET views", () => {
+test("operations may access approved read-only GET views", async () => {
   for (const url of allowedOperationsGets) {
-    const result = requestFor("operations", "GET", url);
+    const result = await requestFor("operations", "GET", url);
 
     assert.equal(
       result.nextCalled,
@@ -103,9 +120,9 @@ const blockedOperationsRequests = [
   ["PATCH", "/api/admin/panics/123/resolve"],
 ];
 
-test("operations is deny-by-default outside approved GET views", () => {
+test("operations is deny-by-default outside approved GET views", async () => {
   for (const [method, url] of blockedOperationsRequests) {
-    const result = requestFor("operations", method, url);
+    const result = await requestFor("operations", method, url);
 
     assert.equal(
       result.nextCalled,
@@ -120,8 +137,8 @@ test("operations is deny-by-default outside approved GET views", () => {
   }
 });
 
-test("admin behavior is unchanged by the operations gate", () => {
-  const result = requestFor(
+test("admin behavior is unchanged by the operations gate", async () => {
+  const result = await requestFor(
     "admin",
     "POST",
     "/api/calls/token"
@@ -131,8 +148,8 @@ test("admin behavior is unchanged by the operations gate", () => {
   assert.equal(result.statusCode, 200);
 });
 
-test("support behavior is unchanged by the operations gate", () => {
-  const result = requestFor(
+test("support behavior is unchanged by the operations gate", async () => {
+  const result = await requestFor(
     "support",
     "GET",
     "/api/admin/wallet-transactions"
