@@ -844,3 +844,27 @@ ALTER TABLE instant_ride_requests
 -- ============================================================
 -- END ARRIVONOW_TIERS_V1
 -- ============================================================
+
+-- ============================================================
+-- Partner Venues program (standalone cherry-pick, 2026-09-18)
+-- Isolated from the unmerged feat/arrivo-express-phase1 branch: only the
+-- table + admin CRUD routes RA-Workspace's "Publish to RideArrivo"
+-- integration needs. Deliberately excludes that branch's reserved-pickup
+-- booking flow (rides.partner_venue_id, area-lock dispatch radius) --
+-- this table exists purely so a venue record can be created/edited.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS partner_venues (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other', -- 'club' | 'restaurant' | 'other'
+  address TEXT NOT NULL,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  perk_description TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- ============================================================
+-- END Partner Venues program
+-- ============================================================
