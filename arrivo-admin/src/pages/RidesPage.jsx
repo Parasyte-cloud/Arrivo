@@ -124,6 +124,11 @@ export function RidesPage() {
   };
 
   const forceCancel = async (ride) => {
+    // Force-cancel had no confirmation step -- a misclick immediately
+    // cancelled a real, possibly in-progress ride with no undo.
+    if (!window.confirm(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
+      return;
+    }
     setSaving(true);
     try {
       await api.updateRide(token, ride.id, { rideStatus: "cancelled", adminNotes: noteDraft || ride.admin_notes });
