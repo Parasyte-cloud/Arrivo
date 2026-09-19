@@ -111,6 +111,18 @@ async function exchangeAuthorizationCode(code, clientId) {
 // deletion must not claim success while an authorization is still live.
 // clientId is the one persisted alongside the refresh token at sign-in, so
 // revocation reuses exactly the client that was authorized.
+// Reasons that mean there is nothing to revoke with, as opposed to a
+// revocation we tried and that failed. Apple's account deletion guidance is
+// explicit that when the refresh token, access token and authorization code
+// are all unavailable, the deletion still has to go ahead and the person is
+// told to remove the app from Sign in with Apple themselves. Holding their
+// account hostage over a token we never captured is not an option.
+//
+// not_configured sits here for the same reason: our own deployment being
+// misconfigured must not be able to permanently trap somebody in an account
+// they have asked to leave.
+const UNREVOCABLE_REASONS = new Set(["no_token", "no_client_id", "not_configured"]);
+
 async function revokeAppleAuthorization(refreshToken, clientId) {
   if (!isAppleRevocationConfigured()) {
     return { revoked: false, reason: "not_configured" };
@@ -148,6 +160,7 @@ async function revokeAppleAuthorization(refreshToken, clientId) {
 
 module.exports = {
   APPLE_TOKEN_URL,
+  UNREVOCABLE_REASONS,
   APPLE_REVOKE_URL,
   isAppleRevocationConfigured,
   buildClientSecret,

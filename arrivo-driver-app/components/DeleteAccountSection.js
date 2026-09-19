@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Modal } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Modal, Alert } from "react-native";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { deleteAccount } from "../services/api";
@@ -33,7 +33,24 @@ export function DeleteAccountSection() {
     setError(null);
     setBusy(true);
     try {
-      await deleteAccount(token, typed.trim());
+      const result = await deleteAccount(token, typed.trim());
+
+      // Anyone who signed in with Apple before we started keeping the token
+      // needed to revoke it. Apple still lists RideArrivo under their Sign in
+      // with Apple settings, and only they can remove it now, so say so
+      // instead of letting them think it is all dealt with.
+      if (result?.appleManualRevocationRequired) {
+        Alert.alert(
+          "One last step",
+          "Your account is deleted. Apple still lists RideArrivo under your Apple ID, and only you can remove it." +
+            "\n\n" +
+            "On your iPhone: Settings, tap your name, then Sign in with Apple. Tap RideArrivo and choose Stop using Apple ID.",
+          [{ text: "Got it", onPress: logout }],
+          { cancelable: false }
+        );
+        return;
+      }
+
       // The token is dead the moment the server answers, so drop straight to
       // the signed out state rather than showing a success screen the app can
       // no longer load anything for.

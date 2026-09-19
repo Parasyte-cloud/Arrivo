@@ -21,6 +21,7 @@ const {
   isAppleRevocationConfigured,
   exchangeAuthorizationCode,
   revokeAppleAuthorization,
+  UNREVOCABLE_REASONS,
 } = require("../services/appleRevoke");
 
 const router = express.Router();
@@ -346,7 +347,38 @@ router.post("/apple", async (req, res) => {
 
   const name = fullName ? [fullName.givenName, fullName.familyName].filter(Boolean).join(" ") : null;
 
+  // Swapped for a refresh token BEFORE the account exists. Doing it afterwards
+  // is how accounts ended up with an apple_id and no way to revoke it: the
+  // exchange failed, the sign-in carried on regardless, and the problem only
+  // surfaced when the person tried to delete themselves months later.
+  //
+  // The audience comes from the VERIFIED token, never the request body, so a
+  // caller cannot nominate somebody else's bundle id. Apple ties a refresh
+  // token to the client that obtained it, and rider and driver are different
+  // clients.
+  let appleRefreshToken = null;
+  if (authorizationCode && isAppleRevocationConfigured()) {
+    appleRefreshToken = await exchangeAuthorizationCode(authorizationCode, payload.audience);
+  }
+
   try {
+    if (!appleRefreshToken && isAppleRevocationConfigured()) {
+      // Somebody who already has an account keeps signing in. Locking them out
+      // over this would be worse than the fallback deletion already has, and
+      // they may simply be on an older build that sends no code.
+      //
+      // A brand new account is the case worth refusing, because that is how
+      // the no-token population grows. Better a clear "try again" now than a
+      // deletion we cannot complete properly later.
+      const existing = await pool.query("SELECT id FROM users WHERE apple_id = $1", [payload.providerId]);
+      if (!existing.rows[0]) {
+        return res.status(502).json({
+          error: "We couldn't finish setting up Sign in with Apple. Please make sure the app is up to date and try again.",
+          reason: "apple_authorization_incomplete",
+        });
+      }
+    }
+
     const { user, isNewAccount } = await findOrCreateOAuthProfile({
       providerColumn: "apple_id",
       providerId: payload.providerId,
@@ -360,17 +392,6 @@ router.post("/apple", async (req, res) => {
     if (user.role !== role) {
       return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
     }
-    // Swap the one-time code for a refresh token and keep it, along with the
-    // client id it belongs to. That pairing matters: Apple wants the same client
-    // id used for the exchange when the token is later revoked, and the rider and
-    // driver apps are different clients.
-    //
-    // The audience comes from the VERIFIED token, never from the request body, so
-    // a caller cannot nominate somebody else's bundle id.
-    //
-    // Best effort: a failure here must not stop somebody signing in. It only
-    // means deletion will later report it has nothing to revoke.
-    const appleRefreshToken = await exchangeAuthorizationCode(authorizationCode, payload.audience);
     if (appleRefreshToken) {
       await pool.query(
         "UPDATE users SET apple_refresh_token = $1, apple_client_id = $2 WHERE id = $3",
@@ -652,33 +673,46 @@ router.delete("/me", requireAuth, async (req, res) => {
   }
   if (!pending) return res.status(404).json({ error: "No account found." });
 
-  if (pending.appleId) {
-    if (!isAppleRevocationConfigured()) {
-      await abortDeletion(pool, req.user.id);
-      console.error("Apple revocation is not configured, refusing to delete user %s", req.user.id);
-      return res.status(503).json({
-        error:
-          "We can't finish deleting an Apple sign-in account right now. Please contact support and we'll do it for you.",
-        reason: "apple_revocation_unavailable",
-      });
-    }
+  // Apple has to be told before anything is scrubbed, because the refresh
+  // token needed to tell it is one of the things that gets scrubbed.
+  let appleManualRevocationRequired = false;
 
-    const revocation = await revokeAppleAuthorization(pending.appleRefreshToken, pending.appleClientId);
+  if (pending.appleId) {
+    const revocation = isAppleRevocationConfigured()
+      ? await revokeAppleAuthorization(pending.appleRefreshToken, pending.appleClientId)
+      : { revoked: false, reason: "not_configured" };
+
     if (!revocation.revoked) {
-      await abortDeletion(pool, req.user.id);
-      console.error("Apple revocation failed for user %s: %s %s", req.user.id, revocation.reason, revocation.detail || "");
-      return res.status(502).json({
-        error:
-          "We couldn't revoke your Apple sign-in, so we've stopped rather than half-delete your account. Please try again, or contact support.",
-        reason: `apple_revocation_${revocation.reason}`,
-      });
+      if (UNREVOCABLE_REASONS.has(revocation.reason)) {
+        // Nothing to revoke with: signed in before we started keeping refresh
+        // tokens, or our own Apple config is missing. Apple's guidance is that
+        // the deletion still goes ahead and the person is told to remove us
+        // from Sign in with Apple themselves, which is what the flag is for.
+        // Logged as an error because not_configured is our bug, not theirs.
+        appleManualRevocationRequired = true;
+        console.error(
+          "Deleting user %s without revoking Apple (%s). They will be asked to remove RideArrivo from Sign in with Apple themselves.",
+          req.user.id,
+          revocation.reason
+        );
+      } else {
+        // We had a token and Apple refused, or the network did. That can come
+        // good on a retry, so stop rather than half delete.
+        await abortDeletion(pool, req.user.id);
+        console.error("Apple revocation failed for user %s: %s %s", req.user.id, revocation.reason, revocation.detail || "");
+        return res.status(502).json({
+          error:
+            "We couldn't revoke your Apple sign-in, so we've stopped rather than half-delete your account. Please try again, or contact support.",
+          reason: `apple_revocation_${revocation.reason}`,
+        });
+      }
     }
   }
 
   try {
     const deleted = await anonymiseAccount(pool, req.user.id);
     if (!deleted) return res.status(404).json({ error: "No account found." });
-    return res.json({ deleted: true, deletedAt: deleted.deleted_at });
+    return res.json({ deleted: true, deletedAt: deleted.deleted_at, appleManualRevocationRequired });
   } catch (error) {
     // The mark is deliberately left in place. Apple is already revoked, so the
     // account must not go back to normal: a retry picks up and finishes.

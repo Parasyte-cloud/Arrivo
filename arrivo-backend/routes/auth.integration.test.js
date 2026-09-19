@@ -211,6 +211,104 @@ await test("an account mid-deletion refuses everything but another attempt", asy
 });
 
 console.log("");
+console.log("Apple accounts we cannot revoke for are still allowed to leave:");
+
+// Anyone who signed in with Apple before the refresh token was captured has an
+// apple_id and nothing to revoke with. Apple's own deletion guidance says the
+// deletion still has to go ahead, and the person is told to remove the app from
+// Sign in with Apple themselves. Refusing to delete them is the one thing we
+// are not allowed to do.
+async function legacyAppleAccount(tag) {
+  appleIdentity = { providerId: `apple-${tag}-${stamp}`, email: `apple-${tag}-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  appleHandler = async () => ({ ok: true, json: async () => ({ refresh_token: "captured-then-lost" }) });
+  const signIn = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "c", agreedToTerms: true } });
+  assert.strictEqual(signIn.status, 200, JSON.stringify(signIn.body));
+  made.push(signIn.body.user.id);
+
+  // Put the account back the way the old sign-in left it: an apple_id, but no
+  // token and no client id.
+  await pool.query("UPDATE users SET apple_refresh_token = NULL, apple_client_id = NULL WHERE id = $1", [signIn.body.user.id]);
+  appleHandler = null;
+  return signIn.body;
+}
+
+await test("a legacy Apple account with no stored token can still delete", async () => {
+  const account = await legacyAppleAccount("legacy");
+  let appleCalled = false;
+  appleHandler = async () => { appleCalled = true; return { ok: false, status: 400, text: async () => "" }; };
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: account.token, body: { confirmEmail: account.user.email } });
+  assert.strictEqual(del.status, 200, `a legacy Apple account must still be able to leave, got ${del.status}: ${JSON.stringify(del.body)}`);
+  assert.strictEqual(del.body.deleted, true);
+  assert.strictEqual(del.body.appleManualRevocationRequired, true, "the app has to be told to send them to Settings");
+  assert.strictEqual(appleCalled, false, "there was nothing to revoke with, so Apple should not have been called");
+
+  const row = await pool.query("SELECT deleted_at, name, email, apple_id FROM users WHERE id = $1", [account.user.id]);
+  assert.ok(row.rows[0].deleted_at, "the account should actually be gone, not just reported gone");
+  assert.strictEqual(row.rows[0].name, "Deleted user");
+  assert.strictEqual(row.rows[0].apple_id, null, "the Apple link should be cleared on our side");
+
+  const after = await call("/api/auth/me", { token: account.token });
+  assert.strictEqual(after.status, 401, "the token should be dead");
+  appleHandler = null;
+});
+
+await test("a normal account is not told about Apple at all", async () => {
+  const u = await signup("noapple");
+  const del = await call("/api/auth/me", { method: "DELETE", token: u.token, body: { confirmEmail: u.email } });
+  assert.strictEqual(del.status, 200, JSON.stringify(del.body));
+  assert.strictEqual(del.body.appleManualRevocationRequired, false, "nothing to do with Apple here");
+});
+
+await test("our own missing Apple config cannot trap somebody in their account", async () => {
+  const account = await legacyAppleAccount("unconfigured");
+  await pool.query("UPDATE users SET apple_refresh_token = 'real-token', apple_client_id = $2 WHERE id = $1", [account.user.id, RIDER_AUD]);
+
+  // A deployment that lost its Apple keys. Their deletion request still wins.
+  const keptKey = process.env.APPLE_PRIVATE_KEY;
+  process.env.APPLE_PRIVATE_KEY = "";
+  try {
+    const del = await call("/api/auth/me", { method: "DELETE", token: account.token, body: { confirmEmail: account.user.email } });
+    assert.strictEqual(del.status, 200, `a config problem must not block deletion, got ${del.status}: ${JSON.stringify(del.body)}`);
+    assert.strictEqual(del.body.appleManualRevocationRequired, true);
+  } finally {
+    process.env.APPLE_PRIVATE_KEY = keptKey;
+  }
+
+  const row = await pool.query("SELECT deleted_at FROM users WHERE id = $1", [account.user.id]);
+  assert.ok(row.rows[0].deleted_at, "should be deleted despite the missing config");
+});
+
+console.log("");
+console.log("Apple sign-in does not quietly create more of them:");
+
+await test("a new Apple account is refused if the exchange gives us nothing", async () => {
+  const providerId = `apple-newfail-${stamp}`;
+  appleIdentity = { providerId, email: `apple-newfail-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  appleHandler = async () => ({ ok: false, status: 400, text: async () => "invalid_grant" });
+
+  const r = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "bad-code", agreedToTerms: true } });
+  assert.strictEqual(r.status, 502, `expected a clean refusal, got ${r.status}: ${JSON.stringify(r.body)}`);
+  assert.strictEqual(r.body.reason, "apple_authorization_incomplete");
+
+  const row = await pool.query("SELECT id FROM users WHERE apple_id = $1", [providerId]);
+  assert.strictEqual(row.rows.length, 0, "a half set up account must not be left behind");
+  appleHandler = null;
+});
+
+await test("an existing Apple account still signs in when the exchange fails", async () => {
+  const account = await legacyAppleAccount("existing");
+  appleHandler = async () => ({ ok: false, status: 400, text: async () => "invalid_grant" });
+
+  // Same person, older build, exchange fails. Locking them out of an account
+  // they already have would be worse than the fallback deletion now has.
+  const again = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "bad-code", agreedToTerms: true } });
+  assert.strictEqual(again.status, 200, `an existing account must still sign in, got ${again.status}: ${JSON.stringify(again.body)}`);
+  assert.strictEqual(again.body.user.id, account.user.id);
+  appleHandler = null;
+});
+
+console.log("");
 console.log("Genuinely concurrent, not a fake returning the answer:");
 
 await test("a top-up committing mid-delete does not lose the money", async () => {
