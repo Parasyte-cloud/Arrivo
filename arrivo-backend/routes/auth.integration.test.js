@@ -420,9 +420,10 @@ await test("a revocable Apple account is revoked and deleted, with nothing for t
   assert.strictEqual(revokeBody.get("token"), "revoke-me", "must revoke the token we stored");
   assert.strictEqual(revokeBody.get("client_id"), RIDER_AUD, "must revoke against the client it was issued to");
 
-  const row = await pool.query("SELECT deleted_at, apple_refresh_token FROM users WHERE id = $1", [signIn.body.user.id]);
+  const row = await pool.query("SELECT deleted_at, apple_refresh_token, apple_revoked_at FROM users WHERE id = $1", [signIn.body.user.id]);
   assert.ok(row.rows[0].deleted_at, "should be deleted");
   assert.strictEqual(row.rows[0].apple_refresh_token, null, "the token should be scrubbed too");
+  assert.ok(row.rows[0].apple_revoked_at, "a successful revocation has to be written down, or a retry asks Apple twice");
   appleHandler = null;
 });
 
@@ -455,6 +456,58 @@ await test("a network failure talking to Apple still blocks the deletion", async
   const row = await pool.query("SELECT deleted_at, deletion_started_at FROM users WHERE id = $1", [signIn.body.user.id]);
   assert.strictEqual(row.rows[0].deleted_at, null, "must not be deleted");
   assert.strictEqual(row.rows[0].deletion_started_at, null, "the in progress mark must be cleared");
+  appleHandler = null;
+});
+
+console.log("");
+console.log("A deletion that revoked Apple and then fell over:");
+
+// Revocation happens before the scrub, and the two cannot be one transaction.
+// If the scrub fails, the in progress mark is left set on purpose so a retry
+// can finish the job. The retry must not ask Apple to revoke a second time:
+// Apple answers invalid_grant for a token that is already dead, we would read
+// that as a hard failure, and the account could never finish deleting.
+async function halfDeletedAppleAccount(tag) {
+  appleIdentity = { providerId: `apple-${tag}-${stamp}`, email: `apple-${tag}-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  appleHandler = async () => ({ ok: true, json: async () => ({ refresh_token: "already-used" }) });
+  const signIn = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "c", agreedToTerms: true } });
+  made.push(signIn.body.user.id);
+  appleHandler = null;
+
+  // The state the first attempt leaves behind: Apple revoked, mark still set,
+  // nothing scrubbed yet.
+  await pool.query("UPDATE users SET deletion_started_at = now(), apple_revoked_at = now() WHERE id = $1", [signIn.body.user.id]);
+  return signIn.body;
+}
+
+await test("a retry does not ask Apple to revoke twice", async () => {
+  const account = await halfDeletedAppleAccount("retry");
+  let appleCalled = false;
+  appleHandler = async () => { appleCalled = true; return { ok: false, status: 400, text: async () => "invalid_grant" }; };
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: account.token, body: { confirmEmail: account.user.email } });
+
+  assert.strictEqual(del.status, 200, `the retry must finish the job, got ${del.status}: ${JSON.stringify(del.body)}`);
+  assert.strictEqual(appleCalled, false, "Apple was already revoked, asking again is what gets the account stuck");
+  assert.strictEqual(del.body.appleManualRevocationRequired, false, "we did revoke it, just on the previous attempt");
+
+  const row = await pool.query("SELECT deleted_at FROM users WHERE id = $1", [account.user.id]);
+  assert.ok(row.rows[0].deleted_at, "the account should be gone after the retry");
+  appleHandler = null;
+});
+
+await test("the mark alone does not skip revocation", async () => {
+  // Only a recorded revocation skips Apple. An interrupted attempt that never
+  // got that far must still revoke on the retry.
+  const account = await halfDeletedAppleAccount("markonly");
+  await pool.query("UPDATE users SET apple_revoked_at = NULL WHERE id = $1", [account.user.id]);
+
+  let appleCalled = false;
+  appleHandler = async (url) => { if (url.includes("revoke")) { appleCalled = true; return { ok: true, status: 200 }; } return { ok: true, json: async () => ({}) }; };
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: account.token, body: { confirmEmail: account.user.email } });
+  assert.strictEqual(del.status, 200, JSON.stringify(del.body));
+  assert.strictEqual(appleCalled, true, "nothing was revoked yet, so the retry has to do it");
   appleHandler = null;
 });
 

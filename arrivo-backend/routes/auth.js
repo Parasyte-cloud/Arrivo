@@ -690,10 +690,22 @@ router.delete("/me", requireAuth, async (req, res) => {
   // token needed to tell it is one of the things that gets scrubbed.
   let appleManualRevocationRequired = false;
 
-  if (pending.appleId) {
+  if (pending.appleId && pending.appleRevokedAt) {
+    // A previous attempt already revoked, and then something further down
+    // failed. Asking Apple again would be answered with invalid_grant for a
+    // token that is already dead, we would read that as a hard failure, and
+    // this account could never finish deleting.
+    console.log("Apple was already revoked for user %s on a previous attempt, carrying on.", req.user.id);
+  } else if (pending.appleId) {
     const revocation = isAppleRevocationConfigured()
       ? await revokeAppleAuthorization(pending.appleRefreshToken, pending.appleClientId)
       : { revoked: false, reason: "not_configured" };
+
+    if (revocation.revoked) {
+      // Written down before the scrub, so a retry after a failure further down
+      // knows not to ask Apple twice.
+      await pool.query("UPDATE users SET apple_revoked_at = now() WHERE id = $1", [req.user.id]);
+    }
 
     if (!revocation.revoked) {
       if (UNREVOCABLE_REASONS.has(revocation.reason)) {

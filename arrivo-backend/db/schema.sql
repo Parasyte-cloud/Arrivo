@@ -516,6 +516,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_client_id TEXT;
 -- refused meanwhile and an interrupted deletion can be retried rather than
 -- leaving a live account whose Apple authorization is already revoked.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_started_at TIMESTAMPTZ;
+-- Set the moment Apple confirms the authorization is revoked, which happens
+-- before the scrub. If the scrub then fails and the person tries again, this
+-- is what stops us revoking a second time: Apple rejects an already revoked
+-- token, we would read that as a hard failure, and they could never finish
+-- deleting.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_revoked_at TIMESTAMPTZ;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);

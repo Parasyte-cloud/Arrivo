@@ -147,7 +147,8 @@ async function beginDeletion(pool, userId) {
     await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
 
     const locked = await client.query(
-      `SELECT wallet_balance_naira, deleted_at, apple_id, apple_refresh_token, apple_client_id
+      `SELECT wallet_balance_naira, deleted_at, apple_id, apple_refresh_token, apple_client_id,
+              apple_revoked_at
          FROM users WHERE id = $1 FOR UPDATE`,
       [userId]
     );
@@ -181,6 +182,7 @@ async function beginDeletion(pool, userId) {
       appleId: account.apple_id,
       appleRefreshToken: account.apple_refresh_token,
       appleClientId: account.apple_client_id,
+      appleRevokedAt: account.apple_revoked_at,
     };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
