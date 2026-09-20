@@ -432,3 +432,16 @@ export function getActiveInstantRequest(token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+// Deleting the account. confirmEmail has to match the address on the
+// account: Google and Apple sign-ins get a random password they have never
+// seen, so a password prompt would lock them out of their own deletion.
+// Answers 409 with a reason when a trip is still running or there is money
+// in the wallet.
+export function deleteAccount(token, confirmEmail) {
+  return request("/api/auth/me", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ confirmEmail }),
+  });
+}

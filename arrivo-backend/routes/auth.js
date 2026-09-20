@@ -9,6 +9,21 @@ const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
+const {
+  findDeletionBlocker,
+  anonymiseAccount,
+  beginDeletion,
+  abortDeletion,
+  DeletionBlocked,
+  SERIALIZATION_FAILURE,
+} = require("../services/accountDeletion");
+const {
+  isAppleRevocationConfigured,
+  exchangeAuthorizationCode,
+  revokeAppleAuthorization,
+  UNREVOCABLE_REASONS,
+} = require("../services/appleRevoke");
+
 const router = express.Router();
 
 const SALT_ROUNDS = 10;
@@ -28,8 +43,49 @@ function validateAvatarDataUrl(dataUrl) {
   return validateImageDataUrl(dataUrl, "Profile photo", MAX_AVATAR_BYTES);
 }
 
+// An allow-list, not a block-list. This used to strip the known secret columns
+// and return everything else, which made every new column on users public by
+// default. apple_refresh_token was about to go out that way, because /me does
+// SELECT * and hands the row straight to this.
+//
+// Adding a column no longer exposes it. If a new field should be visible, put
+// it in this list deliberately.
+const PUBLIC_USER_FIELDS = [
+  "id",
+  "name",
+  "email",
+  "phone",
+  "whatsapp_number",
+  "country_of_residence",
+  "passport_number",
+  "role",
+  "agreed_to_terms",
+  "email_verified",
+  "preferred_language",
+  "avatar_url",
+  "created_at",
+  "date_of_birth",
+  "id_document_url",
+  "id_verification_status",
+  "id_verification_submitted_at",
+  "id_verification_reviewed_at",
+  "id_verification_rejection_reason",
+  "audio_recording_enabled",
+  "wallet_balance_naira",
+  "preferred_vehicle_type",
+  "quiet_ride",
+  "temperature_preference",
+  "child_seat_required",
+  "traveling_with_pet",
+  "deleted_at",
+];
+
 function publicUser(user) {
-  const { password_hash, email_verification_token, email_verification_expires, reset_token, reset_token_expires, ...safe } = user;
+  if (!user) return user;
+  const safe = {};
+  for (const field of PUBLIC_USER_FIELDS) {
+    if (field in user) safe[field] = user[field];
+  }
   return safe;
 }
 
@@ -187,7 +243,7 @@ router.post("/login", async (req, res) => {
 
   const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
   const user = result.rows[0];
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || user.deleted_at || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
@@ -265,6 +321,7 @@ router.post("/google", async (req, res) => {
     if (user.role !== role) {
       return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
     }
+
     const token = signToken(user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
@@ -278,7 +335,7 @@ router.post("/google", async (req, res) => {
 // app — the client has to capture it right then and forward it here, since
 // there's no way to fetch it again later.
 router.post("/apple", async (req, res) => {
-  const { identityToken, fullName, role = "rider", agreedToTerms } = req.body;
+  const { identityToken, fullName, role = "rider", agreedToTerms, authorizationCode } = req.body;
   if (!identityToken) return res.status(400).json({ error: "identityToken is required" });
 
   let payload;
@@ -290,7 +347,51 @@ router.post("/apple", async (req, res) => {
 
   const name = fullName ? [fullName.givenName, fullName.familyName].filter(Boolean).join(" ") : null;
 
+  // Swapped for a refresh token BEFORE the account exists. Doing it afterwards
+  // is how accounts ended up with an apple_id and no way to revoke it: the
+  // exchange failed, the sign-in carried on regardless, and the problem only
+  // surfaced when the person tried to delete themselves months later.
+  //
+  // The audience comes from the VERIFIED token, never the request body, so a
+  // caller cannot nominate somebody else's bundle id. Apple ties a refresh
+  // token to the client that obtained it, and rider and driver are different
+  // clients.
+  let appleRefreshToken = null;
+  if (authorizationCode && isAppleRevocationConfigured()) {
+    appleRefreshToken = await exchangeAuthorizationCode(authorizationCode, payload.audience);
+  }
+
   try {
+    if (!appleRefreshToken) {
+      // Deliberately not conditional on isAppleRevocationConfigured(). Why the
+      // token is missing does not change what it leaves behind: an account with
+      // an apple_id and nothing to revoke with. Guarding this on the config
+      // being present meant a deployment that had lost its Apple keys quietly
+      // went on creating exactly the accounts this check exists to prevent.
+      const existing = await pool.query("SELECT id FROM users WHERE apple_id = $1", [payload.providerId]);
+
+      if (!existing.rows[0]) {
+        // A brand new account is the one case worth refusing, because that is
+        // how the no-token population grows. Better a clear failure now than a
+        // deletion we cannot carry out properly later.
+        if (!isAppleRevocationConfigured()) {
+          console.error("Refusing a new Apple sign-up: Apple revocation is not configured on this deployment.");
+          return res.status(503).json({
+            error: "We can't set up Sign in with Apple right now. Please try again shortly, or sign up with your email.",
+            reason: "apple_revocation_unconfigured",
+          });
+        }
+        return res.status(502).json({
+          error: "We couldn't finish setting up Sign in with Apple. Please make sure the app is up to date and try again.",
+          reason: "apple_authorization_incomplete",
+        });
+      }
+
+      // Somebody who already has an account keeps signing in. Locking them out
+      // would be worse than the manual revocation fallback deletion now has,
+      // and they may simply be on an older build that sends no code at all.
+    }
+
     const { user, isNewAccount } = await findOrCreateOAuthProfile({
       providerColumn: "apple_id",
       providerId: payload.providerId,
@@ -304,6 +405,13 @@ router.post("/apple", async (req, res) => {
     if (user.role !== role) {
       return res.status(403).json({ error: `This account is registered as a ${user.role}, not a ${role}.` });
     }
+    if (appleRefreshToken) {
+      await pool.query(
+        "UPDATE users SET apple_refresh_token = $1, apple_client_id = $2 WHERE id = $3",
+        [appleRefreshToken, payload.audience, user.id]
+      );
+    }
+
     const token = signToken(user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
@@ -538,6 +646,112 @@ router.post("/reset-password", async (req, res) => {
   );
 
   res.json({ message: "Password updated. You can now log in with your new password." });
+});
+
+// DELETE /api/auth/me   body: { confirmEmail }
+//
+// Three phases, because an Apple HTTP call and a Postgres transaction cannot
+// be atomic with each other:
+//
+//   1. mark the account as deleting, under the guards and the row lock. From
+//      here requireAuth refuses everything except another deletion attempt.
+//   2. revoke the Apple authorization. If this fails we clear the mark and
+//      stop, having changed nothing.
+//   3. scrub. If this fails the mark stays and a retry finishes the job,
+//      rather than leaving a live account with a revoked Apple sign-in.
+router.delete("/me", requireAuth, async (req, res) => {
+  const confirmEmail = String(req.body?.confirmEmail || "").trim().toLowerCase();
+
+  const current = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
+  if (!current.rows[0]) return res.status(404).json({ error: "No account found." });
+
+  if (!confirmEmail || confirmEmail !== String(current.rows[0].email).toLowerCase()) {
+    return res.status(400).json({ error: "Type the email address on your account to confirm." });
+  }
+
+  let pending;
+  try {
+    pending = await beginDeletion(pool, req.user.id);
+  } catch (error) {
+    if (error instanceof DeletionBlocked) {
+      return res.status(409).json({ error: error.message, reason: error.reason });
+    }
+    if (error?.code === SERIALIZATION_FAILURE) {
+      return res.status(409).json({
+        error: "Something else was updating your account just then. Please try again.",
+        reason: "concurrent_update",
+      });
+    }
+    throw error;
+  }
+  if (!pending) return res.status(404).json({ error: "No account found." });
+
+  // Apple has to be told before anything is scrubbed, because the refresh
+  // token needed to tell it is one of the things that gets scrubbed.
+  let appleManualRevocationRequired = false;
+
+  if (pending.appleId && pending.appleRevokedAt) {
+    // A previous attempt already revoked, and then something further down
+    // failed. Asking Apple again would be answered with invalid_grant for a
+    // token that is already dead, we would read that as a hard failure, and
+    // this account could never finish deleting.
+    console.log("Apple was already revoked for user %s on a previous attempt, carrying on.", req.user.id);
+  } else if (pending.appleId) {
+    const revocation = isAppleRevocationConfigured()
+      ? await revokeAppleAuthorization(pending.appleRefreshToken, pending.appleClientId)
+      : { revoked: false, reason: "not_configured" };
+
+    if (revocation.revoked) {
+      // Written down before the scrub, so a retry after a failure further down
+      // knows not to ask Apple twice.
+      await pool.query("UPDATE users SET apple_revoked_at = now() WHERE id = $1", [req.user.id]);
+    }
+
+    if (!revocation.revoked) {
+      if (UNREVOCABLE_REASONS.has(revocation.reason)) {
+        // Nothing to revoke with: signed in before we started keeping refresh
+        // tokens, or our own Apple config is missing. Apple's guidance is that
+        // the deletion still goes ahead and the person is told to remove us
+        // from Sign in with Apple themselves, which is what the flag is for.
+        // Logged as an error because not_configured is our bug, not theirs.
+        appleManualRevocationRequired = true;
+        console.error(
+          "Deleting user %s without revoking Apple (%s). They will be asked to remove RideArrivo from Sign in with Apple themselves.",
+          req.user.id,
+          revocation.reason
+        );
+      } else {
+        // We had a token and Apple refused, or the network did. That can come
+        // good on a retry, so stop rather than half delete.
+        await abortDeletion(pool, req.user.id);
+        console.error("Apple revocation failed for user %s: %s %s", req.user.id, revocation.reason, revocation.detail || "");
+        return res.status(502).json({
+          error:
+            "We couldn't revoke your Apple sign-in, so we've stopped rather than half-delete your account. Please try again, or contact support.",
+          reason: `apple_revocation_${revocation.reason}`,
+        });
+      }
+    }
+  }
+
+  try {
+    const deleted = await anonymiseAccount(pool, req.user.id);
+    if (!deleted) return res.status(404).json({ error: "No account found." });
+    return res.json({ deleted: true, deletedAt: deleted.deleted_at, appleManualRevocationRequired });
+  } catch (error) {
+    // The mark is deliberately left in place. Apple is already revoked, so the
+    // account must not go back to normal: a retry picks up and finishes.
+    if (error instanceof DeletionBlocked) {
+      return res.status(409).json({ error: error.message, reason: error.reason });
+    }
+    if (error?.code === SERIALIZATION_FAILURE) {
+      return res.status(409).json({
+        error: "Something else was updating your account just then. Please try again.",
+        reason: "concurrent_update",
+      });
+    }
+    throw error;
+  }
 });
 
 module.exports = router;

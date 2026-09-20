@@ -96,10 +96,10 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const loginWithApple = async ({ identityToken, fullName, agreedToTerms }) => {
+  const loginWithApple = async ({ identityToken, fullName, agreedToTerms, authorizationCode }) => {
     const data = await request("/api/auth/apple", {
       method: "POST",
-      body: JSON.stringify({ identityToken, fullName, role: "rider", agreedToTerms }),
+      body: JSON.stringify({ identityToken, fullName, role: "rider", agreedToTerms, authorizationCode }),
     });
     await SecureStore.setItemAsync(TOKEN_KEY, data.token);
     setToken(data.token);

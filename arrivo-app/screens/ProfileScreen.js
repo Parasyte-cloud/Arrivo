@@ -8,6 +8,7 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone } from "../utils/phoneValidation";
 import { supportedLanguages } from "../i18n";
@@ -346,6 +347,8 @@ export default function ProfileScreen({ navigation }) {
         </Card>
 
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
+
+        <DeleteAccountSection />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

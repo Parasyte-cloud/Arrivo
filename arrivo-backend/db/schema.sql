@@ -497,6 +497,35 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_preference TEXT; -- 'cool
 ALTER TABLE users ADD COLUMN IF NOT EXISTS child_seat_required BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS traveling_with_pet BOOLEAN NOT NULL DEFAULT false;
 
+-- Set when someone deletes their account. The row stays because nine tables
+-- reference users(id) and the retention policy keeps transactional records
+-- for seven years, so the person is stripped out instead of the row going.
+-- Anything reading users for a live person has to exclude these.
+-- Handed back by Apple when we exchange the authorization code at sign-in.
+-- Deleting an account has to revoke the Apple authorization, and this is the
+-- only thing that can be revoked with. Null for anyone who signed in with
+-- Apple before we started collecting it, and for everybody else.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_refresh_token TEXT;
+-- Which Apple client the refresh token above was issued to. Rider and driver
+-- are separate clients, and Apple requires revocation to use the same client
+-- id as the original authorization, so one global setting cannot serve both.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_client_id TEXT;
+-- Set while a deletion is running and cleared if it is abandoned. Deleting
+-- spans an external call to Apple and a database transaction, which cannot be
+-- atomic together, so this marks the account as in progress: mutations are
+-- refused meanwhile and an interrupted deletion can be retried rather than
+-- leaving a live account whose Apple authorization is already revoked.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_started_at TIMESTAMPTZ;
+-- Set the moment Apple confirms the authorization is revoked, which happens
+-- before the scrub. If the scrub then fails and the person tries again, this
+-- is what stops us revoking a second time: Apple rejects an already revoked
+-- token, we would read that as a hard failure, and they could never finish
+-- deleting.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_revoked_at TIMESTAMPTZ;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
+
 -- ── Support tickets ──
 -- Support used to be an email link and a list of FAQs, so a rider had no way
 -- to tell us what was actually wrong and we had nothing on file. This is what

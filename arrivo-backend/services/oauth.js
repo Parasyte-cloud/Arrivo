@@ -94,6 +94,11 @@ function verifyAppleIdentityToken(identityToken) {
           providerId: payload.sub,
           email: payload.email || null,
           emailVerified: payload.email_verified === true || payload.email_verified === "true",
+          // Which app this token was issued to, straight from the verified
+          // payload. Token operations against Apple have to reuse the same
+          // client id, and rider and driver are different clients, so the
+          // caller needs to know which. Never take this from the request body.
+          audience: Array.isArray(payload.aud) ? payload.aud[0] : payload.aud,
         });
       }
     );
