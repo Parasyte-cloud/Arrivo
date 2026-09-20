@@ -362,21 +362,34 @@ router.post("/apple", async (req, res) => {
   }
 
   try {
-    if (!appleRefreshToken && isAppleRevocationConfigured()) {
-      // Somebody who already has an account keeps signing in. Locking them out
-      // over this would be worse than the fallback deletion already has, and
-      // they may simply be on an older build that sends no code.
-      //
-      // A brand new account is the case worth refusing, because that is how
-      // the no-token population grows. Better a clear "try again" now than a
-      // deletion we cannot complete properly later.
+    if (!appleRefreshToken) {
+      // Deliberately not conditional on isAppleRevocationConfigured(). Why the
+      // token is missing does not change what it leaves behind: an account with
+      // an apple_id and nothing to revoke with. Guarding this on the config
+      // being present meant a deployment that had lost its Apple keys quietly
+      // went on creating exactly the accounts this check exists to prevent.
       const existing = await pool.query("SELECT id FROM users WHERE apple_id = $1", [payload.providerId]);
+
       if (!existing.rows[0]) {
+        // A brand new account is the one case worth refusing, because that is
+        // how the no-token population grows. Better a clear failure now than a
+        // deletion we cannot carry out properly later.
+        if (!isAppleRevocationConfigured()) {
+          console.error("Refusing a new Apple sign-up: Apple revocation is not configured on this deployment.");
+          return res.status(503).json({
+            error: "We can't set up Sign in with Apple right now. Please try again shortly, or sign up with your email.",
+            reason: "apple_revocation_unconfigured",
+          });
+        }
         return res.status(502).json({
           error: "We couldn't finish setting up Sign in with Apple. Please make sure the app is up to date and try again.",
           reason: "apple_authorization_incomplete",
         });
       }
+
+      // Somebody who already has an account keeps signing in. Locking them out
+      // would be worse than the manual revocation fallback deletion now has,
+      // and they may simply be on an older build that sends no code at all.
     }
 
     const { user, isNewAccount } = await findOrCreateOAuthProfile({

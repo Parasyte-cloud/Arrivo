@@ -296,6 +296,49 @@ await test("a new Apple account is refused if the exchange gives us nothing", as
   appleHandler = null;
 });
 
+// Losing the Apple keys is our problem, not a reason to start minting
+// accounts we will not be able to revoke. The rule is about the missing token,
+// not about why it is missing, so it has to hold when the config is gone too.
+async function withoutAppleConfig(run) {
+  const keptKey = process.env.APPLE_PRIVATE_KEY;
+  process.env.APPLE_PRIVATE_KEY = "";
+  try {
+    return await run();
+  } finally {
+    process.env.APPLE_PRIVATE_KEY = keptKey;
+  }
+}
+
+await test("a new Apple account is refused when our Apple config is missing", async () => {
+  const providerId = `apple-noconfig-${stamp}`;
+  appleIdentity = { providerId, email: `apple-noconfig-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  let appleCalled = false;
+  appleHandler = async () => { appleCalled = true; return { ok: true, json: async () => ({ refresh_token: "never-asked-for" }) }; };
+
+  const r = await withoutAppleConfig(() =>
+    call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "code-abc", agreedToTerms: true } })
+  );
+
+  assert.strictEqual(r.status, 503, `expected a service configuration refusal, got ${r.status}: ${JSON.stringify(r.body)}`);
+  assert.strictEqual(r.body.reason, "apple_revocation_unconfigured");
+  assert.strictEqual(appleCalled, false, "there are no keys to exchange with, so Apple should not have been called");
+
+  const row = await pool.query("SELECT id FROM users WHERE apple_id = $1", [providerId]);
+  assert.strictEqual(row.rows.length, 0, "no account may be created while we cannot capture a revocation token");
+  appleHandler = null;
+});
+
+await test("an existing Apple account still signs in when our Apple config is missing", async () => {
+  const account = await legacyAppleAccount("noconfig-existing");
+
+  const again = await withoutAppleConfig(() =>
+    call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "code-abc", agreedToTerms: true } })
+  );
+
+  assert.strictEqual(again.status, 200, `an existing account must still sign in, got ${again.status}: ${JSON.stringify(again.body)}`);
+  assert.strictEqual(again.body.user.id, account.user.id);
+});
+
 await test("an existing Apple account still signs in when the exchange fails", async () => {
   const account = await legacyAppleAccount("existing");
   appleHandler = async () => ({ ok: false, status: 400, text: async () => "invalid_grant" });
@@ -306,6 +349,131 @@ await test("an existing Apple account still signs in when the exchange fails", a
   assert.strictEqual(again.status, 200, `an existing account must still sign in, got ${again.status}: ${JSON.stringify(again.body)}`);
   assert.strictEqual(again.body.user.id, account.user.id);
   appleHandler = null;
+});
+
+console.log("");
+console.log("An old build that sends no authorization code at all:");
+
+// The likeliest way this happens in the wild. The refusal has to key off not
+// having a token, not off the exchange having been tried and failed.
+await test("a new Apple account is refused when no authorization code is sent", async () => {
+  const providerId = `apple-nocode-${stamp}`;
+  appleIdentity = { providerId, email: `apple-nocode-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  let appleCalled = false;
+  appleHandler = async () => { appleCalled = true; return { ok: true, json: async () => ({ refresh_token: "never" }) }; };
+
+  const r = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", agreedToTerms: true } });
+  assert.strictEqual(r.status, 502, `expected a refusal, got ${r.status}: ${JSON.stringify(r.body)}`);
+  assert.strictEqual(r.body.reason, "apple_authorization_incomplete");
+  assert.strictEqual(appleCalled, false, "no code means nothing to exchange");
+
+  const row = await pool.query("SELECT id FROM users WHERE apple_id = $1", [providerId]);
+  assert.strictEqual(row.rows.length, 0, "no account may be left behind");
+  appleHandler = null;
+});
+
+await test("an existing Apple account still signs in with no authorization code", async () => {
+  const account = await legacyAppleAccount("nocode-existing");
+  const again = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", agreedToTerms: true } });
+  assert.strictEqual(again.status, 200, `got ${again.status}: ${JSON.stringify(again.body)}`);
+  assert.strictEqual(again.body.user.id, account.user.id);
+});
+
+await test("a legacy account picks up a token the next time it signs in", async () => {
+  // How the no-token population actually drains: they open a current build,
+  // sign in, and the exchange finally works. Worth proving, because without it
+  // every legacy account stays legacy forever.
+  const account = await legacyAppleAccount("selfheal");
+  const before = await pool.query("SELECT apple_refresh_token FROM users WHERE id = $1", [account.user.id]);
+  assert.strictEqual(before.rows[0].apple_refresh_token, null, "should start with nothing stored");
+
+  appleHandler = async () => ({ ok: true, json: async () => ({ refresh_token: "recovered-token" }) });
+  const again = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "good-code", agreedToTerms: true } });
+  assert.strictEqual(again.status, 200, JSON.stringify(again.body));
+
+  const after = await pool.query("SELECT apple_refresh_token, apple_client_id FROM users WHERE id = $1", [account.user.id]);
+  assert.strictEqual(after.rows[0].apple_refresh_token, "recovered-token", "the token should now be stored");
+  assert.strictEqual(after.rows[0].apple_client_id, RIDER_AUD);
+  appleHandler = null;
+});
+
+console.log("");
+console.log("The ordinary Apple deletion, the one that should just work:");
+
+await test("a revocable Apple account is revoked and deleted, with nothing for the rider to do", async () => {
+  appleIdentity = { providerId: `apple-happy-${stamp}`, email: `apple-happy-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  appleHandler = async () => ({ ok: true, json: async () => ({ refresh_token: "revoke-me" }) });
+  const signIn = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "c", agreedToTerms: true } });
+  made.push(signIn.body.user.id);
+
+  let revokeBody = null;
+  appleHandler = async (url, options) => {
+    if (url.includes("revoke")) { revokeBody = new URLSearchParams(options.body.toString()); return { ok: true, status: 200 }; }
+    return { ok: true, json: async () => ({}) };
+  };
+
+  const del = await call("/api/auth/me", { method: "DELETE", token: signIn.body.token, body: { confirmEmail: signIn.body.user.email } });
+  assert.strictEqual(del.status, 200, JSON.stringify(del.body));
+  assert.strictEqual(del.body.appleManualRevocationRequired, false, "we revoked it, so do not send them to Settings");
+
+  assert.ok(revokeBody, "Apple should have been asked to revoke");
+  assert.strictEqual(revokeBody.get("token"), "revoke-me", "must revoke the token we stored");
+  assert.strictEqual(revokeBody.get("client_id"), RIDER_AUD, "must revoke against the client it was issued to");
+
+  const row = await pool.query("SELECT deleted_at, apple_refresh_token FROM users WHERE id = $1", [signIn.body.user.id]);
+  assert.ok(row.rows[0].deleted_at, "should be deleted");
+  assert.strictEqual(row.rows[0].apple_refresh_token, null, "the token should be scrubbed too");
+  appleHandler = null;
+});
+
+await test("a token with no client id beside it falls back rather than blocking", async () => {
+  const account = await legacyAppleAccount("noclient");
+  await pool.query("UPDATE users SET apple_refresh_token = 'orphan-token', apple_client_id = NULL WHERE id = $1", [account.user.id]);
+
+  let appleCalled = false;
+  appleHandler = async () => { appleCalled = true; return { ok: true, status: 200 }; };
+  const del = await call("/api/auth/me", { method: "DELETE", token: account.token, body: { confirmEmail: account.user.email } });
+
+  assert.strictEqual(del.status, 200, `a missing client id must not block deletion, got ${del.status}: ${JSON.stringify(del.body)}`);
+  assert.strictEqual(del.body.appleManualRevocationRequired, true);
+  assert.strictEqual(appleCalled, false, "we cannot revoke without knowing which client, so do not try");
+  appleHandler = null;
+});
+
+await test("a network failure talking to Apple still blocks the deletion", async () => {
+  appleIdentity = { providerId: `apple-net-${stamp}`, email: `apple-net-${stamp}@example.com`, emailVerified: true, audience: RIDER_AUD };
+  appleHandler = async () => ({ ok: true, json: async () => ({ refresh_token: "will-timeout" }) });
+  const signIn = await call("/api/auth/apple", { method: "POST", body: { identityToken: "stub", authorizationCode: "c", agreedToTerms: true } });
+  made.push(signIn.body.user.id);
+
+  appleHandler = async (url) => { if (url.includes("revoke")) throw new Error("socket hang up"); return { ok: true, json: async () => ({}) }; };
+  const del = await call("/api/auth/me", { method: "DELETE", token: signIn.body.token, body: { confirmEmail: signIn.body.user.email } });
+
+  assert.strictEqual(del.status, 502, `a reachable-later failure must not delete, got ${del.status}: ${JSON.stringify(del.body)}`);
+  assert.strictEqual(del.body.reason, "apple_revocation_network");
+
+  const row = await pool.query("SELECT deleted_at, deletion_started_at FROM users WHERE id = $1", [signIn.body.user.id]);
+  assert.strictEqual(row.rows[0].deleted_at, null, "must not be deleted");
+  assert.strictEqual(row.rows[0].deletion_started_at, null, "the in progress mark must be cleared");
+  appleHandler = null;
+});
+
+console.log("");
+console.log("The router itself:");
+
+await test("no path is registered twice", async () => {
+  // Earned this one. A bad edit left two POST /apple handlers in the file and
+  // the second never ran, which is invisible until behaviour quietly reverts.
+  const seen = new Map();
+  for (const layer of authRouter.stack) {
+    if (!layer.route) continue;
+    for (const method of Object.keys(layer.route.methods)) {
+      const key = `${method.toUpperCase()} ${layer.route.path}`;
+      seen.set(key, (seen.get(key) || 0) + 1);
+    }
+  }
+  const dupes = [...seen.entries()].filter(([, n]) => n > 1).map(([k, n]) => `${k} x${n}`);
+  assert.strictEqual(dupes.length, 0, `duplicate handlers: ${dupes.join(", ")}`);
 });
 
 console.log("");
