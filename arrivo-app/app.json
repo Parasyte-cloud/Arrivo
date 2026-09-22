@@ -20,9 +20,13 @@
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["com.googleusercontent.apps.425853448895-o8burrutrcvobsra6k5mrc2iopqioome"]
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.425853448895-o8burrutrcvobsra6k5mrc2iopqioome"
+            ]
           }
-        ]
+        ],
+        "NSCameraUsageDescription": "RideArrivo uses your camera to verify your identity and let you take photos for support requests.",
+        "NSMicrophoneUsageDescription": "RideArrivo uses your microphone for in-app voice and video calls with your driver or support."
       },
       "entitlements": {
         "aps-environment": "production"
@@ -128,7 +132,11 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "forceStaticLinking": ["RNFBApp", "RNFBMessaging", "stream-react-native-webrtc"]
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBMessaging",
+              "stream-react-native-webrtc"
+            ]
           }
         }
       ]
