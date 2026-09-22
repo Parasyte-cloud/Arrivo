@@ -122,7 +122,7 @@ async function refundRequestWithinTransaction(
       request.rider_id,
       fareNaira,
       newBalance,
-      `ArrivoExpress refund — request #${request.id}: ${reason}`,
+      `ArrivoExpress refund, request #${request.id}: ${reason}`,
     ]
   );
 

@@ -139,7 +139,7 @@ export default function ScanScreen({ navigation }) {
       <View style={[styles.screen, { padding: spacing.lg }]}>
         <Text style={styles.permissionText}>
           RideArrivo needs camera access to scan your driver's QR code and start live tracking.
-          {canRetryInApp ? "" : " Camera access was denied — enable it in Settings to continue."}
+          {canRetryInApp ? "" : " Camera access was denied. Enable it in Settings to continue."}
         </Text>
         <View style={{ height: spacing.md }} />
         <Button
@@ -189,7 +189,7 @@ export default function ScanScreen({ navigation }) {
               </Text>
             ) : null}
             <Text style={styles.statusText}>
-              Connect to WiFi (airport WiFi works fine — no SIM data needed) and tap Retry to confirm your ride and
+              Connect to WiFi (airport WiFi works fine, no SIM data needed) and tap Retry to confirm your ride and
               start live tracking.
             </Text>
             <Pressable onPress={retryOffline} style={[styles.retryBtn, { marginTop: 10 }]}>

@@ -204,6 +204,18 @@ function computeVehicleCount(passengerCount, vehicleType) {
   return count;
 }
 
+// Arrivo Express Phase 3 -- Arrivo Share. True if there's room for one
+// more named co-rider in this vehicle, beyond the organizer's own seat --
+// reuses the exact same MAX_PASSENGERS cap as every other passenger-count
+// check in this file (computeVehicleCount above, the booking form's own
+// group-size limit), so "ride together in ONE vehicle" always means that
+// vehicle's real capacity, never a separate or looser number invented just
+// for this feature.
+function hasRoomForAnotherShareParticipant(vehicleType, currentParticipantCount) {
+  const capacity = MAX_PASSENGERS[vehicleType] || 1;
+  return currentParticipantCount + 1 < capacity; // +1 reserves the organizer's own seat
+}
+
 // "Luxury" toggle — a flat surcharge on top of the normal per-location
 // (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
 // Sedan/SUV without switching to the Executive tier. Priced in USD per the
@@ -337,12 +349,104 @@ function computeOverageNaira({ vehicleType, includedHoursPerDay, elapsedHours, f
   return cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
 }
 
+
+// ── Fair Fare (traffic-delay overage) ──
+// "Traffic shouldn't punish you twice." Scoped to one-way, distance-quoted
+// bookings only (booking_type = 'one_way' with a real duration_min quote --
+// see the schema.sql comment on rides.duration_min). A delay up to the
+// configured free allowance costs the rider nothing extra; only the minutes
+// beyond that allowance are billed, at the configured per-minute rate. Both
+// numbers are remotely configurable (services/systemConfig.js) rather than
+// hard-coded here, per the engineering brief's explicit "Config vs.
+// hard-code" requirement -- Finance/Ops haven't picked a final allowance
+// value yet (candidates: 10/15/20/25 min), so this reads whatever is
+// currently configured, defaulting to the brief's own worked example (20
+// min) if nothing has been set.
+const MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE = 2; // same sanity cap reasoning as the chauffeur overage above
+
+function computeFairFareOverageNaira({ quotedDurationMin, elapsedMinutes, freeAllowanceMinutes, perMinuteNaira, fareNaira }) {
+  if (!quotedDurationMin || quotedDurationMin <= 0) return { overageNaira: 0, delayMinutes: 0, billableMinutes: 0 };
+
+  const delayMinutes = Math.max(0, elapsedMinutes - quotedDurationMin);
+  const billableMinutes = Math.max(0, delayMinutes - (freeAllowanceMinutes || 0));
+  if (billableMinutes <= 0) return { overageNaira: 0, delayMinutes, billableMinutes: 0 };
+
+  const rawOverage = Math.round(billableMinutes * (perMinuteNaira || 0));
+  const cap = Math.round((fareNaira || 0) * MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE);
+  const overageNaira = cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
+  return { overageNaira, delayMinutes, billableMinutes };
+}
+
+// ── Arrivo Express Phase 2 (30-day launch test, 2026-09-17 brief) ──
+// Early Bird (4:30am-7:00am, up to 50% off) and Morning Commuter
+// (7:00am-9:00am, 20% off) are automatic percentage discounts based on
+// Lagos-local time -- no entry, no raffle, every qualifying one-way ride
+// gets it. Midday Lucky Ride (12:00pm-1:00pm) is NOT a discount computed
+// here: only one rider wins per day, which isn't knowable at booking time
+// -- see isLuckyRideWindow below and services/scheduler.js's
+// sweepLuckyRideDraw for how that's actually resolved. All three windows
+// reuse isLagosNightTime's technique (fixed UTC+1 offset, no DST, no
+// timezone library needed).
+const EARLY_BIRD_START_MIN = 4 * 60 + 30; // 4:30am
+const EARLY_BIRD_END_MIN = 7 * 60; // 7:00am (exclusive -- Morning Commuter starts here)
+const MORNING_COMMUTER_START_MIN = 7 * 60; // 7:00am
+const MORNING_COMMUTER_END_MIN = 9 * 60; // 9:00am
+const LUCKY_RIDE_START_MIN = 12 * 60; // 12:00pm
+const LUCKY_RIDE_END_MIN = 13 * 60; // 1:00pm
+
+function lagosMinutesOfDay(date = new Date()) {
+  const lagosHour = (date.getUTCHours() + 1) % 24;
+  return lagosHour * 60 + date.getUTCMinutes();
+}
+
+// Calendar date (Africa/Lagos) as "YYYY-MM-DD" -- what "one entry per
+// customer per day" and "one winner per day" both key off.
+function lagosDateString(date = new Date()) {
+  return new Date(date.getTime() + 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function activeLaunchPromo(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  if (minutes >= EARLY_BIRD_START_MIN && minutes < EARLY_BIRD_END_MIN) return "early_bird";
+  if (minutes >= MORNING_COMMUTER_START_MIN && minutes < MORNING_COMMUTER_END_MIN) return "morning_commuter";
+  return null;
+}
+
+function isLuckyRideWindow(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  return minutes >= LUCKY_RIDE_START_MIN && minutes < LUCKY_RIDE_END_MIN;
+}
+
+// Pure function, same shape as computeFairFareOverageNaira above --
+// returns enough detail (originalFareNaira alongside the discounted
+// fareNaira) that the caller can persist promo_discount_naira without
+// recomputing anything.
+function applyLaunchPromoDiscount({ fareNaira, date = new Date(), earlyBirdPercent, morningCommuterPercent }) {
+  const promo = activeLaunchPromo(date);
+  const percent = promo === "early_bird" ? earlyBirdPercent : promo === "morning_commuter" ? morningCommuterPercent : 0;
+  if (!promo || !percent || percent <= 0) {
+    return { fareNaira, promo: null, discountPercent: 0, originalFareNaira: fareNaira };
+  }
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+  const discountedFareNaira = Math.round(fareNaira * (1 - clampedPercent / 100));
+  return { fareNaira: discountedFareNaira, promo, discountPercent: clampedPercent, originalFareNaira: fareNaira };
+}
+
 module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
   computeVehicleCount,
+  MAX_PASSENGERS,
+  hasRoomForAnotherShareParticipant,
   computeOverageNaira,
+  computeFairFareOverageNaira,
+  lagosMinutesOfDay,
+  lagosDateString,
+  activeLaunchPromo,
+  isLuckyRideWindow,
+  applyLaunchPromoDiscount,
+  LUCKY_RIDE_END_MIN,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,

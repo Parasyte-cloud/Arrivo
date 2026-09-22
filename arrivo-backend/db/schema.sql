@@ -875,13 +875,213 @@ ALTER TABLE instant_ride_requests
 -- ============================================================
 
 -- ============================================================
--- Partner Venues program (standalone cherry-pick, 2026-09-18)
--- Isolated from the unmerged feat/arrivo-express-phase1 branch: only the
--- table + admin CRUD routes RA-Workspace's "Publish to RideArrivo"
--- integration needs. Deliberately excludes that branch's reserved-pickup
--- booking flow (rides.partner_venue_id, area-lock dispatch radius) --
--- this table exists purely so a venue record can be created/edited.
+-- ARRIVO EXPRESS PHASE 1 (2026-09-17 engineering brief)
+-- Ride Guarantee, Fair Fare, Family Plan
 -- ============================================================
+
+-- ── Remotely-configurable parameters ──
+-- See services/systemConfig.js for the known keys, their shipped
+-- defaults, and why this is a plain key/value table rather than bespoke
+-- columns: several of these numbers (Fair Fare's threshold and rate,
+-- Family Plan pricing) are explicitly "not yet finalised" per the brief,
+-- and need to be editable from the admin dashboard without a deploy.
+CREATE TABLE IF NOT EXISTS system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by INTEGER REFERENCES users(id)
+);
+
+-- ── Arrivo Ride Guarantee ──
+-- "Only company support staff may cancel an accepted trip -- not the
+-- driver app directly." A driver can no longer free-cancel an accepted
+-- ride from PATCH /:id/status (see routes/rides.js); instead POST
+-- /:id/cancel-request requires one of a fixed set of valid reasons, and
+-- every attempt -- accepted or rejected -- is logged here for support
+-- visibility. A valid cancellation resets the ride to 'requested' with
+-- driver_id cleared (see rides.reassignment_priority below) rather than a
+-- terminal 'cancelled', so the rider is never left needing to re-search.
+CREATE TABLE IF NOT EXISTS ride_cancellations (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  driver_id INTEGER REFERENCES drivers(id),
+  reason TEXT NOT NULL, -- 'vehicle_breakdown' | 'safety_concern' | 'emergency' | 'incorrect_pickup_info'
+  reassigned BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_cancellations_ride ON ride_cancellations(ride_id);
+
+-- Bumped every time a ride is reset for reassignment after a valid driver
+-- cancellation, so GET /api/rides/available can surface a previously-
+-- cancelled ride ahead of brand-new requests -- it's already waited once.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS reassignment_priority INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS previously_cancelled_at TIMESTAMPTZ;
+
+-- ── Arrivo Fair Fare ──
+-- overage_naira/overage_payment_method/overage_payment_reference already
+-- exist (chauffeur time-overage, see the ALTER above them). overage_reason
+-- distinguishes which feature produced the charge so the rider-facing
+-- copy and receipt can be accurate; overage_breakdown is the itemised
+-- numbers behind it (mirrors instant_ride_requests.fare_breakdown), so
+-- "why was I charged extra" always has a real, inspectable answer instead
+-- of a bare total.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_reason TEXT; -- 'chauffeur_hours' | 'traffic_delay'
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS overage_breakdown JSONB;
+
+-- ── Arrivo Family Plan ──
+-- "One account. Your whole family." plan_type gates max_members (lite=2,
+-- plus=3, max=5 -- see routes/family.js PLAN_LIMITS). price_naira is
+-- captured at creation time (not re-read live from system_config every
+-- month) so a later price change doesn't retroactively alter what an
+-- existing family agreed to pay -- same reasoning as memberships.price_naira.
+CREATE TABLE IF NOT EXISTS family_plans (
+  id SERIAL PRIMARY KEY,
+  admin_user_id INTEGER NOT NULL REFERENCES users(id),
+  plan_type TEXT NOT NULL, -- 'lite' | 'plus' | 'max'
+  max_members INTEGER NOT NULL,
+  price_naira NUMERIC NOT NULL,
+  wallet_balance_naira NUMERIC NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'cancelled'
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  renews_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_family_plans_admin ON family_plans(admin_user_id);
+
+-- A user can belong to at most one active family plan (as admin or
+-- member) -- enforced in routes/family.js at write time; the partial
+-- unique index below is the real backstop against a race creating two.
+CREATE TABLE IF NOT EXISTS family_members (
+  id SERIAL PRIMARY KEY,
+  family_plan_id INTEGER NOT NULL REFERENCES family_plans(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  member_role TEXT NOT NULL DEFAULT 'member', -- 'admin' | 'member'
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'removed'
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  removed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_family_members_plan ON family_members(family_plan_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_family_members_one_active_plan
+  ON family_members(user_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS family_wallet_transactions (
+  id SERIAL PRIMARY KEY,
+  family_plan_id INTEGER NOT NULL REFERENCES family_plans(id),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id), -- who triggered it (admin funding, or a member spending on a ride)
+  type TEXT NOT NULL, -- 'topup' | 'ride_charge'
+  status TEXT NOT NULL DEFAULT 'completed',
+  amount_naira NUMERIC NOT NULL, -- positive for topup, negative for a ride charge
+  balance_after_naira NUMERIC,
+  paystack_reference TEXT UNIQUE,
+  ride_id INTEGER REFERENCES rides(id),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_family_wallet_tx_plan ON family_wallet_transactions(family_plan_id, created_at DESC);
+
+-- A family-wallet-paid ride tracks which plan paid for it and, when the
+-- admin booked on a member's behalf rather than the member booking for
+-- themselves, who actually placed the order -- both purely informational
+-- (admin visibility, notifications), never used for authorization after
+-- the fact.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS booked_via_family_plan_id INTEGER REFERENCES family_plans(id);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS booked_by_user_id INTEGER REFERENCES users(id);
+
+-- ============================================================
+-- END ARRIVO EXPRESS PHASE 1
+-- ============================================================
+
+-- ============================================================
+-- ARRIVO EXPRESS PHASE 2 (2026-09-17 engineering brief)
+-- 30-day launch test: Early Bird, Morning Commuter, Midday Lucky Ride
+-- ============================================================
+
+-- promo_code identifies which (if any) launch promo a ride booked under:
+-- 'early_bird' | 'morning_commuter' | 'lucky_ride_entry' | 'lucky_ride_winner'.
+-- promo_discount_naira is ONLY ever nonzero for early_bird/morning_commuter
+-- -- the naira amount fare_naira was reduced by at booking. Lucky Ride
+-- never touches fare_naira (a winner is refunded via a wallet_transactions
+-- credit instead, see services/scheduler.js), so it's always 0 for those
+-- rides. This split matters for routes/drivers.js GET /earnings, which
+-- sums fare_naira + promo_discount_naira so a driver's payout reconstructs
+-- what the trip would have earned without the promo -- Arrivo absorbs
+-- these discounts, not the driver (the brief's own "model economics
+-- carefully" caution for Morning Commuter, the heaviest-demand window).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS promo_discount_naira NUMERIC NOT NULL DEFAULT 0;
+
+-- One row per rider per calendar day (Africa/Lagos) who booked a
+-- qualifying one-way ride inside the 12:00-1:00pm window under the
+-- configured distance cap -- "one entry per customer," enforced by the
+-- unique index below rather than in application code, so it holds even
+-- under concurrent requests.
+CREATE TABLE IF NOT EXISTS lucky_ride_entries (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  rider_id INTEGER NOT NULL REFERENCES users(id),
+  entry_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lucky_ride_one_entry_per_rider_per_day ON lucky_ride_entries(rider_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_lucky_ride_entries_date ON lucky_ride_entries(entry_date);
+
+-- One row per calendar day once services/scheduler.js's Lucky Ride draw
+-- has run for that day -- winning_ride_id is NULL when the window closed
+-- with zero entries. draw_date as the primary key is what makes the draw
+-- idempotent: the sweep re-checks every 5 minutes but only ever draws once.
+CREATE TABLE IF NOT EXISTS lucky_ride_draws (
+  draw_date DATE PRIMARY KEY,
+  winning_ride_id INTEGER REFERENCES rides(id),
+  entries_count INTEGER NOT NULL DEFAULT 0,
+  drawn_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- END ARRIVO EXPRESS PHASE 2
+-- ============================================================
+
+-- ============================================================
+-- ARRIVO EXPRESS PHASE 3 (2026-09-17 engineering brief)
+-- Arrivo Share (ride with people you know, one fare, one payer) and the
+-- the Partner Venues program (reserved pickups from
+-- partnered clubs/restaurants).
+-- ============================================================
+
+-- ── Arrivo Share ──
+-- "People working together in areas not far from each other, who know
+-- each other and don't mind sharing a ride" -- NOT anonymous stranger
+-- pooling. The organizer books and pays for the ride exactly as before
+-- (adults/vehicle_type/fare are all unchanged -- see services/fare.js's
+-- existing MAX_PASSENGERS/computeVehicleCount, which already caps a
+-- single vehicle at 3-5 people depending on type, exactly matching the
+-- brief's "maximum of 5 depending on the vehicle type"). This table only
+-- adds real identities to seats the organizer already paid for, so the
+-- driver knows who to expect and each co-rider can track the trip
+-- themselves. Every co-rider must already have a RideArrivo account
+-- (same constraint as Family Plan members) -- looked up by phone/email,
+-- never a free-text name, so tracking/safety/notifications all work.
+CREATE TABLE IF NOT EXISTS ride_share_participants (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  added_by_user_id INTEGER NOT NULL REFERENCES users(id), -- the organizer (rides.rider_id) at the time of adding
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_share_participant_once ON ride_share_participants(ride_id, user_id);
+
+-- Cheap flag for filtering/reporting/UI without a join -- set true the
+-- moment the first co-rider is added, and reset to false if the organizer
+-- removes everyone (routes/rides.js DELETE .../share-participants/:id) so
+-- a ride that's back to solo doesn't keep showing Share badges/UI.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS is_arrivo_share BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Partner Venues program ──
+-- Clubs/restaurants RideArrivo partners with: riders get a reserved
+-- pickup (book it now, e.g. "we close 4am, pick me up") and the venue
+-- gets guests who arrive/leave safely and reliably -- a real perk for the
+-- rider is the incentive, not a discount, so it's stored as free text
+-- shown at booking/tracking time ("skip the queue", "10% off your bill"),
+-- not wired into the fare engine.
 CREATE TABLE IF NOT EXISTS partner_venues (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -894,6 +1094,26 @@ CREATE TABLE IF NOT EXISTS partner_venues (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- A reserved ride is just an existing 'dropoff'-style scheduled booking
+-- (see scheduled_pickup_at above -- "the rider tells us directly when
+-- they need picking up", already exactly this use case) tagged with which
+-- partner venue it's picking up from. Nothing else about ride creation,
+-- pricing, or payment changes.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS partner_venue_id INTEGER REFERENCES partner_venues(id);
+
+-- ── Audit follow-up indexes (2026-09-17) ──
+-- Postgres never auto-indexes a foreign key column, and this table had no
+-- indexes on driver_id/ride_status/partner_venue_id at all before Phase 3.
+-- GET /api/rides/available's area-lock check
+-- (driver_id = $1 AND ride_status IN (...) AND partner_venue_id IS NOT NULL)
+-- is a new, frequent per-request lookup, so it needs one; the partial
+-- index below also speeds every other place that joins on
+-- rides.partner_venue_id (GET /:id, GET /mine, GET /driver/mine, the admin
+-- Arrivo Share report).
+CREATE INDEX IF NOT EXISTS idx_rides_driver_status ON rides(driver_id, ride_status);
+CREATE INDEX IF NOT EXISTS idx_rides_partner_venue ON rides(partner_venue_id) WHERE partner_venue_id IS NOT NULL;
+
 -- ============================================================
--- END Partner Venues program
+-- END ARRIVO EXPRESS PHASE 3
 -- ============================================================

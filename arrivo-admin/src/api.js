@@ -125,3 +125,24 @@ export const getWaitlist = (token) => request("/api/admin/waitlist", token);
 export const getPanics = (token) => request("/api/admin/panics", token);
 export const resolvePanic = (token, rideId, notes) =>
   request(`/api/admin/panics/${rideId}/resolve`, token, { method: "PATCH", body: JSON.stringify({ notes }) });
+
+// ── Arrivo Express Phase 1 ──────────────────────────────────────────────
+export const getSystemConfig = (token) => request("/api/admin/config", token);
+export const updateSystemConfig = (token, key, value) =>
+  request(`/api/admin/config/${key}`, token, { method: "PATCH", body: JSON.stringify({ value }) });
+
+export const getRideCancellations = (token) => request("/api/admin/ride-cancellations", token);
+
+export const getFamilyPlans = (token) => request("/api/admin/family-plans", token);
+
+// ── Arrivo Express Phase 2 (launch promos) ──────────────────────────────
+export const getLaunchPromos = (token) => request("/api/admin/launch-promos", token);
+
+// ── Arrivo Express Phase 3 (Arrivo Share, the Partner Venues program) ──────────
+export const getArrivoShare = (token) => request("/api/admin/arrivo-share", token);
+
+export const getPartnerVenues = (token) => request("/api/admin/partner-venues", token);
+export const createPartnerVenue = (token, venue) =>
+  request("/api/admin/partner-venues", token, { method: "POST", body: JSON.stringify(venue) });
+export const updatePartnerVenue = (token, id, updates) =>
+  request(`/api/admin/partner-venues/${id}`, token, { method: "PATCH", body: JSON.stringify(updates) });

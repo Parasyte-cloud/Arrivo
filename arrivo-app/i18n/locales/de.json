@@ -12,7 +12,7 @@
     "listVehicle": "Fahrzeug für Abholungen registrieren →",
     "bookAirportPickup": "Flughafenabholung buchen",
     "bookAirportDropoff": "Flughafen-Abgabe buchen",
-    "flightNotFound": "Dieser Flug wurde noch nicht gefunden. Wenn die Nummer stimmt, ist das vor dem Boarding normal — wir prüfen weiter.",
+    "flightNotFound": "Dieser Flug wurde noch nicht gefunden. Wenn die Nummer stimmt, ist das vor dem Boarding normal. Wir prüfen weiter.",
     "landing": "Landung {{time}}",
     "terminal": "Terminal {{terminal}}",
     "arrivingAt": "Ankunft in {{airport}}"
@@ -54,7 +54,7 @@
   },
   "arrivoExpress": {
     "title": "ArrivoExpress",
-    "tagline": "Fahrten auf Abruf, berechnet nach Entfernung und Zeit — Fahrzeug wählen, Preis ansehen, und wir vermitteln dir einen Fahrer in deiner Nähe.",
+    "tagline": "Fahrten auf Abruf, berechnet nach Entfernung und Zeit. Fahrzeug wählen, Preis ansehen, und wir vermitteln dir einen Fahrer in deiner Nähe.",
     "unavailableBody": "ArrivoExpress ist für dein Konto noch nicht freigeschaltet. Versuche stattdessen „Fahrt buchen“ oder „On the Go“, oder schau bald wieder vorbei.",
     "tryAgain": "Erneut versuchen",
     "networkError": "RideArrivo konnte nicht erreicht werden. Überprüfe deine Verbindung und versuche es erneut.",
@@ -93,6 +93,6 @@
     "distanceKm": "{{distance}} km",
     "durationMin": "{{duration}} Min.",
     "homeBannerTitle": "Jetzt fahren mit ArrivoExpress",
-    "homeBannerSubtitle": "Fahrten auf Abruf, berechnet nach Entfernung — in Minuten vermittelt."
+    "homeBannerSubtitle": "Fahrten auf Abruf, berechnet nach Entfernung, in Minuten vermittelt."
   }
 }

@@ -12,7 +12,7 @@
     "listVehicle": "登记您的车辆接单 →",
     "bookAirportPickup": "预订机场接送",
     "bookAirportDropoff": "预订机场送机",
-    "flightNotFound": "暂时未找到该航班。如果航班号正确，这在登机前是正常的——我们会持续查询。",
+    "flightNotFound": "暂时未找到该航班。如果航班号正确，这在登机前是正常的。我们会持续查询。",
     "landing": "降落时间 {{time}}",
     "terminal": "航站楼 {{terminal}}",
     "arrivingAt": "抵达 {{airport}}"
@@ -54,7 +54,7 @@
   },
   "arrivoExpress": {
     "title": "ArrivoExpress",
-    "tagline": "按需叫车服务，根据距离和时间计费——选择车型，查看车费，我们会为您匹配附近的司机。",
+    "tagline": "按需叫车服务，根据距离和时间计费。选择车型，查看车费，我们会为您匹配附近的司机。",
     "unavailableBody": "您的账户尚未开通 ArrivoExpress。请先尝试“预约行程”或“随叫随到”服务，或稍后再来查看。",
     "tryAgain": "重试",
     "networkError": "无法连接到 RideArrivo。请检查您的网络连接后重试。",
@@ -93,6 +93,6 @@
     "distanceKm": "{{distance}} 公里",
     "durationMin": "{{duration}} 分钟",
     "homeBannerTitle": "立即使用 ArrivoExpress 出行",
-    "homeBannerSubtitle": "按需叫车，按距离计费——几分钟内为您匹配司机。"
+    "homeBannerSubtitle": "按需叫车，按距离计费，几分钟内为您匹配司机。"
   }
 }

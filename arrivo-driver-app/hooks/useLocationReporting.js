@@ -32,7 +32,7 @@ export function useLocationReporting(token, isOnline, onError) {
       if (cancelled || fg.status !== "granted") {
         if (fg.status !== "granted") {
           console.warn("Location permission not granted — driver position won't be shared with riders.");
-          onError?.("Location permission is off — riders won't be able to see your position. Enable it in Settings to go online.");
+          onError?.("Location permission is off. Riders won't be able to see your position. Enable it in Settings to go online.");
         }
         return;
       }
@@ -76,7 +76,7 @@ export function useLocationReporting(token, isOnline, onError) {
     if (isOnline && token) {
       start().catch((e) => {
         console.error("Failed to start location reporting:", e.message);
-        onError?.("Couldn't start sharing your location — try toggling online again, or check location settings.");
+        onError?.("Couldn't start sharing your location. Try toggling online again, or check location settings.");
       });
     } else {
       stop().catch((e) => console.error("Failed to stop location reporting:", e.message));

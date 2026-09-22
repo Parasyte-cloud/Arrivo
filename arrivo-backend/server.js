@@ -31,6 +31,8 @@ const alertsRouter = require("./routes/alerts");
 const eventsRouter = require("./routes/events-sse");
 const liveMapRouter = require("./routes/live-map");
 const supportRouter = require("./routes/support");
+const familyRouter = require("./routes/family");
+const partnerVenuesRouter = require("./routes/partnerVenues");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -108,6 +110,8 @@ app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/live-map", liveMapRouter);
 app.use("/api/support", supportRouter);
+app.use("/api/family", familyRouter);
+app.use("/api/partner-venues", partnerVenuesRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.

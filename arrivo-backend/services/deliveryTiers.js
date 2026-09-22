@@ -22,7 +22,7 @@ const DELIVERY_VEHICLE_TIERS = {
   bicycle: {
     key: "bicycle",
     label: "Bicycle Delivery",
-    description: "Documents and small parcels, delivered by bicycle courier — the cheapest, greenest option.",
+    description: "Documents and small parcels, delivered by bicycle courier: the cheapest, greenest option.",
     vehicleType: "bicycle",
     maxPackageKg: 5,
     baseFareNaira: 350,

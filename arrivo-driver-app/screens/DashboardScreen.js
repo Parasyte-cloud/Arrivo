@@ -13,6 +13,7 @@ import {
   setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
   triggerPanic, activateListeningDevice, getDriverProfile,
   getInstantStatus, setInstantAvailability, getInstantOffers, acceptInstantOffer, declineInstantOffer,
+  cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
@@ -26,6 +27,11 @@ export default function DashboardScreen({ navigation }) {
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
+  // Arrivo Express Phase 3 -- the Partner Venues program area lock. Non-null while
+  // this driver is mid-reserved-pickup from a partner venue, per whatever
+  // GET /available's areaLockedToVenue field says this cycle -- see
+  // routes/rides.js for why the queue narrows during that window.
+  const [areaLockedToVenue, setAreaLockedToVenue] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
@@ -85,8 +91,9 @@ export default function DashboardScreen({ navigation }) {
 
   const refreshAvailable = useCallback(async () => {
     try {
-      const { rides } = await getAvailableRides(token);
+      const { rides, areaLockedToVenue: lockedVenue } = await getAvailableRides(token);
       setAvailable(rides);
+      setAreaLockedToVenue(lockedVenue || null);
     } catch (e) {
       setError(e.message);
     }
@@ -276,6 +283,16 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  // Arrivo Ride Guarantee: an accepted/in_progress ride can no longer be
+  // freed up via advanceTrip("cancelled") -- see ActiveTripCard's reason
+  // picker, which calls POST /:id/cancel-request directly and only clears
+  // this driver's active ride once the backend confirms the cancellation
+  // (and has already reset the ride so another driver can pick it up).
+  const handleRideGuaranteeCancelled = () => {
+    setActiveRide(null);
+    refreshAvailable();
+  };
+
   if (loading) {
     return (
       <View style={styles.screen}>
@@ -352,7 +369,7 @@ export default function DashboardScreen({ navigation }) {
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} navigation={navigation} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
             {acceptsInstant ? (
@@ -373,6 +390,14 @@ export default function DashboardScreen({ navigation }) {
             ) : null}
 
             <Text style={styles.sectionLabel}>Nearby requests</Text>
+            {areaLockedToVenue ? (
+              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
+                <Text style={styles.meta}>
+                  🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup — you'll see the full
+                  queue again once it's done.
+                </Text>
+              </Card>
+            ) : null}
             {available.length === 0 ? (
               <Card tone="dark">
                 <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
@@ -473,6 +498,18 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+      {/* Arrivo Express Phase 3 -- the Partner Venues program: this reserved
+          pickup came from a partner venue, not the rider's own address. */}
+      {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
+      {/* Arrivo Express Phase 3 -- Arrivo Share: named co-riders on top of
+          the organizer, so the driver knows who to expect at pickup. */}
+      {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+        <Text style={styles.meta}>
+          Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}
+        </Text>
+      ) : null}
       <View style={{ height: spacing.sm }} />
       {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} disabled={disabled} trailingIcon />}
     </Card>
@@ -522,7 +559,14 @@ function InstantOfferCard({ offer, now, busy, disabled, onAccept, onDecline }) {
   );
 }
 
-function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
+const CANCEL_REASONS = [
+  { value: "vehicle_breakdown", label: "Vehicle breakdown" },
+  { value: "safety_concern", label: "Safety concern" },
+  { value: "emergency", label: "Emergency" },
+  { value: "incorrect_pickup_info", label: "Wrong pickup info" },
+];
+
+function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation }) {
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
   const streamVideoClient = useStreamVideoClient();
@@ -537,6 +581,32 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
   // arrivo-backend/routes/rides.js PATCH /:id/status).
   const awaitingRiderPayment =
     isAccepted && !!ride.pay_at_pickup && ride.payment_method === "wallet" && ride.payment_status !== "paid";
+
+  // Arrivo Ride Guarantee: this is now the ONLY way a driver can back out
+  // of an accepted/in_progress ride -- see CANCEL_REASONS above. Picking a
+  // reason and confirming hits POST /:id/cancel-request, which the backend
+  // only accepts for one of those fixed reasons and which auto-reassigns
+  // the ride rather than leaving the rider stranded.
+  const [showCancelPicker, setShowCancelPicker] = useState(false);
+  const [cancelReason, setCancelReason] = useState(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
+  const cancelSubmittingRef = useRef(false);
+
+  const submitCancelRequest = async () => {
+    if (!cancelReason || cancelSubmittingRef.current) return;
+    cancelSubmittingRef.current = true;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      await cancelRideWithReason(token, ride.id, cancelReason);
+      onCancelled();
+    } catch (e) {
+      setCancelError(e.message || "Couldn't cancel this trip. Please try again.");
+      cancelSubmittingRef.current = false;
+      setCancelBusy(false);
+    }
+  };
 
   const [panicState, setPanicState] = useState("idle"); // idle | counting | active
   const [countdown, setCountdown] = useState(3);
@@ -636,7 +706,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
       return;
     }
     if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
       return;
     }
     try {
@@ -675,6 +745,12 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
+        {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
+        {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+          <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
+        ) : null}
         <Pressable onPress={callRiderInApp}>
           <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
         </Pressable>
@@ -728,7 +804,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
         <>
           <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
           {listeningError ? (
-            <Button label="Couldn't confirm — tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
+            <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
           ) : null}
         </>
       ) : (
@@ -737,7 +813,48 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
 
       <View style={{ height: spacing.sm }} />
 
-      {busy ? (
+      {showCancelPicker ? (
+        <View style={styles.cancelPickerCard}>
+          <Text style={styles.cancelPickerTitle}>Why are you cancelling?</Text>
+          <Text style={styles.cancelPickerBody}>
+            Under Arrivo Ride Guarantee, an accepted trip can only be cancelled for one of these reasons. We'll find
+            the rider a new driver right away — they won't need to rebook.
+          </Text>
+          <View style={styles.cancelReasonRow}>
+            {CANCEL_REASONS.map((r) => (
+              <Pressable
+                key={r.value}
+                onPress={() => setCancelReason(r.value)}
+                style={[styles.cancelReasonChip, cancelReason === r.value && styles.cancelReasonChipActive]}
+              >
+                <Text style={[styles.cancelReasonChipText, cancelReason === r.value && styles.cancelReasonChipTextActive]}>
+                  {r.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {cancelError ? <Text style={styles.cancelPickerError}>{cancelError}</Text> : null}
+          <View style={{ height: spacing.sm }} />
+          {cancelBusy ? (
+            <ActivityIndicator color={colors.amber} />
+          ) : (
+            <>
+              <Button label="Confirm cancellation" variant="ghost" tone="dark" onPress={submitCancelRequest} disabled={!cancelReason} />
+              <View style={{ height: spacing.sm }} />
+              <Button
+                label="Never mind, keep this trip"
+                variant="ghost"
+                tone="dark"
+                onPress={() => {
+                  setShowCancelPicker(false);
+                  setCancelReason(null);
+                  setCancelError(null);
+                }}
+              />
+            </>
+          )}
+        </View>
+      ) : busy ? (
         <ActivityIndicator color={colors.amber} />
       ) : awaitingRiderPayment ? (
         <>
@@ -745,16 +862,20 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
             ⏳ This rider reserved and pays at pickup. Ask them to scan your QR placard to pay and start the trip.
           </Text>
           <View style={{ height: spacing.sm }} />
-          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
         </>
       ) : isAccepted ? (
         <>
           <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
           <View style={{ height: spacing.sm }} />
-          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
         </>
       ) : (
-        <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
+        <>
+          <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
+          <View style={{ height: spacing.sm }} />
+          <Button label="Report an issue / cancel trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+        </>
       )}
     </View>
   );
@@ -786,4 +907,25 @@ const styles = StyleSheet.create({
   panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
+  cancelPickerCard: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    padding: spacing.md,
+  },
+  cancelPickerTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 6 },
+  cancelPickerBody: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18, marginBottom: spacing.sm },
+  cancelReasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  cancelReasonChip: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  cancelReasonChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
+  cancelReasonChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
+  cancelReasonChipTextActive: { color: colors.ink },
+  cancelPickerError: { color: "#FF9B8A", fontSize: 12, fontWeight: "600", marginTop: 8 },
 });

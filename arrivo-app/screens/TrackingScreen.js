@@ -12,6 +12,7 @@ import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
+  addRideShareParticipant, removeRideShareParticipant,
 } from "../services/api";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
@@ -71,7 +72,7 @@ export default function TrackingScreen({ route, navigation }) {
   const [fleetCompanions, setFleetCompanions] = useState([]);
   const [offlineMode, setOfflineMode] = useState(!!offlinePending);
   const [offlineNotice, setOfflineNotice] = useState(
-    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine — no SIM data needed." : null
+    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine, no SIM data needed." : null
   );
   const flushingRef = useRef(false);
   // Bumped whenever flushPendingScan lands a confirmed ride — lets fetchRide
@@ -121,6 +122,13 @@ export default function TrackingScreen({ route, navigation }) {
   const [overageMessage, setOverageMessage] = useState(null);
   const pendingOverageRef = useRef(null);
 
+  // Arrivo Express Phase 3 -- Arrivo Share. Add/remove a co-rider on a ride
+  // YOU booked and paid for -- only shown to the organizer (ride.rider_id
+  // === user.id), and only before the trip starts.
+  const [shareInput, setShareInput] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState(null);
+
   const fetchRide = useCallback(async () => {
     if (!rideId) return;
     const generationAtStart = confirmedGenerationRef.current;
@@ -152,6 +160,40 @@ export default function TrackingScreen({ route, navigation }) {
       setLoading(false);
     }
   }, [token, rideId, offlineMode]);
+
+  // Arrivo Express Phase 3 -- Arrivo Share. phone or email, whichever looks
+  // right -- same "@" heuristic isn't needed since addRideShareParticipant
+  // takes both and the backend only uses whichever is non-empty; here we
+  // just decide which field to send based on whether it looks like an email.
+  const addShareParticipant = async () => {
+    const value = shareInput.trim();
+    if (!value) return;
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const isEmail = value.includes("@");
+      await addRideShareParticipant(token, rideId, isEmail ? { email: value } : { phone: value });
+      setShareInput("");
+      await fetchRide();
+    } catch (e) {
+      setShareError(e.message || "Couldn't add that person to this ride.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const removeShareParticipant = async (participantId) => {
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      await removeRideShareParticipant(token, rideId, participantId);
+      await fetchRide();
+    } catch (e) {
+      setShareError(e.message || "Couldn't remove that person.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   // Fleet Accompaniment convoy — a no-op fetch (empty companions array) for
   // the vast majority of rides that aren't fleet bookings, so this is safe
@@ -274,7 +316,7 @@ export default function TrackingScreen({ route, navigation }) {
         // ignore — share the text-only message below instead
       }
       await Share.share({
-        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "—"}.${linkPart}`,
+        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "an address not on file"}.${linkPart}`,
       });
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));
@@ -296,7 +338,7 @@ export default function TrackingScreen({ route, navigation }) {
       return;
     }
     if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
       return;
     }
     try {
@@ -551,7 +593,16 @@ export default function TrackingScreen({ route, navigation }) {
     );
   }
 
-  const statusLabel = STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
+  // Arrivo Ride Guarantee: a driver-side cancel-request (vehicle breakdown,
+  // safety concern, emergency, wrong pickup info) resets the ride back to
+  // "requested" with driver_id cleared and previously_cancelled_at stamped,
+  // rather than dumping the rider back to square one. This distinguishes
+  // that reassignment case from a brand-new, never-yet-accepted ride so we
+  // can say "we're on it" instead of the generic "looking for a driver".
+  const isReassigning = ride?.ride_status === "requested" && !!ride?.previously_cancelled_at;
+  const statusLabel = isReassigning
+    ? "Finding you a new driver…"
+    : STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
   const hasDriver = !!ride?.driver_name;
   const hasVehicle = !!(ride?.make_model && ride?.plate_number);
 
@@ -585,12 +636,112 @@ export default function TrackingScreen({ route, navigation }) {
           </Card>
         ) : null}
 
+        {isReassigning ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🛡️ Arrivo Ride Guarantee</Text>
+            <Text style={styles.meta}>
+              Your driver had a last-minute issue and can't continue the trip. We're finding you a new driver right
+              now — no need to rebook, your pickup and destination are already set.
+            </Text>
+          </Card>
+        ) : null}
+
+        {ride?.promo_code === "lucky_ride_winner" ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>🎉 You won today's Arrivo Lucky Ride!</Text>
+            <Text style={styles.meta}>
+              {formatFare(ride.fare_naira)} for this trip has been refunded to your wallet. Congratulations!
+            </Text>
+          </Card>
+        ) : ride?.promo_code === "early_bird" || ride?.promo_code === "morning_commuter" ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#8FD9C4", borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>
+              {ride.promo_code === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"}
+            </Text>
+            <Text style={styles.meta}>Discount applied — you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
+          </Card>
+        ) : null}
+
+        {ride?.partner_venue_id ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>
+              🍸 {ride.partner_venue_name ? `${ride.partner_venue_name} x RideArrivo` : "Reserved pickup"}
+            </Text>
+            {ride.partner_venue_perk ? <Text style={styles.meta}>{ride.partner_venue_perk}</Text> : null}
+          </Card>
+        ) : null}
+
+        {ride?.is_arrivo_share ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Arrivo Share</Text>
+            {(ride.shareParticipants || []).length === 0 ? (
+              <Text style={styles.meta}>No one else added yet.</Text>
+            ) : (
+              (ride.shareParticipants || []).map((p) => (
+                <View key={p.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xs }}>
+                  <Text style={styles.meta}>{p.name}{p.phone ? ` · ${p.phone}` : ""}</Text>
+                  {ride.rider_id === user?.id && ["requested", "accepted"].includes(ride.ride_status) ? (
+                    <Pressable onPress={() => removeShareParticipant(p.id)} disabled={shareBusy} hitSlop={8}>
+                      <Text style={{ color: colors.coral, fontSize: 12.5, fontWeight: "600" }}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))
+            )}
+            {ride.rider_id === user?.id && ["requested", "accepted"].includes(ride.ride_status) ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Add by phone or email"
+                  placeholderTextColor={colors.dark.textMuted}
+                  autoCapitalize="none"
+                  value={shareInput}
+                  onChangeText={setShareInput}
+                />
+                {shareError ? <Text style={{ color: colors.coral, fontSize: 12, marginTop: 6 }}>{shareError}</Text> : null}
+                <Button
+                  label={shareBusy ? "Adding…" : "Add to this ride"}
+                  variant="ghost"
+                  tone="dark"
+                  onPress={addShareParticipant}
+                  disabled={shareBusy || !shareInput.trim()}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            ) : null}
+          </Card>
+        ) : ride?.rider_id === user?.id && ["requested", "accepted"].includes(ride?.ride_status) && !ride?.partner_venue_id ? (
+          <Card tone="dark" style={{ marginTop: spacing.md }}>
+            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Riding with people you know?</Text>
+            <Text style={styles.meta}>Add them to this ride with Arrivo Share -- they'll be able to track it too.</Text>
+            <View style={{ marginTop: spacing.sm }}>
+              <TextInput
+                style={styles.input}
+                placeholder="Add by phone or email"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="none"
+                value={shareInput}
+                onChangeText={setShareInput}
+              />
+              {shareError ? <Text style={{ color: colors.coral, fontSize: 12, marginTop: 6 }}>{shareError}</Text> : null}
+              <Button
+                label={shareBusy ? "Adding…" : "Add to this ride"}
+                variant="ghost"
+                tone="dark"
+                onPress={addShareParticipant}
+                disabled={shareBusy || !shareInput.trim()}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
+          </Card>
+        ) : null}
+
         {hasFlightIssue ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.cardLabel}>✈️ Flight {ride.flight_issue === "cancelled" ? "cancelled" : "rescheduled"}</Text>
             <Text style={styles.meta}>
-              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet —
-              top up to at least{" "}
+              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet.
+              Top up to at least{" "}
               {flightIssueWalletMinimum ? formatFare(flightIssueWalletMinimum.minWalletBalanceNaira) : "$100"} to keep this
               ride booked. You'll be charged the fare again at drop-off.
             </Text>
@@ -614,7 +765,7 @@ export default function TrackingScreen({ route, navigation }) {
             {flightStatus ? (
               <>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                  <Text style={styles.meta}>{flightStatus.airline || "—"}</Text>
+                  <Text style={styles.meta}>{flightStatus.airline || "Unknown"}</Text>
                   <Tag
                     label={(flightStatus.status || "unknown").toUpperCase()}
                     tone={flightStatus.status === "landed" ? "teal" : "amber"}
@@ -624,7 +775,7 @@ export default function TrackingScreen({ route, navigation }) {
                   Estimated landing:{" "}
                   {flightStatus.arrival?.estimated
                     ? new Date(flightStatus.arrival.estimated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                    : "—"}
+                    : "--:--"}
                   {flightStatus.arrival?.terminal ? ` · Terminal ${flightStatus.arrival.terminal}` : ""}
                 </Text>
               </>
@@ -686,7 +837,7 @@ export default function TrackingScreen({ route, navigation }) {
             {ride.rider_rating ? (
               <Text style={styles.meta}>
                 You rated this trip {"★".repeat(ride.rider_rating)}{"☆".repeat(5 - ride.rider_rating)}
-                {ride.rider_rating_comment ? ` — "${ride.rider_rating_comment}"` : ""}
+                {ride.rider_rating_comment ? `: "${ride.rider_rating_comment}"` : ""}
               </Text>
             ) : (
               <>
@@ -738,15 +889,21 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: ride.overage_payment_method ? 0 : 1 }}>
-            <Text style={styles.cardLabel}>Extra time charge</Text>
+            <Text style={styles.cardLabel}>
+              {ride.overage_reason === "traffic_delay" ? "Arrivo Fair Fare — traffic delay" : "Extra time charge"}
+            </Text>
             {ride.overage_payment_method ? (
               <Text style={styles.meta}>
-                This trip ran longer than the {Number(ride.included_hours_per_day)}h booked, so an extra {formatFare(ride.overage_naira)} was charged. Paid — thanks.
+                {ride.overage_reason === "traffic_delay"
+                  ? `Traffic pushed this trip ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time. The first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of that was on us — the remaining ${ride.overage_breakdown?.billableMinutes ?? ""} min added ${formatFare(ride.overage_naira)}. Paid. Thanks.`
+                  : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h booked, so an extra ${formatFare(ride.overage_naira)} was charged. Paid. Thanks.`}
               </Text>
             ) : (
               <>
                 <Text style={styles.meta}>
-                  This trip ran longer than the {Number(ride.included_hours_per_day)}h you booked, so there's an extra {formatFare(ride.overage_naira)} to settle for the additional time.
+                  {ride.overage_reason === "traffic_delay"
+                    ? `Traffic shouldn't punish you twice — but this trip ran ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time, and only the first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of delay is free. That leaves ${ride.overage_breakdown?.billableMinutes ?? ""} min at ${ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : ""}/min — an extra ${formatFare(ride.overage_naira)} to settle.`
+                    : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h you booked, so there's an extra ${formatFare(ride.overage_naira)} to settle for the additional time.`}
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>
@@ -767,7 +924,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
-                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid — thank you.</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid. Thank you.</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {overageStatus === "opening" || overageStatus === "verifying" ? (
@@ -793,7 +950,7 @@ export default function TrackingScreen({ route, navigation }) {
             ) : (
               <>
                 <Text style={styles.meta}>
-                  Entirely optional — 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
+                  Entirely optional: 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>
@@ -845,7 +1002,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
-                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent — thank you!</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent. Thank you!</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {tipStatus === "opening" || tipStatus === "verifying" ? (

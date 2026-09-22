@@ -104,7 +104,7 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
 // GET /api/drivers/me
 router.get("/me", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverWithVehicle(req.user.id);
-  if (!driver) return res.status(404).json({ error: "No driver profile yet — complete it via POST /api/drivers/profile" });
+  if (!driver) return res.status(404).json({ error: "No driver profile yet. Complete it via POST /api/drivers/profile" });
   res.json({ driver });
 });
 
@@ -246,11 +246,23 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
   // (e.g. "50 trips" when several paid nothing). Split out separately so
   // completedTrips stays a meaningful "trips that paid you" figure, without
   // hiding the real driving work behind completedFleetEscortTrips.
+  //
+  // fare_naira + promo_discount_naira (not fare_naira alone) is what a
+  // driver is owed for a trip — Arrivo Express Phase 2's Early Bird/
+  // Morning Commuter promos discount what the RIDER pays (fare_naira),
+  // but the brief's own "model economics carefully" caution means that
+  // discount comes out of Arrivo's margin, not the driver's payout.
+  // promo_discount_naira is exactly the gap between what the rider paid
+  // and what the trip would have cost without the promo, so adding it
+  // back here reconstructs the driver's true earnings; it's always 0 for
+  // rides with no promo (a no-op) and for Lucky Ride rides (that promo
+  // pays out via a wallet refund to the rider, never by touching
+  // fare_naira — see services/scheduler.js).
   const summary = (
     await pool.query(
       `SELECT COUNT(*) FILTER (WHERE NOT is_fleet_companion) as "completedTrips",
               COUNT(*) FILTER (WHERE is_fleet_companion) as "completedFleetEscortTrips",
-              COALESCE(SUM(fare_naira), 0) as "totalNaira",
+              COALESCE(SUM(fare_naira + promo_discount_naira), 0) as "totalNaira",
               COALESCE(SUM(tip_naira), 0) as "totalTipsNaira",
               COALESCE(SUM(escort_payout_naira), 0) as "totalEscortPayoutNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'`,
@@ -260,7 +272,7 @@ router.get("/earnings", requireAuth, requireRole("driver"), async (req, res) => 
 
   const thisMonth = (
     await pool.query(
-      `SELECT COALESCE(SUM(fare_naira), 0) as "totalNaira",
+      `SELECT COALESCE(SUM(fare_naira + promo_discount_naira), 0) as "totalNaira",
               COALESCE(SUM(tip_naira), 0) as "totalTipsNaira",
               COALESCE(SUM(escort_payout_naira), 0) as "totalEscortPayoutNaira"
        FROM rides WHERE driver_id = $1 AND ride_status = 'completed'

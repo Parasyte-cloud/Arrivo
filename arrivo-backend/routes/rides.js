@@ -8,12 +8,19 @@ const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
-const { computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, FLEET_ESCORT_PAYOUT_USD } = require("../services/fare");
+const {
+  computeFare, findExcludedArea, MAX_FULL_DAY_COUNT, computeVehicleCount, computeOverageNaira, computeFairFareOverageNaira,
+  FLEET_ESCORT_PAYOUT_USD, applyLaunchPromoDiscount, isLuckyRideWindow, lagosDateString, MAX_PASSENGERS,
+  hasRoomForAnotherShareParticipant,
+} = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
+const { getActivePlanForUser } = require("../services/familyPlan");
+const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
+const { isWithinRadiusKm } = require("../services/routeDeviation");
 
 // Used only to re-confirm a rider can cover their trip after a flight-issue
 // refund (see the flight_issue re-payment check in PATCH /:id/status below).
@@ -27,6 +34,33 @@ const router = express.Router();
 
 function withParsedStops(ride) {
   return { ...ride, stops: JSON.parse(ride.stops || "[]") };
+}
+
+// Arrivo Express Phase 3 -- Arrivo Share. Batches the co-rider lookup for
+// one or many rides in a single query (never N+1 inside a rides.map),
+// then attaches a shareParticipants array to each ride so the rider's own
+// tracking screen and the driver's ride/queue screens can show who's
+// actually coming, without a separate round trip per ride.
+async function attachShareParticipants(rides) {
+  const rideList = Array.isArray(rides) ? rides : [rides];
+  const rideIds = rideList.map((r) => r.id).filter(Boolean);
+  if (rideIds.length === 0) return rides;
+
+  const result = await pool.query(
+    `SELECT ride_share_participants.id, ride_share_participants.ride_id, users.id as user_id, users.name, users.phone
+     FROM ride_share_participants
+     JOIN users ON users.id = ride_share_participants.user_id
+     WHERE ride_share_participants.ride_id = ANY($1::int[])
+     ORDER BY ride_share_participants.created_at ASC`,
+    [rideIds]
+  );
+  const byRide = new Map();
+  for (const row of result.rows) {
+    if (!byRide.has(row.ride_id)) byRide.set(row.ride_id, []);
+    byRide.get(row.ride_id).push({ id: row.id, userId: row.user_id, name: row.name, phone: row.phone });
+  }
+  const withParticipants = rideList.map((ride) => ({ ...ride, shareParticipants: byRide.get(ride.id) || [] }));
+  return Array.isArray(rides) ? withParticipants : withParticipants[0];
 }
 
 // Fleet Accompaniment used to be a priced integer on the ONE ride the
@@ -73,6 +107,24 @@ async function createFleetCompanions(dbClient, primaryRide) {
   }
 }
 
+// Arrivo Express Phase 2 -- Midday Lucky Ride. Called (inside the same
+// transaction as the ride insert, so it's atomic with booking) whenever a
+// ride qualified as today's raffle entry: one_way, booked in the
+// 12:00-1:00pm Lagos window, distance under the configured cap. The
+// unique index on (rider_id, entry_date) is what actually enforces "one
+// entry per customer" -- ON CONFLICT DO NOTHING means a rider's second
+// qualifying ride the same day just doesn't become a second entry, no
+// error, no special-casing needed here. entryDate is null for any ride
+// that didn't qualify, in which case this is a no-op.
+async function recordLuckyRideEntry(dbClient, ride, entryDate) {
+  if (!entryDate) return;
+  await dbClient.query(
+    `INSERT INTO lucky_ride_entries (ride_id, rider_id, entry_date) VALUES ($1, $2, $3)
+     ON CONFLICT (rider_id, entry_date) DO NOTHING`,
+    [ride.id, ride.rider_id, entryDate]
+  );
+}
+
 // POST /api/rides — create a new ride/booking (requires auth)
 // body: { pickupAddress, stops?, flightNumber?, vehicleType, fareNaira,
 //         paymentReference?, bookingType?, durationDays?, agreedCancellationPolicy,
@@ -96,13 +148,22 @@ async function createFleetCompanions(dbClient, primaryRide) {
 // show the rider) from POST /api/rides/quote first.
 router.post("/", requireAuth, async (req, res) => {
   const {
-    pickupAddress, stops, flightNumber, vehicleType, paymentReference,
+    pickupAddress: pickupAddressInput, stops, flightNumber, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
     distanceKm: clientDistanceKm, durationMin: clientDurationMin, securityEscort, fleetSize, paymentMethod = "card",
     emergencyContactName, emergencyContactPhone, dashCamConsent, luxury, payAtPickup,
-    pickupLat, pickupLng, destinationLat, destinationLng,
+    pickupLat: pickupLatInput, pickupLng: pickupLngInput, destinationLat, destinationLng,
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
+    familyMemberUserId, partnerVenueId,
   } = req.body;
+  // Arrivo Express Phase 3 (the Partner Venues program) -- a partner-venue
+  // reserved ride overrides whatever pickup the client sent with the
+  // venue's own verified address/coordinates (see the validation block
+  // below), so these need to be reassignable rather than the plain
+  // const destructure every other field uses.
+  let pickupAddress = pickupAddressInput;
+  let pickupLat = pickupLatInput;
+  let pickupLng = pickupLngInput;
 
   // Only meaningful (and only stored) for a single-day 'full_day' Chauffeur
   // booking — see the schema.sql comment on rides.included_hours_per_day for
@@ -210,6 +271,29 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json(blockedBookingResponse());
     }
   }
+  // Arrivo Express Phase 3 -- the Partner Venues program. A reserved pickup from
+  // a partner venue is just a normal scheduled 'dropoff' booking (see
+  // scheduled_pickup_at above -- "we close 4am, pick me up" is exactly
+  // that use case) tagged with which venue it's picking up from. The
+  // venue's own verified address/coordinates always win over whatever the
+  // client sent, same principle as never trusting a client-submitted fare.
+  if (partnerVenueId) {
+    if (bookingType !== "dropoff") {
+      return res.status(400).json({ error: "A partner-venue reserved ride must use the 'dropoff' booking type with a scheduled pickup time." });
+    }
+    if (!(await getConfigBool("grotto_program_enabled", true))) {
+      return res.status(400).json({ error: "Partner-venue reserved rides aren't available right now." });
+    }
+    const venueResult = await pool.query("SELECT * FROM partner_venues WHERE id = $1 AND is_active = true", [partnerVenueId]);
+    const venue = venueResult.rows[0];
+    if (!venue) {
+      return res.status(400).json({ error: "That partner venue isn't available." });
+    }
+    pickupAddress = venue.address;
+    pickupLat = venue.lat;
+    pickupLng = venue.lng;
+  }
+
   // A linked ride (the arrival pickup this drop-off was booked alongside)
   // must actually belong to this same rider — otherwise a rider could tag
   // their booking onto a stranger's ride id.
@@ -240,7 +324,7 @@ router.post("/", requireAuth, async (req, res) => {
       if (driverInfo.rows[0]) {
         preferredDriverId = driverInfo.rows[0].id;
         preferredVehicleSnapshot = driverInfo.rows[0].make_model
-          ? `${driverInfo.rows[0].make_model}${driverInfo.rows[0].plate_number ? " — " + driverInfo.rows[0].plate_number : ""}`
+          ? `${driverInfo.rows[0].make_model}${driverInfo.rows[0].plate_number ? " (" + driverInfo.rows[0].plate_number + ")" : ""}`
           : null;
       }
     }
@@ -248,8 +332,8 @@ router.post("/", requireAuth, async (req, res) => {
   if (fleetSize && ![0, 2, 3].includes(fleetSize)) {
     return res.status(400).json({ error: "fleetSize must be 0, 2, or 3" });
   }
-  if (!["card", "wallet", "membership"].includes(paymentMethod)) {
-    return res.status(400).json({ error: "paymentMethod must be 'card', 'wallet', or 'membership'" });
+  if (!["card", "wallet", "membership", "family_wallet"].includes(paymentMethod)) {
+    return res.status(400).json({ error: "paymentMethod must be 'card', 'wallet', 'membership', or 'family_wallet'" });
   }
   // "Reserve now, pay at pickup" has been removed as a product decision —
   // every ride is paid in full at booking, like a plane ticket, never at
@@ -276,6 +360,13 @@ router.post("/", requireAuth, async (req, res) => {
   let durationMin = clientDurationMin ?? null;
   let fareNaira;
   let vehicleCount;
+  // Arrivo Express Phase 2 -- set below (one_way/dropoff bookings only)
+  // when a launch promo actually applies. promoCode/promoDiscountNaira are
+  // persisted on the ride; luckyRideEntryDate (Africa/Lagos "YYYY-MM-DD")
+  // drives recordLuckyRideEntry after the ride is inserted.
+  let promoCode = null;
+  let promoDiscountNaira = 0;
+  let luckyRideEntryDate = null;
   // Recomputed independently of computeFare below (same passengerCount +
   // vehicleType inputs) purely so it can be stored on the ride and returned
   // to the rider — computeFare already applies this same number internally.
@@ -304,6 +395,43 @@ router.post("/", requireAuth, async (req, res) => {
         durationMin = distance.durationMin;
       } catch (err) {
         console.error("Distance lookup failed during ride creation (informational only, not blocking):", err.message);
+      }
+    }
+
+    // ── Arrivo Express Phase 2 (30-day launch test, 2026-09-17 brief) ──
+    // Early Bird / Morning Commuter: an automatic discount off the fare
+    // just computed above, based on Lagos-local time — the scheduled
+    // pickup time for a booked-ahead 'dropoff' return leg, otherwise the
+    // moment of booking. Applies uniformly regardless of payment method
+    // (card/wallet/membership/family_wallet all read the same, already-
+    // discounted fareNaira below) — see routes/drivers.js GET /earnings
+    // for how a driver's payout is protected from this discount.
+    //
+    // Midday Lucky Ride is NOT a discount applied here — only one rider
+    // wins per day, decided after the window closes by
+    // services/scheduler.js's sweepLuckyRideDraw, since there's no way to
+    // know the winner at booking time. A qualifying ride here (in the
+    // window, distance under the configured cap) just registers as
+    // today's entry — still charged full fare now, refunded later only if
+    // it wins.
+    if (await getConfigBool("launch_promos_enabled", true)) {
+      const promoDate = parsedScheduledPickupAt || new Date();
+      const promoResult = applyLaunchPromoDiscount({
+        fareNaira,
+        date: promoDate,
+        earlyBirdPercent: await getConfigNumber("early_bird_discount_percent", 50),
+        morningCommuterPercent: await getConfigNumber("morning_commuter_discount_percent", 20),
+      });
+      if (promoResult.promo) {
+        promoCode = promoResult.promo;
+        promoDiscountNaira = promoResult.originalFareNaira - promoResult.fareNaira;
+        fareNaira = promoResult.fareNaira;
+      } else if (isLuckyRideWindow(promoDate)) {
+        const luckyRideMaxDistanceKm = await getConfigNumber("lucky_ride_max_distance_km", 12);
+        if (distanceKm != null && distanceKm <= luckyRideMaxDistanceKm) {
+          luckyRideEntryDate = lagosDateString(promoDate);
+          promoCode = "lucky_ride_entry";
+        }
       }
     }
   } else {
@@ -362,11 +490,12 @@ router.post("/", requireAuth, async (req, res) => {
     try {
       await membershipClient.query("BEGIN");
       const inserted = await membershipClient.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
       );
       await createFleetCompanions(membershipClient, inserted.rows[0]);
+      await recordLuckyRideEntry(membershipClient, inserted.rows[0], luckyRideEntryDate);
       await membershipClient.query("COMMIT");
       return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
     } catch (err) {
@@ -375,6 +504,86 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(500).json({ error: "Could not complete this booking. Please try again." });
     } finally {
       membershipClient.release();
+    }
+  }
+
+  // Family wallet -- same atomic, row-locked debit pattern as the personal
+  // wallet branch just below, but locking family_plans.wallet_balance_naira
+  // instead of the caller's own balance. The caller must be an active
+  // member of a family plan; if familyMemberUserId is given, the caller
+  // must specifically be that plan's ADMIN (the brief's "order rides for
+  // any member" capability) -- a non-admin member can only ever book for
+  // themselves. rider_id is always the person actually taking the trip;
+  // booked_by_user_id records who placed the order when that's someone
+  // else, purely for admin visibility/notifications, never re-checked for
+  // authorization after this request.
+  if (paymentMethod === "family_wallet") {
+    const callerPlan = await getActivePlanForUser(req.user.id);
+    if (!callerPlan) {
+      return res.status(400).json({ error: "You're not part of a family plan." });
+    }
+
+    let riderUserId = req.user.id;
+    if (familyMemberUserId && Number(familyMemberUserId) !== req.user.id) {
+      if (callerPlan.member_role !== "admin") {
+        return res.status(403).json({ error: "Only the family administrator can book a ride for another member." });
+      }
+      const targetMembership = await pool.query(
+        "SELECT * FROM family_members WHERE family_plan_id = $1 AND user_id = $2 AND status = 'active'",
+        [callerPlan.id, familyMemberUserId]
+      );
+      if (!targetMembership.rows[0]) {
+        return res.status(400).json({ error: "That person isn't an active member of your family plan." });
+      }
+      riderUserId = Number(familyMemberUserId);
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const planResult = await client.query("SELECT wallet_balance_naira FROM family_plans WHERE id = $1 FOR UPDATE", [callerPlan.id]);
+      const balance = Number(planResult.rows[0].wallet_balance_naira);
+      if (balance < fareNaira) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Your Family Wallet is empty. Top up to continue riding.", balanceNaira: balance, fareNaira });
+      }
+
+      const rideResult = await client.query(
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, booked_via_family_plan_id, booked_by_user_id, promo_code, promo_discount_naira, partner_venue_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'family_wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36) RETURNING *`,
+        [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id, promoCode, promoDiscountNaira, partnerVenueId || null]
+      );
+      const ride = rideResult.rows[0];
+
+      const newBalanceResult = await client.query(
+        "UPDATE family_plans SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+        [fareNaira, callerPlan.id]
+      );
+      const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+
+      await client.query(
+        `INSERT INTO family_wallet_transactions (family_plan_id, actor_user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+         VALUES ($1, $2, 'ride_charge', 'completed', $3, $4, $5, $6)`,
+        [callerPlan.id, req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
+      );
+
+      await createFleetCompanions(client, ride);
+      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
+
+      await client.query("COMMIT");
+
+      if (riderUserId !== req.user.id) {
+        const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [riderUserId]);
+        sendPushNotification(rider.rows[0]?.push_token, "A ride was booked for you", "Your family administrator booked an Arrivo ride for you.", { rideId: ride.id, type: "family_ride_booked" }).catch(() => {});
+      }
+
+      return res.status(201).json({ ride: withParsedStops(ride) });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Family wallet ride payment failed:", err.message);
+      return res.status(500).json({ error: "Could not complete payment from the family wallet. Please try again." });
+    } finally {
+      client.release();
     }
   }
 
@@ -394,9 +603,9 @@ router.post("/", requireAuth, async (req, res) => {
       }
 
       const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
+        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
       );
       const ride = rideResult.rows[0];
 
@@ -413,6 +622,7 @@ router.post("/", requireAuth, async (req, res) => {
       );
 
       await createFleetCompanions(client, ride);
+      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
 
       await client.query("COMMIT");
       return res.status(201).json({ ride: withParsedStops(ride) });
@@ -432,11 +642,12 @@ router.post("/", requireAuth, async (req, res) => {
   try {
     await cardClient.query("BEGIN");
     const inserted = await cardClient.query(
-      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
-      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd]
+      `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
+      [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
     );
     await createFleetCompanions(cardClient, inserted.rows[0]);
+    await recordLuckyRideEntry(cardClient, inserted.rows[0], luckyRideEntryDate);
     await cardClient.query("COMMIT");
     res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
   } catch (err) {
@@ -452,9 +663,10 @@ router.post("/", requireAuth, async (req, res) => {
 // Uses the exact same formula (services/fare.js) that ride creation above
 // re-verifies against, so what a rider sees here is what they'll be
 // charged. One-way fares are a flat per-location price (see
-// services/fare.js) — deterministic, not distance-based — so the only way
+// services/fare.js) — deterministic, not distance-based — so the main way
 // this quote differs from the eventual charge is if the 8pm–5am night rate
-// boundary is crossed between quoting and booking.
+// boundary, or an Arrivo Express Phase 2 launch-promo window boundary
+// (Early Bird/Morning Commuter), is crossed between quoting and booking.
 // body: { bookingType?, vehicleType, securityEscort?, fleetSize?, luxury?,
 //         pickupAddress?, destinationAddress?,
 //         pickupLat?, pickupLng?, destinationLat?, destinationLng? }
@@ -526,7 +738,24 @@ router.post("/quote", requireAuth, async (req, res) => {
         console.error("Distance lookup failed during quote (informational only, not blocking):", err.message);
       }
     }
-    return res.json({ fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin, vehicleCount });
+    let promo = null;
+    let promoDiscountPercent = 0;
+    let originalFareNaira = fareNaira;
+    if (await getConfigBool("launch_promos_enabled", true)) {
+      const promoResult = applyLaunchPromoDiscount({
+        fareNaira,
+        earlyBirdPercent: await getConfigNumber("early_bird_discount_percent", 50),
+        morningCommuterPercent: await getConfigNumber("morning_commuter_discount_percent", 20),
+      });
+      fareNaira = promoResult.fareNaira;
+      promo = promoResult.promo;
+      promoDiscountPercent = promoResult.discountPercent;
+      originalFareNaira = promoResult.originalFareNaira;
+    }
+    return res.json({
+      fareNaira, fareUsd: fareNaira / ngnPerUsd, ngnPerUsd, distanceKm, durationMin, vehicleCount,
+      promo, promoDiscountPercent, originalFareNaira,
+    });
   }
 
   const allowedCharterTypes = ["full_day", "full_week", "full_month"];
@@ -573,8 +802,37 @@ router.get("/wallet-minimum", requireAuth, async (req, res) => {
 
 // GET /api/rides/mine — the signed-in rider's ride history
 router.get("/mine", requireAuth, async (req, res) => {
-  const result = await pool.query("SELECT * FROM rides WHERE rider_id = $1 ORDER BY created_at DESC", [req.user.id]);
-  res.json({ rides: result.rows.map(withParsedStops) });
+  const result = await pool.query(
+    `SELECT rides.*, partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
+     FROM rides
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
+     WHERE rides.rider_id = $1 ORDER BY rides.created_at DESC`,
+    [req.user.id]
+  );
+  const rides = await attachShareParticipants(result.rows);
+  res.json({ rides: rides.map(withParsedStops) });
+});
+
+// GET /api/rides/shared-with-me -- Arrivo Share. Rides where the signed-in
+// user isn't the organizer/payer but was added as a co-rider, so they can
+// see and track a trip they're part of without it showing up in their own
+// "my rides" payment history. Read-only by design -- only the organizer
+// (rides.rider_id) manages the ride itself; see POST/DELETE
+// /:id/share-participants below.
+router.get("/shared-with-me", requireAuth, async (req, res) => {
+  const result = await pool.query(
+    `SELECT rides.*, riders.name as rider_name, riders.phone as rider_phone,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
+     FROM rides
+     JOIN ride_share_participants ON ride_share_participants.ride_id = rides.id
+     JOIN users riders ON riders.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
+     WHERE ride_share_participants.user_id = $1
+     ORDER BY rides.created_at DESC`,
+    [req.user.id]
+  );
+  const rides = await attachShareParticipants(result.rows);
+  res.json({ rides: rides.map(withParsedStops) });
 });
 
 // GET /api/rides/available — unassigned ride requests, for drivers to pick up
@@ -599,11 +857,43 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   const driver = await getDriverForUser(req.user.id);
   const driverId = driver?.id || null;
 
+  // Arrivo Express Phase 3 -- the Partner Venues program area lock. "The driver
+  // will only get orders around the area for as long as they are online
+  // and have accepted the ride [from a partner venue]" -- while this
+  // driver has an active (accepted/in_progress) reserved pickup from a
+  // partner venue, their queue narrows to other unassigned rides near
+  // that same venue, instead of the whole city. This keeps drivers
+  // circulating around a partner venue during its reservation window
+  // rather than getting pulled far away right when the venue needs them,
+  // which is the entire point of the partnership for the venue's side.
+  // Lifts automatically the moment that reserved ride completes/cancels.
+  let areaLockVenue = null;
+  if (driverId && (await getConfigBool("grotto_program_enabled", true))) {
+    const activeReserved = await pool.query(
+      `SELECT partner_venues.lat, partner_venues.lng, partner_venues.name
+       FROM rides JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
+       WHERE rides.driver_id = $1 AND rides.ride_status IN ('accepted', 'in_progress')
+         AND rides.partner_venue_id IS NOT NULL
+       LIMIT 1`,
+      [driverId]
+    );
+    if (activeReserved.rows[0] && activeReserved.rows[0].lat != null && activeReserved.rows[0].lng != null) {
+      areaLockVenue = activeReserved.rows[0];
+    }
+  }
+
+  // Fetch a larger candidate batch when area-locked, since the distance
+  // filter below happens in JS after this query -- LIMIT 20 up front would
+  // otherwise mean "the first 20 citywide, then filtered down," which
+  // could hand back far fewer than 20 even when plenty of nearby rides
+  // exist further down the unfiltered list.
   const result = await pool.query(
     `SELECT rides.*, users.name as rider_name, users.phone as rider_phone,
-            (rides.preferred_driver_id = $1) as is_preferred_for_you
+            (rides.preferred_driver_id = $1) as is_preferred_for_you,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
      FROM rides
      JOIN users ON users.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.ride_status = 'requested' AND rides.driver_id IS NULL
        AND (rides.preferred_driver_id IS NULL OR rides.preferred_driver_id = $1)
        AND (
@@ -611,11 +901,29 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
          OR rides.preferred_driver_id = $1
          OR rides.scheduled_pickup_at <= now() + interval '5 hours'
        )
-     ORDER BY rides.created_at ASC
-     LIMIT 20`,
-    [driverId]
+     ORDER BY rides.reassignment_priority DESC, rides.created_at ASC
+     LIMIT $2`,
+    [driverId, areaLockVenue ? 200 : 20]
   );
-  res.json({ rides: result.rows.map(withParsedStops) });
+
+  let rides = result.rows;
+  if (areaLockVenue) {
+    const radiusKm = await getConfigNumber("partner_venue_dispatch_radius_km", 5);
+    rides = rides.filter((ride) => {
+      // Can't score a ride with no coordinates against the venue -- excluded
+      // while locked rather than guessed at, same "don't show what we can't
+      // verify" principle as the fare engine never trusting a client number.
+      return isWithinRadiusKm(
+        { lat: areaLockVenue.lat, lng: areaLockVenue.lng },
+        { lat: ride.pickup_lat != null ? Number(ride.pickup_lat) : null, lng: ride.pickup_lng != null ? Number(ride.pickup_lng) : null },
+        radiusKm
+      );
+    });
+  }
+  rides = rides.slice(0, 20);
+  rides = await attachShareParticipants(rides);
+
+  res.json({ rides: rides.map(withParsedStops), areaLockedToVenue: areaLockVenue ? areaLockVenue.name : null });
 });
 
 // POST /api/rides/:id/accept — a driver claims an unassigned ride.
@@ -672,7 +980,7 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     [driver.id]
   );
   const vehicleLabel = vehicleInfo.rows[0]?.make_model
-    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " — " + vehicleInfo.rows[0].plate_number : ""}`
+    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
     : null;
   if (ride.rider_whatsapp_number) {
     sendWhatsAppMessage(ride.rider_whatsapp_number, driverAssignedMessage(ride, driverName, vehicleLabel)).catch(() => {});
@@ -681,7 +989,7 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     sendDriverAssignedEmail(ride.rider_email, ride, driverName, vehicleLabel).catch(() => {});
   }
 
-  res.json({ ride: withParsedStops(ride) });
+  res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
 });
 
 const STATUS_NOTIFICATION = {
@@ -693,19 +1001,24 @@ const STATUS_NOTIFICATION = {
 // Valid ride-status transitions a driver can make via the route below.
 // 'requested' isn't listed as a starting point — a ride only gets a
 // driver_id (required to reach this route at all) once /accept has already
-// moved it to 'accepted'. completed/cancelled are terminal: nothing can
-// leave those states from here.
+// moved it to 'accepted'. completed is terminal from here. 'cancelled' is
+// deliberately NOT reachable through this route as of Arrivo Ride
+// Guarantee (2026-09-17) — "once accepted, your ride is yours." A driver
+// who genuinely cannot continue must use POST /:id/cancel-request below,
+// which requires one of a fixed set of valid reasons rather than a free
+// cancel; anything outside that list goes through company support
+// (routes/admin.js PATCH /rides/:id, unchanged).
 const VALID_STATUS_TRANSITIONS = {
-  accepted: ["in_progress", "cancelled"],
-  in_progress: ["completed", "cancelled"],
+  accepted: ["in_progress"],
+  in_progress: ["completed"],
 };
 
 // PATCH /api/rides/:id/status — driver updates trip progress
 router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res) => {
   const { status } = req.body;
-  const allowed = ["in_progress", "completed", "cancelled"];
+  const allowed = ["in_progress", "completed"];
   if (!allowed.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${allowed.join(", ")}` });
+    return res.status(400).json({ error: `status must be one of: ${allowed.join(", ")}. To cancel an accepted ride, use POST /:id/cancel-request with a valid reason.` });
   }
 
   const driver = await getDriverForUser(req.user.id);
@@ -792,10 +1105,57 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     });
     if (overageNaira > 0) {
       const overageUpdate = await pool.query(
-        "UPDATE rides SET overage_naira = $1, updated_at = now() WHERE id = $2 RETURNING *",
+        "UPDATE rides SET overage_naira = $1, overage_reason = 'chauffeur_hours', updated_at = now() WHERE id = $2 RETURNING *",
         [overageNaira, ride.id]
       );
       ride = overageUpdate.rows[0];
+    }
+  }
+
+  // Arrivo Fair Fare — "traffic shouldn't punish you twice." Scoped to
+  // one-way, distance-quoted bookings (duration_min is only ever set for
+  // those — see the schema.sql comment on it). A delay up to the
+  // configured free allowance is absorbed by Arrivo; only minutes beyond
+  // that are billed, at the configured per-minute rate, both of which are
+  // remotely configurable (services/systemConfig.js) since Finance/Ops
+  // haven't settled on final values yet. overage_breakdown keeps the exact
+  // numbers used so the rider-facing "why was I charged extra" is always
+  // answerable, never just a bare total.
+  if (
+    status === "completed" &&
+    ride.booking_type === "one_way" &&
+    ride.duration_min &&
+    ride.tracking_started_at
+  ) {
+    const elapsedMinutes = (new Date(ride.completed_at).getTime() - new Date(ride.tracking_started_at).getTime()) / (1000 * 60);
+    const [freeAllowanceMinutes, perMinuteNaira] = await Promise.all([
+      getConfigNumber("fair_fare_free_allowance_minutes", 15),
+      getConfigNumber("fair_fare_per_minute_naira", 50),
+    ]);
+    const fairFare = computeFairFareOverageNaira({
+      quotedDurationMin: Number(ride.duration_min),
+      elapsedMinutes,
+      freeAllowanceMinutes,
+      perMinuteNaira,
+      fareNaira: Number(ride.fare_naira),
+    });
+    if (fairFare.overageNaira > 0) {
+      const fairFareUpdate = await pool.query(
+        `UPDATE rides SET overage_naira = $1, overage_reason = 'traffic_delay', overage_breakdown = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+        [
+          fairFare.overageNaira,
+          JSON.stringify({
+            quotedDurationMin: Number(ride.duration_min),
+            elapsedMinutes: Math.round(elapsedMinutes),
+            delayMinutes: Math.round(fairFare.delayMinutes),
+            freeAllowanceMinutes,
+            billableMinutes: Math.round(fairFare.billableMinutes),
+            perMinuteNaira,
+          }),
+          ride.id,
+        ]
+      );
+      ride = fairFareUpdate.rows[0];
     }
   }
 
@@ -869,18 +1229,96 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   res.json({ ride: withParsedStops(ride) });
 });
 
+
+// Valid reasons a driver may cite to cancel an ACCEPTED trip. Anything
+// outside this list is not a self-service driver action at all — it goes
+// through company support (routes/admin.js PATCH /rides/:id), per the
+// Ride Guarantee brief: "Only company support staff may cancel an
+// accepted trip — not the driver app directly."
+const VALID_DRIVER_CANCEL_REASONS = ["vehicle_breakdown", "safety_concern", "emergency", "incorrect_pickup_info"];
+
+// POST /api/rides/:id/cancel-request — Arrivo Ride Guarantee.
+// "Once accepted, your ride is yours." A driver can't free-cancel an
+// accepted ride anymore (see VALID_STATUS_TRANSITIONS above); this is the
+// only self-service path left, and it's deliberately narrow: pick one of
+// four real, checkable reasons, and the ride is reset to 'requested' with
+// driver_id cleared rather than moved to a terminal 'cancelled' — the
+// rider keeps their payment and their place in the queue, and
+// reassignment_priority bumps the ride to the front of GET /available so
+// another driver picks it up ahead of brand-new requests. The rider is
+// never asked to re-search or re-pay. Every attempt is logged to
+// ride_cancellations for support visibility regardless of outcome.
+router.post("/:id/cancel-request", requireAuth, requireRole("driver"), async (req, res) => {
+  const { reason } = req.body;
+  if (!VALID_DRIVER_CANCEL_REASONS.includes(reason)) {
+    return res.status(400).json({
+      error: `reason must be one of: ${VALID_DRIVER_CANCEL_REASONS.join(", ")}. Anything else needs to go through Arrivo support.`,
+    });
+  }
+
+  const driver = await getDriverForUser(req.user.id);
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1 AND driver_id = $2", [req.params.id, driver?.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found or not assigned to you" });
+
+  if (!["accepted", "in_progress"].includes(ride.ride_status)) {
+    return res.status(400).json({ error: `Can't cancel a ride that's already '${ride.ride_status}'.` });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `INSERT INTO ride_cancellations (ride_id, driver_id, reason, reassigned) VALUES ($1, $2, $3, true)`,
+      [ride.id, driver.id, reason]
+    );
+
+    const updated = await client.query(
+      `UPDATE rides
+          SET ride_status = 'requested', driver_id = NULL, tracking_started_at = NULL,
+              reassignment_priority = reassignment_priority + 1, previously_cancelled_at = now(), updated_at = now()
+        WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+
+    await client.query("COMMIT");
+    const freshRide = updated.rows[0];
+
+    const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [freshRide.rider_id]);
+    sendPushNotification(
+      rider.rows[0]?.push_token,
+      "Finding you a new driver",
+      "Your driver had a last-minute issue — we're finding you a replacement now. No need to rebook.",
+      { rideId: freshRide.id, type: "ride_reassigning" }
+    ).catch(() => {});
+
+    res.json({ ride: withParsedStops(freshRide) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Ride cancel-request failed:", err.message);
+    res.status(500).json({ error: "Could not process this cancellation. Please try again or contact support." });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /api/rides/driver/mine — this driver's accepted/active/completed rides
 router.get("/driver/mine", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
 
   const result = await pool.query(
-    `SELECT rides.*, users.name as rider_name, users.phone as rider_phone
-     FROM rides JOIN users ON users.id = rides.rider_id
+    `SELECT rides.*, users.name as rider_name, users.phone as rider_phone,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
+     FROM rides
+     JOIN users ON users.id = rides.rider_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.driver_id = $1 ORDER BY rides.created_at DESC`,
     [driver.id]
   );
-  res.json({ rides: result.rows.map(withParsedStops) });
+  const rides = await attachShareParticipants(result.rows);
+  res.json({ rides: rides.map(withParsedStops) });
 });
 
 // PATCH /api/rides/:id/payment — re-check this ride's own payment_reference
@@ -1005,12 +1443,14 @@ router.get("/:id", requireAuth, async (req, res) => {
             driver_users.id as driver_user_id, driver_users.name as driver_name, driver_users.phone as driver_phone,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
             drivers.rating as driver_rating, drivers.is_verified as driver_is_verified,
-            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type as assigned_vehicle_type
+            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type as assigned_vehicle_type,
+            partner_venues.name as partner_venue_name, partner_venues.perk_description as partner_venue_perk
      FROM rides
      JOIN users riders ON riders.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
      LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
      LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+     LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.id = $1`,
     [req.params.id]
   );
@@ -1020,15 +1460,23 @@ router.get("/:id", requireAuth, async (req, res) => {
   const driver = await getDriverForUser(req.user.id);
   const isRider = ride.rider_id === req.user.id;
   const isAssignedDriver = driver && ride.driver_id === driver.id;
+  // Arrivo Share -- a co-rider added via POST /:id/share-participants can
+  // view (never manage) the trip they're riding on, same as the organizer
+  // tracking it, even though rides.rider_id is the organizer, not them.
+  const shareParticipantCheck = await pool.query(
+    "SELECT 1 FROM ride_share_participants WHERE ride_id = $1 AND user_id = $2",
+    [ride.id, req.user.id]
+  );
+  const isShareParticipant = shareParticipantCheck.rows.length > 0;
   // "support" is allowed the same read-only access as "admin" here, matching
   // GET /:id/fleet below — a support-role staffer can already view this
   // ride's fleet companions, so it makes no sense to 403 them on the ride's
   // own details.
-  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
+  if (!isRider && !isAssignedDriver && !isShareParticipant && !["admin", "support"].includes(req.user.role)) {
     return res.status(403).json({ error: "You don't have access to this ride" });
   }
 
-  res.json({ ride: withParsedStops(ride) });
+  res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
 });
 
 // GET /api/rides/:id/share — the rider (or assigned driver, or admin) calls
@@ -1077,6 +1525,177 @@ router.get("/:id/share", requireAuth, async (req, res) => {
   // PASSWORD_RESET_BASE_URL / SCAN_BASE_URL elsewhere in this file/routes.
   const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html";
   res.json({ shareToken: token, shareUrl: `${base}?share=${token}` });
+});
+
+// POST /api/rides/:id/share-participants — Arrivo Share. The organizer
+// (rides.rider_id) adds a real co-rider by phone or email, same
+// lookup-by-account pattern as Family Plan's POST /plans/:id/members —
+// every co-rider must already have a RideArrivo account, both because the
+// organizer is the only payer (nothing to bill them for) and because a
+// real account is what makes tracking/notifications/safety actually work
+// for that person. Capped at the vehicle's own passenger limit (the same
+// MAX_PASSENGERS used everywhere else a seat count matters) minus the
+// organizer's own seat — Arrivo Share is "ride together in ONE vehicle,"
+// not a way around the normal multi-vehicle group-booking flow.
+// body: { phone } or { email }
+router.post("/:id/share-participants", requireAuth, async (req, res) => {
+  const { phone, email } = req.body;
+  if (!phone && !email) return res.status(400).json({ error: "phone or email is required" });
+
+  const userResult = await pool.query(
+    phone ? "SELECT * FROM users WHERE phone = $1" : "SELECT * FROM users WHERE LOWER(email) = LOWER($1)",
+    [phone || email]
+  );
+  const targetUser = userResult.rows[0];
+  if (!targetUser) {
+    return res.status(404).json({ error: "No RideArrivo account found with that " + (phone ? "phone number" : "email") + "." });
+  }
+
+  // Row-locked (SELECT ... FOR UPDATE on the ride) so two concurrent add
+  // requests for the same ride can't both read the same participant count,
+  // both pass the capacity check, and jointly overshoot the vehicle's real
+  // seat count -- same lock-before-check-then-act pattern already used for
+  // the wallet-debit paths in this file (e.g. the flight-issue
+  // charge-at-drop-off block above).
+  const client = await pool.connect();
+  let ride, inserted;
+  try {
+    await client.query("BEGIN");
+    const rideResult = await client.query("SELECT * FROM rides WHERE id = $1 FOR UPDATE", [req.params.id]);
+    ride = rideResult.rows[0];
+    if (!ride) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Ride not found" });
+    }
+    if (ride.rider_id !== req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Only the person who booked this ride can add people to share it." });
+    }
+    if (!["requested", "accepted"].includes(ride.ride_status)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Co-riders can only be added before the trip starts." });
+    }
+    if (targetUser.id === req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "You're already on this ride." });
+    }
+
+    const countResult = await client.query("SELECT COUNT(*) FROM ride_share_participants WHERE ride_id = $1", [ride.id]);
+    if (!hasRoomForAnotherShareParticipant(ride.vehicle_type, Number(countResult.rows[0].count))) {
+      await client.query("ROLLBACK");
+      const capacity = MAX_PASSENGERS[ride.vehicle_type] || 1;
+      return res.status(400).json({ error: `This ${ride.vehicle_type} seats ${capacity} — it's already full.` });
+    }
+
+    try {
+      inserted = await client.query(
+        `INSERT INTO ride_share_participants (ride_id, user_id, added_by_user_id) VALUES ($1, $2, $3) RETURNING *`,
+        [ride.id, targetUser.id, req.user.id]
+      );
+    } catch (err) {
+      if (err.code === "23505") { // unique_violation — the (ride_id, user_id) index
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: `${targetUser.name} is already on this ride.` });
+      }
+      throw err;
+    }
+
+    await client.query("UPDATE rides SET is_arrivo_share = true, updated_at = now() WHERE id = $1", [ride.id]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("share-participants add failed:", err.message);
+    return res.status(500).json({ error: "Could not add this rider. Please try again." });
+  } finally {
+    client.release();
+  }
+
+  sendPushNotification(
+    targetUser.push_token,
+    "You're riding with Arrivo Share",
+    `You've been added to an Arrivo ride from ${ride.pickup_address}. Track it in the app.`,
+    { rideId: ride.id, type: "arrivo_share_added" }
+  ).catch(() => {});
+
+  // Symmetry with every other mid-trip change a driver needs to know about
+  // (reassignment, cancellation, etc.) -- a driver who has already accepted
+  // this ride should find out who's actually going to be in the car now,
+  // not discover it for the first time at pickup.
+  if (ride.ride_status === "accepted" && ride.driver_id) {
+    pool.query(
+      `SELECT users.push_token FROM drivers JOIN users ON users.id = drivers.user_id WHERE drivers.id = $1`,
+      [ride.driver_id]
+    ).then((driverResult) => {
+      sendPushNotification(
+        driverResult.rows[0]?.push_token,
+        "A co-rider was added to your pickup",
+        `${targetUser.name} will be riding along on this trip.`,
+        { rideId: ride.id, type: "arrivo_share_participant_added" }
+      ).catch(() => {});
+    }).catch(() => {});
+  }
+
+  res.status(201).json({
+    participant: { id: inserted.rows[0].id, userId: targetUser.id, name: targetUser.name, phone: targetUser.phone },
+  });
+});
+
+// DELETE /api/rides/:id/share-participants/:participantId — organizer
+// removes a co-rider before the trip starts (same status gate as adding).
+router.delete("/:id/share-participants/:participantId", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  let ride, removedParticipant;
+  try {
+    await client.query("BEGIN");
+    const rideResult = await client.query("SELECT * FROM rides WHERE id = $1 FOR UPDATE", [req.params.id]);
+    ride = rideResult.rows[0];
+    if (!ride) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Ride not found" });
+    }
+    if (ride.rider_id !== req.user.id) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Only the person who booked this ride can manage who's sharing it." });
+    }
+    if (!["requested", "accepted"].includes(ride.ride_status)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Co-riders can only be removed before the trip starts." });
+    }
+
+    const deleteResult = await client.query(
+      "DELETE FROM ride_share_participants WHERE id = $1 AND ride_id = $2 RETURNING *",
+      [req.params.participantId, ride.id]
+    );
+    if (deleteResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Participant not found on this ride." });
+    }
+    removedParticipant = deleteResult.rows[0];
+
+    const countResult = await client.query("SELECT COUNT(*) FROM ride_share_participants WHERE ride_id = $1", [ride.id]);
+    if (Number(countResult.rows[0].count) === 0) {
+      // No co-riders left -- this is a normal solo booking again, not an
+      // Arrivo Share ride, so it shouldn't keep showing Share badges/UI.
+      await client.query("UPDATE rides SET is_arrivo_share = false, updated_at = now() WHERE id = $1", [ride.id]);
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("share-participants remove failed:", err.message);
+    return res.status(500).json({ error: "Could not remove this rider. Please try again." });
+  } finally {
+    client.release();
+  }
+
+  const removedUser = await pool.query("SELECT push_token FROM users WHERE id = $1", [removedParticipant.user_id]);
+  sendPushNotification(
+    removedUser.rows[0]?.push_token,
+    "You've been removed from a shared ride",
+    "The trip organizer removed you from an Arrivo Share ride.",
+    { rideId: ride.id, type: "arrivo_share_removed" }
+  ).catch(() => {});
+
+  res.json({ removed: true });
 });
 
 // GET /api/rides/:id/fleet — the companion escort vehicles traveling
@@ -1291,13 +1910,16 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
 });
 
 // POST /api/rides/:id/overage-charge — pays off an automatically-computed
-// Chauffeur time-overage charge (see PATCH /:id/status above, where
-// overage_naira gets set at trip completion for a single-day 'full_day'
-// booking that ran longer than the hours the rider selected at booking).
-// Modeled closely on POST /:id/tip just above: same wallet-debit-or-fresh-
-// card-charge rails, riders never pay this in cash. Unlike a tip, the
-// amount is NOT rider-chosen — it's whatever the system already computed
-// and stored on the ride, so this endpoint only accepts a payment method.
+// overage charge (see PATCH /:id/status above, where overage_naira gets
+// set at trip completion). Two possible sources, told apart by
+// overage_reason: a single-day 'full_day' chauffeur booking that ran
+// longer than the hours the rider selected, or (Arrivo Fair Fare) a
+// one-way ride whose traffic delay ran past the configured free
+// allowance. Modeled closely on POST /:id/tip just above: same
+// wallet-debit-or-fresh-card-charge rails, riders never pay this in cash.
+// Unlike a tip, the amount is NOT rider-chosen — it's whatever the system
+// already computed and stored on the ride, so this endpoint only accepts
+// a payment method.
 // body: { paymentMethod: 'wallet' | 'card', paymentReference? }
 router.post("/:id/overage-charge", requireAuth, async (req, res) => {
   const { paymentMethod, paymentReference } = req.body;
@@ -1385,7 +2007,7 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
     await client.query(
       `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
        VALUES ($1, 'overage', 'completed', $2, $3, $4, $5)`,
-      [req.user.id, -overageNaira, newBalance, ride.id, "Time overage charge for Ride #" + ride.id]
+      [req.user.id, -overageNaira, newBalance, ride.id, (ride.overage_reason === "traffic_delay" ? "Traffic delay charge for Ride #" : "Time overage charge for Ride #") + ride.id]
     );
 
     await client.query("COMMIT");

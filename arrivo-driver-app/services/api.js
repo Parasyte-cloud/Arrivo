@@ -78,6 +78,16 @@ export function acceptRide(token, rideId) {
 export function updateRideStatus(token, rideId, status) {
   return request(`/api/rides/${rideId}/status`, authed(token, { method: "PATCH", body: JSON.stringify({ status }) }));
 }
+// Arrivo Ride Guarantee: once a ride is accepted, a driver can no longer
+// free-cancel it via updateRideStatus("cancelled") -- the backend now
+// rejects that transition. This is the only way a driver can back out of
+// an accepted/in_progress ride, and it requires one of a fixed set of
+// valid reasons (vehicle_breakdown | safety_concern | emergency |
+// incorrect_pickup_info). The backend auto-reassigns the ride to another
+// driver rather than leaving the rider to rebook.
+export function cancelRideWithReason(token, rideId, reason) {
+  return request(`/api/rides/${rideId}/cancel-request`, authed(token, { method: "POST", body: JSON.stringify({ reason }) }));
+}
 export function getMyDriverRides(token) {
   return request("/api/rides/driver/mine", authed(token));
 }

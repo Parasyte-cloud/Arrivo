@@ -122,7 +122,7 @@ router.get("/status", requireAuth, async (req, res) => {
       // booking.js's flightContinue handler and RouteScreen.js, neither of
       // which requires a successful Track before proceeding), so say so.
       return res.status(404).json({
-        error: "We couldn't pull live status for that flight yet. If the number's right, this is normal for a flight that hasn't started boarding — we'll keep checking as your trip gets closer, and your booking isn't affected.",
+        error: "We couldn't pull live status for that flight yet. If the number's right, this is normal for a flight that hasn't started boarding. We'll keep checking as your trip gets closer, and your booking isn't affected.",
       });
     }
     res.json(result);
