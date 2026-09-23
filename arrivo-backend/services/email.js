@@ -174,6 +174,8 @@ function sendDriverChangedEmail(to, ride, reason) {
 }
 
 module.exports = {
+  sendEmail,
+  escapeHtml,
   sendPasswordResetEmail,
   sendBookingConfirmationEmail,
   sendWelcomeEmail,
