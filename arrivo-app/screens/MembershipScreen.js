@@ -6,8 +6,8 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import {
-  getMembership, getWallet, subscribeIndividualMembership,
-  subscribeCorporateMembership, linkCorporateDelegate,
+  getMembership, getWallet, getMembershipPlans,
+  subscribeMembership, addMembershipProfileUser,
 } from "../services/api";
 
 function formatNaira(amount) {
@@ -18,28 +18,32 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+const PLAN_LABEL = { premium: "Premium", executive: "Executive", executive_profile: "Executive (profile user)" };
+
 export default function MembershipScreen({ navigation }) {
   const { token } = useAuth();
   const [membership, setMembership] = useState(null);
-  const [delegateCount, setDelegateCount] = useState(0);
+  const [profileUsers, setProfileUsers] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [walletBalance, setWalletBalance] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [busyPlan, setBusyPlan] = useState(null);
   const [error, setError] = useState(null);
-  const [delegateEmail, setDelegateEmail] = useState("");
+  const [profileUserEmail, setProfileUserEmail] = useState("");
   const [linkStatus, setLinkStatus] = useState(null);
-  // Synchronous double-tap guard for subscribeIndividual/subscribeCorporate,
-  // mirroring ScanScreen.js's scannedRef — the `busy` state guard alone
-  // can't stop a second tap landing in the same tick/frame, before React
-  // re-renders with busy=true and swaps the button for the spinner.
+  // Synchronous double-tap guard for subscribe, mirroring ScanScreen.js's
+  // scannedRef — the `busyPlan` state guard alone can't stop a second tap
+  // landing in the same tick/frame, before React re-renders with a
+  // spinner in place of the button.
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const [m, w] = await Promise.all([getMembership(token), getWallet(token)]);
+      const [m, w, p] = await Promise.all([getMembership(token), getWallet(token), getMembershipPlans()]);
       setMembership(m.membership);
-      setDelegateCount(m.delegateCount || 0);
+      setProfileUsers(m.profileUsers || []);
       setWalletBalance(w.balanceNaira);
+      setPlans(p.plans || []);
     } catch (e) {
       setError(e.message || "Couldn't load membership details.");
     } finally {
@@ -53,50 +57,34 @@ export default function MembershipScreen({ navigation }) {
     }, [load])
   );
 
-  const subscribeIndividual = async () => {
+  const subscribe = async (planKey) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
-    setBusy(true);
+    setBusyPlan(planKey);
     setError(null);
     try {
-      await subscribeIndividualMembership(token);
+      await subscribeMembership(token, planKey);
       await load();
     } catch (e) {
       setError(e.message || "Couldn't subscribe. Please try again.");
     } finally {
-      setBusy(false);
+      setBusyPlan(null);
       submittingRef.current = false;
     }
   };
 
-  const subscribeCorporate = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      await subscribeCorporateMembership(token);
-      await load();
-    } catch (e) {
-      setError(e.message || "Couldn't subscribe. Please try again.");
-    } finally {
-      setBusy(false);
-      submittingRef.current = false;
-    }
-  };
-
-  const addDelegate = async () => {
-    if (!delegateEmail.trim()) return;
+  const addProfileUser = async () => {
+    if (!profileUserEmail.trim()) return;
     setLinkStatus("busy");
     setError(null);
     try {
-      await linkCorporateDelegate(token, delegateEmail.trim().toLowerCase());
-      setDelegateEmail("");
+      await addMembershipProfileUser(token, profileUserEmail.trim().toLowerCase());
+      setProfileUserEmail("");
       setLinkStatus("success");
       await load();
     } catch (e) {
       setLinkStatus(null);
-      setError(e.message || "Couldn't link that delegate.");
+      setError(e.message || "Couldn't add that profile user.");
     }
   };
 
@@ -111,9 +99,8 @@ export default function MembershipScreen({ navigation }) {
     );
   }
 
-  const isCorporate = membership?.plan_type === "corporate_delegate" && !membership?.company_account_id;
-  const isCorporateDelegate = membership?.plan_type === "corporate_delegate" && !!membership?.company_account_id;
-  const isIndividual = membership?.plan_type === "individual_annual";
+  const isExecutiveOwner = membership?.plan_type === "executive";
+  const maxAdditionalProfileUsers = isExecutiveOwner ? (membership.max_profile_users || 1) - 1 : 0;
 
   return (
     <View style={styles.screen}>
@@ -131,13 +118,13 @@ export default function MembershipScreen({ navigation }) {
         {membership ? (
           <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
             <View style={styles.rowBetween}>
-              <Text style={styles.planName}>
-                {isCorporateDelegate ? "Corporate delegate" : isCorporate ? "Corporate (company account)" : "Individual annual"}
-              </Text>
+              <Text style={styles.planName}>{PLAN_LABEL[membership.plan_type] || membership.plan_type}</Text>
               <Tag label="Active" tone="teal" />
             </View>
             <Text style={styles.meta}>
-              {isCorporateDelegate ? "Rides billed to your company." : "No per-trip charge until this expires."}
+              {membership.cashback_percent > 0
+                ? `${membership.cashback_percent}% cashback credited to your wallet after every completed trip.`
+                : "No per-trip charge while this is active."}
             </Text>
             <Text style={styles.meta}>Renews / expires {formatDate(membership.expires_at)}</Text>
           </Card>
@@ -147,77 +134,68 @@ export default function MembershipScreen({ navigation }) {
           </Card>
         )}
 
-        {!membership ? (
-          <>
-            <Card tone="dark" style={{ marginBottom: spacing.md }}>
-              <Text style={styles.cardLabel}>Individual annual</Text>
-              <Text style={styles.price}>{formatNaira(250000)}/year</Text>
-              <Text style={styles.meta}>Ride without paying per trip. Billed from your wallet balance.</Text>
-              {walletBalance != null && walletBalance < 250000 ? (
-                <Text style={styles.warningText}>
-                  Wallet balance is {formatNaira(walletBalance)}: top up at least {formatNaira(250000 - walletBalance)} more to subscribe.
+        {!membership
+          ? plans.map((plan) => (
+              <Card tone="dark" style={{ marginBottom: spacing.md }} key={plan.key}>
+                <Text style={styles.cardLabel}>{plan.label}</Text>
+                <Text style={styles.price}>{formatNaira(plan.priceNaira)}/month</Text>
+                <Text style={styles.meta}>{plan.tripCoverage}</Text>
+                <Text style={styles.meta}>{plan.cashbackPercent}% cashback on every trip, credited to your wallet.</Text>
+                <Text style={styles.meta}>
+                  {plan.maxProfileUsers > 1 ? `Up to ${plan.maxProfileUsers} profile users.` : "Single user."}
                 </Text>
-              ) : null}
-              <View style={{ height: spacing.sm }} />
-              {busy ? (
-                <ActivityIndicator color={colors.amber} />
-              ) : (
-                <Button
-                  label="Subscribe"
-                  variant="ghost"
-                  tone="dark"
-                  onPress={subscribeIndividual}
-                  disabled={walletBalance == null || walletBalance < 250000}
-                />
-              )}
-            </Card>
+                {walletBalance != null && walletBalance < plan.priceNaira ? (
+                  <Text style={styles.warningText}>
+                    Wallet balance is {formatNaira(walletBalance)}: top up at least {formatNaira(plan.priceNaira - walletBalance)} more to subscribe.
+                  </Text>
+                ) : null}
+                <View style={{ height: spacing.sm }} />
+                {busyPlan === plan.key ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : (
+                  <Button
+                    label={`Subscribe to ${plan.label}`}
+                    variant="ghost"
+                    tone="dark"
+                    onPress={() => subscribe(plan.key)}
+                    disabled={busyPlan != null || walletBalance == null || walletBalance < plan.priceNaira}
+                  />
+                )}
+              </Card>
+            ))
+          : null}
 
-            <Card tone="dark" style={{ marginBottom: spacing.md }}>
-              <Text style={styles.cardLabel}>Corporate</Text>
-              <Text style={styles.price}>{formatNaira(1500000)}/year</Text>
-              <Text style={styles.meta}>Link your team as delegates: their rides bill to your company account.</Text>
-              {walletBalance != null && walletBalance < 1500000 ? (
-                <Text style={styles.warningText}>
-                  Wallet balance is {formatNaira(walletBalance)}: top up at least {formatNaira(1500000 - walletBalance)} more to subscribe.
-                </Text>
-              ) : null}
-              <View style={{ height: spacing.sm }} />
-              {busy ? (
-                <ActivityIndicator color={colors.amber} />
-              ) : (
-                <Button
-                  label="Subscribe as a company"
-                  variant="ghost"
-                  tone="dark"
-                  onPress={subscribeCorporate}
-                  disabled={walletBalance == null || walletBalance < 1500000}
-                />
-              )}
-            </Card>
-          </>
-        ) : null}
-
-        {isCorporate ? (
+        {isExecutiveOwner ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.cardLabel}>Delegates ({delegateCount})</Text>
-            <Text style={styles.meta}>Add a teammate by the email they used to sign up for RideArrivo.</Text>
+            <Text style={styles.cardLabel}>
+              Profile users ({profileUsers.length}/{maxAdditionalProfileUsers})
+            </Text>
+            <Text style={styles.meta}>Add a profile user by the email they used to sign up for RideArrivo. They'll share your plan's trip coverage and cashback rate.</Text>
             <View style={{ height: spacing.sm }} />
-            <TextInput
-              style={styles.input}
-              placeholder="teammate@company.com"
-              placeholderTextColor={colors.dark.textMuted}
-              value={delegateEmail}
-              onChangeText={setDelegateEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <View style={{ height: spacing.sm }} />
-            {linkStatus === "busy" ? (
-              <ActivityIndicator color={colors.amber} />
-            ) : (
-              <Button label="Add delegate" variant="ghost" tone="dark" onPress={addDelegate} />
-            )}
-            {linkStatus === "success" ? <Text style={styles.successText}>Delegate added ✓</Text> : null}
+            {profileUsers.map((u) => (
+              <Text style={styles.meta} key={u.id}>• {u.name} ({u.email})</Text>
+            ))}
+            {profileUsers.length < maxAdditionalProfileUsers ? (
+              <>
+                <View style={{ height: spacing.sm }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="teammate@example.com"
+                  placeholderTextColor={colors.dark.textMuted}
+                  value={profileUserEmail}
+                  onChangeText={setProfileUserEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+                <View style={{ height: spacing.sm }} />
+                {linkStatus === "busy" ? (
+                  <ActivityIndicator color={colors.amber} />
+                ) : (
+                  <Button label="Add profile user" variant="ghost" tone="dark" onPress={addProfileUser} />
+                )}
+                {linkStatus === "success" ? <Text style={styles.successText}>Profile user added ✓</Text> : null}
+              </>
+            ) : null}
           </Card>
         ) : null}
 

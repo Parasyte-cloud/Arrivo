@@ -17,6 +17,7 @@ function transactionLabel(tx) {
   if (tx.type === "topup") return "Wallet top-up";
   if (tx.type === "ride_charge") return "Ride payment";
   if (tx.type === "membership_charge") return "Membership";
+  if (tx.type === "membership_cashback") return "Membership cashback";
   return tx.description || tx.type;
 }
 

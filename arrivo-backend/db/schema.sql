@@ -216,17 +216,27 @@ CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user ON wallet_transactions(u
 -- underneath it. company_account_id is null for the individual plan and
 -- for the company's own membership row; delegate riders point it at the
 -- company user's id.
+-- plan_type was originally 'individual_annual' | 'corporate_delegate'
+-- (annual, single-tier). Corrected 2026-09 to a monthly, two-tier model —
+-- see routes/memberships.js for the plan catalogue (pricing, cashback
+-- rate, profile-user limit). cashback_percent and max_profile_users below
+-- are ALTER'd in rather than added here, and are stored per-row (not just
+-- looked up from the catalogue by plan_type) so a member who subscribed
+-- under an older price/rate keeps the terms they actually signed up for
+-- if the catalogue changes later.
 CREATE TABLE IF NOT EXISTS memberships (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  plan_type TEXT NOT NULL, -- 'individual_annual' | 'corporate_delegate'
+  plan_type TEXT NOT NULL, -- 'premium' | 'executive' | 'executive_profile' (a profile user linked under someone else's executive plan)
   status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'cancelled' | 'expired'
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
   price_naira NUMERIC NOT NULL,
-  company_account_id INTEGER REFERENCES users(id), -- set on a delegate rider, pointing at the company's user row
+  company_account_id INTEGER REFERENCES users(id), -- set on a linked profile user, pointing back at the Executive member's own user row
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS cashback_percent NUMERIC NOT NULL DEFAULT 0; -- % of every completed trip's fare, credited to the rider's wallet — see services/membershipCashback.js
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS max_profile_users INTEGER NOT NULL DEFAULT 1; -- total seats on this plan, member included (Premium: 1, Executive: 3)
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_company ON memberships(company_account_id);
 

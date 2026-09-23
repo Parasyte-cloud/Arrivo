@@ -4,70 +4,129 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-const INDIVIDUAL_ANNUAL_PRICE = 250000; // NGN — flat annual price, adjust as the real pricing is decided
-const CORPORATE_ANNUAL_PRICE = 1500000; // NGN — flat annual price for the company account itself, adjust as the real pricing is decided
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+// Premium / Executive — monthly membership tiers, corrected 2026-09 from
+// the original annual, single-tier ("individual_annual" / "corporate_delegate")
+// model. Still paid entirely from the wallet at subscribe time, same as
+// the old model — top up first if there's not enough balance, there's no
+// separate card-payment path bolted onto this endpoint.
+//
+// cashbackPercent is credited to the rider's own wallet on EVERY completed,
+// paid trip a member (or one of their linked profile users) takes — see
+// services/membershipCashback.js — including a trip paid via the
+// 'membership' payment method itself (routes/rides.js), where the member
+// doesn't pay the fare but still earns cashback on it as a loyalty bonus on
+// top of the free ride.
+//
+// maxProfileUsers is the total seat count on the plan, the subscribing
+// member included — Premium is a single seat; Executive is up to 3 (the
+// member plus up to 2 linked profile users, see POST /profile-users/add).
+const PLANS = {
+  premium: {
+    key: "premium",
+    label: "Premium",
+    priceNaira: 250000,
+    cashbackPercent: 3,
+    maxProfileUsers: 1,
+    tripCoverage: "All trips within your location, including airport pickup/drop-off, and trips within Lagos.",
+  },
+  executive: {
+    key: "executive",
+    label: "Executive",
+    priceNaira: 500000,
+    cashbackPercent: 5,
+    maxProfileUsers: 3,
+    tripCoverage: "All trips within Lagos, inclusive of pickup and drop-offs.",
+  },
+};
+
+// No recurring/auto-charge job exists yet — a monthly membership simply
+// expires after 30 days and the member re-subscribes from the app or
+// website, same manual pattern the old annual plan used. Building real
+// recurring billing (retry-on-failure, dunning, etc.) is a separate piece
+// of work, not part of this billing-cycle correction.
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+function getPlan(key) {
+  return PLANS[String(key || "").trim().toLowerCase()] || null;
+}
+
+// GET /api/memberships/plans — public catalogue (no auth) so the app and
+// website can render pricing/features from one source instead of each
+// hardcoding its own copy of the numbers.
+router.get("/plans", (req, res) => {
+  res.json({ plans: Object.values(PLANS) });
+});
 
 // GET /api/memberships/mine — the signed-in user's own active membership,
-// and (if they're a company account) how many delegates are linked to them.
+// and (if they're an Executive member) which profile users are linked
+// under it.
 router.get("/mine", requireAuth, async (req, res) => {
   const membership = await pool.query(
     `SELECT * FROM memberships WHERE user_id = $1 AND status = 'active' AND expires_at > now() ORDER BY expires_at DESC LIMIT 1`,
     [req.user.id]
   );
-  const delegateCount = await pool.query(
-    `SELECT COUNT(*) FROM memberships WHERE company_account_id = $1 AND status = 'active'`,
+  const profileUsers = await pool.query(
+    `SELECT memberships.id, memberships.user_id, users.name, users.email
+     FROM memberships JOIN users ON users.id = memberships.user_id
+     WHERE memberships.company_account_id = $1 AND memberships.status = 'active' AND memberships.expires_at > now()
+     ORDER BY memberships.created_at ASC`,
     [req.user.id]
   );
+  const row = membership.rows[0];
   res.json({
-    membership: membership.rows[0] || null,
-    delegateCount: Number(delegateCount.rows[0].count),
+    membership: row
+      ? { ...row, price_naira: Number(row.price_naira), cashback_percent: Number(row.cashback_percent), max_profile_users: Number(row.max_profile_users) }
+      : null,
+    profileUsers: profileUsers.rows,
   });
 });
 
-// POST /api/memberships/individual/subscribe
-// Paid entirely from the wallet — per the requirement that membership
-// billing connects to the same wallet a rider tops up for per-trip
-// payment. If there's no balance, the fix is to top up first, not a
-// separate card-payment path bolted onto this one endpoint.
-router.post("/individual/subscribe", requireAuth, async (req, res) => {
+// POST /api/memberships/subscribe   body: { plan: 'premium' | 'executive' }
+router.post("/subscribe", requireAuth, async (req, res) => {
+  const plan = getPlan(req.body?.plan);
+  if (!plan) return res.status(400).json({ error: "plan must be 'premium' or 'executive'." });
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const existing = await client.query(
-      `SELECT * FROM memberships WHERE user_id = $1 AND plan_type = 'individual_annual' AND status = 'active' AND expires_at > now()`,
+      `SELECT * FROM memberships WHERE user_id = $1 AND plan_type IN ('premium', 'executive') AND status = 'active' AND expires_at > now()`,
       [req.user.id]
     );
     if (existing.rows[0]) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "You already have an active individual membership.", membership: existing.rows[0] });
+      return res.status(400).json({ error: "You already have an active membership.", membership: existing.rows[0] });
     }
 
     const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
     const balance = Number(userResult.rows[0].wallet_balance_naira);
-    if (balance < INDIVIDUAL_ANNUAL_PRICE) {
+    if (balance < plan.priceNaira) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Insufficient wallet balance for the annual plan.", balanceNaira: balance, priceNaira: INDIVIDUAL_ANNUAL_PRICE });
+      return res.status(400).json({
+        error: `Insufficient wallet balance for the ${plan.label} plan.`,
+        balanceNaira: balance,
+        priceNaira: plan.priceNaira,
+      });
     }
 
     const newBalanceResult = await client.query(
       "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
-      [INDIVIDUAL_ANNUAL_PRICE, req.user.id]
+      [plan.priceNaira, req.user.id]
     );
     const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
 
-    const expiresAt = new Date(Date.now() + ONE_YEAR_MS);
+    const expiresAt = new Date(Date.now() + ONE_MONTH_MS);
     const membershipResult = await client.query(
-      `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira)
-       VALUES ($1, 'individual_annual', 'active', $2, $3) RETURNING *`,
-      [req.user.id, expiresAt, INDIVIDUAL_ANNUAL_PRICE]
+      `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira, cashback_percent, max_profile_users)
+       VALUES ($1, $2, 'active', $3, $4, $5, $6) RETURNING *`,
+      [req.user.id, plan.key, expiresAt, plan.priceNaira, plan.cashbackPercent, plan.maxProfileUsers]
     );
 
     await client.query(
       `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, description)
-       VALUES ($1, 'membership_charge', 'completed', $2, $3, 'Individual annual membership')`,
-      [req.user.id, -INDIVIDUAL_ANNUAL_PRICE, newBalance]
+       VALUES ($1, 'membership_charge', 'completed', $2, $3, $4)`,
+      [req.user.id, -plan.priceNaira, newBalance, `${plan.label} membership — monthly`]
     );
 
     await client.query("COMMIT");
@@ -81,113 +140,74 @@ router.post("/individual/subscribe", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/memberships/corporate/subscribe — a company account's OWN
-// membership. This has to exist before that company can link any delegates
-// (see link-delegate below) — without it there was no way for a company to
-// ever get its first corporate_delegate row created in the first place.
-router.post("/corporate/subscribe", requireAuth, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+// POST /api/memberships/profile-users/add   body: { profileUserEmail }
+// Executive only — links an existing rider account as one of the plan's
+// "up to 3 profile users" (the Executive member plus up to 2 more). A
+// linked profile user shares the plan's trip coverage and cashback rate on
+// their OWN rides, billed under this account's membership rather than
+// paying for a separate subscription of their own.
+router.post("/profile-users/add", requireAuth, async (req, res) => {
+  const { profileUserEmail } = req.body;
+  if (!profileUserEmail) return res.status(400).json({ error: "profileUserEmail is required" });
 
-    const existing = await client.query(
-      `SELECT * FROM memberships WHERE user_id = $1 AND plan_type = 'corporate_delegate' AND company_account_id IS NULL AND status = 'active' AND expires_at > now()`,
-      [req.user.id]
-    );
-    if (existing.rows[0]) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: "This account already has an active corporate membership.", membership: existing.rows[0] });
-    }
-
-    const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
-    const balance = Number(userResult.rows[0].wallet_balance_naira);
-    if (balance < CORPORATE_ANNUAL_PRICE) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Insufficient wallet balance for the corporate plan.", balanceNaira: balance, priceNaira: CORPORATE_ANNUAL_PRICE });
-    }
-
-    const newBalanceResult = await client.query(
-      "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
-      [CORPORATE_ANNUAL_PRICE, req.user.id]
-    );
-    const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
-
-    const expiresAt = new Date(Date.now() + ONE_YEAR_MS);
-    // company_account_id is left NULL here — it's only ever set on a
-    // DELEGATE's row, pointing back at the company. The company's own row
-    // just needs plan_type = 'corporate_delegate' and no company_account_id.
-    const membershipResult = await client.query(
-      `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira)
-       VALUES ($1, 'corporate_delegate', 'active', $2, $3) RETURNING *`,
-      [req.user.id, expiresAt, CORPORATE_ANNUAL_PRICE]
-    );
-
-    await client.query(
-      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, description)
-       VALUES ($1, 'membership_charge', 'completed', $2, $3, 'Corporate annual membership')`,
-      [req.user.id, -CORPORATE_ANNUAL_PRICE, newBalance]
-    );
-
-    await client.query("COMMIT");
-    res.status(201).json({ membership: membershipResult.rows[0], walletBalanceNaira: newBalance });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Corporate membership subscribe failed:", err.message);
-    res.status(500).json({ error: "Could not process the corporate subscription. Please try again." });
-  } finally {
-    client.release();
-  }
-});
-
-// POST /api/memberships/corporate/link-delegate
-// body: { delegateEmail }
-// The signed-in user is the company account; this links an existing
-// rider's account under it so they ride without per-trip payment, billed
-// to the company instead. The company must have an active corporate
-// membership before adding delegates.
-router.post("/corporate/link-delegate", requireAuth, async (req, res) => {
-  const { delegateEmail } = req.body;
-  if (!delegateEmail) return res.status(400).json({ error: "delegateEmail is required" });
-
-  const companyMembership = await pool.query(
-    `SELECT * FROM memberships WHERE user_id = $1 AND plan_type = 'corporate_delegate' AND status = 'active' AND expires_at > now()`,
+  const ownMembership = await pool.query(
+    `SELECT * FROM memberships WHERE user_id = $1 AND plan_type = 'executive' AND status = 'active' AND expires_at > now()`,
     [req.user.id]
   );
-  if (!companyMembership.rows[0]) {
-    return res.status(400).json({ error: "This account doesn't have an active corporate membership yet." });
+  if (!ownMembership.rows[0]) {
+    return res.status(400).json({ error: "Only an active Executive membership can add profile users." });
   }
 
-  // Only a 'rider' account can be added as a delegate — a driver or admin
-  // account being silently converted into a corporate delegate (which
-  // grants no-payment rides billed to this company) was previously possible
-  // simply by knowing their email.
-  const delegateUser = await pool.query("SELECT id, role FROM users WHERE email = $1", [delegateEmail.toLowerCase()]);
-  if (!delegateUser.rows[0]) {
-    return res.status(404).json({ error: "No RideArrivo account found for that email. The delegate needs to sign up first." });
-  }
-  if (delegateUser.rows[0].role !== "rider") {
-    return res.status(400).json({ error: "Only a rider account can be added as a corporate delegate." });
-  }
+  const maxProfileUsers = Number(ownMembership.rows[0].max_profile_users);
+  const maxAdditional = maxProfileUsers - 1; // the Executive member themself takes one of the seats
 
-  // A rider already linked (to this company or a different one) shouldn't
-  // get a second active corporate_delegate row — previously nothing stopped
-  // that, which could stack multiple companies billing for the same rider's
-  // trips, or silently re-link someone away from a company that added them
-  // without either company's knowledge.
-  const alreadyDelegate = await pool.query(
-    `SELECT id FROM memberships WHERE user_id = $1 AND plan_type = 'corporate_delegate' AND company_account_id IS NOT NULL AND status = 'active' AND expires_at > now()`,
-    [delegateUser.rows[0].id]
+  const currentCount = await pool.query(
+    `SELECT COUNT(*) FROM memberships WHERE company_account_id = $1 AND status = 'active' AND expires_at > now()`,
+    [req.user.id]
   );
-  if (alreadyDelegate.rows[0]) {
-    return res.status(400).json({ error: "This rider is already linked as a delegate under a corporate account." });
+  if (Number(currentCount.rows[0].count) >= maxAdditional) {
+    return res.status(400).json({
+      error: `The Executive plan supports up to ${maxProfileUsers} profile users in total (you plus ${maxAdditional}). Remove one before adding another.`,
+    });
+  }
+
+  // Only a 'rider' account can be added as a profile user — a driver or
+  // admin account being silently added (which grants free-ride coverage
+  // and cashback billed under this membership) simply by knowing their
+  // email is not something to allow.
+  const profileUser = await pool.query("SELECT id, role FROM users WHERE email = $1", [profileUserEmail.toLowerCase()]);
+  if (!profileUser.rows[0]) {
+    return res.status(404).json({ error: "No RideArrivo account found for that email. They need to sign up first." });
+  }
+  if (profileUser.rows[0].role !== "rider") {
+    return res.status(400).json({ error: "Only a rider account can be added as a profile user." });
+  }
+
+  // A rider already linked (to this Executive account or a different one)
+  // shouldn't get a second active profile-user row — that could stack
+  // multiple memberships covering the same rider's trips, or silently
+  // re-link someone away from a plan that added them without either
+  // member's knowledge.
+  const alreadyLinked = await pool.query(
+    `SELECT id FROM memberships WHERE user_id = $1 AND plan_type = 'executive_profile' AND company_account_id IS NOT NULL AND status = 'active' AND expires_at > now()`,
+    [profileUser.rows[0].id]
+  );
+  if (alreadyLinked.rows[0]) {
+    return res.status(400).json({ error: "This rider is already a profile user on an Executive membership." });
   }
 
   const inserted = await pool.query(
-    `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira, company_account_id)
-     VALUES ($1, 'corporate_delegate', 'active', $2, 0, $3) RETURNING *`,
-    [delegateUser.rows[0].id, companyMembership.rows[0].expires_at, req.user.id]
+    `INSERT INTO memberships (user_id, plan_type, status, expires_at, price_naira, cashback_percent, max_profile_users, company_account_id)
+     VALUES ($1, 'executive_profile', 'active', $2, 0, $3, $4, $5) RETURNING *`,
+    [
+      profileUser.rows[0].id,
+      ownMembership.rows[0].expires_at,
+      ownMembership.rows[0].cashback_percent,
+      maxProfileUsers,
+      req.user.id,
+    ]
   );
-  res.status(201).json({ delegateMembership: inserted.rows[0] });
+  res.status(201).json({ profileUserMembership: inserted.rows[0] });
 });
 
 module.exports = router;
