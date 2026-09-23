@@ -482,7 +482,11 @@ router.post("/", requireAuth, async (req, res) => {
     // membership applies.
     const membership = await pool.query(
       `SELECT * FROM memberships WHERE user_id = $1 AND status = 'active' AND expires_at > now()
-       AND plan_type IN ('premium', 'executive', 'executive_profile') LIMIT 1`,
+       AND plan_type IN ('premium', 'executive', 'executive_profile', 'individual_annual', 'corporate_delegate') LIMIT 1`,
+      // individual_annual / corporate_delegate are the pre-2026-09 annual
+      // plans. Nobody can buy them any more, but anyone who already paid
+      // for one keeps riding on it until it expires rather than being
+      // locked out the day the monthly tiers ship.
       [req.user.id]
     );
     if (!membership.rows[0]) {
@@ -1078,12 +1082,21 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     }
   }
 
+  // Conditional on the status read above, so only ONE request can make a
+  // given transition. Previously WHERE id = $2 alone: a driver double-tapping
+  // "Complete trip" sent two requests that both passed the transition check
+  // above and both ran every completion side effect below -- the Fair Fare
+  // overage wallet debit, the escort payout, the membership cashback --
+  // twice. The loser of the race now gets a 409 and changes nothing.
   const updated = await pool.query(
     `UPDATE rides SET ride_status = $1, updated_at = now(),
        completed_at = CASE WHEN $1 = 'completed' THEN now() ELSE completed_at END
-     WHERE id = $2 RETURNING *`,
-    [status, req.params.id]
+     WHERE id = $2 AND ride_status = $3 RETURNING *`,
+    [status, req.params.id, currentStatus]
   );
+  if (!updated.rows[0]) {
+    return res.status(409).json({ error: "This ride was already updated. Refresh to see its current status." });
+  }
   let ride = updated.rows[0];
 
   // Chauffeur time-overage — deliberately scoped to single-day 'full_day'
