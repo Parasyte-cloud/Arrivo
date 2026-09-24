@@ -453,6 +453,19 @@ router.post("/", requireAuth, async (req, res) => {
   // exists separately from the live-recomputed estimate elsewhere).
   const quotedUsdAmount = fareNaira / ngnPerUsd;
 
+  // validateOnly: run every check and the real fare computation above, but
+  // write nothing. The website calls this immediately BEFORE opening the
+  // Paystack popup and charges exactly the fareNaira returned here. Before
+  // this existed, the site charged the card first and only then called
+  // POST / for real -- so any rule the review-step quote didn't also check
+  // (the 12-hour booking window on drop-offs, a launch promo keyed to the
+  // scheduled pickup time rather than "now") took the rider's money and
+  // then refused the ride. Same code path as a real booking, so the two can
+  // never disagree.
+  if (req.body.validateOnly === true) {
+    return res.json({ ok: true, fareNaira, vehicleCount, promo: promoCode, promoDiscountNaira, quotedUsdAmount, ngnPerUsd });
+  }
+
   // Best-effort capture of the flight's scheduled time AT BOOKING, purely
   // so services/scheduler.js can later tell "this flight got rescheduled"
   // (the live time has drifted a lot from this) apart from "it's always
@@ -680,8 +693,27 @@ router.post("/quote", requireAuth, async (req, res) => {
     bookingType = "one_way", vehicleType, securityEscort, fleetSize, luxury,
     pickupAddress, destinationAddress, durationDays = 1,
     pickupLat, pickupLng, destinationLat, destinationLng,
-    adults = 1, children = 0,
+    adults = 1, children = 0, scheduledPickupAt,
   } = req.body;
+
+  // Same scheduled-time rules POST / enforces. The quote used to skip these
+  // entirely, so a drop-off 6 hours out priced fine here, the rider paid,
+  // and POST / then refused it for being inside the 12-hour window. Only
+  // checked when the client sends it, so older clients that never did are
+  // unaffected (POST / still has the final say).
+  let parsedScheduledPickupAt = null;
+  if (scheduledPickupAt) {
+    parsedScheduledPickupAt = new Date(scheduledPickupAt);
+    if (isNaN(parsedScheduledPickupAt.getTime())) {
+      return res.status(400).json({ error: "scheduledPickupAt must be a valid date/time." });
+    }
+    if (parsedScheduledPickupAt.getTime() < Date.now()) {
+      return res.status(400).json({ error: "scheduledPickupAt must be in the future." });
+    }
+    if (isStandardBookingBlocked(parsedScheduledPickupAt)) {
+      return res.status(400).json(blockedBookingResponse());
+    }
+  }
 
   // Same allowed list as POST / above — a quote for a garbage vehicleType
   // used to still silently succeed (computeVehicleCount/computeFare treat any
@@ -744,6 +776,13 @@ router.post("/quote", requireAuth, async (req, res) => {
     if (await getConfigBool("launch_promos_enabled", true)) {
       const promoResult = applyLaunchPromoDiscount({
         fareNaira,
+        // Must match POST / exactly: a booked-ahead drop-off is discounted
+        // by its scheduled pickup time, not the moment of quoting. This
+        // used to always use "now", so a 5:30am drop-off booked in the
+        // afternoon was quoted (and charged) full price, then saved at the
+        // 50% Early Bird price -- the payment check then failed on the
+        // amount mismatch after the card was already charged.
+        date: parsedScheduledPickupAt || new Date(),
         earlyBirdPercent: await getConfigNumber("early_bird_discount_percent", 50),
         morningCommuterPercent: await getConfigNumber("morning_commuter_discount_percent", 20),
       });
