@@ -587,6 +587,23 @@ CREATE TABLE IF NOT EXISTS support_assisted_bookings (
         'cancelled'
       )
     ),
+  -- Set once a Paystack payment link has been generated for this booking
+  -- (see POST /:id/payment-link). NULL until then. UNIQUE for the same
+  -- reason payment_reference is unique everywhere else in this schema --
+  -- the webhook looks a payment up by reference alone, so two rows must
+  -- never be able to share one.
+  payment_reference TEXT UNIQUE,
+  -- Stored alongside payment_reference so the same link can be re-sent
+  -- (customer lost the WhatsApp message, wants it emailed too) without
+  -- ever calling Paystack /transaction/initialize a second time for the
+  -- same booking. Paystack only returns authorization_url at initialize
+  -- time -- there's no later "look up the URL for this reference" call --
+  -- so if this weren't stored, a resend would have to mint a second,
+  -- different reference, and a customer who still pays via the FIRST
+  -- (now-orphaned) link would have a real, successful charge that this
+  -- system could never bind back to a ride.
+  payment_link_url TEXT,
+  payment_link_sent_at TIMESTAMPTZ,
   payment_status_at_creation TEXT NOT NULL DEFAULT 'pending'
     CHECK (payment_status_at_creation = 'pending'),
   booking_request JSONB NOT NULL
