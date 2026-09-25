@@ -6,6 +6,8 @@ const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth
 const { requireWorkspaceActor } = require("../middleware/workspaceActorAuth");
 const { computeFare, MAX_FULL_DAY_COUNT } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
+const { initializePaystackTransaction } = require("./payments");
+const { sendWhatsAppMessage } = require("../services/whatsapp");
 
 const router = express.Router();
 
@@ -592,6 +594,134 @@ router.post(
 
       throw error;
     }
+  }
+);
+
+// POST /api/support/assisted-bookings/:id/payment-link
+//
+// Generates (or re-sends) a Paystack hosted payment link for a pending
+// assisted booking, and sends it to the rider over WhatsApp. Governed the
+// same way as creating the assisted booking itself: requireAuth (a real
+// backend session), requireAnyRole(["admin","support"]), and a signed
+// Workspace actor token -- this can only be triggered by a verified
+// RideArrivo Workspace employee, same as the create step.
+//
+// This does NOT create a ride. It only starts a Paystack transaction for
+// the fare already locked at creation time and texts the resulting link
+// to the rider. The ride is created later, when Paystack's webhook
+// confirms the payment actually succeeded (routes/payments.js) -- exactly
+// the same "never trust the client, only a verified payment confirms
+// anything" rule every other payment path in this codebase follows.
+//
+// Deliberately scoped to fleet_size = 0 for now: a fleet-escort convoy
+// needs createFleetCompanions() (routes/rides.js) run in the same
+// transaction as the ride insert, which the webhook-driven creation path
+// added alongside this route does not yet call. Rather than silently
+// create a primary ride with no companions for a fleet-escort request,
+// this route refuses to issue a payment link for one at all until that's
+// added.
+router.post(
+  "/assisted-bookings/:id/payment-link",
+  requireAuth,
+  requireAnyRole(["admin", "support"]),
+  requireWorkspaceActor,
+  async (req, res) => {
+    const workspaceActor = req.workspaceActor;
+
+    if (!["support", "admin"].includes(workspaceActor.role)) {
+      return res.status(403).json({
+        error: "Workspace actor is not authorised for assisted booking.",
+      });
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+      return res.status(400).json({ error: "That assisted-booking id is not valid." });
+    }
+
+    const result = await pool.query(
+      `SELECT support_assisted_bookings.*, users.email, users.phone, users.name
+       FROM support_assisted_bookings
+       JOIN users ON users.id = support_assisted_bookings.rider_id
+       WHERE support_assisted_bookings.id = $1`,
+      [id]
+    );
+    const booking = result.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "No assisted booking with that id." });
+    }
+    if (booking.ride_id) {
+      return res.status(400).json({ error: "This assisted booking has already been paid and turned into a ride." });
+    }
+    if (booking.payment_status !== "pending") {
+      return res.status(400).json({ error: `This assisted booking is '${booking.payment_status}', not pending.` });
+    }
+    const fleetSize = Number(booking.booking_request?.fleetSize) || 0;
+    if (fleetSize > 0) {
+      return res.status(400).json({
+        error: "Fleet-escort assisted bookings aren't supported yet -- please book this one through the app/website instead.",
+      });
+    }
+    if (!booking.email) {
+      return res.status(400).json({ error: "This rider has no email on file -- Paystack needs one to start a payment." });
+    }
+
+    // Already have a link for this booking -- resend the SAME one rather
+    // than minting a second Paystack transaction. See the payment_link_url
+    // column comment in db/schema.sql for why: Paystack never lets you
+    // fetch a transaction's authorization_url again after initialize, so a
+    // second initialize here would produce a second, different reference,
+    // and a customer who still pays via the first (now orphaned) link
+    // would have a real charge this system could never bind to a ride.
+    let authorizationUrl = booking.payment_link_url;
+    let reference = booking.payment_reference;
+
+    if (!authorizationUrl) {
+      let initialized;
+      try {
+        initialized = await initializePaystackTransaction({
+          email: booking.email,
+          amountNaira: Number(booking.fare_naira),
+        });
+      } catch (err) {
+        console.error("Assisted-booking payment-link initialize failed:", err.response?.data || err.message);
+        return res.status(502).json({ error: "Could not start this payment. Please try again." });
+      }
+      authorizationUrl = initialized.authorizationUrl;
+      reference = initialized.reference;
+
+      await pool.query(
+        `UPDATE support_assisted_bookings
+         SET payment_reference = $1, payment_link_url = $2, payment_link_sent_at = now(), updated_at = now()
+         WHERE id = $3`,
+        [reference, authorizationUrl, id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE support_assisted_bookings SET payment_link_sent_at = now(), updated_at = now() WHERE id = $1`,
+        [id]
+      );
+    }
+
+    let whatsappSent = false;
+    if (booking.phone) {
+      const fareDisplay = "NGN " + Number(booking.fare_naira).toLocaleString("en-NG");
+      const message =
+        `Hi ${booking.name || "there"}, here's your RideArrivo payment link for ${fareDisplay}: ${authorizationUrl}
+
+` +
+        `Your ride is booked as soon as this is paid. If you didn't request this, please ignore.`;
+      const sendResult = await sendWhatsAppMessage(booking.phone, message);
+      whatsappSent = !!sendResult?.ok;
+    }
+
+    res.json({
+      assistedBookingId: id,
+      authorizationUrl,
+      reference,
+      fareNaira: Number(booking.fare_naira),
+      whatsappSent,
+    });
   }
 );
 
