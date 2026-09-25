@@ -633,6 +633,77 @@ ON support_assisted_bookings(
 );
 
 
+-- Widen support_assisted_bookings to also accept a customer's own
+-- self-service submission (see POST /api/public/booking-requests), not
+-- just a staff-created one. A public submission has no Workspace actor at
+-- all -- there's no employee behind it to sign a token -- so
+-- actor_employee_id/actor_role/actor_request_id move from NOT NULL
+-- (staff-required) to nullable. The CHECK below is the real guardrail:
+-- it still forces every staff-attributed row to carry full actor
+-- identity exactly as before, and separately forces every public row to
+-- carry NONE of it, so a public submission can never forge staff
+-- attribution and a staff submission can never accidentally lose its
+-- audit trail. ALTER TABLE, not a CREATE TABLE edit, because by the time
+-- this change ships the table may already be live with the old,
+-- staff-only shape -- every statement here is safe to re-run.
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_employee_id DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_role DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_request_id DROP NOT NULL;
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_role_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_role_check
+  CHECK (actor_role IS NULL OR actor_role IN ('support', 'admin'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_source_check
+  CHECK (source IN ('support_assisted', 'public_self_service'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_matches_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_matches_source_check
+  CHECK (
+    (
+      source = 'support_assisted'
+      AND actor_employee_id IS NOT NULL
+      AND actor_role IS NOT NULL
+      AND actor_request_id IS NOT NULL
+    )
+    OR
+    (
+      source = 'public_self_service'
+      AND actor_employee_id IS NULL
+      AND actor_role IS NULL
+      AND actor_request_id IS NULL
+    )
+  );
+
+-- Free-text note on how the customer got this link -- "instagram DM",
+-- "a friend", a support agent's name typed in on the form. Never
+-- validated against anything; it exists only so the team can later see
+-- which channel is actually driving completed bookings. NULL for every
+-- staff-created row, since staff attribution already covers that case.
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via TEXT;
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via_ip TEXT;
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_source
+ON support_assisted_bookings(
+  source,
+  created_at
+);
+
+
+
 -- ── On-the-Go requests ──
 -- The quick path for someone who needs a car within 12 hours and hasn't got
 -- time for the full Plan Route flow. Only the essentials, no vehicle choice,

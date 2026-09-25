@@ -33,6 +33,7 @@ const liveMapRouter = require("./routes/live-map");
 const supportRouter = require("./routes/support");
 const familyRouter = require("./routes/family");
 const partnerVenuesRouter = require("./routes/partnerVenues");
+const publicBookingRequestsRouter = require("./routes/publicBookingRequests");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -63,6 +64,11 @@ const ALLOWED_ORIGINS = [
   "https://ridearrivo.com",
   "https://www.ridearrivo.com",
   "https://admin.ridearrivo.com",
+  // The public self-service booking form (POST /api/public/booking-requests)
+  // -- a standalone static page, not part of the main ridearrivo-website
+  // deploy, so it needs its own origin here. Rename this if the subdomain
+  // ends up called something other than easybook.
+  "https://easybook.ridearrivo.com",
 ];
 
 app.use(
@@ -112,6 +118,7 @@ app.use("/api/live-map", liveMapRouter);
 app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
+app.use("/api/public", publicBookingRequestsRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.
