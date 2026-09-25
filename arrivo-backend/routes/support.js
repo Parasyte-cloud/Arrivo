@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
@@ -8,8 +9,13 @@ const { computeFare, MAX_FULL_DAY_COUNT } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { initializePaystackTransaction } = require("./payments");
 const { sendWhatsAppMessage } = require("../services/whatsapp");
+const { sendPasswordResetEmail } = require("../services/email");
 
 const router = express.Router();
+
+// Matches routes/auth.js's SALT_ROUNDS -- same hashing cost everywhere a
+// password gets created in this codebase.
+const SALT_ROUNDS = 10;
 
 const TYPES = ["complaint", "inquiry", "support"];
 const STATUSES = ["open", "closed"];
@@ -198,13 +204,79 @@ router.post(
       }
     }
 
-    if (!riderResult.rows[0]) {
+    let rider = riderResult.rows[0];
+
+    // A phone-in customer with no RideArrivo account at all -- support's
+    // own booking panel used to have no way to move past this except
+    // telling the caller to go install the app first. Opt-in only
+    // (createAccountIfMissing), and only reachable once the lookup above
+    // has already come back empty, so this can never quietly create a
+    // second account next to one that already matched. The account gets
+    // a random password nobody -- not even the agent on the call -- ever
+    // sees or speaks aloud; the customer sets their own via the same
+    // password-reset email/link POST /api/auth/forgot-password already
+    // sends, on their own time. Nothing here blocks the booking that
+    // follows on that reset happening.
+    if (!rider && body.createAccountIfMissing === true) {
+      const newAccountName = String(body.name || "").trim();
+      const newAccountEmail = String(body.email || "").trim().toLowerCase();
+      const newAccountPhone = String(body.phone || "").trim();
+
+      if (!newAccountName) {
+        return res.status(400).json({
+          error: "name is required to create an account for this caller.",
+        });
+      }
+      if (!newAccountEmail) {
+        return res.status(400).json({
+          error: "email is required to create an account for this caller.",
+        });
+      }
+      if (body.customerAgreedToTerms !== true) {
+        return res.status(400).json({
+          error:
+            "customerAgreedToTerms must be confirmed before creating an account on a caller's behalf.",
+        });
+      }
+
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const passwordHash = bcrypt.hashSync(randomPassword, SALT_ROUNDS);
+
+      try {
+        const created = await pool.query(
+          `INSERT INTO users (name, email, phone, password_hash, role, agreed_to_terms)
+           VALUES ($1, $2, $3, $4, 'rider', true)
+           RETURNING id, name, email, phone`,
+          [newAccountName, newAccountEmail, newAccountPhone || null, passwordHash]
+        );
+        rider = created.rows[0];
+      } catch (error) {
+        if (error?.code === "23505") {
+          return res.status(409).json({
+            error: "An account with that email already exists -- look the caller up by email instead.",
+          });
+        }
+        throw error;
+      }
+
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
+      await pool.query(
+        "UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
+        [resetToken, resetExpires, rider.id]
+      );
+      const resetUrl =
+        `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
+      sendPasswordResetEmail(rider.email, resetUrl).catch(e =>
+        console.error("Assisted-booking new-account reset email failed:", e.message)
+      );
+    }
+
+    if (!rider) {
       return res.status(404).json({
         error: "No matching rider account was found.",
       });
     }
-
-    const rider = riderResult.rows[0];
 
     const bookingType =
       String(body.bookingType || "one_way")

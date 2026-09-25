@@ -1,8 +1,8 @@
 const express = require("express");
 const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
+const { requireAuth, requireRole } = require("../middleware/auth");
 const { computeFare } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { initializePaystackTransaction } = require("./payments");
@@ -11,16 +11,26 @@ const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 
 const router = express.Router();
 
-const SALT_ROUNDS = 10; // matches routes/auth.js's guest-account hashing
-
-// This is the one booking-creation path in the app with no login and no
-// Workspace actor in front of it -- a customer stranded by an outage, or
-// whoever is helping them (support, a social-media manager, a friend),
-// can be handed this link and use it from nothing but a browser. Every
-// successful submission starts a real Paystack transaction and sends a
-// real WhatsApp message, both of which cost money, so this earns its own
+// This is the one booking-creation path in the app with no Workspace actor
+// in front of it -- a customer stranded by an outage, or whoever is
+// helping them (support, a social-media manager, a friend), can be handed
+// this link and use it from nothing but a browser. It DOES require the
+// customer to actually be signed in (Google, Apple, or email/password --
+// see easybook.ridearrivo.com), same account as the app and website. That
+// used to not be true: an earlier version of this endpoint found-or-created
+// a rider by whatever email the visitor typed in, with no proof they
+// actually owned it. Real sign-in closes that gap -- a Google/Apple sign-in
+// or a password login proves the account, rather than trusting a text
+// field, and findOrCreateOAuthProfile (routes/auth.js) already links a new
+// Google/Apple sign-in to an existing email-matched account rather than
+// forking a second one, so this can never leave someone with duplicate
+// RideArrivo accounts.
+//
+// Every successful submission starts a real Paystack transaction and sends
+// a real WhatsApp message, both of which cost money, so this earns its own
 // tighter limiter than anywhere else in the app: 5 submissions per IP per
-// hour by default.
+// hour by default. Keyed by IP rather than user id on purpose -- a stolen
+// or shared token account shouldn't get a bigger budget than anyone else.
 const submitLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: Number(process.env.PUBLIC_BOOKING_REQUEST_RATE_LIMIT) || 5,
@@ -33,46 +43,42 @@ const submitLimiter = rateLimit({
     }),
 });
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALLOWED_VEHICLE_TYPES = ["sedan", "suv", "truck", "pickup"];
 
-const MAX_NAME = 140;
 const MAX_ADDRESS = 300;
 const MAX_FLIGHT = 20;
 const MAX_SUBMITTED_VIA = 80;
 
 // POST /api/public/booking-requests
 //
-// A public, unauthenticated version of POST /api/support/assisted-bookings
-// (see that route for the fuller design notes) for the one everyday case
-// this is meant to cover: a customer who can't get through the normal
-// app/website booking flow right now -- an outage, or they found
-// RideArrivo through social media and don't have the app yet -- and
-// needs a one-way ride. Deliberately narrower than the staff version: one
-// way trips only, no fleet/escort/luxury, no full-day/week/month
-// chauffeur booking. Anything outside that stays a staff job through the
-// existing internal route.
+// A public version of POST /api/support/assisted-bookings (see that route
+// for the fuller design notes) for the one everyday case this is meant to
+// cover: a customer who can't get through the normal app/website booking
+// flow right now -- an outage, or they found RideArrivo through social
+// media and don't have the app yet -- and needs a one-way ride.
+// Deliberately narrower than the staff version: one-way trips only, no
+// fleet/escort/luxury, no full-day/week/month chauffeur booking. Anything
+// outside that stays a staff job through the existing internal route.
 //
 // Creates only a durable pre-payment request, same as the staff route --
 // no ride, no charge, no driver -- and then immediately starts a Paystack
 // transaction and sends the link over WhatsApp, so one submission is the
-// whole self-service flow: fill the form, get the link, pay, get the
-// ride. The real ride is still only ever created by the verified Paystack
-// webhook (routes/payments.js), exactly like every other payment path in
-// this codebase.
-router.post("/booking-requests", submitLimiter, async (req, res) => {
+// whole self-service flow: sign in, fill the form, get the link, pay, get
+// the ride. The real ride is still only ever created by the verified
+// Paystack webhook (routes/payments.js), exactly like every other payment
+// path in this codebase.
+router.post("/booking-requests", requireAuth, requireRole("rider"), submitLimiter, async (req, res) => {
   const body = req.body || {};
 
-  // Honeypot: a real visitor never fills in or even sees this field (it's
-  // hidden by CSS on the form). A bot filling every field in a scraped
-  // form will fill this one too. Answer exactly like a real success so it
-  // doesn't learn anything, and do nothing else.
-  if (String(body.website || "").trim() !== "") {
-    return res.status(201).json({
-      ok: true,
-      message: "Thanks! We'll be in touch shortly.",
-    });
+  const riderResult = await pool.query(`SELECT id, name, email, phone FROM users WHERE id = $1`, [req.user.id]);
+  const rider = riderResult.rows[0];
+  if (!rider) {
+    // requireAuth already checked the account still exists, but the row
+    // was fetched fresh there, not carried here -- re-check rather than
+    // trust req.user's JWT payload, which is just whatever was true when
+    // the token was signed up to 7 days ago.
+    return res.status(401).json({ error: "This account no longer exists." });
   }
 
   const idempotencyKey = String(body.idempotencyKey || "").trim();
@@ -80,19 +86,13 @@ router.post("/booking-requests", submitLimiter, async (req, res) => {
     return res.status(400).json({ error: "idempotencyKey must be a UUID." });
   }
 
-  const name = String(body.name || "").trim();
-  if (!name || name.length > MAX_NAME) {
-    return res.status(400).json({ error: `Please enter your name (up to ${MAX_NAME} characters).` });
-  }
-
-  const email = String(body.email || "").trim().toLowerCase();
-  if (!email || !EMAIL_RE.test(email)) {
-    return res.status(400).json({ error: "Please enter a valid email address." });
-  }
-
-  const phone = String(body.phone || "").trim();
+  const phone = String(body.phone || rider.phone || "").trim();
   if (!isValidPhone(phone)) {
-    return res.status(400).json({ error: phoneErrorMessage("Phone number") });
+    return res.status(400).json({ error: phoneErrorMessage("WhatsApp number") });
+  }
+
+  if (!rider.email) {
+    return res.status(400).json({ error: "This account has no email on file -- Paystack needs one to start a payment." });
   }
 
   const pickupAddress = String(body.pickupAddress || "").trim();
@@ -150,47 +150,6 @@ router.post("/booking-requests", submitLimiter, async (req, res) => {
     scheduledPickupAt: null,
     agreedCancellationPolicy: true,
   };
-
-  // Find-or-create the rider. Deliberately NOT the same as POST
-  // /api/auth/guest, which refuses (409) on an existing email -- that's
-  // right for a real login/checkout flow where silently taking over an
-  // existing account with no password check would be a problem, but
-  // wrong here: a returning customer using this form should just be
-  // matched to their existing account, not blocked by it.
-  let rider;
-  const existingRider = await pool.query(
-    `SELECT id, name, email, phone FROM users WHERE role = 'rider' AND lower(email) = $1`,
-    [email]
-  );
-
-  if (existingRider.rows[0]) {
-    rider = existingRider.rows[0];
-  } else {
-    const randomPassword = crypto.randomBytes(24).toString("hex");
-    const passwordHash = bcrypt.hashSync(randomPassword, SALT_ROUNDS);
-
-    try {
-      const created = await pool.query(
-        `INSERT INTO users (name, email, phone, password_hash, role, agreed_to_terms)
-         VALUES ($1, $2, $3, $4, 'rider', true)
-         RETURNING id, name, email, phone`,
-        [name, email, phone, passwordHash]
-      );
-      rider = created.rows[0];
-    } catch (err) {
-      if (err?.code === "23505") {
-        // Lost a race with a second submission for the same email between
-        // our SELECT and this INSERT. Re-select rather than fail the
-        // request outright.
-        const raced = await pool.query(
-          `SELECT id, name, email, phone FROM users WHERE role = 'rider' AND lower(email) = $1`,
-          [email]
-        );
-        rider = raced.rows[0];
-      }
-      if (!rider) throw err;
-    }
-  }
 
   const requestFingerprint = crypto
     .createHash("sha256")
@@ -330,12 +289,12 @@ router.post("/booking-requests", submitLimiter, async (req, res) => {
   if (authorizationUrl) {
     const fareDisplay = "NGN " + Number(booking.fare_naira).toLocaleString("en-NG");
     const message =
-      `Hi ${rider.name || name}, here's your RideArrivo payment link for ${fareDisplay}: ${authorizationUrl}
+      `Hi ${rider.name || "there"}, here's your RideArrivo payment link for ${fareDisplay}: ${authorizationUrl}
 
 ` +
       `Your ride is booked as soon as this is paid. If you didn't request this, please ignore.`;
     try {
-      const sendResult = await sendWhatsAppMessage(rider.phone || phone, message);
+      const sendResult = await sendWhatsAppMessage(phone, message);
       whatsappSent = !!sendResult?.ok;
     } catch (err) {
       console.error("Public booking-request WhatsApp send failed:", err.message);
