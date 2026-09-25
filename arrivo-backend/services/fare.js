@@ -129,6 +129,16 @@ function isLagosNightTime(date = new Date()) {
   return lagosHour >= NIGHT_START_HOUR || lagosHour < NIGHT_END_HOUR;
 }
 
+// Market-adjustment factor on the standard one-way (airport transfer)
+// fare only -- business decision, 2026-09-25, in response to riders
+// citing price as a reason for not booking. Applied to area price +
+// vehicle-tier delta, before the night multiplier, so night pricing
+// still adds its 20% on top of the reduced base rather than on the
+// old one. Charter (day/week/month chauffeur), luxury surcharge, and
+// escort/fleet add-ons are deliberately untouched -- this is scoped
+// to the everyday fare riders are actually complaining about.
+const STANDARD_FARE_ADJUSTMENT = 0.88;
+
 const ROUND_TO_NAIRA = 500;
 
 function roundUpToNearest(amount, step) {
@@ -263,7 +273,7 @@ function computeOneWayFare({ pickupAddress, destinationAddress, vehicleType }) {
 
   const zoneAddress = isAirportAddress(destinationAddress) ? pickupAddress : destinationAddress;
   const vehicleDelta = VEHICLE_TIER_DELTA_NAIRA[vehicleType] || 0;
-  let total = findAreaPrice(zoneAddress) + vehicleDelta;
+  let total = (findAreaPrice(zoneAddress) + vehicleDelta) * STANDARD_FARE_ADJUSTMENT;
 
   if (isLagosNightTime()) {
     total = total * NIGHT_MULTIPLIER;
