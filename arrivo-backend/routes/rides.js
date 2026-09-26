@@ -1886,6 +1886,18 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
     const tipClient = await pool.connect();
     try {
       await tipClient.query("BEGIN");
+      // Re-check under a row lock, not just the unlocked `ride` read above.
+      // Two near-simultaneous tip submissions (a double-tap opening two
+      // separate Paystack checkouts, or a retry after a slow response)
+      // both pass the early check before either transaction starts; without
+      // this, both would go on to charge the rider and the second UPDATE
+      // would silently overwrite the first tip_naira/reference, so only one
+      // charge is ever recorded even though the rider paid twice.
+      const tipRideLock = await tipClient.query("SELECT tip_naira FROM rides WHERE id = $1 FOR UPDATE", [ride.id]);
+      if (Number(tipRideLock.rows[0].tip_naira) > 0) {
+        await tipClient.query("ROLLBACK");
+        return res.status(400).json({ error: "You've already tipped this ride." });
+      }
       const claimed = await claimPaymentReference(tipClient, paymentReference, "ride_tip", ride.id);
       if (!claimed) {
         await tipClient.query("ROLLBACK");
@@ -1913,6 +1925,16 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Same re-check under a row lock as the card path above -- the early
+    // `Number(ride.tip_naira) > 0` check read an unlocked snapshot, so two
+    // near-simultaneous wallet-tip requests could both pass it and both
+    // debit the wallet, with the second UPDATE silently overwriting the
+    // first tip_naira value.
+    const tipRideLock = await client.query("SELECT tip_naira FROM rides WHERE id = $1 FOR UPDATE", [ride.id]);
+    if (Number(tipRideLock.rows[0].tip_naira) > 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "You've already tipped this ride." });
+    }
     const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
     const balance = Number(userResult.rows[0].wallet_balance_naira);
     if (balance < amountNaira) {
@@ -1999,6 +2021,17 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
     const overageClient = await pool.connect();
     try {
       await overageClient.query("BEGIN");
+      // Same double-submit race as POST /:id/tip above, re-checked here
+      // under a row lock instead of the unlocked `ride` read at the top of
+      // the handler.
+      const overageRideLock = await overageClient.query(
+        "SELECT overage_payment_reference, overage_payment_method FROM rides WHERE id = $1 FOR UPDATE",
+        [ride.id]
+      );
+      if (overageRideLock.rows[0].overage_payment_reference || overageRideLock.rows[0].overage_payment_method) {
+        await overageClient.query("ROLLBACK");
+        return res.status(400).json({ error: "This overage charge has already been paid." });
+      }
       const claimed = await claimPaymentReference(overageClient, paymentReference, "ride_overage", ride.id);
       if (!claimed) {
         await overageClient.query("ROLLBACK");
@@ -2025,6 +2058,15 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Same re-check under a row lock as the card path above.
+    const overageRideLock = await client.query(
+      "SELECT overage_payment_reference, overage_payment_method FROM rides WHERE id = $1 FOR UPDATE",
+      [ride.id]
+    );
+    if (overageRideLock.rows[0].overage_payment_reference || overageRideLock.rows[0].overage_payment_method) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "This overage charge has already been paid." });
+    }
     const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
     const balance = Number(userResult.rows[0].wallet_balance_naira);
     if (balance < overageNaira) {
