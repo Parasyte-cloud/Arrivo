@@ -1886,6 +1886,15 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
     const tipClient = await pool.connect();
     try {
       await tipClient.query("BEGIN");
+      // Lock the ride row and re-check "already tipped" from inside the
+      // transaction -- the check above ran against an unlocked SELECT, so
+      // two near-simultaneous tip requests could both pass it and both
+      // debit/charge. Same fix as POST /scan's pay-at-pickup race.
+      const tipRideLock = await tipClient.query("SELECT tip_naira FROM rides WHERE id = $1 FOR UPDATE", [ride.id]);
+      if (Number(tipRideLock.rows[0].tip_naira) > 0) {
+        await tipClient.query("ROLLBACK");
+        return res.status(400).json({ error: "You've already tipped this ride." });
+      }
       const claimed = await claimPaymentReference(tipClient, paymentReference, "ride_tip", ride.id);
       if (!claimed) {
         await tipClient.query("ROLLBACK");
@@ -1913,6 +1922,13 @@ router.post("/:id/tip", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Same row lock + re-check as the card branch above -- an unlocked
+    // read of tip_naira happened before this transaction even opened.
+    const tipRideLock = await client.query("SELECT tip_naira FROM rides WHERE id = $1 FOR UPDATE", [ride.id]);
+    if (Number(tipRideLock.rows[0].tip_naira) > 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "You've already tipped this ride." });
+    }
     const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
     const balance = Number(userResult.rows[0].wallet_balance_naira);
     if (balance < amountNaira) {
@@ -1999,6 +2015,17 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
     const overageClient = await pool.connect();
     try {
       await overageClient.query("BEGIN");
+      // Lock the ride row and re-check "already charged" from inside the
+      // transaction -- same double-debit race as /tip above, fixed the
+      // same way POST /scan's pay-at-pickup race was.
+      const overageRideLock = await overageClient.query(
+        "SELECT overage_payment_reference, overage_payment_method FROM rides WHERE id = $1 FOR UPDATE",
+        [ride.id]
+      );
+      if (overageRideLock.rows[0].overage_payment_reference || overageRideLock.rows[0].overage_payment_method) {
+        await overageClient.query("ROLLBACK");
+        return res.status(400).json({ error: "This overage charge has already been paid." });
+      }
       const claimed = await claimPaymentReference(overageClient, paymentReference, "ride_overage", ride.id);
       if (!claimed) {
         await overageClient.query("ROLLBACK");
@@ -2025,6 +2052,15 @@ router.post("/:id/overage-charge", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Same row lock + re-check as the card branch above.
+    const overageRideLock = await client.query(
+      "SELECT overage_payment_reference, overage_payment_method FROM rides WHERE id = $1 FOR UPDATE",
+      [ride.id]
+    );
+    if (overageRideLock.rows[0].overage_payment_reference || overageRideLock.rows[0].overage_payment_method) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "This overage charge has already been paid." });
+    }
     const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
     const balance = Number(userResult.rows[0].wallet_balance_naira);
     if (balance < overageNaira) {
@@ -2087,11 +2123,17 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
     [note || null, req.params.id]
   );
 
-  console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, triggered by user ${req.user.email}`);
-  // TODO before real launch: wire this to an actual alert — SMS/call to an
-  // ops phone, a Slack webhook, or a push notification to the admin
-  // dashboard. Right now it's logged server-side and visible in the admin
-  // dashboard's ride list, but nothing pages anyone in real time.
+  // Upgraded from console.warn to console.error so this can't get filtered
+  // out at a log level below "warn" -- a panic alert that never reaches
+  // anyone is a safety failure, not just a missed log line.
+  console.error(`[PANIC ALERT -- NO REAL-TIME PAGING WIRED] ride #${req.params.id}, triggered by user ${req.user.email}`);
+  // STILL TODO before real launch: this is only a log line. There is no
+  // SMS/call-to-ops-phone, Slack/webhook, or admin-dashboard push
+  // notification integration anywhere in this codebase to hook into (checked
+  // services/ -- none exists), so nothing pages a human in real time. Do not
+  // ship this endpoint as the actual safety response without wiring one of
+  // those in -- someone in a real emergency is depending on this alert being
+  // seen immediately, not found later in a log.
 
   res.status(201).json({ ride: withParsedStops(updated.rows[0]) });
 });

@@ -81,7 +81,7 @@ function sendPasswordResetEmail(to, resetUrl) {
     subject: "Reset your RideArrivo password",
     html: wrapper(`
       <p>We received a request to reset your RideArrivo password.</p>
-      <p><a href="${resetUrl}" style="background:#F4A300;color:#12123B;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Reset Password</a></p>
+      <p><a href="${escapeHtml(resetUrl)}" style="background:#F4A300;color:#12123B;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Reset Password</a></p>
       <p style="color:#6b6b85;font-size:13px;">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
     `),
   });
@@ -119,7 +119,7 @@ function sendVerificationEmail(to, verifyUrl) {
     subject: "Verify your RideArrivo email",
     html: wrapper(`
       <p>Thanks for creating your RideArrivo profile. Please verify your email to finish setting it up.</p>
-      <p><a href="${verifyUrl}" style="background:#F4A300;color:#12123B;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Verify Email</a></p>
+      <p><a href="${escapeHtml(verifyUrl)}" style="background:#F4A300;color:#12123B;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Verify Email</a></p>
       <p style="color:#6b6b85;font-size:13px;">This link expires in 24 hours.</p>
     `),
   });

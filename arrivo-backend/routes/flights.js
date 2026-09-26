@@ -40,12 +40,16 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
   // HTTPS, not HTTP — aviationstack's free plan has included HTTPS for a
   // while now, so there's no remaining reason to send the access_key in
   // the query string of a plaintext request.
+  // Explicit timeout so a slow/unreachable aviationstack call can't hang
+  // this request indefinitely -- same reasoning as services/email.js's and
+  // services/whatsapp.js's outbound calls.
   const response = await axios.get("https://api.aviationstack.com/v1/flights", {
     params: {
       access_key: process.env.AVIATIONSTACK_KEY,
       flight_iata: normalizedFlightNumber,
       arr_iata: arrIata,
     },
+    timeout: 10000,
   });
 
   // aviationstack answers a bad/expired key, an exhausted monthly quota, or

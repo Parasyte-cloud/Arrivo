@@ -133,6 +133,10 @@ async function maybeSendAndMark(ride, hoursUntil) {
     if (ride[threshold.column]) continue; // already sent
     if (hoursUntil > threshold.hours) continue; // not there yet
     await sendReminder(ride, threshold.label, ride.driver_push_token);
+    // threshold.column is interpolated straight into SQL column position --
+    // safe only because it always comes from the fixed REMINDER_THRESHOLDS
+    // constant above, never from any request-derived value. Do not change
+    // this loop to iterate over anything user/client-influenced.
     await pool.query(`UPDATE rides SET ${threshold.column} = true WHERE id = $1`, [ride.id]);
     ride[threshold.column] = true; // keep the in-memory row consistent in case a later threshold in this same pass also applies
   }
@@ -183,6 +187,23 @@ async function flagFlightIssue(ride, issue) {
   try {
     await client.query("BEGIN");
 
+    // Claimed first, atomically, guarded by flight_issue IS NULL -- so two
+    // concurrent sweep passes touching the same ride can't both run the
+    // refund logic below. Same "claim before acting" reasoning as
+    // sweepLuckyRideDraw's ON CONFLICT DO NOTHING claim, just expressed as
+    // a conditional UPDATE since there's no unique constraint to conflict
+    // on here.
+    const claim = await client.query(
+      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = 'pending_reconfirmation', updated_at = now()
+       WHERE id = $2 AND flight_issue IS NULL
+       RETURNING id`,
+      [issue, ride.id]
+    );
+    if (claim.rowCount === 0) {
+      await client.query("ROLLBACK"); // another sweep already claimed this ride
+      return;
+    }
+
     // Refund the original fare to the wallet as compensation for the
     // upfront charge no longer matching a booking whose timing just
     // changed — credited to the wallet regardless of which rail originally
@@ -202,10 +223,6 @@ async function flagFlightIssue(ride, issue) {
       );
     }
 
-    await client.query(
-      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = 'pending_reconfirmation', updated_at = now() WHERE id = $2`,
-      [issue, ride.id]
-    );
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -250,10 +267,17 @@ async function sweepPreferredDriverExpiry() {
   for (const ride of expiring.rows) {
     try {
       const reason = "your regular driver wasn't available in time for this trip";
-      await pool.query(
-        "UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now() WHERE id = $2",
+      // Atomic claim -- guarded by the same conditions the candidate SELECT
+      // above used, so two concurrent sweep passes can't both clear
+      // preferred_driver_id and both send the "driver changed" notification
+      // for the same ride.
+      const claim = await pool.query(
+        `UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now()
+         WHERE id = $2 AND preferred_driver_id IS NOT NULL AND ride_status = 'requested'
+         RETURNING id`,
         [reason, ride.id]
       );
+      if (claim.rowCount === 0) continue; // another sweep already claimed this ride
       if (ride.rider_push_token) {
         sendPushNotification(
           ride.rider_push_token,
