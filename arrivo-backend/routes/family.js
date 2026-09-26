@@ -14,6 +14,7 @@ const { requireAuth } = require("../middleware/auth");
 const { getConfigNumber } = require("../services/systemConfig");
 const { sendPushNotification } = require("../services/pushNotifications");
 const { PLAN_LIMITS, getActivePlanForUser: getActivePlanForUserShared } = require("../services/familyPlan");
+const { claimPaymentReference } = require("../services/paymentReferences");
 
 const router = express.Router();
 const PAYSTACK_BASE = "https://api.paystack.co";
@@ -251,6 +252,16 @@ router.post("/plans/:id/wallet/topup/verify", requireAuth, async (req, res) => {
       await client.query("ROLLBACK");
       const fresh = await pool.query("SELECT wallet_balance_naira FROM family_plans WHERE id = $1", [plan.id]);
       return res.json({ success: true, walletBalanceNaira: Number(fresh.rows[0].wallet_balance_naira), alreadyCredited: true });
+    }
+
+    // Beyond the same-topup replay check above, this reference must not
+    // already have been spent on a ride payment/tip/overage charge/personal
+    // wallet top-up either -- see services/paymentReferences.js.
+    const claimed = await claimPaymentReference(client, reference, "family_wallet_topup");
+    if (!claimed) {
+      await client.query("ROLLBACK");
+      console.error(`Reused payment reference on family wallet top-up: ${reference} was already used to pay for a different charge.`);
+      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
     }
 
     const paidAmountNaira = paystackData.amount / 100;

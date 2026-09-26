@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
@@ -26,8 +27,78 @@ const {
 
 const router = express.Router();
 
+// Same express-rate-limit pattern as routes/support.js's submitLimiter, but
+// keyed by IP (the default keyGenerator) rather than user id -- every route
+// below runs before requireAuth, or (resend-verification-email) is still a
+// good target for someone spamming from one network, so there's no req.user
+// worth keying on the way support.js has. Limits are deliberately tighter
+// for routes that let someone probe credentials or spam account creation,
+// and looser for OAuth, which is already gated by a real Google/Apple token.
+function authLimiter({ windowMs, limit, message }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+
+const loginLimiter = authLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+const signupLimiter = authLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  message: "Too many signup attempts from this network. Please try again in an hour.",
+});
+const guestSignupLimiter = authLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  message: "Too many signup attempts from this network. Please try again in an hour.",
+});
+const forgotPasswordLimiter = authLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  message: "Too many password reset requests. Please try again in an hour.",
+});
+const resendVerificationLimiter = authLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  message: "Too many verification email requests. Please try again in an hour.",
+});
+const oauthLimiter = authLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  message: "Too many sign-in attempts. Please wait a few minutes and try again.",
+});
+
 const SALT_ROUNDS = 10;
 const TOKEN_EXPIRY = "7d";
+
+// A fixed, precomputed bcrypt hash with no matching account, used only so
+// that a login with an email that doesn't exist still pays the same
+// bcrypt.compareSync cost as a login with a real email and a wrong
+// password. Without this, "no such user" short-circuited before ever
+// calling bcrypt, and the resulting response-time gap let an attacker
+// enumerate which emails have accounts just by timing /login.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("dummy-password-for-timing-safety", SALT_ROUNDS);
+
+// email_verification_token / reset_token used to be stored and looked up as
+// the raw token value -- anyone with read access to the database (a backup,
+// a leaked replica, an over-broad admin query) could use a live row's token
+// directly, without ever needing the emailed link. Hashing before every
+// store and every lookup means the DB only ever holds something useless on
+// its own; the raw token -- the only usable form -- exists only in the
+// emailed URL and the requester's browser. sha256 (not bcrypt) is
+// deliberate: these are already high-entropy random tokens, not
+// low-entropy secrets like passwords, so there's no offline-guessing risk
+// to slow down, and a fast, deterministic hash is all a WHERE lookup needs.
+function hashToken(rawToken) {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
 
 function signToken(user) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -94,7 +165,7 @@ function publicUser(user) {
 //         confirmPassword, agreedToTerms, preferredLanguage?, role? }
 // This is the real account/profile flow (as opposed to /guest, which is
 // the lightweight no-password path used by the website's booking checkout).
-router.post("/signup", async (req, res) => {
+router.post("/signup", signupLimiter, async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
     password, confirmPassword, agreedToTerms, avatarDataUrl,
@@ -138,14 +209,29 @@ router.post("/signup", async (req, res) => {
   const passwordHash = bcrypt.hashSync(password, SALT_ROUNDS);
   const verificationToken = crypto.randomBytes(32).toString("hex");
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const verificationTokenHash = hashToken(verificationToken);
 
-  const inserted = await pool.query(
-    `INSERT INTO users (name, email, phone, passport_number, password_hash, role, preferred_language,
-                         agreed_to_terms, email_verification_token, email_verification_expires, avatar_url,
-                         whatsapp_number, country_of_residence, date_of_birth)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12, $13) RETURNING *`,
-    [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationToken, verificationExpires, avatarDataUrl || null, whatsappNumber || null, countryOfResidence || null, dateOfBirth || null]
-  );
+  // The SELECT above is only a courtesy check for the common case -- it
+  // can't stop two concurrent signups with the same email both passing it
+  // before either INSERT lands. The UNIQUE constraint on users.email is
+  // the real guard; catching its violation here turns that race into the
+  // same clean 409 the courtesy check already returns, instead of an
+  // unhandled 500.
+  let inserted;
+  try {
+    inserted = await pool.query(
+      `INSERT INTO users (name, email, phone, passport_number, password_hash, role, preferred_language,
+                           agreed_to_terms, email_verification_token, email_verification_expires, avatar_url,
+                           whatsapp_number, country_of_residence, date_of_birth)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [name, email.toLowerCase(), phone || null, passportNumber || null, passwordHash, role, preferredLanguage, verificationTokenHash, verificationExpires, avatarDataUrl || null, whatsappNumber || null, countryOfResidence || null, dateOfBirth || null]
+    );
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "An account with that email already exists" });
+    }
+    throw error;
+  }
 
   const user = inserted.rows[0];
   const token = signToken(user);
@@ -179,7 +265,7 @@ async function verifyEmailToken(token) {
 
   const result = await pool.query(
     "SELECT * FROM users WHERE email_verification_token = $1 AND email_verification_expires > now()",
-    [token]
+    [hashToken(token)]
   );
   const user = result.rows[0];
   if (!user) return { ok: false, message: "This verification link is invalid or has expired." };
@@ -235,7 +321,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
@@ -243,7 +329,14 @@ router.post("/login", async (req, res) => {
 
   const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
   const user = result.rows[0];
-  if (!user || user.deleted_at || !bcrypt.compareSync(password, user.password_hash)) {
+  // Always run a real bcrypt comparison, even when there's no user (or a
+  // deleted one) to check against -- comparing against a fixed dummy hash
+  // in that case keeps this response's timing the same as a genuine wrong-
+  // password rejection, so timing alone can't reveal whether an email is
+  // registered. See DUMMY_PASSWORD_HASH above.
+  const hashToCheck = (user && !user.deleted_at) ? user.password_hash : DUMMY_PASSWORD_HASH;
+  const passwordOk = bcrypt.compareSync(password, hashToCheck);
+  if (!user || user.deleted_at || !passwordOk) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
@@ -256,6 +349,11 @@ router.post("/login", async (req, res) => {
 // { user, isNewAccount }. Never trusts the client's agreedToTerms for an
 // account that already exists — that flag only matters (and gets enforced)
 // the moment a brand-new account is actually being created here.
+// providerColumn is interpolated straight into SQL column position below
+// (three times in this function) -- safe only because every caller passes
+// one of the two fixed internal literals "google_id" / "apple_id" from the
+// /google and /apple routes further down, never anything derived from the
+// request body. Do not change this to accept a client-influenced value.
 async function findOrCreateOAuthProfile({ providerColumn, providerId, email, name, avatarUrl, emailVerified, role, agreedToTerms }) {
   let user = (await pool.query(`SELECT * FROM users WHERE ${providerColumn} = $1`, [providerId])).rows[0];
   if (user) return { user, isNewAccount: false };
@@ -296,7 +394,7 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
 // servers in services/oauth.js before any of its contents are trusted.
 // agreedToTerms is only required (and only checked) when this is genuinely
 // a brand-new account; an existing account already agreed at signup.
-router.post("/google", async (req, res) => {
+router.post("/google", oauthLimiter, async (req, res) => {
   const { idToken, role = "rider", agreedToTerms } = req.body;
   if (!idToken) return res.status(400).json({ error: "idToken is required" });
 
@@ -334,7 +432,7 @@ router.post("/google", async (req, res) => {
 // Apple only ever sends fullName on the very first authorization for a given
 // app — the client has to capture it right then and forward it here, since
 // there's no way to fetch it again later.
-router.post("/apple", async (req, res) => {
+router.post("/apple", oauthLimiter, async (req, res) => {
   const { identityToken, fullName, role = "rider", agreedToTerms, authorizationCode } = req.body;
   if (!identityToken) return res.status(400).json({ error: "identityToken is required" });
 
@@ -495,7 +593,7 @@ router.patch("/me", requireAuth, async (req, res) => {
 // signup one expires after 24 hours and is one-time-use — see
 // verifyEmailToken below) rather than reusing whatever's already on the
 // row, which may well be gone by the time someone actually asks for this.
-router.post("/resend-verification-email", requireAuth, async (req, res) => {
+router.post("/resend-verification-email", requireAuth, resendVerificationLimiter, async (req, res) => {
   const current = (await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id])).rows[0];
   if (!current) return res.status(404).json({ error: "User not found" });
   if (current.email_verified) {
@@ -506,7 +604,7 @@ router.post("/resend-verification-email", requireAuth, async (req, res) => {
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   await pool.query(
     "UPDATE users SET email_verification_token = $1, email_verification_expires = $2 WHERE id = $3",
-    [verificationToken, verificationExpires, current.id]
+    [hashToken(verificationToken), verificationExpires, current.id]
   );
 
   const requestBaseUrl = `${req.protocol}://${req.get("host")}/api/auth/verify-email`;
@@ -565,7 +663,7 @@ router.post("/push-token", requireAuth, async (req, res) => {
 // New email -> silently create a real rider account (random password the
 // guest never sees) and log them in. Existing email -> refuse; otherwise
 // anyone could "book as" an existing rider with no password check at all.
-router.post("/guest", async (req, res) => {
+router.post("/guest", guestSignupLimiter, async (req, res) => {
   const { name, email, phone, whatsappNumber, countryOfResidence, agreedToTerms, preferredLanguage = "en" } = req.body;
 
   if (!name || !email) {
@@ -586,11 +684,26 @@ router.post("/guest", async (req, res) => {
   const randomPassword = crypto.randomBytes(24).toString("hex");
   const passwordHash = bcrypt.hashSync(randomPassword, SALT_ROUNDS);
 
-  const inserted = await pool.query(
-    `INSERT INTO users (name, email, phone, whatsapp_number, country_of_residence, password_hash, role, preferred_language, agreed_to_terms)
-     VALUES ($1, $2, $3, $4, $5, $6, 'rider', $7, true) RETURNING *`,
-    [name, email.toLowerCase(), phone || null, whatsappNumber || null, countryOfResidence || null, passwordHash, preferredLanguage]
-  );
+  // Same race as signup above -- the SELECT courtesy check can't stop two
+  // concurrent guest signups with the same email both passing it before
+  // either INSERT lands, so catch the UNIQUE violation and return the same
+  // clean 409 the courtesy check above already returns.
+  let inserted;
+  try {
+    inserted = await pool.query(
+      `INSERT INTO users (name, email, phone, whatsapp_number, country_of_residence, password_hash, role, preferred_language, agreed_to_terms)
+       VALUES ($1, $2, $3, $4, $5, $6, 'rider', $7, true) RETURNING *`,
+      [name, email.toLowerCase(), phone || null, whatsappNumber || null, countryOfResidence || null, passwordHash, preferredLanguage]
+    );
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({
+        error: "An account already exists with this email. Please log in with your password to continue.",
+        requiresLogin: true,
+      });
+    }
+    throw error;
+  }
 
   const user = inserted.rows[0];
   const token = signToken(user);
@@ -602,7 +715,7 @@ router.post("/guest", async (req, res) => {
 // body: { email }
 // Always responds the same way whether or not the email exists — otherwise
 // this endpoint becomes a way to check which emails have accounts.
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "email is required" });
 
@@ -616,7 +729,7 @@ router.post("/forgot-password", async (req, res) => {
   const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
   await pool.query("UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3", [
-    resetToken, expires, user.id,
+    hashToken(resetToken), expires, user.id,
   ]);
 
   const resetUrl = `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
@@ -634,7 +747,7 @@ router.post("/reset-password", async (req, res) => {
 
   const result = await pool.query(
     "SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > now()",
-    [token]
+    [hashToken(token)]
   );
   const user = result.rows[0];
   if (!user) return res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });

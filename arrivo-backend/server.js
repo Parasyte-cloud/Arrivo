@@ -71,7 +71,11 @@ app.use(
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
-      return callback(new Error("Not allowed by CORS"));
+      // .status = 403 so this reaches the client as a clean 403, not the
+      // generic error handler's 500 (it defaults to err.status || 500).
+      const err = new Error("Not allowed by CORS");
+      err.status = 403;
+      return callback(err);
     },
   })
 );

@@ -1,9 +1,27 @@
 const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { claimPaymentReference } = require("../services/paymentReferences");
+const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
+
+// Both routes below were previously wide open -- no auth, no rate limit --
+// despite calling out to Paystack on every request. requireAuth stops an
+// anonymous caller from using this server as a free proxy to Paystack's
+// API; the limiter (same express-rate-limit pattern as routes/support.js's
+// submitLimiter and routes/auth.js's limiters) caps how fast even a signed-
+// in caller can hammer either one.
+const paymentsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.id || req.ip),
+  handler: (req, res) =>
+    res.status(429).json({ error: "Too many payment requests. Please wait a few minutes and try again." }),
+});
 
 const PAYSTACK_BASE = "https://api.paystack.co";
 
@@ -33,7 +51,7 @@ async function verifyPaystackTransaction(reference) {
 // body: { email, amountNaira, reference? }
 // Call this from the app right before showing checkout. Returns an
 // authorization_url to open in a browser/webview, and a reference to verify later.
-router.post("/initialize", async (req, res) => {
+router.post("/initialize", requireAuth, paymentsLimiter, async (req, res) => {
   const { email, amountNaira } = req.body;
 
   if (!email || !amountNaira) {
@@ -77,7 +95,7 @@ router.post("/initialize", async (req, res) => {
 // Call this after the checkout browser closes, to confirm the payment
 // actually succeeded before marking a ride as paid. Never trust the
 // frontend's word alone that a payment succeeded.
-router.get("/verify/:reference", async (req, res) => {
+router.get("/verify/:reference", requireAuth, paymentsLimiter, async (req, res) => {
   try {
     const result = await verifyPaystackTransaction(req.params.reference);
     res.json(result);
