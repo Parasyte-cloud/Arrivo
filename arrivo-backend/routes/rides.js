@@ -16,6 +16,7 @@ const {
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference } = require("../services/paymentReferences");
+const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { getActivePlanForUser } = require("../services/familyPlan");
@@ -123,6 +124,81 @@ async function recordLuckyRideEntry(dbClient, ride, entryDate) {
      ON CONFLICT (rider_id, entry_date) DO NOTHING`,
     [ride.id, ride.rider_id, entryDate]
   );
+}
+
+// Thrown from inside withIdempotentMoneyBooking's doWork to abort with a
+// specific, expected client error (insufficient balance, etc.) rather than
+// the generic 500 every other unexpected failure gets. Distinct from a
+// normal Error so the catch block below can tell "reject this booking" apart
+// from "something actually broke."
+class BookingRejected extends Error {
+  constructor(status, body) {
+    super(body.error || "Booking rejected");
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// Shared by the wallet, family_wallet, and membership branches of POST /
+// below -- each of them debits money (or spends a membership trip) and
+// inserts the ride in one transaction, and each needs the exact same
+// idempotency handling around that transaction (see services/idempotency.js
+// and the ride_idempotency_keys table in db/schema.sql). Kept as one
+// function so the three can't drift out of sync with each other.
+//
+// doWork(client) does the branch's actual work (balance check, the INSERT,
+// the debit, fleet companions, lucky-ride entry) using the given
+// transaction client, and must return the inserted ride row. To reject the
+// booking with a specific client-facing error (e.g. insufficient balance),
+// throw a BookingRejected rather than returning an error response directly
+// -- returning here would commit the transaction, which is exactly what
+// rejecting is trying to avoid.
+//
+// onFreshSuccess(ride), if given, runs AFTER the response has been sent,
+// and only for a genuinely new booking -- never for a replayed one, since a
+// replay's side effects (notifications, emails) already happened the first
+// time.
+async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBody, { label, genericErrorMessage, doWork, onFreshSuccess }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const idem = await beginIdempotentRide(client, userId, idempotencyKey, requestBody);
+    if (!idem.claimed) {
+      await client.query("ROLLBACK");
+      if (idem.replay) {
+        return res.status(idem.responseStatus).json(idem.responseBody);
+      }
+      return res.status(409).json({
+        error: idem.reason === "idempotency_key_reused_for_different_booking"
+          ? "This idempotency key was already used for a different booking."
+          : "This booking attempt is already being processed. Please try again shortly.",
+        reason: idem.reason,
+      });
+    }
+
+    const ride = await doWork(client);
+    const responseBody = { ride: withParsedStops(ride) };
+    await completeIdempotentRide(client, idem.recordId, { rideId: ride.id, responseStatus: 201, responseBody });
+    await client.query("COMMIT");
+    res.status(201).json(responseBody);
+
+    if (onFreshSuccess) {
+      try {
+        await onFreshSuccess(ride);
+      } catch (err) {
+        console.error(`${label} post-booking follow-up failed:`, err.message);
+      }
+    }
+  } catch (err) {
+    await client.query("ROLLBACK");
+    if (err instanceof BookingRejected) {
+      return res.status(err.status).json(err.body);
+    }
+    console.error(`${label} ride booking failed:`, err.message);
+    return res.status(500).json({ error: genericErrorMessage });
+  } finally {
+    client.release();
+  }
 }
 
 // POST /api/rides — create a new ride/booking (requires auth)
@@ -466,6 +542,20 @@ router.post("/", requireAuth, async (req, res) => {
     return res.json({ ok: true, fareNaira, vehicleCount, promo: promoCode, promoDiscountNaira, quotedUsdAmount, ngnPerUsd });
   }
 
+  // Wallet, family_wallet, and membership bookings debit money (or spend a
+  // membership trip) and insert the ride in this SAME request, with no
+  // separate confirm step the way card payments have (see
+  // used_payment_references above) -- so a lost response followed by a
+  // retry can otherwise commit the same booking twice. idempotencyKey is
+  // required for those three so every such request can be de-duplicated;
+  // see services/idempotency.js and withIdempotentMoneyBooking above. Not
+  // required for card, since a card charge is only ever marked paid once,
+  // separately, by claiming its Paystack payment_reference.
+  const idempotencyKey = typeof req.body.idempotencyKey === "string" ? req.body.idempotencyKey.trim() : "";
+  if (["wallet", "family_wallet", "membership"].includes(paymentMethod) && !idempotencyKey) {
+    return res.status(400).json({ error: "idempotencyKey is required for wallet, family_wallet, and membership bookings." });
+  }
+
   // Best-effort capture of the flight's scheduled time AT BOOKING, purely
   // so services/scheduler.js can later tell "this flight got rescheduled"
   // (the live time has drifted a lot from this) apart from "it's always
@@ -495,29 +585,26 @@ router.post("/", requireAuth, async (req, res) => {
     if (!membership.rows[0]) {
       return res.status(400).json({ error: "No active membership found for this account." });
     }
-    // In its own transaction (same reasoning as the wallet branch below):
-    // without this, a fleet-companion insert failure after the primary ride
-    // already committed as 'paid' would leave a real, charged ride with a
-    // half-built (or missing) convoy and no way to retry cleanly.
-    const membershipClient = await pool.connect();
-    try {
-      await membershipClient.query("BEGIN");
-      const inserted = await membershipClient.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
-      );
-      await createFleetCompanions(membershipClient, inserted.rows[0]);
-      await recordLuckyRideEntry(membershipClient, inserted.rows[0], luckyRideEntryDate);
-      await membershipClient.query("COMMIT");
-      return res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
-    } catch (err) {
-      await membershipClient.query("ROLLBACK");
-      console.error("Membership ride creation failed:", err.message);
-      return res.status(500).json({ error: "Could not complete this booking. Please try again." });
-    } finally {
-      membershipClient.release();
-    }
+    // Idempotency-wrapped (see withIdempotentMoneyBooking above): without
+    // it, a lost response followed by a retry could spend a second
+    // membership trip and insert a duplicate ride for the same booking
+    // attempt. The transaction it opens is also still what protects a
+    // fleet-companion insert failure from leaving a half-built convoy
+    // behind a ride that already committed.
+    return withIdempotentMoneyBooking(res, req.user.id, idempotencyKey, req.body, {
+      label: "Membership",
+      genericErrorMessage: "Could not complete this booking. Please try again.",
+      doWork: async (client) => {
+        const inserted = await client.query(
+          `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
+          [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
+        );
+        await createFleetCompanions(client, inserted.rows[0]);
+        await recordLuckyRideEntry(client, inserted.rows[0], luckyRideEntryDate);
+        return inserted.rows[0];
+      },
+    });
   }
 
   // Family wallet -- same atomic, row-locked debit pattern as the personal
@@ -531,7 +618,13 @@ router.post("/", requireAuth, async (req, res) => {
   // else, purely for admin visibility/notifications, never re-checked for
   // authorization after this request.
   if (paymentMethod === "family_wallet") {
-    const callerPlan = await getActivePlanForUser(req.user.id);
+    // getActivePlanForUser takes (pool, userId) -- see services/familyPlan.js
+    // (routes/family.js wraps it into a one-arg helper of its own; this
+    // route was calling the two-arg shared version with only one argument,
+    // which silently passed req.user.id as `pool` and left `userId`
+    // undefined, so this threw ("req.user.id.query is not a function") on
+    // every family_wallet booking rather than looking up a plan.
+    const callerPlan = await getActivePlanForUser(pool, req.user.id);
     if (!callerPlan) {
       return res.status(400).json({ error: "You're not part of a family plan." });
     }
@@ -551,53 +644,52 @@ router.post("/", requireAuth, async (req, res) => {
       riderUserId = Number(familyMemberUserId);
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const planResult = await client.query("SELECT wallet_balance_naira FROM family_plans WHERE id = $1 FOR UPDATE", [callerPlan.id]);
-      const balance = Number(planResult.rows[0].wallet_balance_naira);
-      if (balance < fareNaira) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "Your Family Wallet is empty. Top up to continue riding.", balanceNaira: balance, fareNaira });
-      }
+    // Idempotency-wrapped (see withIdempotentMoneyBooking above): the row
+    // lock on family_plans.wallet_balance_naira below still protects against
+    // two DIFFERENT bookings racing each other, but on its own it does
+    // nothing to stop the SAME booking attempt being retried after a lost
+    // response and debiting the family wallet a second time.
+    return withIdempotentMoneyBooking(res, req.user.id, idempotencyKey, req.body, {
+      label: "Family wallet",
+      genericErrorMessage: "Could not complete payment from the family wallet. Please try again.",
+      doWork: async (client) => {
+        const planResult = await client.query("SELECT wallet_balance_naira FROM family_plans WHERE id = $1 FOR UPDATE", [callerPlan.id]);
+        const balance = Number(planResult.rows[0].wallet_balance_naira);
+        if (balance < fareNaira) {
+          throw new BookingRejected(400, { error: "Your Family Wallet is empty. Top up to continue riding.", balanceNaira: balance, fareNaira });
+        }
 
-      const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, booked_via_family_plan_id, booked_by_user_id, promo_code, promo_discount_naira, partner_venue_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'family_wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36) RETURNING *`,
-        [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id, promoCode, promoDiscountNaira, partnerVenueId || null]
-      );
-      const ride = rideResult.rows[0];
+        const rideResult = await client.query(
+          `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, booked_via_family_plan_id, booked_by_user_id, promo_code, promo_discount_naira, partner_venue_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'family_wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36) RETURNING *`,
+          [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id, promoCode, promoDiscountNaira, partnerVenueId || null]
+        );
+        const ride = rideResult.rows[0];
 
-      const newBalanceResult = await client.query(
-        "UPDATE family_plans SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
-        [fareNaira, callerPlan.id]
-      );
-      const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+        const newBalanceResult = await client.query(
+          "UPDATE family_plans SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+          [fareNaira, callerPlan.id]
+        );
+        const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
 
-      await client.query(
-        `INSERT INTO family_wallet_transactions (family_plan_id, actor_user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
-         VALUES ($1, $2, 'ride_charge', 'completed', $3, $4, $5, $6)`,
-        [callerPlan.id, req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
-      );
+        await client.query(
+          `INSERT INTO family_wallet_transactions (family_plan_id, actor_user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+           VALUES ($1, $2, 'ride_charge', 'completed', $3, $4, $5, $6)`,
+          [callerPlan.id, req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
+        );
 
-      await createFleetCompanions(client, ride);
-      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
+        await createFleetCompanions(client, ride);
+        await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
 
-      await client.query("COMMIT");
-
-      if (riderUserId !== req.user.id) {
-        const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [riderUserId]);
-        sendPushNotification(rider.rows[0]?.push_token, "A ride was booked for you", "Your family administrator booked an Arrivo ride for you.", { rideId: ride.id, type: "family_ride_booked" }).catch(() => {});
-      }
-
-      return res.status(201).json({ ride: withParsedStops(ride) });
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error("Family wallet ride payment failed:", err.message);
-      return res.status(500).json({ error: "Could not complete payment from the family wallet. Please try again." });
-    } finally {
-      client.release();
-    }
+        return ride;
+      },
+      onFreshSuccess: async (ride) => {
+        if (riderUserId !== req.user.id) {
+          const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [riderUserId]);
+          await sendPushNotification(rider.rows[0]?.push_token, "A ride was booked for you", "Your family administrator booked an Arrivo ride for you.", { rideId: ride.id, type: "family_ride_booked" }).catch(() => {});
+        }
+      },
+    });
   }
 
   // Paying from wallet happens in the same DB transaction as creating the
@@ -605,47 +697,46 @@ router.post("/", requireAuth, async (req, res) => {
   // simultaneous bookings from both reading "sufficient balance" and both
   // going through, overdrawing the wallet.
   if (paymentMethod === "wallet") {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
-      const balance = Number(userResult.rows[0].wallet_balance_naira);
-      if (balance < fareNaira) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "Insufficient wallet balance for this ride.", balanceNaira: balance, fareNaira });
-      }
+    // Idempotency-wrapped (see withIdempotentMoneyBooking above) for the
+    // same reason as family_wallet above: the row lock on
+    // users.wallet_balance_naira stops two DIFFERENT bookings from
+    // overdrawing the wallet, but does nothing to stop the SAME retried
+    // attempt debiting it twice.
+    return withIdempotentMoneyBooking(res, req.user.id, idempotencyKey, req.body, {
+      label: "Wallet",
+      genericErrorMessage: "Could not complete payment from wallet. Please try again.",
+      doWork: async (client) => {
+        const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+        const balance = Number(userResult.rows[0].wallet_balance_naira);
+        if (balance < fareNaira) {
+          throw new BookingRejected(400, { error: "Insufficient wallet balance for this ride.", balanceNaira: balance, fareNaira });
+        }
 
-      const rideResult = await client.query(
-        `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
-        [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
-      );
-      const ride = rideResult.rows[0];
+        const rideResult = await client.query(
+          `INSERT INTO rides (rider_id, pickup_address, stops, flight_number, vehicle_type, fare_naira, payment_reference, booking_type, duration_days, agreed_cancellation_policy, distance_km, duration_min, security_escort, fleet_size, payment_status, payment_method, pay_at_pickup, emergency_contact_name, emergency_contact_phone, dash_cam_consent, pickup_lat, pickup_lng, destination_lat, destination_lng, scheduled_pickup_at, linked_ride_id, preferred_driver_id, preferred_vehicle_snapshot, original_flight_scheduled_at, adults, children, vehicle_count, included_hours_per_day, quoted_usd_amount, quoted_ngn_per_usd, promo_code, promo_discount_naira, partner_venue_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'wallet', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
+          [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
+        );
+        const ride = rideResult.rows[0];
 
-      const newBalanceResult = await client.query(
-        "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
-        [fareNaira, req.user.id]
-      );
-      const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+        const newBalanceResult = await client.query(
+          "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
+          [fareNaira, req.user.id]
+        );
+        const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
 
-      await client.query(
-        `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
-         VALUES ($1, 'ride_charge', 'completed', $2, $3, $4, $5)`,
-        [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
-      );
+        await client.query(
+          `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+           VALUES ($1, 'ride_charge', 'completed', $2, $3, $4, $5)`,
+          [req.user.id, -fareNaira, newBalance, ride.id, "Ride #" + ride.id + " (" + pickupAddress + ")"]
+        );
 
-      await createFleetCompanions(client, ride);
-      await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
+        await createFleetCompanions(client, ride);
+        await recordLuckyRideEntry(client, ride, luckyRideEntryDate);
 
-      await client.query("COMMIT");
-      return res.status(201).json({ ride: withParsedStops(ride) });
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error("Wallet ride payment failed:", err.message);
-      return res.status(500).json({ error: "Could not complete payment from wallet. Please try again." });
-    } finally {
-      client.release();
-    }
+        return ride;
+      },
+    });
   }
 
   // Same transaction reasoning as the membership/wallet branches above — a
