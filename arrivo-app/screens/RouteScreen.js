@@ -38,9 +38,19 @@ const EXCLUDED_AREAS = [
   { name: "Ibeju-Lekki", keywords: ["ibeju-lekki", "ibeju lekki"] },
   { name: "Makoko", keywords: ["makoko"] },
 ];
+// Roads named after a red-zone town that run through areas we DO serve
+// ("Lekki - Epe Expy" across Ajah/Sangotedo/Ikota/VGC, "Lagos - Badagry
+// Expy" along Festac/Trade Fair/Ojo) are removed before matching, and
+// matching is whole-word so "Deeper" / "Independence" don't read as Epe.
+// Same rule as arrivo-backend/services/fare.js findExcludedArea.
+const THROUGH_ROADS = /\b(?:lekki|ikorodu|ijebu)\s*-?\s*epe\b|\b(?:lagos\s*-?\s*)?badagry\s*(?:express\s*way|expy|exp|road|rd)\b/g;
+function containsWord(text, word) {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("(^|[^a-z0-9])" + escaped + "($|[^a-z0-9])").test(text);
+}
 function findExcludedArea(address) {
-  const a = " " + (address || "").toLowerCase() + " ";
-  return EXCLUDED_AREAS.find((area) => area.keywords.some((k) => a.indexOf(k) !== -1)) || null;
+  const a = (address || "").toLowerCase().replace(THROUGH_ROADS, " ");
+  return EXCLUDED_AREAS.find((area) => area.keywords.some((k) => containsWord(a, k))) || null;
 }
 
 // "pickup" (Pickup Truck) is a later addition for heavy/bulky cargo —

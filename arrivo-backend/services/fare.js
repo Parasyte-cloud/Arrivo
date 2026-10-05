@@ -75,11 +75,34 @@ function isAirportAddress(address) {
   return matchesAny(address, AIRPORT_KEYWORDS);
 }
 
+// Roads named after a red-zone town that run through areas we DO serve.
+// Google puts them in almost every address in Ajah, Sangotedo, Ikota, VGC
+// and Chevron ("..., Lekki - Epe Expy, ...") and along the Festac / Mile 2
+// / Trade Fair / Ojo corridor ("Lagos - Badagry Expy"). They're removed
+// before matching so the road name alone never refuses a trip; the town
+// itself ("..., Epe, Lagos") still does.
+const THROUGH_ROADS = /\b(?:lekki|ikorodu|ijebu)\s*-?\s*epe\b|\b(?:lagos\s*-?\s*)?badagry\s*(?:express\s*way|expy|exp|road|rd)\b/g;
+
+// Whole-word match: "epe" must not match inside "Deeper" or "Independence".
+function containsWord(text, word) {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("(^|[^a-z0-9])" + escaped + "($|[^a-z0-9])").test(text);
+}
+
 // Returns the matching EXCLUDED_AREAS entry, or null.
+//
+// This used to be a plain substring search, which refused every address on
+// the Lekki-Epe Expressway as "Epe" and every address on the Lagos-Badagry
+// Expressway as "Badagry" -- most of Ajah/Sangotedo/Ikota and the Festac /
+// Trade Fair / LASU corridor, all of which are priced in AREA_PRICING above
+// -- plus any address containing "deeper", "independence", etc. The same
+// function also gates ArrivoExpress (services/instantFare.js) and
+// deliveries (services/deliveryFare.js). Keep in sync with the copies in
+// arrivo-website/booking.js and arrivo-app/screens/RouteScreen.js.
 function findExcludedArea(address) {
-  const a = " " + (address || "").toLowerCase() + " ";
+  const a = (address || "").toLowerCase().replace(THROUGH_ROADS, " ");
   for (const area of EXCLUDED_AREAS) {
-    if (area.keywords.some((k) => a.indexOf(k) !== -1)) return area;
+    if (area.keywords.some((k) => containsWord(a, k))) return area;
   }
   return null;
 }
