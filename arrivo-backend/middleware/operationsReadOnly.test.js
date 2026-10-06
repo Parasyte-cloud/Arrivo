@@ -79,6 +79,9 @@ const allowedOperationsGets = [
   "/api/admin/flight-issues",
   "/api/admin/vehicles",
   "/api/admin/analytics",
+  "/api/admin/exports",
+  "/api/admin/exports/riders?from=2026-10-01&to=2026-10-31",
+  "/api/admin/exports/arrivoexpress-requests",
   "/api/live-map/snapshot",
   "/api/alerts",
   "/api/alerts/alert-123",
@@ -118,6 +121,9 @@ const blockedOperationsRequests = [
   ["PATCH", "/api/admin/rides/123"],
   ["PATCH", "/api/admin/drivers/123/verify"],
   ["PATCH", "/api/admin/panics/123/resolve"],
+  ["POST", "/api/admin/exports/riders"],
+  ["DELETE", "/api/admin/exports/riders"],
+  ["GET", "/api/admin/exports/riders/extra/path"],
 ];
 
 test("operations is deny-by-default outside approved GET views", async () => {

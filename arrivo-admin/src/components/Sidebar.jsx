@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { id: "arrivo-express", label: "Arrivo Express", icon: "🛡️" },
   { id: "live-map", label: "Live Map", icon: "📍" },
   { id: "analytics", label: "Analytics", icon: "📊" },
+  { id: "exports", label: "Exports", icon: "⬇️" },
 ];
 
 const OPERATIONS_NAV_IDS = new Set([
@@ -26,6 +27,7 @@ const OPERATIONS_NAV_IDS = new Set([
   "vehicles",
   "live-map",
   "analytics",
+  "exports",
 ]);
 
 

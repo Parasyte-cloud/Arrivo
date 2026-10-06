@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
-const { claimPaymentReference } = require("../services/paymentReferences");
+const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 const { computeVehicleCount } = require("../services/fare");
 const { sendWhatsAppMessage } = require("../services/whatsapp");
 const router = express.Router();
@@ -69,13 +69,21 @@ function paystackHeaders() {
 // out whether a transaction really succeeded. Never trust a client's word
 // for this; always ask Paystack.
 async function verifyPaystackTransaction(reference) {
-  const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${reference}`, {
+  if (!isValidPaystackReference(reference)) {
+    throw Object.assign(new Error("Invalid payment reference."), { status: 400, invalidReference: true });
+  }
+  const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference)}`, {
     headers: paystackHeaders(),
+    // Without a timeout a stalled Paystack call holds the request open forever.
+    timeout: 10000,
   });
   const data = response.data.data;
+  // Everything downstream credits "amount / 100" as naira, so a payment in
+  // any other currency must not count as a success.
+  const inNaira = data.currency === "NGN";
   return {
-    success: data.status === "success",
-    status: data.status,
+    success: data.status === "success" && inNaira,
+    status: inNaira ? data.status : "wrong_currency",
     amountNaira: data.amount / 100,
     currency: data.currency,
     paidAt: data.paid_at,
@@ -103,7 +111,7 @@ async function initializePaystackTransaction({ email, amountNaira }) {
       amount: Math.round(amountNaira * 100), // Paystack expects kobo
       callback_url: process.env.PAYSTACK_CALLBACK_URL,
     },
-    { headers: paystackHeaders() }
+    { headers: paystackHeaders(), timeout: 10000 }
   );
 
   const { authorization_url, access_code, reference } = response.data.data;
@@ -153,6 +161,7 @@ router.get("/verify/:reference", async (req, res) => {
     const result = await verifyPaystackTransaction(req.params.reference);
     res.json(result);
   } catch (err) {
+    if (err.invalidReference) return res.status(400).json({ error: "Invalid payment reference." });
     console.error("Paystack verify failed:", err.response?.data || err.message);
     res.status(502).json({ error: "Could not verify payment." });
   }
@@ -167,8 +176,15 @@ router.post(
   express.raw({ type: "application/json" }), // need the raw body to check the signature
   async (req, res) => {
     const signature = req.headers["x-paystack-signature"];
+    // With no key configured the HMAC below would be computed over an empty
+    // key, which anyone can reproduce, so every webhook would pass. Refuse
+    // them all instead.
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      console.error("Paystack webhook ignored: PAYSTACK_SECRET_KEY is not set.");
+      return res.sendStatus(503);
+    }
     const expected = crypto
-      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY || "")
+      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
       .update(req.body)
       .digest("hex");
 

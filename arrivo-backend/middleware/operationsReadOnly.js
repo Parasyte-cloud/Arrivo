@@ -7,6 +7,10 @@ const OPERATIONS_GET_RULES = [
   /^\/api\/admin\/flight-issues\/?$/,
   /^\/api\/admin\/vehicles\/?$/,
   /^\/api\/admin\/analytics\/?$/,
+  // CSV downloads. Operations may take the operational datasets; the exports
+  // router itself refuses the admin-only ones and the history log.
+  /^\/api\/admin\/exports\/?$/,
+  /^\/api\/admin\/exports\/[a-z-]+\/?$/,
   /^\/api\/live-map\/snapshot\/?$/,
   /^\/api\/alerts\/?$/,
   /^\/api\/alerts\/[^/]+\/?$/,
