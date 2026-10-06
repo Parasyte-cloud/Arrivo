@@ -1,5 +1,6 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = rateLimit;
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -37,10 +38,11 @@ const TOKEN_EXPIRY = "7d";
 // carrier NAT address can make a few genuine users share a bucket, but the
 // alternative -- no limit at all -- is what let anyone hammer login,
 // signup, or password reset with no backoff.
-function authRateLimiter({ windowMs, limit, message }) {
+function authRateLimiter({ windowMs, limit, message, ...extra }) {
   return rateLimit({
     windowMs,
     limit,
+    ...extra,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     // Every other rate-limit response in this API answers { error }, and
@@ -50,9 +52,31 @@ function authRateLimiter({ windowMs, limit, message }) {
 }
 
 // Login is the classic brute-force target -- tight window, tight count.
+//
+// Two layers, because most Nigerian riders reach us through mobile-carrier
+// NAT, where thousands of people share one public IP:
+//   1. Per account: 10 FAILED attempts per 15 minutes for one email from one
+//      network. This is the real brute-force protection, and it only counts
+//      failures, so signing in successfully never uses up the allowance.
+//   2. Per network: a high ceiling (300 failures per 15 minutes) that stops one
+//      address spraying many different emails without locking a whole carrier
+//      out when a few of its users mistype passwords.
+// Before this, every attempt (successful ones too) counted against 10 per IP,
+// so a handful of genuine logins on a shared address could block everyone.
 const loginLimiter = authRateLimiter({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.AUTH_LOGIN_RATE_LIMIT) || 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) =>
+    `${ipKeyGenerator(req.ip)}|${String((req.body && req.body.email) || "").trim().toLowerCase().slice(0, 254)}`,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+
+const loginNetworkLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_LOGIN_NETWORK_RATE_LIMIT) || 300,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: "Too many login attempts. Please wait a few minutes and try again.",
 });
 
@@ -61,7 +85,10 @@ const loginLimiter = authRateLimiter({
 // an hour, but still bounded so a script can't mass-create accounts.
 const signupLimiter = authRateLimiter({
   windowMs: 60 * 60 * 1000,
-  limit: Number(process.env.AUTH_SIGNUP_RATE_LIMIT) || 8,
+  // 60 an hour per network, not 8: one carrier-NAT address can be thousands
+  // of real people, and a launch-day spike would otherwise lock them out of
+  // creating a profile at all.
+  limit: Number(process.env.AUTH_SIGNUP_RATE_LIMIT) || 60,
   message: "Too many signup attempts from this network. Please wait a while and try again.",
 });
 
@@ -281,7 +308,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", loginLimiter, async (req, res) => {
+router.post("/login", loginNetworkLimiter, loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
