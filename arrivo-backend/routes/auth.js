@@ -1,10 +1,12 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = rateLimit;
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
+const { setSessionCookie, clearSessionCookie } = require("../middleware/sessionCookie");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
@@ -37,10 +39,11 @@ const TOKEN_EXPIRY = "7d";
 // carrier NAT address can make a few genuine users share a bucket, but the
 // alternative -- no limit at all -- is what let anyone hammer login,
 // signup, or password reset with no backoff.
-function authRateLimiter({ windowMs, limit, message }) {
+function authRateLimiter({ windowMs, limit, message, ...extra }) {
   return rateLimit({
     windowMs,
     limit,
+    ...extra,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     // Every other rate-limit response in this API answers { error }, and
@@ -50,9 +53,31 @@ function authRateLimiter({ windowMs, limit, message }) {
 }
 
 // Login is the classic brute-force target -- tight window, tight count.
+//
+// Two layers, because most Nigerian riders reach us through mobile-carrier
+// NAT, where thousands of people share one public IP:
+//   1. Per account: 10 FAILED attempts per 15 minutes for one email from one
+//      network. This is the real brute-force protection, and it only counts
+//      failures, so signing in successfully never uses up the allowance.
+//   2. Per network: a high ceiling (300 failures per 15 minutes) that stops one
+//      address spraying many different emails without locking a whole carrier
+//      out when a few of its users mistype passwords.
+// Before this, every attempt (successful ones too) counted against 10 per IP,
+// so a handful of genuine logins on a shared address could block everyone.
 const loginLimiter = authRateLimiter({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.AUTH_LOGIN_RATE_LIMIT) || 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) =>
+    `${ipKeyGenerator(req.ip)}|${String((req.body && req.body.email) || "").trim().toLowerCase().slice(0, 254)}`,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+
+const loginNetworkLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_LOGIN_NETWORK_RATE_LIMIT) || 300,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: "Too many login attempts. Please wait a few minutes and try again.",
 });
 
@@ -61,7 +86,10 @@ const loginLimiter = authRateLimiter({
 // an hour, but still bounded so a script can't mass-create accounts.
 const signupLimiter = authRateLimiter({
   windowMs: 60 * 60 * 1000,
-  limit: Number(process.env.AUTH_SIGNUP_RATE_LIMIT) || 8,
+  // 60 an hour per network, not 8: one carrier-NAT address can be thousands
+  // of real people, and a launch-day spike would otherwise lock them out of
+  // creating a profile at all.
+  limit: Number(process.env.AUTH_SIGNUP_RATE_LIMIT) || 60,
   message: "Too many signup attempts from this network. Please wait a while and try again.",
 });
 
@@ -76,7 +104,11 @@ const passwordResetLimiter = authRateLimiter({
 });
 
 function signToken(user) {
-  return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role, tv: user.token_version ?? 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: TOKEN_EXPIRY }
+  );
 }
 
 // Registration photos arrive as a base64 data URL from the browser/app
@@ -215,6 +247,7 @@ router.post("/signup", signupLimiter, async (req, res) => {
   sendVerificationEmail(user.email, verifyUrl).catch((e) => console.error("Verification email failed:", e.message));
   sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
 
+  setSessionCookie(res, token);
   res.status(201).json({ token, user: publicUser(user) });
 });
 
@@ -281,7 +314,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", loginLimiter, async (req, res) => {
+router.post("/login", loginNetworkLimiter, loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
@@ -294,6 +327,7 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 
   const token = signToken(user);
+  setSessionCookie(res, token);
   res.json({ token, user: publicUser(user) });
 });
 
@@ -312,6 +346,31 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
 
   const byEmail = (await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()])).rows[0];
   if (byEmail) {
+    // Linking hands over an existing account to whoever holds the provider
+    // login, so the provider must vouch that this email really is theirs.
+    if (!emailVerified) {
+      throw Object.assign(
+        new Error("The email on this sign-in account is not verified, so we can't connect it to an existing RideArrivo account. Verify it with the provider first, or sign in with your password."),
+        { status: 400 }
+      );
+    }
+    // The password sign-up path issues a working token before the email is
+    // checked, so someone could have registered this address first, with a
+    // password of their own, to wait for its owner. If the email was never
+    // verified, the person arriving now with a verified provider login is the
+    // owner: take the account, kill the password that was set at sign-up and
+    // end every session that already exists for it.
+    if (!byEmail.email_verified) {
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const claimed = await pool.query(
+        `UPDATE users SET ${providerColumn} = $1, email_verified = true, password_hash = $2,
+                email_verification_token = NULL, email_verification_expires = NULL,
+                reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1
+          WHERE id = $3 RETURNING *`,
+        [providerId, bcrypt.hashSync(randomPassword, SALT_ROUNDS), byEmail.id]
+      );
+      return { user: claimed.rows[0], isNewAccount: false };
+    }
     const linked = await pool.query(`UPDATE users SET ${providerColumn} = $1 WHERE id = $2 RETURNING *`, [providerId, byEmail.id]);
     return { user: linked.rows[0], isNewAccount: false };
   }
@@ -369,6 +428,7 @@ router.post("/google", async (req, res) => {
     }
 
     const token = signToken(user);
+    setSessionCookie(res, token);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Google." });
@@ -459,6 +519,7 @@ router.post("/apple", async (req, res) => {
     }
 
     const token = signToken(user);
+    setSessionCookie(res, token);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Apple." });
@@ -466,6 +527,14 @@ router.post("/apple", async (req, res) => {
 });
 
 // GET /api/auth/me
+// POST /api/auth/logout
+// Clears the shared single sign-on cookie on every *.ridearrivo.com site.
+// Bearer-token clients just discard their token; calling this is harmless.
+router.post("/logout", (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
 router.get("/me", requireAuth, async (req, res) => {
   const result = await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id]);
   const user = result.rows[0];
@@ -687,7 +756,7 @@ router.post("/reset-password", passwordResetLimiter, async (req, res) => {
 
   const passwordHash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
   await pool.query(
-    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
+    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1 WHERE id = $2",
     [passwordHash, user.id]
   );
 

@@ -466,10 +466,16 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS escort_payout_naira NUMERIC;
 -- services/paymentReferences.js). The UNIQUE constraint makes the claim
 -- itself atomic even under two simultaneous requests racing with the same
 -- reference — a plain SELECT-then-UPDATE check can't guarantee that.
+-- Bumped to sign a user out everywhere: a password reset, or an unverified
+-- sign-up claimed by the real owner of the email. Tokens carry the value they
+-- were issued with (claim "tv"; older tokens count as 0) and stop working when
+-- it no longer matches.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS used_payment_references (
   id SERIAL PRIMARY KEY,
   reference TEXT UNIQUE NOT NULL,
-  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup'
+  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup' | 'family_topup'
   ride_id INTEGER REFERENCES rides(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1176,3 +1182,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_idempotency_key_once ON ride_idempote
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 3
 -- ============================================================
+
+-- ── Operations CSV exports: audit trail ──
+-- One row per download attempt, written before any data leaves, then updated
+-- with the final row count and outcome. Exports carry personal data out of
+-- the system, so who took what and when has to be answerable later.
+CREATE TABLE IF NOT EXISTS export_audit_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT NOT NULL,
+  user_role TEXT NOT NULL,
+  dataset TEXT NOT NULL,
+  date_from DATE,
+  date_to DATE,
+  row_count INTEGER,
+  status TEXT NOT NULL DEFAULT 'started', -- 'started' | 'completed' | 'failed' | 'aborted'
+  ip TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_export_audit_log_created ON export_audit_log(created_at DESC);
+-- Which door the download came through: the admin console or the Workspace.
+ALTER TABLE export_audit_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'console';

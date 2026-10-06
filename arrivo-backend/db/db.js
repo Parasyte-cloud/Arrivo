@@ -17,6 +17,18 @@ const pool = new Pool({
   // for these providers — the connection is still encrypted, just not
   // verified against a CA bundle.
   ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+  // Without a connect timeout a request waits forever when every connection
+  // is busy, and without an idle timeout the pool keeps connections the
+  // provider has already dropped.
+  connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 15000,
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30000,
+});
+
+// An error on an idle pooled connection (the database restarting, a managed
+// provider closing idle sessions) is emitted on the pool. With no listener,
+// Node treats it as an uncaught exception and the whole API process exits.
+pool.on("error", (err) => {
+  console.error("Idle database connection error (connection discarded):", err.message);
 });
 
 // Run the schema on startup — every statement uses IF NOT EXISTS, so this

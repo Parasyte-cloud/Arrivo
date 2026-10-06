@@ -11,6 +11,9 @@ const {
   isLuckyRideWindow,
   applyLaunchPromoDiscount,
   lagosDateString,
+  computeOneWayFare,
+  computeCharterFare,
+  PLATFORM_FARE_INCREASE,
 } = require("./fare");
 
 // Builds a UTC Date that corresponds to a given Africa/Lagos (UTC+1) local
@@ -194,6 +197,20 @@ test("lagosDateString reflects the Lagos calendar day, not the UTC one, near mid
   // 11:30pm UTC on Jan 1 is 12:30am Lagos time on Jan 2.
   const almostMidnightUtc = new Date(Date.UTC(2026, 0, 1, 23, 30));
   assert.strictEqual(lagosDateString(almostMidnightUtc), "2026-01-02");
+});
+
+test("platform fare increase is +7%", () => {
+  assert.strictEqual(PLATFORM_FARE_INCREASE, 1.07);
+});
+
+test("charter fare includes the 7% increase (sedan full day: 8500 x 6 x 1.07)", () => {
+  assert.strictEqual(computeCharterFare({ vehicleType: "sedan", bookingType: "full_day", durationDays: 1 }), 54570);
+});
+
+test("one-way fare includes the 7% increase (Ikoyi sedan: 44,000 day / 52,800 night, before +7%)", () => {
+  const fare = computeOneWayFare({ pickupAddress: "Murtala Muhammed Airport", destinationAddress: "Ikoyi", vehicleType: "sedan" });
+  // Daytime 44,000 x 1.07 = 47,080 -> 47,500. Night 52,800 x 1.07 = 56,496 -> 56,500.
+  assert.ok(fare === 47500 || fare === 56500, "unexpected fare " + fare);
 });
 
 console.log(`${passed} passed`);

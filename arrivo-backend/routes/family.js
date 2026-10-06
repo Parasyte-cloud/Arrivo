@@ -12,6 +12,7 @@ const axios = require("axios");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { getConfigNumber } = require("../services/systemConfig");
+const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 const { sendPushNotification } = require("../services/pushNotifications");
 const { PLAN_LIMITS, getActivePlanForUser: getActivePlanForUserShared } = require("../services/familyPlan");
 
@@ -229,14 +230,21 @@ router.post("/plans/:id/wallet/topup/verify", requireAuth, async (req, res) => {
 
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ error: "reference is required" });
+  if (!isValidPaystackReference(reference)) return res.status(400).json({ error: "Invalid payment reference." });
 
   let paystackData;
   try {
-    const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${reference}`, { headers: paystackHeaders() });
+    const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: paystackHeaders(),
+      timeout: 10000,
+    });
     paystackData = response.data.data;
   } catch (err) {
     console.error("Paystack verify failed (family wallet top-up):", err.response?.data || err.message);
     return res.status(502).json({ error: "Could not verify payment with Paystack." });
+  }
+  if (paystackData.currency !== "NGN") {
+    return res.status(400).json({ error: "Only payments in naira can be credited to the family wallet." });
   }
   if (paystackData.status !== "success") {
     return res.status(400).json({ error: "Payment was not successful.", status: paystackData.status });
@@ -251,6 +259,16 @@ router.post("/plans/:id/wallet/topup/verify", requireAuth, async (req, res) => {
       await client.query("ROLLBACK");
       const fresh = await pool.query("SELECT wallet_balance_naira FROM family_plans WHERE id = $1", [plan.id]);
       return res.json({ success: true, walletBalanceNaira: Number(fresh.rows[0].wallet_balance_naira), alreadyCredited: true });
+    }
+
+    // The check above only knows about earlier family top-ups. This is the
+    // shared ledger every other payment flow claims from, so one real payment
+    // cannot also be spent on a personal top-up, a ride, a tip or an overage.
+    const claimed = await claimPaymentReference(client, reference, "family_topup");
+    if (!claimed) {
+      await client.query("ROLLBACK");
+      console.error(`Reused payment reference on family wallet top-up: ${reference} was already used for a different charge.`);
+      return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
     }
 
     const paidAmountNaira = paystackData.amount / 100;

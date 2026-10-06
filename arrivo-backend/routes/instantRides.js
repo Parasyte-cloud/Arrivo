@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const {
   requireAuth,
@@ -159,6 +160,32 @@ router.get("/tiers", requireAuth, (req, res) => {
   });
 });
 
+// Per-rider limits (not per-IP, so a shared carrier NAT cannot lock out real
+// riders). /quote calls Google Distance Matrix on every hit, so it is the
+// route most worth protecting from a runaway client or a script.
+function riderLimiter({ windowMs, limit, message }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req) => "rider:" + (req.user && req.user.id),
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+
+const quoteLimiter = riderLimiter({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.INSTANT_QUOTE_RATE_LIMIT) || 40,
+  message: "Too many fare checks. Please wait a few minutes and try again.",
+});
+
+const createLimiter = riderLimiter({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.INSTANT_CREATE_RATE_LIMIT) || 15,
+  message: "Too many ride requests. Please wait a few minutes and try again.",
+});
+
 // POST /api/instant-rides/quote
 //
 // Fare and route data are always calculated by the backend. The app may
@@ -167,6 +194,7 @@ router.post(
   "/quote",
   requireAuth,
   requireRole("rider"),
+  quoteLimiter,
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
@@ -202,6 +230,7 @@ router.post(
   "/",
   requireAuth,
   requireRole("rider"),
+  createLimiter,
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
@@ -222,6 +251,24 @@ router.post(
 
     try {
       const quote = await quoteInstantRide(req.body);
+
+      // Optional, additive guard: a client that shows the rider a fare and
+      // then confirms it can send expectedFareNaira. Fares move with live
+      // traffic, so a lower fare is always fine, but if the fare to be
+      // charged is now meaningfully HIGHER than what the rider agreed to,
+      // stop before any money moves and let them re-confirm.
+      const expected = Number(req.body.expectedFareNaira);
+      if (Number.isFinite(expected) && expected > 0) {
+        const tolerancePct = Number(process.env.INSTANT_FARE_TOLERANCE_PCT);
+        const pct = Number.isFinite(tolerancePct) && tolerancePct >= 0 ? tolerancePct : 10;
+        if (quote.fareNaira > Math.ceil(expected * (1 + pct / 100))) {
+          return res.status(409).json({
+            error: "The fare changed while you were confirming. Please review the new fare.",
+            code: "FARE_CHANGED",
+            fareNaira: quote.fareNaira,
+          });
+        }
+      }
 
       const funded =
         await createWalletFundedRequest({
@@ -643,16 +690,25 @@ router.get(
     // rider sees their current ArrivoExpress state.
     await expireStaleOffers(pool);
 
+    // A request stays 'matched' forever once a driver accepts. Without the
+    // join below, a rider whose last Express trip has long since finished
+    // would be reported as still active and bounced to its tracking page
+    // on every visit. Only a matched request whose ride is still live counts.
     const findActive = () => pool.query(
-      `SELECT *
-         FROM instant_ride_requests
-        WHERE rider_id = $1
-          AND status IN (
+      `SELECT irr.*
+         FROM instant_ride_requests irr
+         LEFT JOIN rides ON rides.id = irr.ride_id
+        WHERE irr.rider_id = $1
+          AND irr.status IN (
             'searching',
             'offering',
             'matched'
           )
-        ORDER BY created_at DESC
+          AND NOT (
+            irr.status = 'matched'
+            AND rides.ride_status IN ('completed', 'cancelled', 'canceled')
+          )
+        ORDER BY irr.created_at DESC
         LIMIT 1`,
       [req.user.id]
     );

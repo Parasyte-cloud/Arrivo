@@ -146,3 +146,45 @@ export const createPartnerVenue = (token, venue) =>
   request("/api/admin/partner-venues", token, { method: "POST", body: JSON.stringify(venue) });
 export const updatePartnerVenue = (token, id, updates) =>
   request(`/api/admin/partner-venues/${id}`, token, { method: "PATCH", body: JSON.stringify(updates) });
+
+// ── Operations CSV exports ──────────────────────────────────────────────
+export const getExportList = (token) => request("/api/admin/exports", token);
+export const getExportHistory = (token) => request("/api/admin/exports/history", token);
+
+// A download cannot go through request(): that parses JSON, and this answers
+// with a file. It also cannot be a plain link, because the file is behind the
+// sign-in token, which a link cannot carry. So fetch it with the token, then
+// hand the bytes to the browser as a download.
+export async function downloadExport(token, dataset, { from, to } = {}) {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/exports/${encodeURIComponent(dataset)}${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event("auth:expired"));
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed (${res.status})`);
+  }
+
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : `arrivo-${dataset}.csv`;
+  const rows = Number(res.headers.get("X-Row-Count"));
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return { filename, rows: Number.isFinite(rows) ? rows : null };
+}
