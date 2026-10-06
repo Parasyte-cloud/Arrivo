@@ -6,7 +6,7 @@ import { Card } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideHistory } from "../services/api";
+import { getRideHistory, getSharedWithMeRides } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 
 export default function ActivityScreen({ navigation }) {
@@ -14,13 +14,19 @@ export default function ActivityScreen({ navigation }) {
   const { token } = useAuth();
   const { formatRideFare } = useCurrency(token);
   const [rides, setRides] = useState([]);
+  // Arrivo Express Phase 3 -- Arrivo Share. Rides booked and paid for by
+  // someone else, where you were added as a co-rider (see
+  // POST /:id/share-participants) -- shown separately since you can track
+  // these but didn't book or pay for them.
+  const [sharedRides, setSharedRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const data = await getRideHistory(token);
+      const [data, sharedData] = await Promise.all([getRideHistory(token), getSharedWithMeRides(token)]);
       setRides(data.rides || []);
+      setSharedRides(sharedData.rides || []);
       setError(null);
     } catch (e) {
       setError(e.message || "Couldn't load your ride history.");
@@ -59,7 +65,10 @@ export default function ActivityScreen({ navigation }) {
             <Card tone="dark" style={{ marginBottom: spacing.sm }}>
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+                  <Text style={styles.tripTitle}>
+                    {ride.pickup_address}
+                    {ride.is_arrivo_share ? " · Arrivo Share" : ""}
+                  </Text>
                   <Text style={styles.tripDate}>
                     {new Date(ride.created_at).toLocaleDateString()} · {ride.ride_status} · {ride.payment_status}
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
@@ -70,6 +79,29 @@ export default function ActivityScreen({ navigation }) {
             </Card>
           </Pressable>
         ))}
+
+        {sharedRides.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Rides you're sharing</Text>
+            {sharedRides.map((ride) => (
+              <Pressable
+                key={`shared-${ride.id}`}
+                onPress={() => navigation.navigate("Home", { screen: "Tracking", params: { rideId: ride.id } })}
+              >
+                <Card tone="dark" style={{ marginBottom: spacing.sm }}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
+                      <Text style={styles.tripDate}>
+                        Booked by {ride.rider_name} · {new Date(ride.created_at).toLocaleDateString()} · {ride.ride_status}
+                      </Text>
+                    </View>
+                  </View>
+                </Card>
+              </Pressable>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -78,6 +110,7 @@ export default function ActivityScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.dark.bg0 },
   title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.md },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.dark.text, marginTop: spacing.md, marginBottom: spacing.sm },
   row: { flexDirection: "row", alignItems: "center" },
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },

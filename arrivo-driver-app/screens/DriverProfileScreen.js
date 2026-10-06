@@ -69,7 +69,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
       >
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Complete your driver profile</Text>
-        <Text style={styles.subtitle}>Step 2 of 2. A few details so we can verify you to drive — your vehicle is assigned separately by RideArrivo</Text>
+        <Text style={styles.subtitle}>Step 2 of 2. A few details so we can verify you to drive. Your vehicle is assigned separately by RideArrivo</Text>
 
         <Card style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>License & verification</Text>

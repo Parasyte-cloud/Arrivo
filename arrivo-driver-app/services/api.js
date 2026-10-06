@@ -78,6 +78,16 @@ export function acceptRide(token, rideId) {
 export function updateRideStatus(token, rideId, status) {
   return request(`/api/rides/${rideId}/status`, authed(token, { method: "PATCH", body: JSON.stringify({ status }) }));
 }
+// Arrivo Ride Guarantee: once a ride is accepted, a driver can no longer
+// free-cancel it via updateRideStatus("cancelled") -- the backend now
+// rejects that transition. This is the only way a driver can back out of
+// an accepted/in_progress ride, and it requires one of a fixed set of
+// valid reasons (vehicle_breakdown | safety_concern | emergency |
+// incorrect_pickup_info). The backend auto-reassigns the ride to another
+// driver rather than leaving the rider to rebook.
+export function cancelRideWithReason(token, rideId, reason) {
+  return request(`/api/rides/${rideId}/cancel-request`, authed(token, { method: "POST", body: JSON.stringify({ reason }) }));
+}
 export function getMyDriverRides(token) {
   return request("/api/rides/driver/mine", authed(token));
 }
@@ -105,4 +115,37 @@ export function getCallToken(token) {
 // ride — see arrivo-backend/routes/chat.js. Returns { channelType, channelId }.
 export function getRideChatChannel(token, rideId) {
   return request("/api/chat/ride-channel", authed(token, { method: "POST", body: JSON.stringify({ rideId }) }));
+}
+
+// ArrivoExpress: on-demand, metered rides — a separate availability toggle and
+// offer queue from the scheduled getAvailableRides() above, so an
+// unmatched ArrivoExpress request can never leak into the normal claim queue
+// (see arrivo-backend routes/instantRides.js).
+export function getInstantStatus(token) {
+  return request("/api/instant-rides/status", authed(token));
+}
+export function setInstantAvailability(token, acceptsInstant) {
+  return request("/api/instant-rides/driver/availability", authed(token, { method: "PATCH", body: JSON.stringify({ acceptsInstant }) }));
+}
+export function getInstantOffers(token) {
+  return request("/api/instant-rides/driver/offers", authed(token));
+}
+export function acceptInstantOffer(token, offerId) {
+  return request(`/api/instant-rides/driver/offers/${offerId}/accept`, authed(token, { method: "POST" }));
+}
+export function declineInstantOffer(token, offerId) {
+  return request(`/api/instant-rides/driver/offers/${offerId}/decline`, authed(token, { method: "POST" }));
+}
+
+// Deleting the account. confirmEmail has to match the address on the
+// account: Google and Apple sign-ins get a random password they have never
+// seen, so a password prompt would lock them out of their own deletion.
+// Answers 409 with a reason when a trip is still running or there is money
+// in the wallet.
+export function deleteAccount(token, confirmEmail) {
+  return request("/api/auth/me", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ confirmEmail }),
+  });
 }

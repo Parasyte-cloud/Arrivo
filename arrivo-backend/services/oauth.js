@@ -48,26 +48,41 @@ async function verifyGoogleIdToken(idToken) {
   };
 }
 
-// The bundle IDs Apple can put in a token audience. These are ios.bundleIdentifier
-// from each app.json, and they are baked in rather than left to config because
-// they are a fixed property of the apps in this repo, not something that differs
-// per environment. Leaving them to an env var is what broke this: production had
-// the ANDROID package names in it (com.arrivo.app, com.arrivo.driver), which can
-// never appear in an Apple token, so Sign in with Apple failed on both iOS apps.
+// The native Apple client IDs: ios.bundleIdentifier from each app.json. Apple
+// puts exactly these in the token audience for the two iOS apps, so they are
+// baked into code rather than left to config. Leaving them to an env var is
+// what broke Sign in with Apple: production held the ANDROID package names
+// (com.arrivo.app, com.arrivo.driver), which can never appear in an Apple
+// token, so every Apple sign-in on both iOS apps was rejected.
 //
 // If either app.json changes ios.bundleIdentifier, change it here too.
-const APP_BUNDLE_IDS = ["com.ridearrivo.rider", "com.ridearrivo.driver"];
+const NATIVE_APPLE_CLIENT_IDS = ["com.ridearrivo.rider", "com.ridearrivo.driver"];
 
-// APPLE_BUNDLE_IDS still works, but it now ADDS to the list rather than
-// replacing it, so a stale or wrong value cannot take Apple sign-in down again.
-// Use it for anything not in this repo, like a web Services ID.
-function getAppleBundleIds() {
-  const extra = (process.env.APPLE_BUNDLE_IDS || "")
+function parseIdList(raw) {
+  return String(raw || "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+}
 
-  return [...new Set([...APP_BUNDLE_IDS, ...extra])];
+// Every identifier in this list is an Apple client whose signed tokens we
+// are willing to trust, so the list is part of the authentication boundary
+// and must only grow on purpose. Non-native clients (for example a web
+// Services ID such as com.ridearrivo.web) are added ONLY through
+// APPLE_ADDITIONAL_CLIENT_IDS, a variable that exists for that single job.
+//
+// The legacy APPLE_BUNDLE_IDS is deliberately ignored: it is the variable
+// that drifted onto the wrong values in production, and silently trusting
+// whatever it holds would let a stale setting widen the trust boundary.
+function getAppleClientIds() {
+  return [...new Set([...NATIVE_APPLE_CLIENT_IDS, ...parseIdList(process.env.APPLE_ADDITIONAL_CLIENT_IDS)])];
+}
+
+if (process.env.APPLE_BUNDLE_IDS) {
+  console.warn(
+    "[oauth] APPLE_BUNDLE_IDS is deprecated and ignored. The native app IDs are built in; " +
+      "set APPLE_ADDITIONAL_CLIENT_IDS only for a non-native client such as a web Services ID."
+  );
 }
 
 const appleJwks = jwksClient({
@@ -89,7 +104,7 @@ function getAppleSigningKey(header, callback) {
 // first authorization ever, in a separate `fullName` field the client has to
 // capture and forward itself — this function only handles the token.
 function verifyAppleIdentityToken(identityToken) {
-  const audience = getAppleBundleIds();
+  const audience = getAppleClientIds();
   if (!audience.length) {
     throw new Error(
       "Sign in with Apple isn't configured on the server yet."
@@ -107,10 +122,15 @@ function verifyAppleIdentityToken(identityToken) {
           providerId: payload.sub,
           email: payload.email || null,
           emailVerified: payload.email_verified === true || payload.email_verified === "true",
+          // Which app this token was issued to, straight from the verified
+          // payload. Token operations against Apple have to reuse the same
+          // client id, and rider and driver are different clients, so the
+          // caller needs to know which. Never take this from the request body.
+          audience: Array.isArray(payload.aud) ? payload.aud[0] : payload.aud,
         });
       }
     );
   });
 }
 
-module.exports = { verifyGoogleIdToken, verifyAppleIdentityToken };
+module.exports = { verifyGoogleIdToken, verifyAppleIdentityToken, getAppleClientIds, NATIVE_APPLE_CLIENT_IDS };

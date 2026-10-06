@@ -9,22 +9,47 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides, triggerPanic, activateListeningDevice, getDriverProfile } from "../services/api";
+import {
+  setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
+  triggerPanic, activateListeningDevice, getDriverProfile,
+  getInstantStatus, setInstantAvailability, getInstantOffers, acceptInstantOffer, declineInstantOffer,
+  cancelRideWithReason,
+} from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
 const POLL_INTERVAL_MS = 8000;
+// ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
+// default 20s) so they're polled on their own, quicker cadence below.
+const INSTANT_POLL_INTERVAL_MS = 4000;
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
+  // Arrivo Express Phase 3 -- the Partner Venues program area lock. Non-null while
+  // this driver is mid-reserved-pickup from a partner venue, per whatever
+  // GET /available's areaLockedToVenue field says this cycle -- see
+  // routes/rides.js for why the queue narrows during that window.
+  const [areaLockedToVenue, setAreaLockedToVenue] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef(null);
+
+  // ArrivoExpress: a separate opt-in from the main online switch above --
+  // a driver must be both online AND opted into ArrivoExpress to receive
+  // these offers (see arrivo-backend routes/instantRides.js).
+  const [instantEnabled, setInstantEnabled] = useState(false);
+  const [instantVerified, setInstantVerified] = useState(false);
+  const [acceptsInstant, setAcceptsInstant] = useState(false);
+  const [instantOffers, setInstantOffers] = useState([]);
+  const [instantBusyOfferId, setInstantBusyOfferId] = useState(null);
+  const [instantError, setInstantError] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const instantPollRef = useRef(null);
 
   // While online (whether waiting for a request or mid-trip), periodically
   // report this phone's GPS position to the backend. This is what makes
@@ -66,8 +91,9 @@ export default function DashboardScreen({ navigation }) {
 
   const refreshAvailable = useCallback(async () => {
     try {
-      const { rides } = await getAvailableRides(token);
+      const { rides, areaLockedToVenue: lockedVenue } = await getAvailableRides(token);
       setAvailable(rides);
+      setAreaLockedToVenue(lockedVenue || null);
     } catch (e) {
       setError(e.message);
     }
@@ -86,11 +112,21 @@ export default function DashboardScreen({ navigation }) {
       try {
         const { driver } = await getDriverProfile(token);
         if (driver && driver.is_online) setIsOnline(true);
+        if (driver) {
+          setInstantVerified(!!driver.is_verified);
+          setAcceptsInstant(!!driver.accepts_instant);
+        }
       } catch (e) {
         // Non-fatal — worst case the driver has to flip the switch
         // themselves, same as before this fix existed.
       }
     })();
+  }, [token]);
+
+  useEffect(() => {
+    getInstantStatus(token)
+      .then((status) => setInstantEnabled(!!status.enabled))
+      .catch(() => {});
   }, [token]);
 
   // On screen focus, check whether this driver already has an active ride
@@ -139,6 +175,82 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  const toggleInstant = async (value) => {
+    setAcceptsInstant(value); // optimistic
+    setInstantError(null);
+    try {
+      await setInstantAvailability(token, value);
+    } catch (e) {
+      setAcceptsInstant(!value); // revert on failure
+      setInstantError(e.message);
+    }
+  };
+
+  const refreshInstantOffers = useCallback(async () => {
+    try {
+      const { offers } = await getInstantOffers(token);
+      setInstantOffers(offers || []);
+    } catch (e) {
+      // Non-fatal like refreshAvailable above — just try again next tick.
+    }
+  }, [token]);
+
+  // Poll ArrivoExpress offers only while genuinely eligible to receive them:
+  // online, opted in, verified, and not already mid-trip.
+  useEffect(() => {
+    if (isOnline && acceptsInstant && instantVerified && !activeRide) {
+      refreshInstantOffers();
+      instantPollRef.current = setInterval(refreshInstantOffers, INSTANT_POLL_INTERVAL_MS);
+    } else {
+      clearInterval(instantPollRef.current);
+      setInstantOffers([]);
+    }
+    return () => clearInterval(instantPollRef.current);
+  }, [isOnline, acceptsInstant, instantVerified, activeRide, refreshInstantOffers]);
+
+  // Drives the live per-offer countdown text -- only ticks while there's
+  // actually something to count down, so this never runs for drivers who
+  // haven't opted into ArrivoExpress.
+  useEffect(() => {
+    if (instantOffers.length === 0) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [instantOffers.length]);
+
+  const handleAcceptInstant = async (offerId) => {
+    setInstantBusyOfferId(offerId);
+    setInstantError(null);
+    try {
+      const result = await acceptInstantOffer(token, offerId);
+      if (result.status === "accepted" && result.ride) {
+        setActiveRide(result.ride);
+        setInstantOffers([]);
+      } else {
+        refreshInstantOffers();
+      }
+    } catch (e) {
+      // e.g. another driver already accepted, or it expired -- either way
+      // the offer is gone, refresh so the list matches reality.
+      setInstantError(e.message);
+      refreshInstantOffers();
+    } finally {
+      setInstantBusyOfferId(null);
+    }
+  };
+
+  const handleDeclineInstant = async (offerId) => {
+    setInstantBusyOfferId(offerId);
+    try {
+      await declineInstantOffer(token, offerId);
+    } catch (e) {
+      // Already resolved one way or another -- fine either way, the
+      // refresh below is what actually matters.
+    } finally {
+      setInstantBusyOfferId(null);
+      refreshInstantOffers();
+    }
+  };
+
   const handleAccept = async (rideId) => {
     setBusyRideId(rideId);
     setError(null);
@@ -169,6 +281,16 @@ export default function DashboardScreen({ navigation }) {
     } finally {
       setBusyRideId(null);
     }
+  };
+
+  // Arrivo Ride Guarantee: an accepted/in_progress ride can no longer be
+  // freed up via advanceTrip("cancelled") -- see ActiveTripCard's reason
+  // picker, which calls POST /:id/cancel-request directly and only clears
+  // this driver's active ride once the backend confirms the cancellation
+  // (and has already reset the ride so another driver can pick it up).
+  const handleRideGuaranteeCancelled = () => {
+    setActiveRide(null);
+    refreshAvailable();
   };
 
   if (loading) {
@@ -221,13 +343,61 @@ export default function DashboardScreen({ navigation }) {
           />
         </View>
 
+        {instantEnabled ? (
+          <Card tone="dark" style={{ marginBottom: spacing.md }}>
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.cardTitleLight}>ArrivoExpress requests</Text>
+                <Text style={styles.meta}>
+                  {instantVerified
+                    ? "Get on-demand ride requests alongside your scheduled bookings."
+                    : "Your driver profile must be verified before you can enable this."}
+                </Text>
+              </View>
+              <Switch
+                value={acceptsInstant}
+                onValueChange={toggleInstant}
+                disabled={!!activeRide || !instantVerified}
+                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                thumbColor="#fff"
+              />
+            </View>
+          </Card>
+        ) : null}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} token={token} navigation={navigation} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
+            {acceptsInstant ? (
+              <>
+                <Text style={styles.sectionLabel}>ArrivoExpress requests</Text>
+                {instantOffers.map((offer) => (
+                  <InstantOfferCard
+                    key={offer.offer_id}
+                    offer={offer}
+                    now={now}
+                    busy={instantBusyOfferId === offer.offer_id}
+                    disabled={instantBusyOfferId !== null && instantBusyOfferId !== offer.offer_id}
+                    onAccept={() => handleAcceptInstant(offer.offer_id)}
+                    onDecline={() => handleDeclineInstant(offer.offer_id)}
+                  />
+                ))}
+              </>
+            ) : null}
+
             <Text style={styles.sectionLabel}>Nearby requests</Text>
+            {areaLockedToVenue ? (
+              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
+                <Text style={styles.meta}>
+                  🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup — you'll see the full
+                  queue again once it's done.
+                </Text>
+              </Card>
+            ) : null}
             {available.length === 0 ? (
               <Card tone="dark">
                 <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
@@ -328,13 +498,75 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+      {/* Arrivo Express Phase 3 -- the Partner Venues program: this reserved
+          pickup came from a partner venue, not the rider's own address. */}
+      {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
+      {/* Arrivo Express Phase 3 -- Arrivo Share: named co-riders on top of
+          the organizer, so the driver knows who to expect at pickup. */}
+      {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+        <Text style={styles.meta}>
+          Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}
+        </Text>
+      ) : null}
       <View style={{ height: spacing.sm }} />
       {busy ? <ActivityIndicator color={colors.amber} /> : <Button label="Accept Ride" onPress={onAccept} disabled={disabled} trailingIcon />}
     </Card>
   );
 }
 
-function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
+
+// Shows a live "Xs" countdown to the offer's expiry, ticking off the
+// `now` state DashboardScreen updates every second while any offer is
+// visible — this reads that instead of running its own timer so every
+// visible offer's countdown updates in lockstep.
+function InstantOfferCard({ offer, now, busy, disabled, onAccept, onDecline }) {
+  const secondsLeft = Math.max(0, Math.round((new Date(offer.expires_at).getTime() - now) / 1000));
+  return (
+    <Card tone="dark" style={{ marginBottom: spacing.sm }}>
+      <View style={styles.rowBetween}>
+        <Tag label="ArrivoExpress" tone="amber" />
+        <Text style={styles.fare}>₦{offer.estimated_fare_naira?.toLocaleString()}</Text>
+      </View>
+      <Text style={styles.tripTitle}>{offer.pickup_address}</Text>
+      <Text style={styles.meta}>→ {offer.destination_address}</Text>
+      <Text style={styles.meta}>
+        {offer.distance_to_pickup_km != null ? `${offer.distance_to_pickup_km.toFixed(1)} km to pickup` : ""}
+        {offer.eta_to_pickup_min != null ? ` · ~${Math.round(offer.eta_to_pickup_min)} min away` : ""}
+      </Text>
+      <Text style={styles.meta}>Rider: {offer.rider_name}</Text>
+      <Text style={secondsLeft <= 5 ? styles.countdownUrgent : styles.countdownText}>
+        Responds within {secondsLeft}s
+      </Text>
+      <View style={{ height: spacing.sm }} />
+      {busy ? (
+        <ActivityIndicator color={colors.amber} />
+      ) : (
+        <View style={styles.rowBetween}>
+          <Button
+            label="Decline"
+            variant="ghost"
+            tone="dark"
+            style={{ flex: 1, marginRight: spacing.sm }}
+            disabled={disabled}
+            onPress={onDecline}
+          />
+          <Button label="Accept" style={{ flex: 1 }} disabled={disabled} onPress={onAccept} />
+        </View>
+      )}
+    </Card>
+  );
+}
+
+const CANCEL_REASONS = [
+  { value: "vehicle_breakdown", label: "Vehicle breakdown" },
+  { value: "safety_concern", label: "Safety concern" },
+  { value: "emergency", label: "Emergency" },
+  { value: "incorrect_pickup_info", label: "Wrong pickup info" },
+];
+
+function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation }) {
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
   const streamVideoClient = useStreamVideoClient();
@@ -349,6 +581,32 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
   // arrivo-backend/routes/rides.js PATCH /:id/status).
   const awaitingRiderPayment =
     isAccepted && !!ride.pay_at_pickup && ride.payment_method === "wallet" && ride.payment_status !== "paid";
+
+  // Arrivo Ride Guarantee: this is now the ONLY way a driver can back out
+  // of an accepted/in_progress ride -- see CANCEL_REASONS above. Picking a
+  // reason and confirming hits POST /:id/cancel-request, which the backend
+  // only accepts for one of those fixed reasons and which auto-reassigns
+  // the ride rather than leaving the rider stranded.
+  const [showCancelPicker, setShowCancelPicker] = useState(false);
+  const [cancelReason, setCancelReason] = useState(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
+  const cancelSubmittingRef = useRef(false);
+
+  const submitCancelRequest = async () => {
+    if (!cancelReason || cancelSubmittingRef.current) return;
+    cancelSubmittingRef.current = true;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      await cancelRideWithReason(token, ride.id, cancelReason);
+      onCancelled();
+    } catch (e) {
+      setCancelError(e.message || "Couldn't cancel this trip. Please try again.");
+      cancelSubmittingRef.current = false;
+      setCancelBusy(false);
+    }
+  };
 
   const [panicState, setPanicState] = useState("idle"); // idle | counting | active
   const [countdown, setCountdown] = useState(3);
@@ -448,7 +706,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
       return;
     }
     if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again — or dial their number below instead.");
+      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
       return;
     }
     try {
@@ -487,6 +745,12 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
         {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
         {ride.flight_number ? <Text style={styles.meta}>Flight {ride.flight_number}</Text> : null}
+        {ride.partner_venue_id ? (
+        <Tag label={ride.partner_venue_name ? `🍸 ${ride.partner_venue_name} x RideArrivo` : "🍸 Reserved (partner venue)"} tone="amber" />
+      ) : null}
+        {ride.is_arrivo_share && ride.shareParticipants?.length ? (
+          <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
+        ) : null}
         <Pressable onPress={callRiderInApp}>
           <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
         </Pressable>
@@ -540,7 +804,7 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
         <>
           <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
           {listeningError ? (
-            <Button label="Couldn't confirm — tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
+            <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
           ) : null}
         </>
       ) : (
@@ -549,7 +813,48 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
 
       <View style={{ height: spacing.sm }} />
 
-      {busy ? (
+      {showCancelPicker ? (
+        <View style={styles.cancelPickerCard}>
+          <Text style={styles.cancelPickerTitle}>Why are you cancelling?</Text>
+          <Text style={styles.cancelPickerBody}>
+            Under Arrivo Ride Guarantee, an accepted trip can only be cancelled for one of these reasons. We'll find
+            the rider a new driver right away — they won't need to rebook.
+          </Text>
+          <View style={styles.cancelReasonRow}>
+            {CANCEL_REASONS.map((r) => (
+              <Pressable
+                key={r.value}
+                onPress={() => setCancelReason(r.value)}
+                style={[styles.cancelReasonChip, cancelReason === r.value && styles.cancelReasonChipActive]}
+              >
+                <Text style={[styles.cancelReasonChipText, cancelReason === r.value && styles.cancelReasonChipTextActive]}>
+                  {r.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {cancelError ? <Text style={styles.cancelPickerError}>{cancelError}</Text> : null}
+          <View style={{ height: spacing.sm }} />
+          {cancelBusy ? (
+            <ActivityIndicator color={colors.amber} />
+          ) : (
+            <>
+              <Button label="Confirm cancellation" variant="ghost" tone="dark" onPress={submitCancelRequest} disabled={!cancelReason} />
+              <View style={{ height: spacing.sm }} />
+              <Button
+                label="Never mind, keep this trip"
+                variant="ghost"
+                tone="dark"
+                onPress={() => {
+                  setShowCancelPicker(false);
+                  setCancelReason(null);
+                  setCancelError(null);
+                }}
+              />
+            </>
+          )}
+        </View>
+      ) : busy ? (
         <ActivityIndicator color={colors.amber} />
       ) : awaitingRiderPayment ? (
         <>
@@ -557,16 +862,20 @@ function ActiveTripCard({ ride, busy, onAdvance, token, navigation }) {
             ⏳ This rider reserved and pays at pickup. Ask them to scan your QR placard to pay and start the trip.
           </Text>
           <View style={{ height: spacing.sm }} />
-          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
         </>
       ) : isAccepted ? (
         <>
           <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
           <View style={{ height: spacing.sm }} />
-          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => onAdvance("cancelled")} />
+          <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
         </>
       ) : (
-        <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
+        <>
+          <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
+          <View style={{ height: spacing.sm }} />
+          <Button label="Report an issue / cancel trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+        </>
       )}
     </View>
   );
@@ -586,6 +895,9 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
   scheduledText: { color: colors.amber, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
   error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  cardTitleLight: { color: colors.dark.text, fontWeight: "700", fontSize: 13.5 },
+  countdownText: { color: colors.dark.textMuted, fontSize: 11, marginTop: 6, fontWeight: "600" },
+  countdownUrgent: { color: "#FF9B8A", fontSize: 11, marginTop: 6, fontWeight: "700" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
   panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },
   panicCountingText: { color: "#FF9B8A", fontSize: 13, fontWeight: "700" },
@@ -595,4 +907,25 @@ const styles = StyleSheet.create({
   panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
+  cancelPickerCard: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    padding: spacing.md,
+  },
+  cancelPickerTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 6 },
+  cancelPickerBody: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18, marginBottom: spacing.sm },
+  cancelReasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  cancelReasonChip: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  cancelReasonChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
+  cancelReasonChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
+  cancelReasonChipTextActive: { color: colors.ink },
+  cancelPickerError: { color: "#FF9B8A", fontSize: 12, fontWeight: "600", marginTop: 8 },
 });

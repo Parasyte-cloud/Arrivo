@@ -25,6 +25,7 @@ const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ defaul
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
+const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
 // validate an incoming URL hash (so a stale/garbage/mistyped link can
@@ -32,7 +33,7 @@ const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ defa
 // for what "a valid page" means.
 const PAGES = [
   "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics",
+  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express",
 ];
 
 const OPERATIONS_PAGES = [
@@ -153,6 +154,7 @@ function Dashboard() {
             {page === "live-map" && <LiveMapPage />}
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
+            {page === "arrivo-express" && <ArrivoExpressPage />}
           </Suspense>
         </ErrorBoundary>
       </main>

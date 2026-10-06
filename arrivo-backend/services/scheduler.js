@@ -29,6 +29,8 @@ const { sendPushNotification } = require("./pushNotifications");
 const { sendWhatsAppMessage, flightIssueMessage, driverChangedMessage } = require("./whatsapp");
 const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
 const { lookupFlightStatus } = require("../routes/flights");
+const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
+const { getConfigBool } = require("./systemConfig");
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -44,7 +46,7 @@ const REMINDER_THRESHOLDS = [
 
 function riderReminderCopy(label, ride) {
   const tripWord = ride.booking_type === "dropoff" ? "airport drop-off" : "airport pickup";
-  if (label === "now") return `It's time — your ${tripWord} is starting now.`;
+  if (label === "now") return `It's time: your ${tripWord} is starting now.`;
   return `Reminder: your ${tripWord} is in ${label}.`;
 }
 
@@ -196,7 +198,7 @@ async function flagFlightIssue(ride, issue) {
       await client.query(
         `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
          VALUES ($1, 'refund', 'completed', $2, $3, $4, $5)`,
-        [ride.rider_id, ride.fare_naira, newBalance, ride.id, `Refund — flight ${ride.flight_number} ${issue}, Ride #${ride.id}`]
+        [ride.rider_id, ride.fare_naira, newBalance, ride.id, `Refund: flight ${ride.flight_number} ${issue}, Ride #${ride.id}`]
       );
     }
 
@@ -217,7 +219,7 @@ async function flagFlightIssue(ride, issue) {
     sendPushNotification(
       ride.rider_push_token,
       "Flight change detected",
-      `Your flight ${ride.flight_number} was ${issue}. Your fare was refunded to your wallet — top up to at least $100 to keep your ride booked.`,
+      `Your flight ${ride.flight_number} was ${issue}. Your fare was refunded to your wallet. Top up to at least $100 to keep your ride booked.`,
       { rideId: ride.id, type: "flight_issue" }
     ).catch(() => {});
   }
@@ -256,7 +258,7 @@ async function sweepPreferredDriverExpiry() {
         sendPushNotification(
           ride.rider_push_token,
           "A quick update on your driver",
-          `We couldn't keep the same driver for this trip — ${reason}. We've opened it up to our other verified drivers.`,
+          `We couldn't keep the same driver for this trip: ${reason}. We've opened it up to our other verified drivers.`,
           { rideId: ride.id, type: "driver_changed" }
         ).catch(() => {});
       }
@@ -272,10 +274,104 @@ async function sweepPreferredDriverExpiry() {
   }
 }
 
+// Job 4 -- Arrivo Express Phase 2's Midday Lucky Ride draw. Every
+// qualifying ride booked in the 12:00-1:00pm Lagos window registered
+// itself as an entry (routes/rides.js recordLuckyRideEntry) at booking
+// time, still charged full fare -- there's no way to know the day's
+// winner until the window has actually closed. Once it has, this picks
+// one entry at random and refunds that ride's rider in full.
+//
+// draw_date is the table's primary key, so this is naturally idempotent:
+// once a day's row exists (win or no entries at all), every later sweep
+// this same day is a single indexed SELECT and nothing else -- cheap
+// enough to just check unconditionally on every 5-minute sweep rather
+// than trying to schedule it for exactly 1:00pm.
+async function sweepLuckyRideDraw() {
+  if (!(await getConfigBool("launch_promos_enabled", true))) return;
+
+  const now = new Date();
+  if (lagosMinutesOfDay(now) < LUCKY_RIDE_END_MIN) return; // window hasn't closed yet today
+
+  const today = lagosDateString(now);
+  const already = await pool.query("SELECT 1 FROM lucky_ride_draws WHERE draw_date = $1", [today]);
+  if (already.rows[0]) return; // already drawn today
+
+  const entries = await pool.query(
+    `SELECT lucky_ride_entries.ride_id, rides.rider_id, rides.fare_naira, users.push_token
+       FROM lucky_ride_entries
+       JOIN rides ON rides.id = lucky_ride_entries.ride_id
+       JOIN users ON users.id = lucky_ride_entries.rider_id
+      WHERE lucky_ride_entries.entry_date = $1
+      ORDER BY random()
+      LIMIT 1`,
+    [today]
+  );
+  const entriesCountResult = await pool.query(
+    "SELECT COUNT(*) FROM lucky_ride_entries WHERE entry_date = $1",
+    [today]
+  );
+  const entriesCount = Number(entriesCountResult.rows[0].count);
+  const winner = entries.rows[0] || null;
+
+  // Claimed with an INSERT before any money moves, same "only one writer
+  // wins" reasoning as GET /:id/share's share_token claim in
+  // routes/rides.js -- if two sweeps somehow overlapped, only one can
+  // insert today's row, and the loser's refund attempt below is skipped.
+  const claim = await pool.query(
+    `INSERT INTO lucky_ride_draws (draw_date, winning_ride_id, entries_count)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (draw_date) DO NOTHING`,
+    [today, winner?.ride_id ?? null, entriesCount]
+  );
+  if (claim.rowCount === 0) return; // another sweep already claimed today's draw
+
+  if (!winner) {
+    console.log(`[scheduler] Lucky Ride draw for ${today}: no qualifying entries.`);
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const newBalanceResult = await client.query(
+      "UPDATE users SET wallet_balance_naira = wallet_balance_naira + $1 WHERE id = $2 RETURNING wallet_balance_naira",
+      [winner.fare_naira, winner.rider_id]
+    );
+    const newBalance = Number(newBalanceResult.rows[0].wallet_balance_naira);
+    await client.query(
+      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, ride_id, description)
+       VALUES ($1, 'refund', 'completed', $2, $3, $4, $5)`,
+      [winner.rider_id, winner.fare_naira, newBalance, winner.ride_id, `Arrivo Lucky Ride winner! Ride #${winner.ride_id}`]
+    );
+    await client.query(
+      "UPDATE rides SET promo_code = 'lucky_ride_winner', updated_at = now() WHERE id = $1",
+      [winner.ride_id]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(`[scheduler] Lucky Ride payout failed for ride #${winner.ride_id}:`, err.message);
+    return;
+  } finally {
+    client.release();
+  }
+
+  console.log(`[scheduler] Lucky Ride draw for ${today}: ride #${winner.ride_id} won, ${entriesCount} entries.`);
+  if (winner.push_token) {
+    sendPushNotification(
+      winner.push_token,
+      "🎉 You won today's Arrivo Lucky Ride!",
+      `Your fare for that trip has been refunded to your wallet. Congratulations!`,
+      { rideId: winner.ride_id, type: "lucky_ride_winner" }
+    ).catch(() => {});
+  }
+}
+
 async function runSweep() {
   await sweepReminders().catch((err) => console.error("[scheduler] sweepReminders crashed:", err.message));
   await sweepFlightIssues().catch((err) => console.error("[scheduler] sweepFlightIssues crashed:", err.message));
   await sweepPreferredDriverExpiry().catch((err) => console.error("[scheduler] sweepPreferredDriverExpiry crashed:", err.message));
+  await sweepLuckyRideDraw().catch((err) => console.error("[scheduler] sweepLuckyRideDraw crashed:", err.message));
 }
 
 function startScheduler() {

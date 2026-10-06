@@ -17,6 +17,7 @@ function transactionLabel(tx) {
   if (tx.type === "topup") return "Wallet top-up";
   if (tx.type === "ride_charge") return "Ride payment";
   if (tx.type === "membership_charge") return "Membership";
+  if (tx.type === "membership_cashback") return "Membership cashback";
   return tx.description || tx.type;
 }
 
@@ -155,6 +156,22 @@ export default function WalletScreen({ navigation }) {
           variant="ghost"
           tone="dark"
           onPress={() => navigation.navigate("Home", { screen: "Membership" })}
+          style={{ marginBottom: spacing.md }}
+        />
+
+        <Button
+          label="Family Plan"
+          variant="ghost"
+          tone="dark"
+          onPress={() => navigation.navigate("Home", { screen: "FamilyPlan" })}
+          style={{ marginBottom: spacing.md }}
+        />
+
+        <Button
+          label="Reserved Pickups (Partner Venues)"
+          variant="ghost"
+          tone="dark"
+          onPress={() => navigation.navigate("Home", { screen: "PartnerVenues" })}
           style={{ marginBottom: spacing.md }}
         />
 

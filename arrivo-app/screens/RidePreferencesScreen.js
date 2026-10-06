@@ -62,7 +62,7 @@ export default function RidePreferencesScreen() {
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Ride-sharing preferences</Text>
-        <Text style={styles.meta}>Set your defaults once — you can always change anything for a specific trip when you book.</Text>
+        <Text style={styles.meta}>Set your defaults once. You can always change anything for a specific trip when you book.</Text>
 
         <Card tone="dark" style={{ marginTop: spacing.lg }}>
           <Text style={styles.cardLabel}>Preferred vehicle</Text>

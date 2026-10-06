@@ -321,25 +321,27 @@ export function getMembership(token) {
   });
 }
 
-export function subscribeIndividualMembership(token) {
-  return request("/api/memberships/individual/subscribe", {
+// GET /api/memberships/plans — the Premium/Executive catalogue (pricing,
+// cashback rate, profile-user limit), no auth required.
+export function getMembershipPlans() {
+  return request("/api/memberships/plans");
+}
+
+export function subscribeMembership(token, plan) {
+  return request("/api/memberships/subscribe", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ plan }),
   });
 }
 
-export function subscribeCorporateMembership(token) {
-  return request("/api/memberships/corporate/subscribe", {
+// Executive only — links an existing rider account as one of the plan's
+// up to 3 profile users.
+export function addMembershipProfileUser(token, profileUserEmail) {
+  return request("/api/memberships/profile-users/add", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-  });
-}
-
-export function linkCorporateDelegate(token, delegateEmail) {
-  return request("/api/memberships/corporate/link-delegate", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ delegateEmail }),
+    body: JSON.stringify({ profileUserEmail }),
   });
 }
 
@@ -364,4 +366,176 @@ export function createSupportTicket(token, { type, subject, description, rideId 
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ type, subject, description, rideId }),
   });
+}
+
+// ArrivoExpress: RideArrivo's on-demand, metered point-to-point ride option —
+// separate from On-the-Go above (which is a manual, no-quote, ops-confirms
+// concierge flow) and separate from the scheduled Route/Chauffeur booking
+// flows. See arrivo-backend/routes/instantRides.js for the full contract.
+// Every call here requires the rider (or driver) to already be signed in.
+
+// Feature flag + which payment rails are currently enabled. The app should
+// hide the ArrivoExpress entry point entirely when enabled is false, rather
+// than show a dead-end button — ArrivoExpress ships behind a rollout gate.
+export function getInstantStatus(token) {
+  return request("/api/instant-rides/status", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Economy/Comfort/XL/Premium — the "choose your vehicle" step. Available
+// even while ArrivoExpress itself is disabled, so this can safely be prefetched.
+export function getInstantTiers(token) {
+  return request("/api/instant-rides/tiers", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// The fare shown here is always recalculated by the server at request time
+// too — this call is purely so the rider can see the price before paying.
+export function getInstantQuote(token, trip) {
+  return request("/api/instant-rides/quote", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(trip),
+  });
+}
+
+// Charges the rider's RideArrivo Wallet immediately and kicks off driver
+// dispatch. Throws with code INSUFFICIENT_WALLET (plus balanceNaira/
+// fareNaira in the error) when the wallet can't cover the fare — the
+// screen should offer a "Top up wallet" action in that case, not just show
+// the raw message. Throws with code ACTIVE_INSTANT_REQUEST if the rider
+// already has one in flight.
+export function createInstantRide(token, trip) {
+  return request("/api/instant-rides", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(trip),
+  });
+}
+
+// Only works before a driver has matched (status searching/offering) — once
+// matched, cancelling is the normal ride-cancellation flow on the resulting
+// ride (see getRideDetails/Tracking), not this endpoint.
+export function cancelInstantRequest(token, requestId) {
+  return request(`/api/instant-rides/rider/requests/${requestId}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Poll this while waiting for a match. request.status moves
+// searching -> offering -> matched (at which point request.ride_id is set
+// — hand off to the normal Tracking screen with that id) or -> null once
+// cancelled/expired/refunded.
+export function getActiveInstantRequest(token) {
+  return request("/api/instant-rides/rider/active", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Deleting the account. confirmEmail has to match the address on the
+// account: Google and Apple sign-ins get a random password they have never
+// seen, so a password prompt would lock them out of their own deletion.
+// Answers 409 with a reason when a trip is still running or there is money
+// in the wallet.
+export function deleteAccount(token, confirmEmail) {
+  return request("/api/auth/me", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ confirmEmail }),
+  });
+}
+
+// ── Arrivo Family Plan ──────────────────────────────────────────────────
+export function getFamilyPlanPricing(token) {
+  return request("/api/family/pricing", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function getMyFamilyPlan(token) {
+  return request("/api/family/mine", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function createFamilyPlan(token, planType) {
+  return request("/api/family/plans", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ planType }),
+  });
+}
+
+export function addFamilyMember(token, planId, { phone, email }) {
+  return request(`/api/family/plans/${planId}/members`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ phone, email }),
+  });
+}
+
+export function removeFamilyMember(token, planId, memberId) {
+  return request(`/api/family/plans/${planId}/members/${memberId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function verifyFamilyWalletTopup(token, planId, reference) {
+  return request(`/api/family/plans/${planId}/wallet/topup/verify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reference }),
+  });
+}
+
+export function getFamilyPlanRides(token, planId) {
+  return request(`/api/family/plans/${planId}/rides`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// ── Arrivo Ride Guarantee (driver-side) ────────────────────────────────────
+export function cancelRideWithReason(token, rideId, reason) {
+  return request(`/api/rides/${rideId}/cancel-request`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+// ── Arrivo Express Phase 3: Arrivo Share ────────────────────────────────────
+// Add/remove a co-rider on a ride you organized (and paid for) -- every
+// co-rider must already have a RideArrivo account, looked up the same way
+// Family Plan members are (POST /api/family/plans/:id/members).
+export function addRideShareParticipant(token, rideId, { phone, email }) {
+  return request(`/api/rides/${rideId}/share-participants`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ phone, email }),
+  });
+}
+
+export function removeRideShareParticipant(token, rideId, participantId) {
+  return request(`/api/rides/${rideId}/share-participants/${participantId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Rides you're riding on as a co-rider (not the organizer/payer) -- shows
+// up separately from getRideHistory, which is your own booked/paid rides.
+export function getSharedWithMeRides(token) {
+  return request("/api/rides/shared-with-me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// ── Arrivo Express Phase 3: the Partner Venues program (partner venues) ───────────
+export function getPartnerVenues(token) {
+  return request("/api/partner-venues", {
+    headers: { Authorization: `Bearer ${token}` },  });
 }

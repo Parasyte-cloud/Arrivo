@@ -75,11 +75,34 @@ function isAirportAddress(address) {
   return matchesAny(address, AIRPORT_KEYWORDS);
 }
 
+// Roads named after a red-zone town that run through areas we DO serve.
+// Google puts them in almost every address in Ajah, Sangotedo, Ikota, VGC
+// and Chevron ("..., Lekki - Epe Expy, ...") and along the Festac / Mile 2
+// / Trade Fair / Ojo corridor ("Lagos - Badagry Expy"). They're removed
+// before matching so the road name alone never refuses a trip; the town
+// itself ("..., Epe, Lagos") still does.
+const THROUGH_ROADS = /\b(?:lekki|ikorodu|ijebu)\s*-?\s*epe\b|\b(?:lagos\s*-?\s*)?badagry\s*(?:express\s*way|expy|exp|road|rd)\b/g;
+
+// Whole-word match: "epe" must not match inside "Deeper" or "Independence".
+function containsWord(text, word) {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("(^|[^a-z0-9])" + escaped + "($|[^a-z0-9])").test(text);
+}
+
 // Returns the matching EXCLUDED_AREAS entry, or null.
+//
+// This used to be a plain substring search, which refused every address on
+// the Lekki-Epe Expressway as "Epe" and every address on the Lagos-Badagry
+// Expressway as "Badagry" -- most of Ajah/Sangotedo/Ikota and the Festac /
+// Trade Fair / LASU corridor, all of which are priced in AREA_PRICING above
+// -- plus any address containing "deeper", "independence", etc. The same
+// function also gates ArrivoExpress (services/instantFare.js) and
+// deliveries (services/deliveryFare.js). Keep in sync with the copies in
+// arrivo-website/booking.js and arrivo-app/screens/RouteScreen.js.
 function findExcludedArea(address) {
-  const a = " " + (address || "").toLowerCase() + " ";
+  const a = (address || "").toLowerCase().replace(THROUGH_ROADS, " ");
   for (const area of EXCLUDED_AREAS) {
-    if (area.keywords.some((k) => a.indexOf(k) !== -1)) return area;
+    if (area.keywords.some((k) => containsWord(a, k))) return area;
   }
   return null;
 }
@@ -128,6 +151,16 @@ function isLagosNightTime(date = new Date()) {
   const lagosHour = (date.getUTCHours() + 1) % 24;
   return lagosHour >= NIGHT_START_HOUR || lagosHour < NIGHT_END_HOUR;
 }
+
+// Market-adjustment factor on the standard one-way (airport transfer)
+// fare only -- business decision, 2026-09-25, in response to riders
+// citing price as a reason for not booking. Applied to area price +
+// vehicle-tier delta, before the night multiplier, so night pricing
+// still adds its 20% on top of the reduced base rather than on the
+// old one. Charter (day/week/month chauffeur), luxury surcharge, and
+// escort/fleet add-ons are deliberately untouched -- this is scoped
+// to the everyday fare riders are actually complaining about.
+const STANDARD_FARE_ADJUSTMENT = 0.88;
 
 const ROUND_TO_NAIRA = 500;
 
@@ -204,6 +237,18 @@ function computeVehicleCount(passengerCount, vehicleType) {
   return count;
 }
 
+// Arrivo Express Phase 3 -- Arrivo Share. True if there's room for one
+// more named co-rider in this vehicle, beyond the organizer's own seat --
+// reuses the exact same MAX_PASSENGERS cap as every other passenger-count
+// check in this file (computeVehicleCount above, the booking form's own
+// group-size limit), so "ride together in ONE vehicle" always means that
+// vehicle's real capacity, never a separate or looser number invented just
+// for this feature.
+function hasRoomForAnotherShareParticipant(vehicleType, currentParticipantCount) {
+  const capacity = MAX_PASSENGERS[vehicleType] || 1;
+  return currentParticipantCount + 1 < capacity; // +1 reserves the organizer's own seat
+}
+
 // "Luxury" toggle — a flat surcharge on top of the normal per-location
 // (one-way) or flat-rate (charter) fare, for a rider who wants a nicer
 // Sedan/SUV without switching to the Executive tier. Priced in USD per the
@@ -213,6 +258,31 @@ function computeVehicleCount(passengerCount, vehicleType) {
 // Pickup Truck has no luxury option either: it's a cargo vehicle, not a
 // comfort tier.
 const LUXURY_SURCHARGE_USD = { sedan: 60, suv: 100 };
+
+// Yellow zone keywords — the same corridors already priced at the Yellow
+// zone rate in AREA_PRICING above (further out / heavier traffic than the
+// Green zone core). Extracted into their own list (rather than only living
+// inside AREA_PRICING) so other pricing models — like ArrivoExpress's metered
+// point-to-point fare in services/instantFare.js — can apply a corridor
+// multiplier without re-deriving a fixed price per neighbourhood.
+const YELLOW_ZONE_KEYWORDS = [
+  "iyana-ipaja", "iyana ipaja", "egbeda", "akowonjo", "idimu", "ipaja",
+  "ayobo", "baruwa", "alimosho", "command", "abule egba", "ijaiye",
+  "oko oba", "dopemu", "shasha", "lekki", "ajah", "ikorodu", "festac",
+  "satellite town",
+];
+
+// Classifies a free-text address into a pricing zone: 'red' (excluded —
+// see EXCLUDED_AREAS), 'yellow' (a traffic corridor, see
+// YELLOW_ZONE_KEYWORDS above), or 'green' (everything else, including
+// unlisted addresses — deliberately not a fourth "unknown" bucket, since an
+// address that hasn't been specifically classified as busier shouldn't be
+// charged more by default).
+function classifyZone(address) {
+  if (findExcludedArea(address)) return "red";
+  if (matchesAny(address, YELLOW_ZONE_KEYWORDS)) return "yellow";
+  return "green";
+}
 
 // pickupAddress/destinationAddress are the free-text addresses the rider
 // entered (or picked via autocomplete) — these, not lat/lng, are what
@@ -226,7 +296,7 @@ function computeOneWayFare({ pickupAddress, destinationAddress, vehicleType }) {
 
   const zoneAddress = isAirportAddress(destinationAddress) ? pickupAddress : destinationAddress;
   const vehicleDelta = VEHICLE_TIER_DELTA_NAIRA[vehicleType] || 0;
-  let total = findAreaPrice(zoneAddress) + vehicleDelta;
+  let total = (findAreaPrice(zoneAddress) + vehicleDelta) * STANDARD_FARE_ADJUSTMENT;
 
   if (isLagosNightTime()) {
     total = total * NIGHT_MULTIPLIER;
@@ -312,16 +382,110 @@ function computeOverageNaira({ vehicleType, includedHoursPerDay, elapsedHours, f
   return cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
 }
 
+
+// ── Fair Fare (traffic-delay overage) ──
+// "Traffic shouldn't punish you twice." Scoped to one-way, distance-quoted
+// bookings only (booking_type = 'one_way' with a real duration_min quote --
+// see the schema.sql comment on rides.duration_min). A delay up to the
+// configured free allowance costs the rider nothing extra; only the minutes
+// beyond that allowance are billed, at the configured per-minute rate. Both
+// numbers are remotely configurable (services/systemConfig.js) rather than
+// hard-coded here, per the engineering brief's explicit "Config vs.
+// hard-code" requirement -- Finance/Ops haven't picked a final allowance
+// value yet (candidates: 10/15/20/25 min), so this reads whatever is
+// currently configured, defaulting to the brief's own worked example (20
+// min) if nothing has been set.
+const MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE = 2; // same sanity cap reasoning as the chauffeur overage above
+
+function computeFairFareOverageNaira({ quotedDurationMin, elapsedMinutes, freeAllowanceMinutes, perMinuteNaira, fareNaira }) {
+  if (!quotedDurationMin || quotedDurationMin <= 0) return { overageNaira: 0, delayMinutes: 0, billableMinutes: 0 };
+
+  const delayMinutes = Math.max(0, elapsedMinutes - quotedDurationMin);
+  const billableMinutes = Math.max(0, delayMinutes - (freeAllowanceMinutes || 0));
+  if (billableMinutes <= 0) return { overageNaira: 0, delayMinutes, billableMinutes: 0 };
+
+  const rawOverage = Math.round(billableMinutes * (perMinuteNaira || 0));
+  const cap = Math.round((fareNaira || 0) * MAX_FAIR_FARE_OVERAGE_MULTIPLE_OF_FARE);
+  const overageNaira = cap > 0 ? Math.min(rawOverage, cap) : rawOverage;
+  return { overageNaira, delayMinutes, billableMinutes };
+}
+
+// ── Arrivo Express Phase 2 (30-day launch test, 2026-09-17 brief) ──
+// Early Bird (4:30am-7:00am, up to 50% off) and Morning Commuter
+// (7:00am-9:00am, 20% off) are automatic percentage discounts based on
+// Lagos-local time -- no entry, no raffle, every qualifying one-way ride
+// gets it. Midday Lucky Ride (12:00pm-1:00pm) is NOT a discount computed
+// here: only one rider wins per day, which isn't knowable at booking time
+// -- see isLuckyRideWindow below and services/scheduler.js's
+// sweepLuckyRideDraw for how that's actually resolved. All three windows
+// reuse isLagosNightTime's technique (fixed UTC+1 offset, no DST, no
+// timezone library needed).
+const EARLY_BIRD_START_MIN = 4 * 60 + 30; // 4:30am
+const EARLY_BIRD_END_MIN = 7 * 60; // 7:00am (exclusive -- Morning Commuter starts here)
+const MORNING_COMMUTER_START_MIN = 7 * 60; // 7:00am
+const MORNING_COMMUTER_END_MIN = 9 * 60; // 9:00am
+const LUCKY_RIDE_START_MIN = 12 * 60; // 12:00pm
+const LUCKY_RIDE_END_MIN = 13 * 60; // 1:00pm
+
+function lagosMinutesOfDay(date = new Date()) {
+  const lagosHour = (date.getUTCHours() + 1) % 24;
+  return lagosHour * 60 + date.getUTCMinutes();
+}
+
+// Calendar date (Africa/Lagos) as "YYYY-MM-DD" -- what "one entry per
+// customer per day" and "one winner per day" both key off.
+function lagosDateString(date = new Date()) {
+  return new Date(date.getTime() + 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function activeLaunchPromo(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  if (minutes >= EARLY_BIRD_START_MIN && minutes < EARLY_BIRD_END_MIN) return "early_bird";
+  if (minutes >= MORNING_COMMUTER_START_MIN && minutes < MORNING_COMMUTER_END_MIN) return "morning_commuter";
+  return null;
+}
+
+function isLuckyRideWindow(date = new Date()) {
+  const minutes = lagosMinutesOfDay(date);
+  return minutes >= LUCKY_RIDE_START_MIN && minutes < LUCKY_RIDE_END_MIN;
+}
+
+// Pure function, same shape as computeFairFareOverageNaira above --
+// returns enough detail (originalFareNaira alongside the discounted
+// fareNaira) that the caller can persist promo_discount_naira without
+// recomputing anything.
+function applyLaunchPromoDiscount({ fareNaira, date = new Date(), earlyBirdPercent, morningCommuterPercent }) {
+  const promo = activeLaunchPromo(date);
+  const percent = promo === "early_bird" ? earlyBirdPercent : promo === "morning_commuter" ? morningCommuterPercent : 0;
+  if (!promo || !percent || percent <= 0) {
+    return { fareNaira, promo: null, discountPercent: 0, originalFareNaira: fareNaira };
+  }
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+  const discountedFareNaira = Math.round(fareNaira * (1 - clampedPercent / 100));
+  return { fareNaira: discountedFareNaira, promo, discountPercent: clampedPercent, originalFareNaira: fareNaira };
+}
+
 module.exports = {
   computeFare,
   computeOneWayFare,
   computeCharterFare,
   computeVehicleCount,
+  MAX_PASSENGERS,
+  hasRoomForAnotherShareParticipant,
   computeOverageNaira,
+  computeFairFareOverageNaira,
+  lagosMinutesOfDay,
+  lagosDateString,
+  activeLaunchPromo,
+  isLuckyRideWindow,
+  applyLaunchPromoDiscount,
+  LUCKY_RIDE_END_MIN,
   findExcludedArea,
   findAreaPrice,
   isAirportAddress,
   isLagosNightTime,
+  classifyZone,
+  YELLOW_ZONE_KEYWORDS,
   SECURITY_ESCORT_PRICE_USD,
   FLEET_PRICE_NAIRA,
   FLEET_ESCORT_PAYOUT_USD,

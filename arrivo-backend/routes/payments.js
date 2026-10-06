@@ -39,6 +39,17 @@ router.post("/initialize", async (req, res) => {
   if (!email || !amountNaira) {
     return res.status(400).json({ error: "email and amountNaira are required" });
   }
+  // amountNaira previously only had a truthiness check, so 0, a negative
+  // number, or NaN all passed it — Paystack itself rejects a bogus
+  // transaction_initialize amount, and nothing is credited from this route
+  // alone (see routes/payments.js's /verify and the webhook below, which
+  // re-check Paystack's own confirmed amount rather than trusting the
+  // client), so this was never a path to actually crediting a wallet. It's
+  // still worth rejecting here rather than letting a malformed request
+  // reach Paystack's API at all.
+  if (!Number.isFinite(amountNaira) || amountNaira <= 0) {
+    return res.status(400).json({ error: "amountNaira must be a positive number" });
+  }
   if (!process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_SECRET_KEY.includes("replace_me")) {
     return res.status(500).json({ error: "PAYSTACK_SECRET_KEY is not configured on the server" });
   }

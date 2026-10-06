@@ -55,7 +55,7 @@ export default function CompleteProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>Just a couple more details</Text>
           <Text style={styles.subtitle}>
-            We need these to keep you in the loop about your rides — driver assignments and any flight
+            We need these to keep you in the loop about your rides: driver assignments and any flight
             changes get sent here.
           </Text>
 

@@ -26,10 +26,13 @@ const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
+const instantRidesRouter = require("./routes/instantRides");
 const alertsRouter = require("./routes/alerts");
 const eventsRouter = require("./routes/events-sse");
 const liveMapRouter = require("./routes/live-map");
 const supportRouter = require("./routes/support");
+const familyRouter = require("./routes/family");
+const partnerVenuesRouter = require("./routes/partnerVenues");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -43,7 +46,41 @@ const app = express();
 // the first hop is trusted (Render's own edge), not an arbitrary chain.
 app.set("trust proxy", 1);
 
-app.use(cors());
+// Locked down 2026-09-17 (security audit follow-up): previously cors() with
+// no options, which reflects any Origin and allows credentials-less
+// cross-origin reads of every API response given a leaked Bearer token --
+// low severity since auth here is Bearer-token, not cookie-based (so no
+// classic CSRF), but there is no reason to leave every arbitrary origin
+// able to read this API's responses in a browser. Real allowlist below:
+// ridearrivo.com (+www) is the rider-facing website, admin.ridearrivo.com
+// is the internal ops dashboard (confirmed via the live Vercel project,
+// 2026-09-17). Requests with NO Origin header (native mobile apps via
+// fetch/axios, curl, server-to-server calls, Postman) are allowed through
+// unconditionally -- CORS is a browser-only enforcement mechanism, the
+// rider/driver apps never send a browser-style Origin header, so this
+// allowlist cannot break them regardless of how strict it is.
+const ALLOWED_ORIGINS = [
+  "https://ridearrivo.com",
+  "https://www.ridearrivo.com",
+  "https://admin.ridearrivo.com",
+  // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
+  // posts to /api/auth/google and /api/auth/apple directly from the
+  // browser, same as login.html/signup.html on the main site, so a
+  // membership sign-up is a real account on this same backend, not a
+  // separate identity silo.
+  "https://membership.ridearrivo.com",
+];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+  })
+);
 
 // The Paystack webhook needs the RAW request body to verify its signature,
 // so we skip the JSON parser for that one path and let routes/payments.js
@@ -74,10 +111,13 @@ app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
+app.use("/api/instant-rides", instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/live-map", liveMapRouter);
 app.use("/api/support", supportRouter);
+app.use("/api/family", familyRouter);
+app.use("/api/partner-venues", partnerVenuesRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.

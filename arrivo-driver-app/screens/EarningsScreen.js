@@ -81,12 +81,12 @@ export default function EarningsScreen() {
             </View>
             {summary.totalTipsNaira > 0 ? (
               <Text style={styles.tipsNote}>
-                Includes ₦{summary.totalTipsNaira.toLocaleString()} in tips (₦{(summary.thisMonthTipsNaira || 0).toLocaleString()} this month) — 100% goes to you.
+                Includes ₦{summary.totalTipsNaira.toLocaleString()} in tips (₦{(summary.thisMonthTipsNaira || 0).toLocaleString()} this month). 100% goes to you.
               </Text>
             ) : null}
             {summary.totalEscortPayoutNaira > 0 ? (
               <Text style={styles.tipsNote}>
-                Includes ₦{summary.totalEscortPayoutNaira.toLocaleString()} in fleet-escort payouts (₦{(summary.thisMonthEscortPayoutNaira || 0).toLocaleString()} this month) — flat $100 per escort trip.
+                Includes ₦{summary.totalEscortPayoutNaira.toLocaleString()} in fleet-escort payouts (₦{(summary.thisMonthEscortPayoutNaira || 0).toLocaleString()} this month). Flat $100 per escort trip.
               </Text>
             ) : null}
           </Card>

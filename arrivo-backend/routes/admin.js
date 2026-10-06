@@ -2,6 +2,7 @@ const express = require("express");
 const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
+const { listConfig, setConfig } = require("../services/systemConfig");
 
 const router = express.Router();
 
@@ -365,11 +366,12 @@ router.get("/wallet-transactions", async (req, res) => {
 
 // ── Memberships ──────────────────────────────────────────────────────────
 
-// GET /api/admin/memberships — every membership row (individual annual,
-// corporate account, and corporate delegate), with the member's name/email
-// joined in, plus the company account's name/email when this row is a
-// delegate (company_account_id set) so admin can see who's billing whom
-// without cross-referencing user ids by hand.
+// GET /api/admin/memberships — every membership row (Premium, Executive,
+// and executive_profile — a profile user linked under someone else's
+// Executive plan), with the member's name/email joined in, plus the
+// linking Executive member's name/email when this row is a profile user
+// (company_account_id set) so admin can see who's linked to whom without
+// cross-referencing user ids by hand.
 router.get("/memberships", async (req, res) => {
   const result = await pool.query(
     `SELECT memberships.*, users.name as user_name, users.email as user_email,
@@ -515,6 +517,197 @@ router.get("/analytics", async (req, res) => {
     totalRevenueNaira: revenue,
     revenueThisMonthNaira: revenueThisMonth,
   });
+});
+
+
+// ── Arrivo Express Phase 1: remotely-configurable parameters ──────────────
+// Fair Fare's allowance/rate and Family Plan's placeholder pricing, all
+// backed by services/systemConfig.js. GET is available to support/
+// operations (read-only), PATCH is admin-only since it changes what
+// riders are charged.
+router.get("/config", async (req, res) => {
+  const config = await listConfig();
+  res.json({ config });
+});
+
+router.patch("/config/:key", requireRole("admin"), async (req, res) => {
+  const { value } = req.body;
+  if (value === undefined || value === null || value === "") {
+    return res.status(400).json({ error: "value is required" });
+  }
+  try {
+    await setConfig(req.params.key, value, req.user.id);
+    const config = await listConfig();
+    res.json({ config: config.find((c) => c.key === req.params.key) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Arrivo Ride Guarantee: cancellation log ────────────────────────────────
+// Every driver cancel-request attempt (routes/rides.js POST
+// /:id/cancel-request), valid or not, for support to review patterns
+// (a driver citing "vehicle breakdown" every other trip, say).
+router.get("/ride-cancellations", async (req, res) => {
+  const result = await pool.query(
+    `SELECT ride_cancellations.*, rides.pickup_address, rides.rider_id,
+            driver_users.name AS driver_name, rider_users.name AS rider_name
+       FROM ride_cancellations
+       JOIN rides ON rides.id = ride_cancellations.ride_id
+       LEFT JOIN drivers ON drivers.id = ride_cancellations.driver_id
+       LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+       LEFT JOIN users rider_users ON rider_users.id = rides.rider_id
+      ORDER BY ride_cancellations.created_at DESC
+      LIMIT 200`
+  );
+  res.json({ cancellations: result.rows });
+});
+
+// ── Arrivo Family Plan: admin visibility ───────────────────────────────────
+router.get("/family-plans", async (req, res) => {
+  const result = await pool.query(
+    `SELECT fp.*, admin_user.name AS admin_name, admin_user.email AS admin_email,
+            (SELECT COUNT(*) FROM family_members WHERE family_plan_id = fp.id AND status = 'active') AS member_count
+       FROM family_plans fp
+       JOIN users admin_user ON admin_user.id = fp.admin_user_id
+      ORDER BY fp.created_at DESC
+      LIMIT 200`
+  );
+  res.json({ familyPlans: result.rows });
+});
+
+// ── Arrivo Express Phase 2: 30-day launch promos ───────────────────────────
+// Per-promo volume/discount totals (Early Bird, Morning Commuter) plus the
+// Lucky Ride draw history -- "designed to prove demand and generate
+// content" per the brief, so ops needs to see this without a DB query.
+router.get("/launch-promos", async (req, res) => {
+  const byPromo = await pool.query(
+    `SELECT promo_code,
+            COUNT(*) as ride_count,
+            COALESCE(SUM(promo_discount_naira), 0) as total_discount_naira
+       FROM rides
+      WHERE promo_code IN ('early_bird', 'morning_commuter')
+        AND ride_status != 'cancelled'
+      GROUP BY promo_code`
+  );
+
+  const luckyRideDraws = await pool.query(
+    `SELECT lucky_ride_draws.*, rides.fare_naira as winning_fare_naira,
+            users.name as winner_name, users.email as winner_email
+       FROM lucky_ride_draws
+       LEFT JOIN rides ON rides.id = lucky_ride_draws.winning_ride_id
+       LEFT JOIN users ON users.id = rides.rider_id
+      ORDER BY lucky_ride_draws.draw_date DESC
+      LIMIT 30`
+  );
+
+  res.json({ byPromo: byPromo.rows, luckyRideDraws: luckyRideDraws.rows });
+});
+
+// ── Arrivo Express Phase 3: Arrivo Share reporting ─────────────────────────
+// Just visibility, not management -- Arrivo Share has no admin-editable
+// settings of its own (its passenger cap already lives in
+// services/fare.js's MAX_PASSENGERS, shared with every other booking).
+router.get("/arrivo-share", async (req, res) => {
+  const summary = await pool.query(
+    `SELECT COUNT(*) as shared_ride_count,
+            COALESCE(SUM(participant_counts.count), 0) as total_co_riders
+       FROM rides
+       LEFT JOIN (
+         SELECT ride_id, COUNT(*) as count FROM ride_share_participants GROUP BY ride_id
+       ) participant_counts ON participant_counts.ride_id = rides.id
+      WHERE rides.is_arrivo_share = true AND rides.ride_status != 'cancelled'`
+  );
+  const recentShared = await pool.query(
+    `SELECT rides.id, rides.pickup_address, rides.vehicle_type, rides.ride_status, rides.created_at,
+            organizer.name as organizer_name,
+            COALESCE(json_agg(json_build_object('name', co_riders.name, 'phone', co_riders.phone))
+                     FILTER (WHERE co_riders.id IS NOT NULL), '[]') as co_riders
+       FROM rides
+       JOIN users organizer ON organizer.id = rides.rider_id
+       LEFT JOIN ride_share_participants ON ride_share_participants.ride_id = rides.id
+       LEFT JOIN users co_riders ON co_riders.id = ride_share_participants.user_id
+      WHERE rides.is_arrivo_share = true
+      GROUP BY rides.id, organizer.name
+      ORDER BY rides.created_at DESC
+      LIMIT 30`
+  );
+  res.json({ summary: summary.rows[0], recentShared: recentShared.rows });
+});
+
+// ── Partner Venues program: admin CRUD ──────────────────────────────────
+// Full CRUD, admin-only for anything that mutates (matches the config
+// endpoints above) -- support/operations can still see the list via the
+// router-wide requireAnyRole, since they're the ones fielding a rider's
+// "why didn't my reserved pickup show a perk" question.
+router.get("/partner-venues", async (req, res) => {
+  const result = await pool.query("SELECT * FROM partner_venues ORDER BY name ASC");
+  res.json({ venues: result.rows });
+});
+
+// Same "never trust unvalidated coordinates" principle as the fare/dispatch
+// code -- a bad lat/lng here would silently break the partner-venue area-lock
+// radius check and the pickup-address override in POST /api/rides for
+// every rider booking from this venue. Returns an error string, or null
+// if the value is fine (undefined/null is fine -- coordinates are optional).
+function invalidCoordinate(value, label) {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return `${label} must be a number.`;
+  if (label === "lat" && (num < -90 || num > 90)) return "lat must be between -90 and 90.";
+  if (label === "lng" && (num < -180 || num > 180)) return "lng must be between -180 and 180.";
+  return null;
+}
+
+router.post("/partner-venues", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription } = req.body;
+  if (!name || !address) return res.status(400).json({ error: "name and address are required" });
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
+  const inserted = await pool.query(
+    `INSERT INTO partner_venues (name, category, address, lat, lng, perk_description)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [name, category || "other", address, lat === undefined || lat === "" ? null : lat, lng === undefined || lng === "" ? null : lng, perkDescription || null]
+  );
+  res.status(201).json({ venue: inserted.rows[0] });
+});
+
+router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
+  const { name, category, address, lat, lng, perkDescription, isActive } = req.body;
+  const allowedCategories = ["club", "restaurant", "other"];
+  if (category && !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${allowedCategories.join(", ")}` });
+  }
+  const latError = invalidCoordinate(lat, "lat");
+  if (latError) return res.status(400).json({ error: latError });
+  const lngError = invalidCoordinate(lng, "lng");
+  if (lngError) return res.status(400).json({ error: lngError });
+  const existing = await pool.query("SELECT * FROM partner_venues WHERE id = $1", [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: "Partner venue not found." });
+  const current = existing.rows[0];
+
+  const updated = await pool.query(
+    `UPDATE partner_venues SET
+       name = $1, category = $2, address = $3, lat = $4, lng = $5, perk_description = $6, is_active = $7, updated_at = now()
+     WHERE id = $8 RETURNING *`,
+    [
+      name ?? current.name,
+      category ?? current.category,
+      address ?? current.address,
+      lat !== undefined ? lat : current.lat,
+      lng !== undefined ? lng : current.lng,
+      perkDescription !== undefined ? perkDescription : current.perk_description,
+      isActive !== undefined ? isActive : current.is_active,
+      req.params.id,
+    ]
+  );
+  res.json({ venue: updated.rows[0] });
 });
 
 module.exports = router;

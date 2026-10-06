@@ -94,7 +94,7 @@ export default function EmergencyContactsScreen() {
         <Text style={styles.title}>Emergency contacts</Text>
         <Text style={styles.meta}>
           Save someone we can reach if we can't reach you during a ride. The first contact here fills in automatically
-          when you book — you can still edit or clear it per trip.
+          when you book. You can still edit or clear it per trip.
         </Text>
 
         {contacts === null && !loadError ? (
@@ -115,7 +115,7 @@ export default function EmergencyContactsScreen() {
                       guess one for them, so say so plainly rather than
                       showing a number that may not dial from abroad. */}
                   {c.phone && !c.phone.trim().startsWith("+") ? (
-                    <Text style={styles.legacyHint}>Missing a country code — remove and re-add this contact.</Text>
+                    <Text style={styles.legacyHint}>Missing a country code. Remove and re-add this contact.</Text>
                   ) : null}
                 </View>
                 <Pressable onPress={() => remove(c.id)} disabled={deletingId === c.id} hitSlop={8}>

@@ -17,16 +17,20 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location \u2014 even while the app is in the background \u2014 so riders can see you en route on their live map.",
         "UIBackgroundModes": [
           "location"
         ],
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["com.googleusercontent.apps.425853448895-q2615cfrppo2kfc3jasjl84kbvjouued"]
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.425853448895-q2615cfrppo2kfc3jasjl84kbvjouued"
+            ]
           }
-        ]
+        ],
+        "NSCameraUsageDescription": "RideArrivo Driver uses your camera to verify your identity and upload vehicle/license photos.",
+        "NSMicrophoneUsageDescription": "RideArrivo Driver uses your microphone for in-app voice and video calls with riders or support."
       },
       "entitlements": {
         "aps-environment": "production"
@@ -97,7 +101,7 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "RideArrivo Driver uses your location to match you with nearby pickups.",
-          "locationAlwaysAndWhenInUsePermission": "RideArrivo Driver uses your location — even while the app is in the background — so riders can see you en route on their live map.",
+          "locationAlwaysAndWhenInUsePermission": "RideArrivo Driver uses your location \u2014 even while the app is in the background \u2014 so riders can see you en route on their live map.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
@@ -133,7 +137,11 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "forceStaticLinking": ["RNFBApp", "RNFBMessaging", "stream-react-native-webrtc"]
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBMessaging",
+              "stream-react-native-webrtc"
+            ]
           }
         }
       ]

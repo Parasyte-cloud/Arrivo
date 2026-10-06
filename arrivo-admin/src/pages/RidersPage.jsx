@@ -359,15 +359,21 @@ export function RidersPage() {
 
 function exportWaitlistCsv(token) {
   api.getWaitlist(token).then(({ waitlist }) => {
-    const header = "email,source,signed_up_at\n";
-    const rows = waitlist.map((w) => `${w.email},${w.source || ""},${w.created_at}`).join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `arrivo-waitlist-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Routed through the shared downloadCsv() helper (utils.js) instead of
+    // hand-building the CSV string -- this was the one exporter in the app
+    // that didn't, which meant it was also the one exporter vulnerable to
+    // CSV-formula injection (a waitlist signup with an email/source field
+    // starting with =, +, -, or @ would execute as a live formula when the
+    // export is opened in Excel) on top of not escaping commas/quotes at all.
+    downloadCsv(
+      `arrivo-waitlist-${new Date().toISOString().slice(0, 10)}.csv`,
+      waitlist,
+      [
+        { label: "email", value: (w) => w.email },
+        { label: "source", value: (w) => w.source || "" },
+        { label: "signed_up_at", value: (w) => w.created_at },
+      ]
+    );
   }).catch((e) => {
     // Previously unhandled — a failed request (expired token, network
     // error, 500) just left the button looking like it silently did

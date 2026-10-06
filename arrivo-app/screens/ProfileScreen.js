@@ -8,6 +8,7 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone } from "../utils/phoneValidation";
 import { supportedLanguages } from "../i18n";
@@ -39,7 +40,7 @@ function statusStyle(status) {
 function idVerificationBadge(status) {
   if (status === "verified") return { label: "Verified ✓", color: "#8FD9C4" };
   if (status === "pending") return { label: "Pending review", color: colors.amber };
-  if (status === "rejected") return { label: "Rejected — resubmit", color: colors.coral };
+  if (status === "rejected") return { label: "Rejected: resubmit", color: colors.coral };
   return { label: "Not verified", color: colors.dark.textMuted };
 }
 
@@ -135,7 +136,7 @@ export default function ProfileScreen({ navigation }) {
     setResendMessage(null);
     try {
       const data = await resendVerificationEmail();
-      setResendMessage(data.alreadyVerified ? "Your email is already verified." : "Verification email sent — check your inbox.");
+      setResendMessage(data.alreadyVerified ? "Your email is already verified." : "Verification email sent. Check your inbox.");
     } catch (e) {
       setResendMessage(e.message || "Couldn't send the verification email. Please try again.");
     } finally {
@@ -208,7 +209,7 @@ export default function ProfileScreen({ navigation }) {
               <View style={styles.avatarEditBadge}><Text style={styles.avatarEditBadgeText}>✎</Text></View>
             </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{user?.name || "—"}</Text>
+              <Text style={styles.name}>{user?.name || "Not set"}</Text>
               <Text style={styles.meta}>{user?.email}{user?.phone ? ` · ${user.phone}` : ""}</Text>
             </View>
           </View>
@@ -281,7 +282,7 @@ export default function ProfileScreen({ navigation }) {
         ) : (
           trips.map((ride) => {
             const stops = ride.stops || [];
-            const dropoff = stops.length ? stops[stops.length - 1] : "—";
+            const dropoff = stops.length ? stops[stops.length - 1] : "Not set";
             const date = new Date(ride.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
             return (
               <Card key={ride.id} tone="dark" style={{ marginBottom: spacing.sm }}>
@@ -346,6 +347,8 @@ export default function ProfileScreen({ navigation }) {
         </Card>
 
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
+
+        <DeleteAccountSection />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
