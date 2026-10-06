@@ -216,17 +216,27 @@ CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user ON wallet_transactions(u
 -- underneath it. company_account_id is null for the individual plan and
 -- for the company's own membership row; delegate riders point it at the
 -- company user's id.
+-- plan_type was originally 'individual_annual' | 'corporate_delegate'
+-- (annual, single-tier). Corrected 2026-09 to a monthly, two-tier model —
+-- see routes/memberships.js for the plan catalogue (pricing, cashback
+-- rate, profile-user limit). cashback_percent and max_profile_users below
+-- are ALTER'd in rather than added here, and are stored per-row (not just
+-- looked up from the catalogue by plan_type) so a member who subscribed
+-- under an older price/rate keeps the terms they actually signed up for
+-- if the catalogue changes later.
 CREATE TABLE IF NOT EXISTS memberships (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  plan_type TEXT NOT NULL, -- 'individual_annual' | 'corporate_delegate'
+  plan_type TEXT NOT NULL, -- 'premium' | 'executive' | 'executive_profile' (a profile user linked under someone else's executive plan)
   status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'cancelled' | 'expired'
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
   price_naira NUMERIC NOT NULL,
-  company_account_id INTEGER REFERENCES users(id), -- set on a delegate rider, pointing at the company's user row
+  company_account_id INTEGER REFERENCES users(id), -- set on a linked profile user, pointing back at the Executive member's own user row
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS cashback_percent NUMERIC NOT NULL DEFAULT 0; -- % of every completed trip's fare, credited to the rider's wallet — see services/membershipCashback.js
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS max_profile_users INTEGER NOT NULL DEFAULT 1; -- total seats on this plan, member included (Premium: 1, Executive: 3)
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_company ON memberships(company_account_id);
 
@@ -1113,6 +1123,55 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS partner_venue_id INTEGER REFERENCES p
 -- Arrivo Share report).
 CREATE INDEX IF NOT EXISTS idx_rides_driver_status ON rides(driver_id, ride_status);
 CREATE INDEX IF NOT EXISTS idx_rides_partner_venue ON rides(partner_venue_id) WHERE partner_venue_id IS NOT NULL;
+
+-- ── Ride-booking idempotency (2026-09-26) ──
+-- POST /api/rides for the wallet, family_wallet, and membership payment
+-- methods debits money (or consumes a membership trip) and inserts the ride
+-- in the SAME request, with no separate confirm step the way card payments
+-- have (see used_payment_references above). If the rider's connection drops
+-- after that transaction commits but before the response arrives, the
+-- website sees a failure, re-enables the Pay button, and the rider naturally
+-- retries -- which, without this table, ran the whole debit-and-insert a
+-- second time.
+--
+-- The website already generates a UUID per booking attempt and sends it as
+-- idempotencyKey. This table is what makes that key actually mean something:
+-- one row per (user, key), and the booking transaction (services/idempotency.js)
+-- inserts this row and does its real work in the SAME transaction, so a
+-- rollback undoes both together and a commit persists both together. That
+-- makes retries safe without any extra locking:
+--   * first attempt: INSERT ... ON CONFLICT DO NOTHING succeeds, the booking
+--     proceeds, and this row is updated to 'completed' with the resulting
+--     ride id and the exact response body right before COMMIT;
+--   * a retry with the same key, after that COMMIT: the INSERT conflicts,
+--     the existing 'completed' row is read back, and (if the request looks
+--     like the same booking -- see request_hash) the ORIGINAL response is
+--     replayed rather than the money moving again;
+--   * a retry that arrives WHILE the first attempt is still mid-transaction:
+--     Postgres blocks the second INSERT on the first's uncommitted row until
+--     it commits or rolls back, so two concurrent requests with the same key
+--     can never both "win" -- one always sees the other's outcome;
+--   * a retry after the first attempt failed and rolled back: the insert
+--     rolled back too, so the key is simply free again and the retry runs
+--     as a fresh attempt.
+-- request_hash is a hash of the fields that determine what's actually being
+-- booked/charged, so the same key reused for a materially different booking
+-- (a different fare, destination, or payment method) is rejected with a 409
+-- instead of silently replaying the wrong ride -- see
+-- services/idempotency.js for exactly what's hashed.
+CREATE TABLE IF NOT EXISTS ride_idempotency_keys (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'completed'
+  ride_id INTEGER REFERENCES rides(id),
+  response_status INTEGER,
+  response_body JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_idempotency_key_once ON ride_idempotency_keys(user_id, idempotency_key);
 
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 3

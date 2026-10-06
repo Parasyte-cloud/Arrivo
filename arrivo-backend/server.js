@@ -63,6 +63,12 @@ const ALLOWED_ORIGINS = [
   "https://ridearrivo.com",
   "https://www.ridearrivo.com",
   "https://admin.ridearrivo.com",
+  // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
+  // posts to /api/auth/google and /api/auth/apple directly from the
+  // browser, same as login.html/signup.html on the main site, so a
+  // membership sign-up is a real account on this same backend, not a
+  // separate identity silo.
+  "https://membership.ridearrivo.com",
 ];
 
 app.use(
