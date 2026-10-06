@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { StreamClientProvider } from "./StreamClientContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -25,6 +25,7 @@ const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ defaul
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
+const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
@@ -33,7 +34,7 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // for what "a valid page" means.
 const PAGES = [
   "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express",
+  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "exports",
 ];
 
 const OPERATIONS_PAGES = [
@@ -44,6 +45,7 @@ const OPERATIONS_PAGES = [
   "vehicles",
   "live-map",
   "analytics",
+  "exports",
 ];
 
 
@@ -53,10 +55,14 @@ function pageFromHash(allowedPages = PAGES) {
 }
 
 function Dashboard() {
-  const { isOperations } = useAuth();
-  const allowedPages = isOperations
-    ? OPERATIONS_PAGES
-    : PAGES;
+  const { user, isOperations } = useAuth();
+  // Support can read the console but not take data out of it, so the Exports
+  // page is left off their list as well as refused by the server.
+  const isSupport = user?.role === "support";
+  const allowedPages = useMemo(
+    () => (isOperations ? OPERATIONS_PAGES : isSupport ? PAGES.filter((p) => p !== "exports") : PAGES),
+    [isOperations, isSupport]
+  );
 
   // Default to Panic Alerts on login — the safety-critical view should be
   // the first thing an ops person sees, not something they have to
@@ -155,6 +161,7 @@ function Dashboard() {
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
             {page === "arrivo-express" && <ArrivoExpressPage />}
+            {page === "exports" && <ExportsPage />}
           </Suspense>
         </ErrorBoundary>
       </main>

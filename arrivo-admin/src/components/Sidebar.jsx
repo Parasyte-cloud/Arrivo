@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { id: "arrivo-express", label: "Arrivo Express", icon: "🛡️" },
   { id: "live-map", label: "Live Map", icon: "📍" },
   { id: "analytics", label: "Analytics", icon: "📊" },
+  { id: "exports", label: "Exports", icon: "⬇️" },
 ];
 
 const OPERATIONS_NAV_IDS = new Set([
@@ -26,6 +27,7 @@ const OPERATIONS_NAV_IDS = new Set([
   "vehicles",
   "live-map",
   "analytics",
+  "exports",
 ]);
 
 
@@ -52,7 +54,9 @@ export function Sidebar({ page, setPage, open, onClose }) {
   const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
   const visibleNavItems = isOperations
     ? NAV_ITEMS.filter((item) => OPERATIONS_NAV_IDS.has(item.id))
-    : NAV_ITEMS;
+    : user?.role === "support"
+      ? NAV_ITEMS.filter((item) => item.id !== "exports")
+      : NAV_ITEMS;
 
   return (
     <>

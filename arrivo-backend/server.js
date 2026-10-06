@@ -20,6 +20,7 @@ const membershipsRouter = require("./routes/memberships");
 const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
+const adminExportsRouter = require("./routes/adminExports");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
@@ -99,6 +100,9 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/rides", ridesRouter);
 app.use("/api/drivers", driversRouter);
+// Before the general admin router: exports are admin and operations only,
+// and the router applies that itself.
+app.use("/api/admin/exports", adminExportsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);
