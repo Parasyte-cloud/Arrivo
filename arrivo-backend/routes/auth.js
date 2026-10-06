@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
+const { setSessionCookie, clearSessionCookie } = require("../middleware/sessionCookie");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
@@ -215,6 +216,7 @@ router.post("/signup", signupLimiter, async (req, res) => {
   sendVerificationEmail(user.email, verifyUrl).catch((e) => console.error("Verification email failed:", e.message));
   sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
 
+  setSessionCookie(res, token);
   res.status(201).json({ token, user: publicUser(user) });
 });
 
@@ -294,6 +296,7 @@ router.post("/login", loginLimiter, async (req, res) => {
   }
 
   const token = signToken(user);
+  setSessionCookie(res, token);
   res.json({ token, user: publicUser(user) });
 });
 
@@ -369,6 +372,7 @@ router.post("/google", async (req, res) => {
     }
 
     const token = signToken(user);
+    setSessionCookie(res, token);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Google." });
@@ -459,6 +463,7 @@ router.post("/apple", async (req, res) => {
     }
 
     const token = signToken(user);
+    setSessionCookie(res, token);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Apple." });
@@ -466,6 +471,14 @@ router.post("/apple", async (req, res) => {
 });
 
 // GET /api/auth/me
+// POST /api/auth/logout
+// Clears the shared single sign-on cookie on every *.ridearrivo.com site.
+// Bearer-token clients just discard their token; calling this is harmless.
+router.post("/logout", (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
 router.get("/me", requireAuth, async (req, res) => {
   const result = await pool.query("SELECT * FROM users WHERE id = $1", [req.user.id]);
   const user = result.rows[0];

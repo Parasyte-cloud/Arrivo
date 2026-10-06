@@ -59,6 +59,8 @@ app.set("trust proxy", 1);
 // unconditionally -- CORS is a browser-only enforcement mechanism, the
 // rider/driver apps never send a browser-style Origin header, so this
 // allowlist cannot break them regardless of how strict it is.
+const { csrfOriginCheck } = require("./middleware/sessionCookie");
+
 const ALLOWED_ORIGINS = [
   "https://ridearrivo.com",
   "https://www.ridearrivo.com",
@@ -69,10 +71,26 @@ const ALLOWED_ORIGINS = [
   // membership sign-up is a real account on this same backend, not a
   // separate identity silo.
   "https://membership.ridearrivo.com",
+  // ArrivoExpress runs standalone on its own subdomain and calls this API
+  // straight from the browser.
+  "https://express.ridearrivo.com",
 ];
+
+// Extra origins (for example a Cloudflare Pages preview URL while testing a
+// deploy) can be added without a code change: set EXTRA_ALLOWED_ORIGINS to a
+// comma-separated list of full origins. Exact match only, no wildcards.
+(process.env.EXTRA_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean)
+  .forEach((o) => ALLOWED_ORIGINS.push(o));
 
 app.use(
   cors({
+    // Needed so browsers send/accept the shared session cookie on
+    // cross-subdomain fetches. Safe because origins are an exact allowlist
+    // (a wildcard origin is refused by browsers when credentials are on).
+    credentials: true,
     origin(origin, callback) {
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
@@ -81,6 +99,9 @@ app.use(
     },
   })
 );
+
+// Second CSRF layer for the cookie session (SameSite=Lax is the first).
+app.use(csrfOriginCheck(ALLOWED_ORIGINS));
 
 // The Paystack webhook needs the RAW request body to verify its signature,
 // so we skip the JSON parser for that one path and let routes/payments.js
