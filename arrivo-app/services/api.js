@@ -443,6 +443,9 @@ export function deleteAccount(token, confirmEmail) {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ confirmEmail }),
+  });
+}
+
 // ── Arrivo Family Plan ──────────────────────────────────────────────────
 export function getFamilyPlanPricing(token) {
   return request("/api/family/pricing", {

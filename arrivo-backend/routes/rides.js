@@ -19,6 +19,7 @@ const { claimPaymentReference } = require("../services/paymentReferences");
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
+const { sendPanicAlert } = require("../services/panicAlert");
 const { getActivePlanForUser } = require("../services/familyPlan");
 const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
 const { isWithinRadiusKm } = require("../services/routeDeviation");
@@ -2221,10 +2222,11 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
   );
 
   console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, triggered by user ${req.user.email}`);
-  // TODO before real launch: wire this to an actual alert — SMS/call to an
-  // ops phone, a Slack webhook, or a push notification to the admin
-  // dashboard. Right now it's logged server-side and visible in the admin
-  // dashboard's ride list, but nothing pages anyone in real time.
+  // Pages whoever is on call (OPS_ALERT_EMAILS / OPS_ALERT_WHATSAPP) right
+  // now, instead of relying on someone having the admin dashboard open.
+  // Not awaited: the person who pressed the button gets their confirmation
+  // immediately; delivery problems are logged by services/panicAlert.js.
+  sendPanicAlert(pool, Number(req.params.id), req.user.id);
 
   res.status(201).json({ ride: withParsedStops(updated.rows[0]) });
 });
