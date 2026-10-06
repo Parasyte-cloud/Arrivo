@@ -2,6 +2,7 @@ const {
   findExcludedArea,
   classifyZone,
   isLagosNightTime,
+  PLATFORM_FARE_INCREASE,
 } = require("./fare");
 
 const { getTier } = require("./instantTiers");
@@ -88,7 +89,7 @@ function computeInstantFare({
 
   const beforeMinimum = meteredSubtotal * nightMultiplier;
   const fareNaira = roundUpToNearest(
-    Math.max(beforeMinimum, tierConfig.minimumFareNaira),
+    Math.max(beforeMinimum, tierConfig.minimumFareNaira) * PLATFORM_FARE_INCREASE,
     ROUND_TO_NAIRA
   );
 
