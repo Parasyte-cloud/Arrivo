@@ -76,7 +76,11 @@ const passwordResetLimiter = authRateLimiter({
 });
 
 function signToken(user) {
-  return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role, tv: user.token_version ?? 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: TOKEN_EXPIRY }
+  );
 }
 
 // Registration photos arrive as a base64 data URL from the browser/app
@@ -312,6 +316,31 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
 
   const byEmail = (await pool.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()])).rows[0];
   if (byEmail) {
+    // Linking hands over an existing account to whoever holds the provider
+    // login, so the provider must vouch that this email really is theirs.
+    if (!emailVerified) {
+      throw Object.assign(
+        new Error("The email on this sign-in account is not verified, so we can't connect it to an existing RideArrivo account. Verify it with the provider first, or sign in with your password."),
+        { status: 400 }
+      );
+    }
+    // The password sign-up path issues a working token before the email is
+    // checked, so someone could have registered this address first, with a
+    // password of their own, to wait for its owner. If the email was never
+    // verified, the person arriving now with a verified provider login is the
+    // owner: take the account, kill the password that was set at sign-up and
+    // end every session that already exists for it.
+    if (!byEmail.email_verified) {
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const claimed = await pool.query(
+        `UPDATE users SET ${providerColumn} = $1, email_verified = true, password_hash = $2,
+                email_verification_token = NULL, email_verification_expires = NULL,
+                reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1
+          WHERE id = $3 RETURNING *`,
+        [providerId, bcrypt.hashSync(randomPassword, SALT_ROUNDS), byEmail.id]
+      );
+      return { user: claimed.rows[0], isNewAccount: false };
+    }
     const linked = await pool.query(`UPDATE users SET ${providerColumn} = $1 WHERE id = $2 RETURNING *`, [providerId, byEmail.id]);
     return { user: linked.rows[0], isNewAccount: false };
   }
@@ -687,7 +716,7 @@ router.post("/reset-password", passwordResetLimiter, async (req, res) => {
 
   const passwordHash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
   await pool.query(
-    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
+    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1 WHERE id = $2",
     [passwordHash, user.id]
   );
 

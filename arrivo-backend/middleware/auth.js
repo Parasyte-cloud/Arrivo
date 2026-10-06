@@ -28,7 +28,7 @@ async function requireAuth(req, res, next) {
   // to the login screen and hide the real fault.
   let live;
   try {
-    live = await pool.query("SELECT deleted_at, deletion_started_at FROM users WHERE id = $1", [payload.id]);
+    live = await pool.query("SELECT deleted_at, deletion_started_at, role, token_version FROM users WHERE id = $1", [payload.id]);
   } catch (err) {
     console.error("Could not check account status for user %s:", payload.id, err.message);
     return res.status(503).json({ error: "We're having trouble right now. Please try again." });
@@ -37,6 +37,14 @@ async function requireAuth(req, res, next) {
   if (!live.rows[0] || live.rows[0].deleted_at) {
     return res.status(401).json({ error: "This account no longer exists." });
   }
+
+  // The role and the session are decided by the database, not by what the
+  // token said seven days ago. Otherwise a demoted admin keeps admin rights
+  // until the token expires, and a password reset does not log out a thief.
+  if ((payload.tv ?? 0) !== (live.rows[0].token_version ?? 0)) {
+    return res.status(401).json({ error: "Your session has ended. Please sign in again." });
+  }
+  req.user = { ...payload, role: live.rows[0].role ?? payload.role };
 
   // A deletion that got as far as revoking Apple but not as far as scrubbing.
   // Nothing new should attach to an account on its way out, so everything is
@@ -54,8 +62,8 @@ async function requireAuth(req, res, next) {
   return enforceOperationsReadOnly(req, res, next);
 }
 
-// Use after requireAuth. The role is embedded in the JWT itself, so this
-// is a cheap check with no extra database lookup.
+// Use after requireAuth, which sets req.user.role from the database row it
+// already loads, so this needs no lookup of its own.
 function requireRole(role) {
   return (req, res, next) => {
     if (req.user?.role !== role) {
