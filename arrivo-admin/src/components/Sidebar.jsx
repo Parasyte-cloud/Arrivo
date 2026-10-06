@@ -54,9 +54,7 @@ export function Sidebar({ page, setPage, open, onClose }) {
   const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
   const visibleNavItems = isOperations
     ? NAV_ITEMS.filter((item) => OPERATIONS_NAV_IDS.has(item.id))
-    : user?.role === "support"
-      ? NAV_ITEMS.filter((item) => item.id !== "exports")
-      : NAV_ITEMS;
+    : NAV_ITEMS;
 
   return (
     <>

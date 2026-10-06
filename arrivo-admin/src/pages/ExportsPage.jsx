@@ -213,7 +213,7 @@ export function ExportsPage() {
                       <td style={{ fontSize: 12.5 }}>{h.time_wat}</td>
                       <td>
                         <div>{h.user_email}</div>
-                        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{h.user_role}</div>
+                        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{h.user_role}{h.source === "workspace" ? " · Workspace" : ""}</div>
                       </td>
                       <td>{h.dataset}</td>
                       <td style={{ color: "var(--text-muted)", fontSize: 12.5 }}>

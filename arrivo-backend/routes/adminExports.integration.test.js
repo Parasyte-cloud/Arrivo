@@ -4,8 +4,9 @@
 //   npm run test:integration
 //
 // What this protects, in the order it matters:
-//   1. Who can download. Support, riders and strangers get nothing, operations
-//      gets the operational files only, admin gets everything.
+//   1. Who can download. Riders, drivers and strangers get nothing; support and
+//      operations get the operational files only; admin gets everything. The
+//      Workspace door only opens with the shared secret.
 //   2. What is in the files. No password hashes, tokens, passport numbers or ID
 //      images, and deleted accounts stay deleted.
 //   3. That the file is a faithful record: every row once, in Lagos time, with
@@ -21,6 +22,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 process.env.EXPORT_BATCH_SIZE = "2";
 process.env.EXPORT_MAX_ROWS = "50";
 process.env.EXPORT_RATE_LIMIT = "60";
+const PROXY_SECRET = "workspace-proxy-secret-for-tests-0123456789";
+process.env.EXPORT_PROXY_SECRET = PROXY_SECRET;
 
 const express = require("express");
 require("express-async-errors");
@@ -43,6 +46,7 @@ async function test(name, fn) {
 const app = express();
 app.use(express.json());
 app.use("/api/admin/exports", exportsRouter);
+app.use("/api/internal/exports", exportsRouter.workspaceRouter);
 app.use((err, req, res, next) => res.status(500).json({ error: "server error", detail: err.message }));
 const server = http.createServer(app);
 
@@ -63,6 +67,18 @@ async function get(path, user) {
   const bytes = Buffer.from(await res.arrayBuffer());
   const text = bytes.toString("utf8");
   return { status: res.status, headers: res.headers, text, bytes };
+}
+
+// The Workspace door: no login token, a shared secret and who is asking.
+async function viaWorkspace(path, { secret = PROXY_SECRET, email = "someone@ridearrivo.com", role = "operations" } = {}) {
+  const { port } = server.address();
+  const headers = {};
+  if (secret !== null) headers["x-export-proxy-secret"] = secret;
+  if (email !== null) headers["x-actor-email"] = email;
+  if (role !== null) headers["x-actor-role"] = role;
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return { status: res.status, headers: res.headers, text: bytes.toString("utf8"), bytes };
 }
 
 // A real CSV reader, so the checks read cells and not guesses at substrings.
@@ -102,6 +118,7 @@ async function makeUser(label, role, extra = {}) {
 
 async function cleanup() {
   await pool.query("DELETE FROM export_audit_log WHERE user_email LIKE $1", [`${tag}%`]);
+  await pool.query("DELETE FROM export_audit_log WHERE user_email LIKE 'ws.%@ridearrivo.com' OR user_email = 'someone@ridearrivo.com'");
   await pool.query("DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)", [`${tag}%`]);
   await pool.query("DELETE FROM instant_ride_offers WHERE request_id IN (SELECT id FROM instant_ride_requests WHERE rider_id IN (SELECT id FROM users WHERE email LIKE $1))", [`${tag}%`]);
   await pool.query("DELETE FROM instant_ride_requests WHERE rider_id IN (SELECT id FROM users WHERE email LIKE $1)", [`${tag}%`]);
@@ -174,13 +191,23 @@ async function cleanup() {
       assert.equal((await get("/api/admin/exports")).status, 401);
     });
 
-    await test("support and riders are refused everywhere, including the list", async () => {
-      for (const user of [ids.support, ids.rider, ids.driverUser]) {
+    await test("riders and drivers are refused everywhere, including the list", async () => {
+      for (const user of [ids.rider, ids.driverUser]) {
         for (const path of ["/api/admin/exports", "/api/admin/exports/riders", "/api/admin/exports/drivers", "/api/admin/exports/history"]) {
           const r = await get(path, user);
           assert.equal(r.status, 403, `${user.role} should be refused ${path}`);
         }
       }
+    });
+
+    await test("support gets the operational exports but not the money ones or the history", async () => {
+      const list = JSON.parse((await get("/api/admin/exports", ids.support)).text);
+      const keys = list.datasets.map((d) => d.key);
+      assert.ok(keys.includes("riders") && keys.includes("rides"));
+      assert.ok(!keys.includes("wallet-transactions") && !keys.includes("memberships"));
+      assert.equal((await get("/api/admin/exports/riders", ids.support)).status, 200);
+      assert.equal((await get("/api/admin/exports/wallet-transactions", ids.support)).status, 403);
+      assert.equal((await get("/api/admin/exports/history", ids.support)).status, 403);
     });
 
     await test("operations sees the operational exports and not the money ones", async () => {
@@ -385,9 +412,61 @@ async function cleanup() {
 
     await test("refused requests are not logged as downloads", async () => {
       const before = (await pool.query("SELECT COUNT(*)::int n FROM export_audit_log WHERE user_email = $1", [ids.support.email])).rows[0].n;
-      await get("/api/admin/exports/riders", ids.support);
+      await get("/api/admin/exports/wallet-transactions", ids.support);
       const after = (await pool.query("SELECT COUNT(*)::int n FROM export_audit_log WHERE user_email = $1", [ids.support.email])).rows[0].n;
       assert.equal(before, after);
+    });
+
+    // ── The Workspace door ────────────────────────────────────────
+
+    await test("workspace door is shut without the secret, with a wrong one, or without an identity", async () => {
+      assert.equal((await viaWorkspace("/api/internal/exports/riders", { secret: null })).status, 401);
+      assert.equal((await viaWorkspace("/api/internal/exports/riders", { secret: "wrong" + PROXY_SECRET })).status, 401);
+      assert.equal((await viaWorkspace("/api/internal/exports/riders", { email: null })).status, 403);
+      assert.equal((await viaWorkspace("/api/internal/exports/riders", { email: "not-an-email" })).status, 403);
+    });
+
+    await test("workspace door refuses roles that may not export", async () => {
+      for (const role of ["finance", "rider", "manager", "", null]) {
+        assert.equal((await viaWorkspace("/api/internal/exports", { role })).status, 403, `role ${role}`);
+      }
+    });
+
+    await test("workspace door is disabled when no secret is configured", async () => {
+      const keep = process.env.EXPORT_PROXY_SECRET;
+      process.env.EXPORT_PROXY_SECRET = "short";
+      try {
+        assert.equal((await viaWorkspace("/api/internal/exports", { secret: "short" })).status, 503);
+      } finally {
+        process.env.EXPORT_PROXY_SECRET = keep;
+      }
+    });
+
+    await test("workspace operations and support get a real file; money files stay admin only", async () => {
+      for (const role of ["operations", "support"]) {
+        const r = await viaWorkspace("/api/internal/exports/riders", { role, email: `ws.${role}@ridearrivo.com` });
+        assert.equal(r.status, 200);
+        assert.deepEqual([...r.bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+        assert.ok(/attachment; filename="arrivo-riders-/.test(r.headers.get("content-disposition")));
+        assert.equal((await viaWorkspace("/api/internal/exports/wallet-transactions", { role })).status, 403);
+        assert.equal((await viaWorkspace("/api/internal/exports/history", { role })).status, 403);
+      }
+      const admin = await viaWorkspace("/api/internal/exports/wallet-transactions", { role: "admin", email: "ws.admin@ridearrivo.com" });
+      assert.equal(admin.status, 200);
+    });
+
+    await test("a workspace download is audited under the real person and marked as workspace", async () => {
+      const row = (await pool.query(
+        "SELECT user_id, user_role, source, status, ip FROM export_audit_log WHERE user_email = 'ws.support@ridearrivo.com' AND dataset = 'riders' ORDER BY id DESC LIMIT 1"
+      )).rows[0];
+      assert.ok(row, "audit row exists");
+      assert.equal(row.user_id, null);
+      assert.equal(row.user_role, "support");
+      assert.equal(row.source, "workspace");
+      assert.equal(row.status, "completed");
+      assert.equal(row.ip, null);
+      const consoleRow = (await pool.query("SELECT source FROM export_audit_log WHERE user_email = $1 ORDER BY id DESC LIMIT 1", [ids.support.email])).rows[0];
+      assert.equal(consoleRow.source, "console");
     });
 
     await test("admin can read the history and it names who downloaded", async () => {

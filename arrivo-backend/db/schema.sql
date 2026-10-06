@@ -1197,3 +1197,5 @@ CREATE TABLE IF NOT EXISTS export_audit_log (
   completed_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_export_audit_log_created ON export_audit_log(created_at DESC);
+-- Which door the download came through: the admin console or the Workspace.
+ALTER TABLE export_audit_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'console';

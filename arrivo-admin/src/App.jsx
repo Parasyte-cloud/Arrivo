@@ -55,13 +55,10 @@ function pageFromHash(allowedPages = PAGES) {
 }
 
 function Dashboard() {
-  const { user, isOperations } = useAuth();
-  // Support can read the console but not take data out of it, so the Exports
-  // page is left off their list as well as refused by the server.
-  const isSupport = user?.role === "support";
+  const { isOperations } = useAuth();
   const allowedPages = useMemo(
-    () => (isOperations ? OPERATIONS_PAGES : isSupport ? PAGES.filter((p) => p !== "exports") : PAGES),
-    [isOperations, isSupport]
+    () => (isOperations ? OPERATIONS_PAGES : PAGES),
+    [isOperations]
   );
 
   // Default to Panic Alerts on login — the safety-critical view should be
