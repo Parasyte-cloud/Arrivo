@@ -1,7 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { claimPaymentReference } = require("../services/paymentReferences");
 const { requireAuth } = require("../middleware/auth");
@@ -18,7 +18,10 @@ const paymentsLimiter = rateLimit({
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => String(req.user?.id || req.ip),
+  // Signed-in callers are limited per account. The IP fallback goes through
+  // ipKeyGenerator so an IPv6 user cannot dodge the limit by rotating
+  // addresses within their own /64.
+  keyGenerator: (req) => (req.user?.id ? "user:" + req.user.id : ipKeyGenerator(req.ip)),
   handler: (req, res) =>
     res.status(429).json({ error: "Too many payment requests. Please wait a few minutes and try again." }),
 });
