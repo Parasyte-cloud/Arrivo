@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
-const { claimPaymentReference } = require("../services/paymentReferences");
+const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 
 const router = express.Router();
 const PAYSTACK_BASE = "https://api.paystack.co";
@@ -34,16 +34,25 @@ router.get("/", requireAuth, async (req, res) => {
 router.post("/topup/verify", requireAuth, async (req, res) => {
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ error: "reference is required" });
+  // See isValidPaystackReference: this value goes into a URL called with the
+  // secret key, so it must be a plain reference and nothing else.
+  if (!isValidPaystackReference(reference)) return res.status(400).json({ error: "Invalid payment reference." });
 
   let paystackData;
   try {
-    const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${reference}`, { headers: paystackHeaders() });
+    const response = await axios.get(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: paystackHeaders(),
+      timeout: 10000,
+    });
     paystackData = response.data.data;
   } catch (err) {
     console.error("Paystack verify failed:", err.response?.data || err.message);
     return res.status(502).json({ error: "Could not verify payment with Paystack." });
   }
 
+  if (paystackData.currency !== "NGN") {
+    return res.status(400).json({ error: "Only payments in naira can be credited to the wallet." });
+  }
   if (paystackData.status !== "success") {
     return res.status(400).json({ error: "Payment was not successful.", status: paystackData.status });
   }

@@ -466,10 +466,16 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS escort_payout_naira NUMERIC;
 -- services/paymentReferences.js). The UNIQUE constraint makes the claim
 -- itself atomic even under two simultaneous requests racing with the same
 -- reference — a plain SELECT-then-UPDATE check can't guarantee that.
+-- Bumped to sign a user out everywhere: a password reset, or an unverified
+-- sign-up claimed by the real owner of the email. Tokens carry the value they
+-- were issued with (claim "tv"; older tokens count as 0) and stop working when
+-- it no longer matches.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS used_payment_references (
   id SERIAL PRIMARY KEY,
   reference TEXT UNIQUE NOT NULL,
-  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup'
+  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup' | 'family_topup'
   ride_id INTEGER REFERENCES rides(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

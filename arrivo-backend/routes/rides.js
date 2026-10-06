@@ -752,6 +752,35 @@ router.post("/", requireAuth, async (req, res) => {
   // Same transaction reasoning as the membership/wallet branches above — a
   // fleet-companion insert failure must not leave a real card-paid ride
   // with a half-built convoy and no clean way to retry.
+  // A card booking is only a booking once the card payment is real. Until
+  // now the reference was stored without being checked, so a ride could be
+  // created with a made-up reference, shown to drivers and driven for free.
+  // Ask Paystack, require success in naira for at least the fare (the fare is
+  // the server's own figure, never the client's), and spend the reference
+  // below in the same transaction as the ride, so it cannot also pay for
+  // anything else. A free ride (fare 0) has nothing to verify.
+  const cardPaymentRequired = Number(fareNaira) > 0;
+  if (cardPaymentRequired) {
+    if (!paymentReference) {
+      return res.status(400).json({ error: "A completed card payment is required to book this ride." });
+    }
+    let cardVerification;
+    try {
+      cardVerification = await verifyPaystackTransaction(paymentReference);
+    } catch (err) {
+      if (err.invalidReference) return res.status(400).json({ error: "Invalid payment reference." });
+      console.error("Paystack verify failed while creating a card ride:", err.response?.data || err.message);
+      return res.status(502).json({ error: "We could not confirm your payment yet. You have not been booked, please try again in a moment." });
+    }
+    if (!cardVerification.success) {
+      return res.status(400).json({ error: `Payment not confirmed (status: ${cardVerification.status}).` });
+    }
+    if (Math.round(cardVerification.amountNaira) < Math.round(Number(fareNaira))) {
+      console.error(`Card ride underpaid: paid ₦${cardVerification.amountNaira}, fare ₦${fareNaira}, ref ${paymentReference}`);
+      return res.status(400).json({ error: "The amount paid is less than this ride's fare. Contact support with your payment reference: " + paymentReference });
+    }
+  }
+
   const cardClient = await pool.connect();
   try {
     await cardClient.query("BEGIN");
@@ -760,10 +789,30 @@ router.post("/", requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
       [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
     );
-    await createFleetCompanions(cardClient, inserted.rows[0]);
-    await recordLuckyRideEntry(cardClient, inserted.rows[0], luckyRideEntryDate);
+    let cardRide = inserted.rows[0];
+    if (cardPaymentRequired) {
+      const claimed = await claimPaymentReference(cardClient, paymentReference, "ride_payment", cardRide.id);
+      if (!claimed) {
+        await cardClient.query("ROLLBACK");
+        console.error(`Reused payment reference on card ride creation: ${paymentReference} was already used for a different charge.`);
+        return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+      }
+      cardRide = (
+        await cardClient.query("UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *", [cardRide.id])
+      ).rows[0];
+    }
+    await createFleetCompanions(cardClient, cardRide);
+    await recordLuckyRideEntry(cardClient, cardRide, luckyRideEntryDate);
     await cardClient.query("COMMIT");
-    res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+
+    // The website used to send this from PATCH /:id/payment. A ride that is
+    // paid at creation returns early there, so it is sent here instead.
+    if (cardPaymentRequired) {
+      pool.query("SELECT email FROM users WHERE id = $1", [req.user.id])
+        .then((rider) => rider.rows[0] && sendBookingConfirmationEmail(rider.rows[0].email, cardRide))
+        .catch((e) => console.error("Booking confirmation email failed:", e.message));
+    }
+    res.status(201).json({ ride: withParsedStops(cardRide) });
   } catch (err) {
     await cardClient.query("ROLLBACK");
     console.error("Card ride creation failed:", err.message);
@@ -997,6 +1046,14 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   const driver = await getDriverForUser(req.user.id);
   const driverId = driver?.id || null;
 
+  // The queue carries riders' names and phone numbers. Anyone can sign up as
+  // a driver, so it is only shown once an admin has approved the profile,
+  // the same rule POST /:id/accept already applies. An empty queue (not an
+  // error) keeps the driver app's screens working while approval is pending.
+  if (!driver || !driver.is_verified) {
+    return res.json({ rides: [], areaLockedToVenue: null, pendingVerification: true });
+  }
+
   // Arrivo Express Phase 3 -- the Partner Venues program area lock. "The driver
   // will only get orders around the area for as long as they are online
   // and have accepted the ride [from a partner venue]" -- while this
@@ -1062,6 +1119,11 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   }
   rides = rides.slice(0, 20);
   rides = await attachShareParticipants(rides);
+
+  // rides.* includes columns a driver has no use for: staff notes, the public
+  // tracking key (anyone holding it can follow the trip, after the driver has
+  // finished with it too) and the payment reference.
+  rides = rides.map(({ admin_notes, share_token, payment_reference, ...safe }) => safe);
 
   res.json({ rides: rides.map(withParsedStops), areaLockedToVenue: areaLockVenue ? areaLockVenue.name : null });
 });
@@ -1438,9 +1500,16 @@ router.post("/:id/cancel-request", requireAuth, requireRole("driver"), async (re
       `UPDATE rides
           SET ride_status = 'requested', driver_id = NULL, tracking_started_at = NULL,
               reassignment_priority = reassignment_priority + 1, previously_cancelled_at = now(), updated_at = now()
-        WHERE id = $1 RETURNING *`,
-      [ride.id]
+        WHERE id = $1 AND driver_id = $2 AND ride_status IN ('accepted', 'in_progress') RETURNING *`,
+      [ride.id, driver.id]
     );
+    // The status check above was read earlier, so the ride may have moved on
+    // (completed, or already cancelled) in between. Without this guard a
+    // completed and paid ride could be put back in the queue.
+    if (updated.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "This ride changed while you were cancelling it. Please refresh." });
+    }
 
     await client.query("COMMIT");
     const freshRide = updated.rows[0];
