@@ -1176,3 +1176,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_idempotency_key_once ON ride_idempote
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 3
 -- ============================================================
+
+-- ── Operations CSV exports: audit trail ──
+-- One row per download attempt, written before any data leaves, then updated
+-- with the final row count and outcome. Exports carry personal data out of
+-- the system, so who took what and when has to be answerable later.
+CREATE TABLE IF NOT EXISTS export_audit_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT NOT NULL,
+  user_role TEXT NOT NULL,
+  dataset TEXT NOT NULL,
+  date_from DATE,
+  date_to DATE,
+  row_count INTEGER,
+  status TEXT NOT NULL DEFAULT 'started', -- 'started' | 'completed' | 'failed' | 'aborted'
+  ip TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_export_audit_log_created ON export_audit_log(created_at DESC);
+-- Which door the download came through: the admin console or the Workspace.
+ALTER TABLE export_audit_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'console';
