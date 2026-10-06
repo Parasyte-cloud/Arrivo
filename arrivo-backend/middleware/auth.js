@@ -1,10 +1,14 @@
 const { pool } = require("../db/db");
 const jwt = require("jsonwebtoken");
 const { enforceOperationsReadOnly } = require("./operationsReadOnly");
+const { readCookie } = require("./sessionCookie");
 
 async function requireAuth(req, res, next) {
   const header = req.headers.authorization; // expected: "Bearer <token>"
-  const token = header && header.startsWith("Bearer ") ? header.slice(7) : null;
+  // Bearer (mobile apps, existing web pages) wins; otherwise fall back to the
+  // shared single sign-on cookie used across *.ridearrivo.com.
+  const bearer = header && header.startsWith("Bearer ") ? header.slice(7) : null;
+  const token = bearer || readCookie(req);
 
   if (!token) {
     return res.status(401).json({ error: "Missing or malformed Authorization header" });
