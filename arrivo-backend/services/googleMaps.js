@@ -15,6 +15,9 @@
 // IP (or left unrestricted if your host's IP isn't static) rather than
 // by referrer, since there's no browser involved on this side.
 const axios = require("axios");
+// Every axios.get call below sets an explicit 10s timeout -- without one, a
+// slow/unreachable Google Maps API call could hang indefinitely, same
+// reasoning as services/email.js's and services/whatsapp.js's outbound calls.
 
 const PLACES_BASE = "https://maps.googleapis.com/maps/api/place";
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
@@ -43,6 +46,7 @@ async function placesAutocomplete(input, sessionToken) {
       components: "country:ng",
       sessiontoken: sessionToken || undefined,
     },
+    timeout: 10000,
   });
   if (response.data.status !== "OK" && response.data.status !== "ZERO_RESULTS") {
     throw new Error(`Places Autocomplete failed: ${response.data.status} ${response.data.error_message || ""}`.trim());
@@ -62,6 +66,7 @@ async function placeDetails(placeId, sessionToken) {
       fields: "geometry,formatted_address",
       sessiontoken: sessionToken || undefined,
     },
+    timeout: 10000,
   });
   if (response.data.status !== "OK") {
     throw new Error(`Place Details failed: ${response.data.status} ${response.data.error_message || ""}`.trim());
@@ -88,6 +93,7 @@ async function getDistanceDuration(originLat, originLng, destLat, destLng) {
       departure_time: "now",
       traffic_model: "best_guess",
     },
+    timeout: 10000,
   });
   if (response.data.status !== "OK") {
     throw new Error(`Distance Matrix failed: ${response.data.status} ${response.data.error_message || ""}`.trim());
@@ -112,6 +118,7 @@ async function reverseGeocode(lat, lng) {
   const key = requireKey();
   const response = await axios.get(GEOCODE_URL, {
     params: { latlng: `${lat},${lng}`, key },
+    timeout: 10000,
   });
   if (response.data.status !== "OK") {
     throw new Error(`Reverse geocode failed: ${response.data.status} ${response.data.error_message || ""}`.trim());
