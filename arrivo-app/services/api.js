@@ -321,25 +321,27 @@ export function getMembership(token) {
   });
 }
 
-export function subscribeIndividualMembership(token) {
-  return request("/api/memberships/individual/subscribe", {
+// GET /api/memberships/plans — the Premium/Executive catalogue (pricing,
+// cashback rate, profile-user limit), no auth required.
+export function getMembershipPlans() {
+  return request("/api/memberships/plans");
+}
+
+export function subscribeMembership(token, plan) {
+  return request("/api/memberships/subscribe", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ plan }),
   });
 }
 
-export function subscribeCorporateMembership(token) {
-  return request("/api/memberships/corporate/subscribe", {
+// Executive only — links an existing rider account as one of the plan's
+// up to 3 profile users.
+export function addMembershipProfileUser(token, profileUserEmail) {
+  return request("/api/memberships/profile-users/add", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-  });
-}
-
-export function linkCorporateDelegate(token, delegateEmail) {
-  return request("/api/memberships/corporate/link-delegate", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ delegateEmail }),
+    body: JSON.stringify({ profileUserEmail }),
   });
 }
 
@@ -443,6 +445,9 @@ export function deleteAccount(token, confirmEmail) {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ confirmEmail }),
+  });
+}
+
 // ── Arrivo Family Plan ──────────────────────────────────────────────────
 export function getFamilyPlanPricing(token) {
   return request("/api/family/pricing", {

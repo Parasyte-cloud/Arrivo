@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -28,6 +29,51 @@ const router = express.Router();
 
 const SALT_ROUNDS = 10;
 const TOKEN_EXPIRY = "7d";
+
+// These routes run before requireAuth (there is no req.user yet -- that is
+// the whole point of them), so the only key available is the caller's IP,
+// unlike the per-user limiter in routes/support.js. That is the standard
+// tradeoff for brute-force protection on public auth endpoints: a shared
+// carrier NAT address can make a few genuine users share a bucket, but the
+// alternative -- no limit at all -- is what let anyone hammer login,
+// signup, or password reset with no backoff.
+function authRateLimiter({ windowMs, limit, message }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    // Every other rate-limit response in this API answers { error }, and
+    // both apps + the website read that field to show a message.
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+
+// Login is the classic brute-force target -- tight window, tight count.
+const loginLimiter = authRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_LOGIN_RATE_LIMIT) || 10,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
+
+// Signup/guest checkout: looser window, since a shared NAT address (campus
+// wifi, a carrier gateway) can plausibly produce several real signups in
+// an hour, but still bounded so a script can't mass-create accounts.
+const signupLimiter = authRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.AUTH_SIGNUP_RATE_LIMIT) || 8,
+  message: "Too many signup attempts from this network. Please wait a while and try again.",
+});
+
+// Forgot/reset-password: same shape as signup, but this pair specifically
+// protects against using the reset flow as an email-enumeration or
+// mail-bombing tool (forgot-password sends an email on every call for a
+// real address).
+const passwordResetLimiter = authRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.AUTH_PASSWORD_RESET_RATE_LIMIT) || 8,
+  message: "Too many password reset attempts. Please wait a while and try again.",
+});
 
 function signToken(user) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -94,7 +140,7 @@ function publicUser(user) {
 //         confirmPassword, agreedToTerms, preferredLanguage?, role? }
 // This is the real account/profile flow (as opposed to /guest, which is
 // the lightweight no-password path used by the website's booking checkout).
-router.post("/signup", async (req, res) => {
+router.post("/signup", signupLimiter, async (req, res) => {
   const {
     firstName, lastName, email, passportNumber, phone,
     password, confirmPassword, agreedToTerms, avatarDataUrl,
@@ -235,7 +281,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
@@ -565,7 +611,7 @@ router.post("/push-token", requireAuth, async (req, res) => {
 // New email -> silently create a real rider account (random password the
 // guest never sees) and log them in. Existing email -> refuse; otherwise
 // anyone could "book as" an existing rider with no password check at all.
-router.post("/guest", async (req, res) => {
+router.post("/guest", signupLimiter, async (req, res) => {
   const { name, email, phone, whatsappNumber, countryOfResidence, agreedToTerms, preferredLanguage = "en" } = req.body;
 
   if (!name || !email) {
@@ -602,7 +648,7 @@ router.post("/guest", async (req, res) => {
 // body: { email }
 // Always responds the same way whether or not the email exists — otherwise
 // this endpoint becomes a way to check which emails have accounts.
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", passwordResetLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "email is required" });
 
@@ -627,7 +673,7 @@ router.post("/forgot-password", async (req, res) => {
 
 // POST /api/auth/reset-password
 // body: { token, newPassword }
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", passwordResetLimiter, async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
   if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });

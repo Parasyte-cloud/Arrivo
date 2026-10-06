@@ -110,6 +110,12 @@ export default function TrackingScreen({ route, navigation }) {
   const [tipStatus, setTipStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [tipMessage, setTipMessage] = useState(null);
   const pendingTipRef = useRef(null);
+  // Synchronous double-tap guard for submitTip, mirroring CheckoutScreen.js's
+  // payWithWalletOrMembership submittingRef -- tipStatus("verifying") alone
+  // can't stop a second tap landing in the same tick, before React re-renders
+  // with the busy state and disables the button, which would fire a second
+  // wallet debit or a second Paystack initialization for the same tip.
+  const tipSubmittingRef = useRef(false);
 
   // Chauffeur time-overage charge — automatically computed server-side at
   // trip completion (see PATCH /:id/status in the backend) for a single-day
@@ -121,6 +127,9 @@ export default function TrackingScreen({ route, navigation }) {
   const [overageStatus, setOverageStatus] = useState("idle"); // idle | opening | verifying | success | error
   const [overageMessage, setOverageMessage] = useState(null);
   const pendingOverageRef = useRef(null);
+  // Same synchronous double-tap guard as tipSubmittingRef above, for
+  // submitOveragePayment.
+  const overageSubmittingRef = useRef(false);
 
   // Arrivo Express Phase 3 -- Arrivo Share. Add/remove a co-rider on a ride
   // YOU booked and paid for -- only shown to the organizer (ride.rider_id
@@ -526,8 +535,10 @@ export default function TrackingScreen({ route, navigation }) {
   };
 
   const submitOveragePayment = async () => {
+    if (overageSubmittingRef.current) return;
     const overageNaira = Number(ride?.overage_naira) || 0;
     if (!(overageNaira > 0)) return;
+    overageSubmittingRef.current = true;
     setOverageMessage(null);
     if (overagePaymentMethod === "wallet") {
       setOverageStatus("verifying");
@@ -538,6 +549,7 @@ export default function TrackingScreen({ route, navigation }) {
       } catch (e) {
         setOverageStatus("error");
         setOverageMessage(e.message || "Couldn't complete this payment. Please try again.");
+        overageSubmittingRef.current = false;
       }
       return;
     }
@@ -546,18 +558,25 @@ export default function TrackingScreen({ route, navigation }) {
       const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira);
       pendingOverageRef.current = reference;
       await Linking.openURL(authorizationUrl);
+      // Card checkout continues in the browser -- reset once we've handed
+      // off, since the AppState-driven verifyAndApplyCardOverage handles
+      // its own outcome/retry from here, not this call.
+      overageSubmittingRef.current = false;
     } catch (e) {
       setOverageStatus("error");
       setOverageMessage(e.message || "Something went wrong starting this payment.");
+      overageSubmittingRef.current = false;
     }
   };
 
   const submitTip = async () => {
+    if (tipSubmittingRef.current) return;
     if (!(tipAmount > 0)) {
       setTipMessage("Choose an amount to tip.");
       setTipStatus("error");
       return;
     }
+    tipSubmittingRef.current = true;
     setTipMessage(null);
     if (tipPaymentMethod === "wallet") {
       setTipStatus("verifying");
@@ -568,6 +587,7 @@ export default function TrackingScreen({ route, navigation }) {
       } catch (e) {
         setTipStatus("error");
         setTipMessage(e.message || "Couldn't complete your tip. Please try again.");
+        tipSubmittingRef.current = false;
       }
       return;
     }
@@ -576,9 +596,14 @@ export default function TrackingScreen({ route, navigation }) {
       const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount);
       pendingTipRef.current = reference;
       await Linking.openURL(authorizationUrl);
+      // Card checkout continues in the browser -- reset once we've handed
+      // off, since the AppState-driven verifyAndApplyCardTip handles its
+      // own outcome/retry from here, not this call.
+      tipSubmittingRef.current = false;
     } catch (e) {
       setTipStatus("error");
       setTipMessage(e.message || "Something went wrong starting the tip payment.");
+      tipSubmittingRef.current = false;
     }
   };
 

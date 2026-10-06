@@ -69,6 +69,12 @@ const ALLOWED_ORIGINS = [
   // deploy, so it needs its own origin here. Rename this if the subdomain
   // ends up called something other than easybook.
   "https://easybook.ridearrivo.com",
+  // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
+  // posts to /api/auth/google and /api/auth/apple directly from the
+  // browser, same as login.html/signup.html on the main site, so a
+  // membership sign-up is a real account on this same backend, not a
+  // separate identity silo.
+  "https://membership.ridearrivo.com",
 ];
 
 app.use(

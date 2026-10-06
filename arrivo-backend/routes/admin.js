@@ -366,11 +366,12 @@ router.get("/wallet-transactions", async (req, res) => {
 
 // ── Memberships ──────────────────────────────────────────────────────────
 
-// GET /api/admin/memberships — every membership row (individual annual,
-// corporate account, and corporate delegate), with the member's name/email
-// joined in, plus the company account's name/email when this row is a
-// delegate (company_account_id set) so admin can see who's billing whom
-// without cross-referencing user ids by hand.
+// GET /api/admin/memberships — every membership row (Premium, Executive,
+// and executive_profile — a profile user linked under someone else's
+// Executive plan), with the member's name/email joined in, plus the
+// linking Executive member's name/email when this row is a profile user
+// (company_account_id set) so admin can see who's linked to whom without
+// cross-referencing user ids by hand.
 router.get("/memberships", async (req, res) => {
   const result = await pool.query(
     `SELECT memberships.*, users.name as user_name, users.email as user_email,
