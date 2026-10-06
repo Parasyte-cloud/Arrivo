@@ -18,6 +18,7 @@ const {
 const {
   getInstantDispatchConfig,
   createOfferBatch,
+  redispatchOpenRequest,
   expireStaleOffers,
   listDriverOffers,
   declineOffer,
@@ -642,7 +643,7 @@ router.get(
     // rider sees their current ArrivoExpress state.
     await expireStaleOffers(pool);
 
-    const result = await pool.query(
+    const findActive = () => pool.query(
       `SELECT *
          FROM instant_ride_requests
         WHERE rider_id = $1
@@ -655,6 +656,24 @@ router.get(
         LIMIT 1`,
       [req.user.id]
     );
+
+    let result = await findActive();
+
+    // The rider app polls this every few seconds while searching, so it is
+    // also what keeps the search going: when the last batch of offers has
+    // lapsed with no taker, offer the trip to the next nearest drivers in a
+    // wider radius. A failure here must never break the rider's status.
+    if (result.rows[0] && result.rows[0].status !== "matched") {
+      try {
+        await redispatchOpenRequest(result.rows[0]);
+        result = await findActive();
+      } catch (error) {
+        console.error(
+          `ArrivoExpress re-dispatch failed for request #${result.rows[0].id}:`,
+          error.message
+        );
+      }
+    }
 
     res.json({
       enabled: true,
