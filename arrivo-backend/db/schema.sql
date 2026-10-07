@@ -563,6 +563,163 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status, created_at);
 
+
+-- ── Support-assisted bookings ──
+--
+-- A trusted RideArrivo Workspace employee may create a booking for an
+-- existing Arrivo rider without ever receiving or impersonating the
+-- rider's password/JWT.
+--
+-- actor_employee_id is the Workspace employee UUID.
+-- rider_id is the Arrivo users.id INTEGER.
+--
+-- actor_request_id is the signed Workspace actor JWT jti and provides
+-- a second replay boundary in addition to the client idempotency key.
+
+CREATE TABLE IF NOT EXISTS support_assisted_bookings (
+  id SERIAL PRIMARY KEY,
+  -- Bound only after verified customer payment creates the real ride.
+  ride_id INTEGER UNIQUE
+    REFERENCES rides(id) ON DELETE RESTRICT,
+  rider_id INTEGER NOT NULL
+    REFERENCES users(id) ON DELETE RESTRICT,
+  actor_employee_id UUID NOT NULL,
+  actor_role TEXT NOT NULL
+    CHECK (actor_role IN ('support','admin')),
+  actor_request_id UUID NOT NULL UNIQUE,
+  idempotency_key UUID NOT NULL UNIQUE,
+  request_fingerprint TEXT NOT NULL
+    CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+  source TEXT NOT NULL DEFAULT 'support_assisted'
+    CHECK (source = 'support_assisted'),
+  payment_method TEXT NOT NULL DEFAULT 'card'
+    CHECK (payment_method = 'card'),
+  payment_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      payment_status IN (
+        'pending',
+        'paid',
+        'failed',
+        'cancelled'
+      )
+    ),
+  -- Set once a Paystack payment link has been generated for this booking
+  -- (see POST /:id/payment-link). NULL until then. UNIQUE for the same
+  -- reason payment_reference is unique everywhere else in this schema --
+  -- the webhook looks a payment up by reference alone, so two rows must
+  -- never be able to share one.
+  payment_reference TEXT UNIQUE,
+  -- Stored alongside payment_reference so the same link can be re-sent
+  -- (customer lost the WhatsApp message, wants it emailed too) without
+  -- ever calling Paystack /transaction/initialize a second time for the
+  -- same booking. Paystack only returns authorization_url at initialize
+  -- time -- there's no later "look up the URL for this reference" call --
+  -- so if this weren't stored, a resend would have to mint a second,
+  -- different reference, and a customer who still pays via the FIRST
+  -- (now-orphaned) link would have a real, successful charge that this
+  -- system could never bind back to a ride.
+  payment_link_url TEXT,
+  payment_link_sent_at TIMESTAMPTZ,
+  payment_status_at_creation TEXT NOT NULL DEFAULT 'pending'
+    CHECK (payment_status_at_creation = 'pending'),
+  booking_request JSONB NOT NULL
+    CHECK (jsonb_typeof(booking_request) = 'object'),
+  fare_naira INTEGER NOT NULL
+    CHECK (fare_naira > 0),
+  quoted_ngn_per_usd NUMERIC(14,4) NOT NULL
+    CHECK (quoted_ngn_per_usd > 0),
+  quoted_usd_amount NUMERIC(14,2) NOT NULL
+    CHECK (quoted_usd_amount >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_rider
+ON support_assisted_bookings(
+  rider_id,
+  created_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_actor
+ON support_assisted_bookings(
+  actor_employee_id,
+  created_at
+);
+
+
+-- Widen support_assisted_bookings to also accept a customer's own
+-- self-service submission (see POST /api/public/booking-requests), not
+-- just a staff-created one. A public submission has no Workspace actor at
+-- all -- there's no employee behind it to sign a token -- so
+-- actor_employee_id/actor_role/actor_request_id move from NOT NULL
+-- (staff-required) to nullable. The CHECK below is the real guardrail:
+-- it still forces every staff-attributed row to carry full actor
+-- identity exactly as before, and separately forces every public row to
+-- carry NONE of it, so a public submission can never forge staff
+-- attribution and a staff submission can never accidentally lose its
+-- audit trail. ALTER TABLE, not a CREATE TABLE edit, because by the time
+-- this change ships the table may already be live with the old,
+-- staff-only shape -- every statement here is safe to re-run.
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_employee_id DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_role DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_request_id DROP NOT NULL;
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_role_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_role_check
+  CHECK (actor_role IS NULL OR actor_role IN ('support', 'admin'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_source_check
+  CHECK (source IN ('support_assisted', 'public_self_service'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_matches_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_matches_source_check
+  CHECK (
+    (
+      source = 'support_assisted'
+      AND actor_employee_id IS NOT NULL
+      AND actor_role IS NOT NULL
+      AND actor_request_id IS NOT NULL
+    )
+    OR
+    (
+      source = 'public_self_service'
+      AND actor_employee_id IS NULL
+      AND actor_role IS NULL
+      AND actor_request_id IS NULL
+    )
+  );
+
+-- Free-text note on how the customer got this link -- "instagram DM",
+-- "a friend", a support agent's name typed in on the form. Never
+-- validated against anything; it exists only so the team can later see
+-- which channel is actually driving completed bookings. NULL for every
+-- staff-created row, since staff attribution already covers that case.
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via TEXT;
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via_ip TEXT;
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_source
+ON support_assisted_bookings(
+  source,
+  created_at
+);
+
+
+
 -- ── On-the-Go requests ──
 -- The quick path for someone who needs a car within 12 hours and hasn't got
 -- time for the full Plan Route flow. Only the essentials, no vehicle choice,

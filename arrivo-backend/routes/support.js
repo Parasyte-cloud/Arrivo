@@ -1,9 +1,21 @@
 const express = require("express");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
+const { requireWorkspaceActor } = require("../middleware/workspaceActorAuth");
+const { computeFare, MAX_FULL_DAY_COUNT } = require("../services/fare");
+const { getNgnPerUsd } = require("../services/fx");
+const { initializePaystackTransaction } = require("./payments");
+const { sendWhatsAppMessage } = require("../services/whatsapp");
+const { sendPasswordResetEmail } = require("../services/email");
 
 const router = express.Router();
+
+// Matches routes/auth.js's SALT_ROUNDS -- same hashing cost everywhere a
+// password gets created in this codebase.
+const SALT_ROUNDS = 10;
 
 const TYPES = ["complaint", "inquiry", "support"];
 const STATUSES = ["open", "closed"];
@@ -84,6 +96,706 @@ router.post("/tickets", requireAuth, submitLimiter, async (req, res) => {
   );
   res.status(201).json({ ticket: result.rows[0] });
 });
+
+
+// POST /api/support/assisted-bookings
+//
+// Creates only a durable pre-payment request. It does NOT create a ride,
+// mark a ride paid, dispatch a driver or call the payment provider.
+// The real ride is bound only after a later verified customer-payment path.
+router.post(
+  "/assisted-bookings",
+  requireAuth,
+  requireAnyRole(["admin", "support"]),
+  requireWorkspaceActor,
+  async (req, res) => {
+    const workspaceActor = req.workspaceActor;
+
+    if (
+      !["support", "admin"].includes(
+        workspaceActor.role
+      )
+    ) {
+      return res.status(403).json({
+        error:
+          "Workspace actor is not authorised for assisted booking.",
+      });
+    }
+
+    const actorEmployeeId = workspaceActor.employeeId;
+    const payment_status = "pending";
+    const source = "support_assisted";
+
+    const body = req.body || {};
+
+    const idempotencyKey =
+      String(body.idempotencyKey || "").trim();
+
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!UUID_RE.test(idempotencyKey)) {
+      return res.status(400).json({
+        error: "idempotencyKey must be a UUID.",
+      });
+    }
+
+    let riderResult;
+
+    if (
+      body.riderId !== undefined &&
+      body.riderId !== null &&
+      body.riderId !== ""
+    ) {
+      const riderId = Number(body.riderId);
+
+      if (
+        !Number.isInteger(riderId) ||
+        riderId < 1 ||
+        riderId > 2147483647
+      ) {
+        return res.status(400).json({
+          error: "riderId must be a valid whole number.",
+        });
+      }
+
+      riderResult = await pool.query(
+        `SELECT id, name, email, phone
+         FROM users
+         WHERE id = $1
+           AND role = 'rider'`,
+        [riderId]
+      );
+    } else {
+      const email =
+        String(body.email || "")
+          .trim()
+          .toLowerCase();
+
+      const phone =
+        String(body.phone || "").trim();
+
+      if (!email && !phone) {
+        return res.status(400).json({
+          error:
+            "Provide riderId, email or phone to identify the rider.",
+        });
+      }
+
+      riderResult = await pool.query(
+        `SELECT id, name, email, phone
+         FROM users
+         WHERE role = 'rider'
+           AND (
+             ($1 <> '' AND lower(email) = $1)
+             OR
+             ($2 <> '' AND phone = $2)
+           )
+         ORDER BY id
+         LIMIT 3`,
+        [email, phone]
+      );
+
+      if (riderResult.rows.length > 1) {
+        return res.status(409).json({
+          error:
+            "Customer lookup is ambiguous. Select the rider by riderId.",
+        });
+      }
+    }
+
+    let rider = riderResult.rows[0];
+
+    // A phone-in customer with no RideArrivo account at all -- support's
+    // own booking panel used to have no way to move past this except
+    // telling the caller to go install the app first. Opt-in only
+    // (createAccountIfMissing), and only reachable once the lookup above
+    // has already come back empty, so this can never quietly create a
+    // second account next to one that already matched. The account gets
+    // a random password nobody -- not even the agent on the call -- ever
+    // sees or speaks aloud; the customer sets their own via the same
+    // password-reset email/link POST /api/auth/forgot-password already
+    // sends, on their own time. Nothing here blocks the booking that
+    // follows on that reset happening.
+    if (!rider && body.createAccountIfMissing === true) {
+      const newAccountName = String(body.name || "").trim();
+      const newAccountEmail = String(body.email || "").trim().toLowerCase();
+      const newAccountPhone = String(body.phone || "").trim();
+
+      if (!newAccountName) {
+        return res.status(400).json({
+          error: "name is required to create an account for this caller.",
+        });
+      }
+      if (!newAccountEmail) {
+        return res.status(400).json({
+          error: "email is required to create an account for this caller.",
+        });
+      }
+      if (body.customerAgreedToTerms !== true) {
+        return res.status(400).json({
+          error:
+            "customerAgreedToTerms must be confirmed before creating an account on a caller's behalf.",
+        });
+      }
+
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const passwordHash = bcrypt.hashSync(randomPassword, SALT_ROUNDS);
+
+      try {
+        const created = await pool.query(
+          `INSERT INTO users (name, email, phone, password_hash, role, agreed_to_terms)
+           VALUES ($1, $2, $3, $4, 'rider', true)
+           RETURNING id, name, email, phone`,
+          [newAccountName, newAccountEmail, newAccountPhone || null, passwordHash]
+        );
+        rider = created.rows[0];
+      } catch (error) {
+        if (error?.code === "23505") {
+          return res.status(409).json({
+            error: "An account with that email already exists -- look the caller up by email instead.",
+          });
+        }
+        throw error;
+      }
+
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
+      await pool.query(
+        "UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
+        [resetToken, resetExpires, rider.id]
+      );
+      const resetUrl =
+        `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
+      sendPasswordResetEmail(rider.email, resetUrl).catch(e =>
+        console.error("Assisted-booking new-account reset email failed:", e.message)
+      );
+    }
+
+    if (!rider) {
+      return res.status(404).json({
+        error: "No matching rider account was found.",
+      });
+    }
+
+    const bookingType =
+      String(body.bookingType || "one_way")
+        .trim()
+        .toLowerCase();
+
+    const vehicleType =
+      String(body.vehicleType || "")
+        .trim()
+        .toLowerCase();
+
+    const pickupAddress =
+      String(body.pickupAddress || "").trim();
+
+    const destinationAddress =
+      String(body.destinationAddress || "").trim();
+
+    const flightNumber =
+      String(body.flightNumber || "").trim() ||
+      null;
+
+    const adults =
+      Number(body.adults ?? 1);
+
+    const children =
+      Number(body.children ?? 0);
+
+    const durationDays =
+      Number(body.durationDays ?? 1);
+
+    const fleetSize =
+      Number(body.fleetSize ?? 0);
+
+    const securityEscort =
+      Boolean(body.securityEscort);
+
+    const luxury =
+      Boolean(body.luxury);
+
+    const agreedCancellationPolicy =
+      body.agreedCancellationPolicy === true;
+
+    const scheduledPickupAt =
+      body.scheduledPickupAt
+        ? String(body.scheduledPickupAt)
+        : null;
+
+    const allowedBookingTypes = [
+      "one_way",
+      "dropoff",
+      "full_day",
+      "full_week",
+      "full_month",
+    ];
+
+    const allowedVehicleTypes = [
+      "sedan",
+      "suv",
+      "truck",
+      "pickup",
+    ];
+
+    if (!allowedBookingTypes.includes(bookingType)) {
+      return res.status(400).json({
+        error:
+          `bookingType must be one of: ${allowedBookingTypes.join(", ")}`,
+      });
+    }
+
+    if (!allowedVehicleTypes.includes(vehicleType)) {
+      return res.status(400).json({
+        error:
+          `vehicleType must be one of: ${allowedVehicleTypes.join(", ")}`,
+      });
+    }
+
+    if (!pickupAddress) {
+      return res.status(400).json({
+        error: "pickupAddress is required.",
+      });
+    }
+
+    const oneWayStyle =
+      bookingType === "one_way" ||
+      bookingType === "dropoff";
+
+    if (oneWayStyle && !destinationAddress) {
+      return res.status(400).json({
+        error:
+          "destinationAddress is required for this booking type.",
+      });
+    }
+
+    if (
+      !Number.isInteger(adults) ||
+      adults < 1 ||
+      adults > 100
+    ) {
+      return res.status(400).json({
+        error:
+          "adults must be a whole number from 1 to 100.",
+      });
+    }
+
+    if (
+      !Number.isInteger(children) ||
+      children < 0 ||
+      children > 100
+    ) {
+      return res.status(400).json({
+        error:
+          "children must be a whole number from 0 to 100.",
+      });
+    }
+
+    if (
+      bookingType === "full_day" &&
+      (
+        !Number.isInteger(durationDays) ||
+        durationDays < 1 ||
+        durationDays > MAX_FULL_DAY_COUNT
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          `durationDays must be from 1 to ${MAX_FULL_DAY_COUNT}.`,
+      });
+    }
+
+    if (![0, 2, 3].includes(fleetSize)) {
+      return res.status(400).json({
+        error: "fleetSize must be 0, 2, or 3.",
+      });
+    }
+
+    if (
+      bookingType === "one_way" &&
+      !flightNumber
+    ) {
+      return res.status(400).json({
+        error:
+          "flightNumber is required for one-way bookings.",
+      });
+    }
+
+    if (
+      bookingType === "dropoff" &&
+      !scheduledPickupAt
+    ) {
+      return res.status(400).json({
+        error:
+          "scheduledPickupAt is required for airport drop-off bookings.",
+      });
+    }
+
+    if (scheduledPickupAt) {
+      const parsed =
+        new Date(scheduledPickupAt);
+
+      if (
+        Number.isNaN(parsed.getTime()) ||
+        parsed.getTime() < Date.now()
+      ) {
+        return res.status(400).json({
+          error:
+            "scheduledPickupAt must be a valid future date/time.",
+        });
+      }
+    }
+
+    if (!agreedCancellationPolicy) {
+      return res.status(400).json({
+        error:
+          "Customer agreement to the Cancellation & Refund Policy is required.",
+      });
+    }
+
+    const passengerCount =
+      adults + children;
+
+    const normalizedRequest = {
+      bookingType,
+      pickupAddress,
+      destinationAddress:
+        destinationAddress || null,
+      flightNumber,
+      vehicleType,
+      durationDays,
+      adults,
+      children,
+      passengerCount,
+      securityEscort,
+      fleetSize,
+      luxury,
+      scheduledPickupAt,
+      agreedCancellationPolicy: true,
+    };
+
+    const requestFingerprint =
+      crypto
+        .createHash("sha256")
+        .update(
+          JSON.stringify({
+            riderId: rider.id,
+            ...normalizedRequest,
+          })
+        )
+        .digest("hex");
+
+    const existing =
+      await pool.query(
+        `SELECT *
+         FROM support_assisted_bookings
+         WHERE idempotency_key = $1`,
+        [idempotencyKey]
+      );
+
+    if (existing.rows[0]) {
+      const prior = existing.rows[0];
+
+      if (
+        prior.actor_employee_id !==
+          actorEmployeeId ||
+        prior.request_fingerprint !==
+          requestFingerprint
+      ) {
+        return res.status(409).json({
+          error:
+            "That idempotency key is already bound to another assisted booking.",
+        });
+      }
+
+      return res.status(200).json({
+        assistedBooking: {
+          id: prior.id,
+          riderId: prior.rider_id,
+          fareNaira: prior.fare_naira,
+          paymentStatus:
+            prior.payment_status,
+          rideId: prior.ride_id,
+          requiresCustomerPayment:
+            prior.payment_status !== "paid",
+        },
+      });
+    }
+
+    const ngnPerUsd =
+      await getNgnPerUsd();
+
+    let fareNaira;
+
+    try {
+      fareNaira =
+        await computeFare({
+          bookingType,
+          pickupAddress,
+          destinationAddress:
+            destinationAddress || null,
+          vehicleType,
+          securityEscort,
+          fleetSize,
+          luxury,
+          ngnPerUsd,
+          durationDays,
+          passengerCount,
+        });
+    } catch (error) {
+      return res.status(400).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to calculate the assisted-booking fare.",
+      });
+    }
+
+    const quotedUsdAmount =
+      Number(
+        (
+          Number(fareNaira) /
+          Number(ngnPerUsd)
+        ).toFixed(2)
+      );
+
+    try {
+      const inserted =
+        await pool.query(
+          `INSERT INTO support_assisted_bookings (
+             rider_id,
+             actor_employee_id,
+             actor_role,
+             actor_request_id,
+             idempotency_key,
+             request_fingerprint,
+             source,
+             payment_method,
+             payment_status,
+             payment_status_at_creation,
+             booking_request,
+             fare_naira,
+             quoted_ngn_per_usd,
+             quoted_usd_amount
+           )
+           VALUES (
+             $1,$2,$3,$4,$5,$6,$7,
+             'card',$8,'pending',
+             $9::jsonb,$10,$11,$12
+           )
+           RETURNING *`,
+          [
+            rider.id,
+            actorEmployeeId,
+            workspaceActor.role,
+            workspaceActor.requestId,
+            idempotencyKey,
+            requestFingerprint,
+            source,
+            payment_status,
+            JSON.stringify(
+              normalizedRequest
+            ),
+            fareNaira,
+            ngnPerUsd,
+            quotedUsdAmount,
+          ]
+        );
+
+      const booking =
+        inserted.rows[0];
+
+      return res.status(201).json({
+        assistedBooking: {
+          id: booking.id,
+          riderId: booking.rider_id,
+          fareNaira:
+            booking.fare_naira,
+          quotedUsdAmount:
+            booking.quoted_usd_amount,
+          paymentStatus:
+            booking.payment_status,
+          rideId: booking.ride_id,
+          requiresCustomerPayment: true,
+        },
+      });
+    } catch (error) {
+      if (error?.code === "23505") {
+        const raced =
+          await pool.query(
+            `SELECT *
+             FROM support_assisted_bookings
+             WHERE idempotency_key = $1`,
+            [idempotencyKey]
+          );
+
+        const prior =
+          raced.rows[0];
+
+        if (
+          prior &&
+          prior.actor_employee_id ===
+            actorEmployeeId &&
+          prior.request_fingerprint ===
+            requestFingerprint
+        ) {
+          return res.status(200).json({
+            assistedBooking: {
+              id: prior.id,
+              riderId:
+                prior.rider_id,
+              fareNaira:
+                prior.fare_naira,
+              paymentStatus:
+                prior.payment_status,
+              rideId:
+                prior.ride_id,
+              requiresCustomerPayment:
+                prior.payment_status !==
+                "paid",
+            },
+          });
+        }
+
+        return res.status(409).json({
+          error:
+            "This assisted-booking request has already been used.",
+        });
+      }
+
+      throw error;
+    }
+  }
+);
+
+// POST /api/support/assisted-bookings/:id/payment-link
+//
+// Generates (or re-sends) a Paystack hosted payment link for a pending
+// assisted booking, and sends it to the rider over WhatsApp. Governed the
+// same way as creating the assisted booking itself: requireAuth (a real
+// backend session), requireAnyRole(["admin","support"]), and a signed
+// Workspace actor token -- this can only be triggered by a verified
+// RideArrivo Workspace employee, same as the create step.
+//
+// This does NOT create a ride. It only starts a Paystack transaction for
+// the fare already locked at creation time and texts the resulting link
+// to the rider. The ride is created later, when Paystack's webhook
+// confirms the payment actually succeeded (routes/payments.js) -- exactly
+// the same "never trust the client, only a verified payment confirms
+// anything" rule every other payment path in this codebase follows.
+//
+// Deliberately scoped to fleet_size = 0 for now: a fleet-escort convoy
+// needs createFleetCompanions() (routes/rides.js) run in the same
+// transaction as the ride insert, which the webhook-driven creation path
+// added alongside this route does not yet call. Rather than silently
+// create a primary ride with no companions for a fleet-escort request,
+// this route refuses to issue a payment link for one at all until that's
+// added.
+router.post(
+  "/assisted-bookings/:id/payment-link",
+  requireAuth,
+  requireAnyRole(["admin", "support"]),
+  requireWorkspaceActor,
+  async (req, res) => {
+    const workspaceActor = req.workspaceActor;
+
+    if (!["support", "admin"].includes(workspaceActor.role)) {
+      return res.status(403).json({
+        error: "Workspace actor is not authorised for assisted booking.",
+      });
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+      return res.status(400).json({ error: "That assisted-booking id is not valid." });
+    }
+
+    const result = await pool.query(
+      `SELECT support_assisted_bookings.*, users.email, users.phone, users.name
+       FROM support_assisted_bookings
+       JOIN users ON users.id = support_assisted_bookings.rider_id
+       WHERE support_assisted_bookings.id = $1`,
+      [id]
+    );
+    const booking = result.rows[0];
+    if (!booking) {
+      return res.status(404).json({ error: "No assisted booking with that id." });
+    }
+    if (booking.ride_id) {
+      return res.status(400).json({ error: "This assisted booking has already been paid and turned into a ride." });
+    }
+    if (booking.payment_status !== "pending") {
+      return res.status(400).json({ error: `This assisted booking is '${booking.payment_status}', not pending.` });
+    }
+    const fleetSize = Number(booking.booking_request?.fleetSize) || 0;
+    if (fleetSize > 0) {
+      return res.status(400).json({
+        error: "Fleet-escort assisted bookings aren't supported yet -- please book this one through the app/website instead.",
+      });
+    }
+    if (!booking.email) {
+      return res.status(400).json({ error: "This rider has no email on file -- Paystack needs one to start a payment." });
+    }
+
+    // Already have a link for this booking -- resend the SAME one rather
+    // than minting a second Paystack transaction. See the payment_link_url
+    // column comment in db/schema.sql for why: Paystack never lets you
+    // fetch a transaction's authorization_url again after initialize, so a
+    // second initialize here would produce a second, different reference,
+    // and a customer who still pays via the first (now orphaned) link
+    // would have a real charge this system could never bind to a ride.
+    let authorizationUrl = booking.payment_link_url;
+    let reference = booking.payment_reference;
+
+    if (!authorizationUrl) {
+      let initialized;
+      try {
+        initialized = await initializePaystackTransaction({
+          email: booking.email,
+          amountNaira: Number(booking.fare_naira),
+        });
+      } catch (err) {
+        console.error("Assisted-booking payment-link initialize failed:", err.response?.data || err.message);
+        return res.status(502).json({ error: "Could not start this payment. Please try again." });
+      }
+      authorizationUrl = initialized.authorizationUrl;
+      reference = initialized.reference;
+
+      await pool.query(
+        `UPDATE support_assisted_bookings
+         SET payment_reference = $1, payment_link_url = $2, payment_link_sent_at = now(), updated_at = now()
+         WHERE id = $3`,
+        [reference, authorizationUrl, id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE support_assisted_bookings SET payment_link_sent_at = now(), updated_at = now() WHERE id = $1`,
+        [id]
+      );
+    }
+
+    let whatsappSent = false;
+    if (booking.phone) {
+      const fareDisplay = "NGN " + Number(booking.fare_naira).toLocaleString("en-NG");
+      const message =
+        `Hi ${booking.name || "there"}, here's your RideArrivo payment link for ${fareDisplay}: ${authorizationUrl}
+
+` +
+        `Your ride is booked as soon as this is paid. If you didn't request this, please ignore.`;
+      const sendResult = await sendWhatsAppMessage(booking.phone, message);
+      whatsappSent = !!sendResult?.ok;
+    }
+
+    res.json({
+      assistedBookingId: id,
+      authorizationUrl,
+      reference,
+      fareNaira: Number(booking.fare_naira),
+      whatsappSent,
+    });
+  }
+);
 
 // GET /api/support/tickets. Ops only, newest first.
 // Nothing in the admin dashboard reads this yet. It's here so tickets aren't
