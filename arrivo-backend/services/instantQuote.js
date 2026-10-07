@@ -107,9 +107,9 @@ function validateInstantTripInput(input = {}) {
   };
 }
 
-async function quoteInstantRide(input) {
-  const trip = validateInstantTripInput(input);
-
+// One Google Distance Matrix lookup. Shared by the single-tier quote and the
+// all-tier quote so a rider comparing vehicles costs one routing call, not four.
+async function fetchRoute(trip) {
   let route;
 
   try {
@@ -146,6 +146,11 @@ async function quoteInstantRide(input) {
     );
   }
 
+  return { distanceKm, durationMin };
+}
+
+// Pure pricing step: a validated trip plus a route in, a quote out.
+function buildQuote(trip, { distanceKm, durationMin }) {
   let fare;
 
   try {
@@ -192,8 +197,36 @@ async function quoteInstantRide(input) {
   };
 }
 
+async function quoteInstantRide(input) {
+  const trip = validateInstantTripInput(input);
+  const route = await fetchRoute(trip);
+  return buildQuote(trip, route);
+}
+
+// Prices the same trip for every vehicle tier from ONE route lookup, in the
+// catalogue's display order. Each entry is a complete quote, identical in
+// shape to what POST /quote returns, so a client can book straight from it.
+async function quoteAllTiers(input = {}) {
+  const baseTrip = validateInstantTripInput({
+    ...input,
+    tier: listTiers()[0].key,
+  });
+  const route = await fetchRoute(baseTrip);
+
+  return {
+    route,
+    quotes: listTiers().map((tier) =>
+      buildQuote(
+        validateInstantTripInput({ ...input, tier: tier.key }),
+        route
+      )
+    ),
+  };
+}
+
 module.exports = {
   InstantQuoteError,
   validateInstantTripInput,
   quoteInstantRide,
+  quoteAllTiers,
 };

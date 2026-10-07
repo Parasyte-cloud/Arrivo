@@ -26,8 +26,10 @@ const {
 } = require("../services/instantDispatch");
 const {
   quoteInstantRide,
+  quoteAllTiers,
   InstantQuoteError,
 } = require("../services/instantQuote");
+const { estimateNearbyDrivers } = require("../services/instantNearby");
 const {
   InstantWalletError,
   createWalletFundedRequest,
@@ -208,6 +210,53 @@ router.post(
       return res.json({
         quote,
       });
+    } catch (error) {
+      if (error instanceof InstantQuoteError) {
+        return res.status(error.status).json({
+          error: error.message,
+          code: error.code,
+        });
+      }
+
+      throw error;
+    }
+  }
+);
+
+// POST /api/instant-rides/quote/all
+//
+// The "choose your ride" screen: the fare for EVERY vehicle tier plus how many
+// drivers are near the pickup and roughly how soon one could arrive, from a
+// single request and a single routing lookup. Each quote is complete (same
+// shape as POST /quote), so the app can book from the one the rider taps.
+// The driver availability part is advisory: if it fails the fares still come
+// back, with availability null, rather than blocking the rider from booking.
+router.post(
+  "/quote/all",
+  requireAuth,
+  requireRole("rider"),
+  quoteLimiter,
+  async (req, res) => {
+    if (!isArrivoNowEnabled()) {
+      return res.status(503).json({
+        error: "ArrivoExpress is not available yet.",
+      });
+    }
+
+    try {
+      const { route, quotes } = await quoteAllTiers(req.body);
+
+      let availability = null;
+      try {
+        availability = await estimateNearbyDrivers({
+          lat: quotes[0].pickupLat,
+          lng: quotes[0].pickupLng,
+        });
+      } catch (error) {
+        console.error("ArrivoExpress availability lookup failed:", error.message);
+      }
+
+      return res.json({ route, quotes, availability });
     } catch (error) {
       if (error instanceof InstantQuoteError) {
         return res.status(error.status).json({
