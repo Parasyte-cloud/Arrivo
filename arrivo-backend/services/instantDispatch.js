@@ -197,6 +197,38 @@ async function findEligibleDrivers(
   return result.rows;
 }
 
+// A request used to get exactly one batch of offers, at creation, inside a
+// 3 km radius. If nobody was that close (or the first three drivers ignored
+// it) nothing ever went out again, and the rider sat on "finding a driver"
+// until the request expired and was refunded. Re-dispatching while the
+// request is still open fixes that: every REDISPATCH_STEP_SECONDS the search
+// radius doubles (3, 6, 12, then capped at MAX_REDISPATCH_RADIUS_KM) and the
+// next nearest drivers are offered the trip. Drivers who already had an
+// offer for this request are never offered it again (see findEligibleDrivers).
+const REDISPATCH_STEP_SECONDS = 40;
+const MAX_REDISPATCH_RADIUS_KM = 25;
+
+function radiusForRequestAge(ageSeconds, initialRadiusKm = getInstantDispatchConfig().initialRadiusKm) {
+  const age = Number.isFinite(Number(ageSeconds)) ? Math.max(0, Number(ageSeconds)) : 0;
+  const steps = Math.floor(age / REDISPATCH_STEP_SECONDS);
+  return Math.min(MAX_REDISPATCH_RADIUS_KM, initialRadiusKm * Math.pow(2, steps));
+}
+
+// Safe to call as often as the rider app polls: createOfferBatch returns
+// "already_offering" without creating anything while a live offer exists,
+// and does nothing for requests that are matched, cancelled or expired.
+async function redispatchOpenRequest(request) {
+  if (!request || (request.status !== "searching" && request.status !== "offering")) {
+    return null;
+  }
+
+  const ageSeconds = (Date.now() - new Date(request.created_at).getTime()) / 1000;
+
+  return createOfferBatch(request.id, {
+    radiusKm: radiusForRequestAge(ageSeconds),
+  });
+}
+
 async function createOfferBatch(requestId, options = {}) {
   const config = getInstantDispatchConfig();
 
@@ -549,6 +581,9 @@ module.exports = {
   expireStaleOffers,
   findEligibleDrivers,
   createOfferBatch,
+  redispatchOpenRequest,
+  radiusForRequestAge,
+  REDISPATCH_STEP_SECONDS,
   listDriverOffers,
   declineOffer,
 };
