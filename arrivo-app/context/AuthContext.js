@@ -24,7 +24,7 @@ async function request(path, options = {}) {
     headers: { "Content-Type": "application/json", ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   return data;
 }
 
@@ -47,8 +47,13 @@ export function AuthProvider({ children }) {
           setAppLanguage(me.preferred_language);
         }
       } catch (e) {
-        // Saved token was invalid/expired — clear it silently and fall back to login.
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        // Only a definite 401/403 means the saved token is no good. A network
+        // failure or a server error says nothing about the token, so keep it:
+        // opening the app with no signal used to delete the session and force a
+        // fresh login. Either way this launch lands on the login screen.
+        if (e && (e.status === 401 || e.status === 403)) {
+          await SecureStore.deleteItemAsync(TOKEN_KEY);
+        }
       } finally {
         setInitializing(false);
       }
