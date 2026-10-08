@@ -13,6 +13,9 @@ const axios = require("axios");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 process.env.PAYSTACK_SECRET_KEY = "sk_test_stub_for_tests";
+// Small limits so the rate-limit tests below can reach them (read at require time).
+process.env.PAYMENT_INIT_RATE_LIMIT = "5";
+process.env.PAYMENT_VERIFY_RATE_LIMIT = "60";
 
 const express = require("express");
 require("express-async-errors");
@@ -213,16 +216,43 @@ function rideBody(overrides) {
     assert.strictEqual(Number(ok.body.ride.fare_naira), fare);
   });
 
-  await test("one payment cannot book two rides", async () => {
+  await test("a retry of the same card booking returns the same ride, not an error", async () => {
     const rider = await makeUser("card-rider3");
     const fare = await fareFor(rider);
     transactions.set(`twice-${stamp}`, { amount: fare * 100 });
     const first = await call("/api/rides", { method: "POST", token: rider.token, body: rideBody({ paymentMethod: "card", paymentReference: `twice-${stamp}` }) });
     assert.strictEqual(first.status, 201, JSON.stringify(first.body));
     const second = await call("/api/rides", { method: "POST", token: rider.token, body: rideBody({ paymentMethod: "card", paymentReference: `twice-${stamp}` }) });
-    assert.strictEqual(second.status, 400, JSON.stringify(second.body));
+    assert.strictEqual(second.status, 200, JSON.stringify(second.body));
+    assert.strictEqual(second.body.replayed, true);
+    assert.strictEqual(second.body.ride.id, first.body.ride.id);
     const n = await pool.query("SELECT count(*)::int n FROM rides WHERE rider_id = $1", [rider.id]);
     assert.strictEqual(n.rows[0].n, 1);
+  });
+
+  await test("simultaneous retries of one card booking create exactly one ride", async () => {
+    const rider = await makeUser("card-rider3b");
+    const fare = await fareFor(rider);
+    transactions.set(`race-${stamp}`, { amount: fare * 100 });
+    const body = rideBody({ paymentMethod: "card", paymentReference: `race-${stamp}` });
+    const results = await Promise.all([1, 2, 3].map(() => call("/api/rides", { method: "POST", token: rider.token, body })));
+    for (const r of results) assert.ok(r.status === 200 || r.status === 201, JSON.stringify(r.body));
+    assert.strictEqual(new Set(results.map((r) => r.body.ride.id)).size, 1);
+    const n = await pool.query("SELECT count(*)::int n FROM rides WHERE rider_id = $1", [rider.id]);
+    assert.strictEqual(n.rows[0].n, 1);
+  });
+
+  await test("another rider cannot reuse someone else's paid reference", async () => {
+    const owner = await makeUser("card-rider3c");
+    const thief = await makeUser("card-rider3d");
+    const fare = await fareFor(owner);
+    transactions.set(`steal-${stamp}`, { amount: fare * 100 });
+    const first = await call("/api/rides", { method: "POST", token: owner.token, body: rideBody({ paymentMethod: "card", paymentReference: `steal-${stamp}` }) });
+    assert.strictEqual(first.status, 201, JSON.stringify(first.body));
+    const second = await call("/api/rides", { method: "POST", token: thief.token, body: rideBody({ paymentMethod: "card", paymentReference: `steal-${stamp}` }) });
+    assert.strictEqual(second.status, 400, JSON.stringify(second.body));
+    const n = await pool.query("SELECT count(*)::int n FROM rides WHERE rider_id = $1", [thief.id]);
+    assert.strictEqual(n.rows[0].n, 0);
   });
 
   await test("a payment in the wrong currency does not book a ride", async () => {
@@ -299,6 +329,30 @@ function rideBody(overrides) {
     } finally {
       process.env.PAYSTACK_SECRET_KEY = keep;
     }
+  });
+
+  console.log("Payment route rate limits:");
+
+  await test("/initialize is rate limited per IP and answers { error }", async () => {
+    const statuses = [];
+    let last;
+    for (let i = 0; i < 7; i++) {
+      last = await call("/api/payments/initialize", { method: "POST", body: {} });
+      statuses.push(last.status);
+    }
+    assert.ok(statuses.slice(0, 5).every((x) => x !== 429), statuses.join());
+    assert.strictEqual(statuses[6], 429, statuses.join());
+    assert.ok(last.body.error);
+  });
+
+  await test("/verify is rate limited per IP", async () => {
+    let limited = null;
+    for (let i = 0; i < 70 && !limited; i++) {
+      const r = await call(`/api/payments/verify/rl-${stamp}-${i}`);
+      if (r.status === 429) limited = r;
+    }
+    assert.ok(limited, "never rate limited");
+    assert.ok(limited.body.error);
   });
 
   for (const id of [...new Set(made)]) {
