@@ -1,21 +1,32 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 
 const router = express.Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-router.post("/", async (req, res) => {
-  const { email, source } = req.body;
+// Public and unauthenticated, so without a cap anyone could fill the table.
+// Shared carrier addresses are common, hence a generous per-IP allowance.
+const waitlistLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.WAITLIST_RATE_LIMIT) || 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Too many sign-ups from this network. Please try again later." }),
+});
 
-  if (!email || !EMAIL_RE.test(email)) {
+router.post("/", waitlistLimiter, async (req, res) => {
+  const { email, source } = req.body || {};
+
+  if (typeof email !== "string" || email.length > 254 || !EMAIL_RE.test(email)) {
     return res.status(400).json({ error: "Please enter a valid email address." });
   }
 
   const normalized = email.trim().toLowerCase();
 
   try {
-    await pool.query("INSERT INTO waitlist (email, source) VALUES ($1, $2)", [normalized, source || "website"]);
+    await pool.query("INSERT INTO waitlist (email, source) VALUES ($1, $2)", [normalized, typeof source === "string" && source.trim() ? source.trim().slice(0, 64) : "website"]);
     return res.status(201).json({ message: "You're on the list!" });
   } catch (err) {
     if (err.code === "23505") {
