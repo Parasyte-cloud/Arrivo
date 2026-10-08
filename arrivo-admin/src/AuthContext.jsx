@@ -40,11 +40,16 @@ export function AuthProvider({ children }) {
       if (saved) {
         try {
           const { user: me } = await api.getMe(saved);
-          if (!ALLOWED_ROLES.includes(me.role)) throw new Error(ROLE_ERROR);
+          if (!ALLOWED_ROLES.includes(me.role)) throw Object.assign(new Error(ROLE_ERROR), { status: 403 });
           setToken(saved);
           setUser(me);
-        } catch {
-          localStorage.removeItem(TOKEN_KEY);
+        } catch (e) {
+          // A rejected token (401/403) or a non-staff role means the saved
+          // session is no good. A network or server fault says nothing about
+          // the token, so keep it for the next load.
+          if (e && (e.status === 401 || e.status === 403)) {
+            localStorage.removeItem(TOKEN_KEY);
+          }
         }
       }
       setInitializing(false);
