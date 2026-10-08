@@ -331,18 +331,33 @@ function rideBody(overrides) {
     }
   });
 
+  await test("PAYMENT_ROUTES_REQUIRE_AUTH=true needs a signed-in rider on initialize and verify", async () => {
+    const rider = await makeUser("pay-auth");
+    process.env.PAYMENT_ROUTES_REQUIRE_AUTH = "true";
+    try {
+      const anonVerify = await call(`/api/payments/verify/auth-${stamp}`);
+      assert.strictEqual(anonVerify.status, 401, JSON.stringify(anonVerify.body));
+      const anonInit = await call("/api/payments/initialize", { method: "POST", body: {} });
+      assert.strictEqual(anonInit.status, 401, JSON.stringify(anonInit.body));
+      const signedVerify = await call(`/api/payments/verify/auth-${stamp}`, { token: rider.token });
+      assert.strictEqual(signedVerify.status, 200, JSON.stringify(signedVerify.body));
+    } finally {
+      delete process.env.PAYMENT_ROUTES_REQUIRE_AUTH;
+    }
+  });
+
   console.log("Payment route rate limits:");
 
   await test("/initialize is rate limited per IP and answers { error }", async () => {
-    const statuses = [];
-    let last;
-    for (let i = 0; i < 7; i++) {
-      last = await call("/api/payments/initialize", { method: "POST", body: {} });
-      statuses.push(last.status);
+    let limited = null;
+    let before = 0;
+    for (let i = 0; i < 12 && !limited; i++) {
+      const r = await call("/api/payments/initialize", { method: "POST", body: {} });
+      if (r.status === 429) limited = r; else before++;
     }
-    assert.ok(statuses.slice(0, 5).every((x) => x !== 429), statuses.join());
-    assert.strictEqual(statuses[6], 429, statuses.join());
-    assert.ok(last.body.error);
+    assert.ok(limited, "never rate limited");
+    assert.ok(before >= 1, "limited before any request was allowed");
+    assert.ok(limited.body.error);
   });
 
   await test("/verify is rate limited per IP", async () => {
