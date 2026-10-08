@@ -1,5 +1,22 @@
 import { API_BASE_URL } from "./config";
 
+// One place that hears about a rejected sign-in. Any call that carried an
+// Authorization header and got a 401 means the saved session is dead (expired,
+// revoked, or the account was removed), so AuthContext signs the user out
+// cleanly instead of every screen showing its own "Request failed (401)".
+// Calls with no Authorization header (login, signup, forgot-password) never
+// trigger it, so a wrong password does not sign anyone out.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+export function notifyUnauthorized(status, headers) {
+  if (status !== 401 || !unauthorizedHandler) return;
+  const sent = headers && (headers.Authorization || headers.authorization);
+  if (!sent) return;
+  try { unauthorizedHandler(sent); } catch { /* signing out must never throw into a screen */ }
+}
+
 async function request(path, options = {}) {
   // NOTE: headers must be merged, not spread at the top level — any caller
   // that passes its own `headers` (e.g. { Authorization }, which is nearly
@@ -13,7 +30,8 @@ async function request(path, options = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    notifyUnauthorized(res.status, options.headers);
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   }
   return data;
 }
