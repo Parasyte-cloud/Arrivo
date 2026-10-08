@@ -19,7 +19,8 @@
         "NSLocationWhenInUseUsageDescription": "RideArrivo Driver uses your location to match you with nearby pickups.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideArrivo Driver uses your location \u2014 even while the app is in the background \u2014 so riders can see you en route on their live map.",
         "UIBackgroundModes": [
-          "location"
+          "location",
+          "audio"
         ],
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
@@ -30,7 +31,7 @@
           }
         ],
         "NSCameraUsageDescription": "RideArrivo Driver uses your camera to verify your identity and upload vehicle/license photos.",
-        "NSMicrophoneUsageDescription": "RideArrivo Driver uses your microphone for in-app voice and video calls with riders or support."
+        "NSMicrophoneUsageDescription": "RideArrivo Driver uses your microphone for in-app calls with riders or support and, only if you choose to turn it on, to record audio during a trip for safety."
       },
       "entitlements": {
         "aps-environment": "production"
@@ -83,6 +84,13 @@
     "plugins": [
       "expo-font",
       "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": true
+        }
+      ],
       "expo-apple-authentication",
       [
         "expo-splash-screen",
@@ -127,7 +135,7 @@
         "@config-plugins/react-native-webrtc",
         {
           "cameraPermission": "RideArrivo Driver needs camera access so your rider can see you during a video call, if you choose to turn your camera on.",
-          "microphonePermission": "RideArrivo Driver needs microphone access so you can talk with your rider during a call."
+          "microphonePermission": "RideArrivo Driver uses your microphone for in-app calls with riders or support and, only if you choose to turn it on, to record audio during a trip for safety."
         }
       ],
       "@react-native-firebase/app",

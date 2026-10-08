@@ -167,3 +167,20 @@ export function deleteAccount(token, confirmEmail) {
     body: JSON.stringify({ confirmEmail }),
   });
 }
+
+// ── In-trip audio recording (off unless the server says so) ──
+export function getRecordingConfig(token) {
+  return request("/api/recordings/config", authed(token));
+}
+export function startAudioRecording(token, rideId, viaPanic) {
+  return request("/api/recordings/start", authed(token, { method: "POST", body: JSON.stringify({ rideId, consent: true, viaPanic: !!viaPanic }) }));
+}
+export function requestAudioChunk(token, recordingId, seq, contentType, sizeBytes) {
+  return request(`/api/recordings/${recordingId}/chunks`, authed(token, { method: "POST", body: JSON.stringify({ seq, contentType, sizeBytes }) }));
+}
+export function completeAudioChunk(token, recordingId, seq, durationSec) {
+  return request(`/api/recordings/${recordingId}/chunks/${seq}/complete`, authed(token, { method: "POST", body: JSON.stringify({ durationSec }) }));
+}
+export function finishAudioRecording(token, recordingId) {
+  return request(`/api/recordings/${recordingId}/finish`, authed(token, { method: "POST" }));
+}

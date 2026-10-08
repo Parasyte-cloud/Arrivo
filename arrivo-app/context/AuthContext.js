@@ -5,6 +5,7 @@ import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient
 import { API_BASE_URL } from "../services/config";
 import { setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
 import { setAppLanguage } from "../i18n";
+import { stopRideRecording } from "../services/rideAudioRecorder";
 
 const TOKEN_KEY = "arrivo_token";
 const AuthContext = createContext(null);
@@ -135,6 +136,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = async () => {
+    // Safety recording must never outlive the session that consented to it.
+    await stopRideRecording().catch(() => {});
     // Stops this device from being registered for incoming-call push under
     // the account that's signing out — without this, a signed-out phone
     // could keep ringing for calls meant for whoever logs in on it next

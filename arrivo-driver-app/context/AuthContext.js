@@ -6,6 +6,7 @@ import * as api from "../services/api";
 import { setUnauthorizedHandler } from "../services/api";
 import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
 import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
+import { stopRideRecording } from "../services/rideAudioRecorder";
 
 const TOKEN_KEY = "arrivo_driver_token";
 // Caches the last successfully-fetched profile so a cold start with no
@@ -146,6 +147,8 @@ export function AuthProvider({ children }) {
   // already rejected, so that call would only fail with another 401.
   const logout = async (options) => {
     const sessionExpired = !!(options && options.sessionExpired === true);
+    // Safety recording must never outlive the session that consented to it.
+    await stopRideRecording().catch(() => {});
     await stopBackgroundLocation();
     // Tell the backend this driver went offline before dropping the token —
     // otherwise a driver who signs out while online (rather than flipping
