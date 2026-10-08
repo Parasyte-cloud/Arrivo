@@ -9,7 +9,10 @@ const express = require("express");
 require("express-async-errors");
 const cors = require("cors");
 
-const { ready } = require("./db/db"); // resolves once the Postgres schema is initialized
+const { ready, pool } = require("./db/db"); // ready resolves once the Postgres schema is initialized
+const { secureHeaders } = require("./middleware/secureHeaders");
+const { originLock } = require("./middleware/originLock");
+const { createHealthRouter } = require("./routes/health");
 
 const authRouter = require("./routes/auth");
 const ridesRouter = require("./routes/rides");
@@ -47,6 +50,17 @@ const app = express();
 // req.protocol below (routes/auth.js) silently downgrade to http://. Only
 // the first hop is trusted (Render's own edge), not an arbitrary chain.
 app.set("trust proxy", 1);
+
+// Ops layer. Order matters:
+//  1. Do not advertise the framework.
+//  2. Baseline security headers on every response (middleware/secureHeaders.js).
+//  3. Health endpoints before the origin lock and CORS, so Render's health
+//     check and the uptime probes never depend on either (routes/health.js).
+//  4. Origin lock, off unless ORIGIN_LOCK_MODE is set (middleware/originLock.js).
+app.disable("x-powered-by");
+app.use(secureHeaders());
+app.use(createHealthRouter({ query: (sql) => pool.query(sql) }));
+app.use(originLock());
 
 // Locked down 2026-09-17 (security audit follow-up): previously cors() with
 // no options, which reflects any Origin and allows credentials-less
