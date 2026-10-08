@@ -1473,3 +1473,49 @@ BEGIN
     END IF;
   END IF;
 END $$;
+-- ── In-trip audio recording ──
+-- Off unless RIDE_AUDIO_RECORDING_ENABLED=true (see services/audioStorage.js).
+-- One recording per start by one person on one ride; audio arrives in short
+-- chunks so a crash or a lost signal keeps everything uploaded so far.
+CREATE TABLE IF NOT EXISTS ride_audio_recordings (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  consent_at TIMESTAMPTZ NOT NULL,
+  started_via_panic BOOLEAN NOT NULL DEFAULT false,
+  -- A hold (set automatically by a panic alert, or by an admin) stops the
+  -- retention sweep from deleting this recording.
+  hold BOOLEAN NOT NULL DEFAULT false,
+  ended_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_recordings_ride ON ride_audio_recordings(ride_id);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_recordings_retention ON ride_audio_recordings(created_at) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS ride_audio_chunks (
+  id SERIAL PRIMARY KEY,
+  recording_id INTEGER NOT NULL REFERENCES ride_audio_recordings(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  declared_size_bytes INTEGER NOT NULL,
+  size_bytes INTEGER,
+  duration_sec NUMERIC,
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'uploaded'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  uploaded_at TIMESTAMPTZ,
+  UNIQUE (recording_id, seq)
+);
+
+-- Who listened to what. Written before any listening link is issued.
+CREATE TABLE IF NOT EXISTS ride_audio_access_log (
+  id SERIAL PRIMARY KEY,
+  recording_id INTEGER NOT NULL REFERENCES ride_audio_recordings(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT NOT NULL,
+  action TEXT NOT NULL, -- 'play' | 'hold' | 'release'
+  ip TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_access_log_recording ON ride_audio_access_log(recording_id, created_at DESC);

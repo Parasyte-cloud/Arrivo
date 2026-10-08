@@ -2364,6 +2364,10 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
     [note || null, req.params.id]
   );
 
+  // Any audio already recorded on this ride is kept past the normal retention.
+  pool.query("UPDATE ride_audio_recordings SET hold = true WHERE ride_id = $1 AND deleted_at IS NULL", [req.params.id])
+    .catch((e) => console.error("Could not hold ride audio after panic:", e.message));
+
   console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, triggered by user ${req.user.email}`);
   // Pages whoever is on call (OPS_ALERT_EMAILS / OPS_ALERT_WHATSAPP) right
   // now, instead of relying on someone having the admin dashboard open.
