@@ -2,6 +2,7 @@
 //   DATABASE_URL=postgres://localhost/... node routes/publicRoutes.integration.test.js
 
 const assert = require("assert");
+const jwt = require("jsonwebtoken");
 const http = require("http");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
@@ -15,6 +16,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/waitlist", require("./waitlist"));
 app.use("/api/rides", require("./rides"));
+app.use("/api/owners", require("./owners"));
 app.use((err, req, res, next) => res.status(500).json({ error: "server error", detail: err.message }));
 const server = http.createServer(app);
 
@@ -23,10 +25,10 @@ async function test(name, fn) {
   try { await fn(); console.log(`  ok  ${name}`); passed++; }
   catch (e) { console.log(`FAIL  ${name}`); console.log(`      ${e.stack || e.message}`); process.exitCode = 1; }
 }
-async function call(path, { method = "GET", body } = {}) {
+async function call(path, { method = "GET", body, token } = {}) {
   const { port } = server.address();
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method, headers: { "Content-Type": "application/json" },
+    method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -67,6 +69,29 @@ async function makeRide(status, tag) {
   await test("an unknown token is a 404", async () => {
     const r = await call("/api/rides/track/not-a-real-token");
     assert.strictEqual(r.status, 404);
+  });
+
+  console.log("Owner vehicles:");
+  await test("vehicle input is validated", async () => {
+    const u = (await pool.query(
+      `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified) VALUES ('Own','own-${stamp}@example.com','x','rider',true,true) RETURNING id, token_version`)).rows[0];
+    userIds.push(u.id);
+    const token = jwt.sign({ id: u.id, email: `own-${stamp}@example.com`, role: "rider", tv: u.token_version }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const bad = [
+      { makeModel: "x".repeat(101), plateNumber: "ABC123" },
+      { makeModel: "Toyota", plateNumber: "P".repeat(21) },
+      { makeModel: "Toyota", plateNumber: "ABC123", seats: 0 },
+      { makeModel: "Toyota", plateNumber: "ABC123", seats: "four" },
+      { makeModel: { a: 1 }, plateNumber: "ABC123" },
+    ];
+    for (const body of bad) {
+      const r = await call("/api/owners/vehicles", { method: "POST", token, body });
+      assert.strictEqual(r.status, 400, JSON.stringify(body));
+    }
+    const ok = await call("/api/owners/vehicles", { method: "POST", token, body: { makeModel: " Toyota Camry ", plateNumber: " ABC123 ", seats: 4 } });
+    assert.strictEqual(ok.status, 201, JSON.stringify(ok.body));
+    assert.strictEqual(ok.body.vehicle.make_model, "Toyota Camry");
+    await pool.query("DELETE FROM vehicles WHERE owner_user_id = $1", [u.id]);
   });
 
   console.log("Waitlist:");
