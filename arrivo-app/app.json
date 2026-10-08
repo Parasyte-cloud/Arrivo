@@ -57,7 +57,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "https://arrivo-backend-g1ku.onrender.com",
+      "apiBaseUrl": "https://api.ridearrivo.com",
       "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o",
       "googleOAuth": {
         "iosClientId": "425853448895-o8burrutrcvobsra6k5mrc2iopqioome.apps.googleusercontent.com",
