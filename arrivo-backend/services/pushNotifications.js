@@ -24,7 +24,9 @@ async function sendPushNotification(pushToken, title, body, data = {}) {
       signal: controller.signal,
     });
     if (!res.ok) {
-      console.error(`[push] Expo push API returned ${res.status} for token ${pushToken}`);
+      // Never log the token itself: it is the address of a person's phone, and
+      // log drains are read by more people than the database is.
+      console.error(`[push] Expo push API returned ${res.status}`);
       return { ok: false };
     }
     const json = await res.json().catch(() => null);

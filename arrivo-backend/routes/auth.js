@@ -11,6 +11,7 @@ const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = requ
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const { passwordProblem } = require("../services/passwordPolicy");
 
 const {
   findDeletionBlocker,
@@ -183,8 +184,9 @@ router.post("/signup", signupLimiter, async (req, res) => {
   if (!firstName || !lastName || !email || !password) {
     return res.status(400).json({ error: "firstName, lastName, email, and password are required" });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  const passwordIssue = passwordProblem(password);
+  if (passwordIssue) {
+    return res.status(400).json({ error: passwordIssue });
   }
   if (confirmPassword !== undefined && password !== confirmPassword) {
     return res.status(400).json({ error: "Passwords do not match" });
@@ -745,7 +747,8 @@ router.post("/forgot-password", passwordResetLimiter, async (req, res) => {
 router.post("/reset-password", passwordResetLimiter, async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
-  if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  const newPasswordIssue = passwordProblem(newPassword);
+  if (newPasswordIssue) return res.status(400).json({ error: newPasswordIssue });
 
   const result = await pool.query(
     "SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > now()",

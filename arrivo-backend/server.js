@@ -1,4 +1,11 @@
 require("dotenv").config();
+
+// Refuse to run without a usable JWT_SECRET. Checked before anything else
+// loads so a misconfigured deploy fails loudly at boot, not on the first login.
+if (!require("./services/jwtSecretCheck").checkJwtSecretAtStartup()) {
+  process.exit(1);
+}
+
 const express = require("express");
 // Patches express.Router so a rejected promise inside any async route
 // handler is forwarded to Express's error handling instead of becoming an
@@ -62,6 +69,7 @@ app.set("trust proxy", 1);
 // rider/driver apps never send a browser-style Origin header, so this
 // allowlist cannot break them regardless of how strict it is.
 const { csrfOriginCheck } = require("./middleware/sessionCookie");
+const { makeOriginCheck, respondIfCorsRejection } = require("./middleware/corsPolicy");
 
 const ALLOWED_ORIGINS = [
   "https://ridearrivo.com",
@@ -98,12 +106,7 @@ app.use(
     // cross-subdomain fetches. Safe because origins are an exact allowlist
     // (a wildcard origin is refused by browsers when credentials are on).
     credentials: true,
-    origin(origin, callback) {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
+    origin: makeOriginCheck(ALLOWED_ORIGINS),
   })
 );
 
@@ -158,6 +161,7 @@ app.use("/api/public", publicBookingRequestsRouter);
 // forwarded errors would fall through to Express's default HTML error page
 // instead of the JSON error shape every client in this codebase expects.
 app.use((err, req, res, next) => {
+  if (!res.headersSent && respondIfCorsRejection(err, res)) return;
   console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
