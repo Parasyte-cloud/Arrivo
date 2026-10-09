@@ -27,6 +27,8 @@ const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
+const configRouter = require("./routes/config");
+const { appVersionGate } = require("./services/appVersion");
 const instantRidesRouter = require("./routes/instantRides");
 const alertsRouter = require("./routes/alerts");
 const eventsRouter = require("./routes/events-sse");
@@ -120,6 +122,11 @@ app.use((req, res, next) => {
   express.json({ limit: "6mb" })(req, res, next);
 });
 
+// Reads the X-App-* headers the apps send and answers 426 to a build below the
+// configured minimum. Never blocks a request without the headers (builds
+// already on phones send none). See services/appVersion.js.
+app.use(appVersionGate());
+
 app.get("/", (req, res) => {
   res.json({ ok: true, service: "arrivo-backend", time: new Date().toISOString() });
 });
@@ -143,6 +150,7 @@ app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
+app.use("/api/config", configRouter);
 app.use("/api/instant-rides", instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
