@@ -188,3 +188,29 @@ export async function downloadExport(token, dataset, { from, to } = {}) {
 
   return { filename, rows: Number.isFinite(rows) ? rows : null };
 }
+
+// ── ArrivoExpress pricing, quests and automation (admin only) ───────────
+const EX = "/api/admin/express";
+export const getExpressPrices = (token) => request(`${EX}/prices`, token);
+export const getExpressPriceHistory = (token, tier) =>
+  request(`${EX}/prices/history${tier ? `?tier=${encodeURIComponent(tier)}` : ""}`, token);
+export const publishExpressPrices = (token, body) =>
+  request(`${EX}/prices`, token, { method: "POST", body: JSON.stringify(body) });
+export const logExpressSample = (token, body) =>
+  request(`${EX}/samples`, token, { method: "POST", body: JSON.stringify(body) });
+export const getExpressComparison = (token, days = 7) => request(`${EX}/comparison?days=${days}`, token);
+export const getExpressQuests = (token) => request(`${EX}/quests`, token);
+export const createExpressQuest = (token, body) =>
+  request(`${EX}/quests`, token, { method: "POST", body: JSON.stringify(body) });
+export const endExpressQuest = (token, id) => request(`${EX}/quests/${id}/end`, token, { method: "POST" });
+export const getExpressPayouts = (token, status) =>
+  request(`${EX}/payouts${status ? `?status=${status}` : ""}`, token);
+export const markExpressPayoutPaid = (token, id) => request(`${EX}/payouts/${id}/paid`, token, { method: "POST" });
+export const payExpressPayoutToWallet = (token, id) => request(`${EX}/payouts/${id}/pay-wallet`, token, { method: "POST" });
+export const payAllExpressPayouts = (token) =>
+  request(`${EX}/payouts/pay-all-owed`, token, { method: "POST", body: JSON.stringify({ confirm: true }) });
+export const getExpressAutomation = (token) => request(`${EX}/automation`, token);
+export const setExpressAutomation = (token, key, enabled) =>
+  request(`${EX}/automation`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getExpressRepricePlan = (token) => request(`${EX}/reprice/plan`, token);
+export const applyExpressReprice = (token) => request(`${EX}/reprice/apply`, token, { method: "POST" });
