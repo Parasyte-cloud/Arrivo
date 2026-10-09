@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "./config";
 import { clientHeaders } from "./clientInfo";
 import { noteResponse } from "../utils/updateRequired";
+import { buildPaymentInit, paymentInitHeaders } from "../utils/paymentIntent";
 
 // One place that hears about a rejected sign-in. Any call that carried an
 // Authorization header and got a 401 means the saved session is dead (expired,
@@ -77,14 +78,14 @@ export function getBookingConfig() {
   return request("/api/config/booking");
 }
 
-// The token is sent so the backend can require a signed-in rider on these two
-// routes (PAYMENT_ROUTES_REQUIRE_AUTH). Builds that predate this change send
-// none, which is why the backend keeps that switch off until they have aged out.
-export function initializePayment(email, amountNaira, token) {
+// Phase 1: sends the login token and a purpose. The backend does not require
+// either yet (see docs/PAYMENT-TOKEN-ROLLOUT.md), so a missing token must never
+// stop a payment from starting.
+export function initializePayment(token, { email, amountNaira, purpose, refId }) {
   return request("/api/payments/initialize", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: JSON.stringify({ email, amountNaira }),
+    headers: paymentInitHeaders(token),
+    body: JSON.stringify(buildPaymentInit({ email, amountNaira, purpose, refId })),
   });
 }
 
