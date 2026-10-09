@@ -111,6 +111,54 @@ function getPool() {
   return require("../db/db").pool;
 }
 
+// The samples that count for one tier: those logged since its last price
+// change (older ones were measured against a different price), within the
+// window. Also when it was last changed automatically.
+async function loadEvidence(pool, tierKey, now, opts) {
+  const last = await pool.query(
+    `SELECT max(effective_from) FILTER (WHERE note LIKE 'AUTO:%') AS last_auto,
+            max(effective_from) FILTER (WHERE effective_from <= $2) AS last_any
+       FROM instant_price_book WHERE tier = $1`,
+    [tierKey, now]
+  );
+  const lastAuto = last.rows[0].last_auto;
+  const lastAny = last.rows[0].last_any;
+  const windowStart = new Date(now.getTime() - opts.windowDays * 86400000);
+  const since = lastAny && new Date(lastAny) > windowStart ? new Date(lastAny) : windowStart;
+  const s = await pool.query(
+    `SELECT source, observed_fare_naira, our_fare_naira
+       FROM instant_price_samples WHERE tier = $1 AND created_at >= $2`,
+    [tierKey, since]
+  );
+  return { samples: s.rows, lastAuto, since };
+}
+
+// Pure. What is still missing before a tier can move, in plain words.
+function coverageForTier(tier, samples, opts) {
+  const bySource = {};
+  for (const x of samples) bySource[x.source] = (bySource[x.source] || 0) + 1;
+  const strongSources = Object.values(bySource).filter((n) => n >= 2).length;
+  const needSamples = Math.max(opts.minSamples - samples.length, 0);
+  const needSources = Math.max(opts.minSources - strongSources, 0);
+  const missing = [];
+  if (needSamples) missing.push(`${needSamples} more sample${needSamples === 1 ? "" : "s"}`);
+  if (needSources) missing.push(`${needSources} more competitor${needSources === 1 ? "" : "s"} with at least 2 samples`);
+  return { tier, samples: samples.length, bySource, needSamples, needSources, ready: missing.length === 0, missing: missing.join(" and ") };
+}
+
+// What the admin screen shows: how close each tier is to having enough data.
+async function coverage({ db, now = new Date() } = {}) {
+  const pool = db || getPool();
+  const opts = settings();
+  const { listTiers } = require("./instantTiers");
+  const tiers = [];
+  for (const t of listTiers()) {
+    const { samples } = await loadEvidence(pool, t.key, now, opts);
+    tiers.push(coverageForTier(t.key, samples, opts));
+  }
+  return { windowDays: opts.windowDays, minSamples: opts.minSamples, minSources: opts.minSources, tiers };
+}
+
 // Reads the evidence and builds a plan for every tier. Pure reads.
 async function planAutoReprice({ db, now = new Date() } = {}) {
   const pool = db || getPool();
@@ -122,27 +170,11 @@ async function planAutoReprice({ db, now = new Date() } = {}) {
 
   const tiers = [];
   for (const t of listTiers()) {
-    const last = await pool.query(
-      `SELECT max(effective_from) FILTER (WHERE note LIKE 'AUTO:%') AS last_auto,
-              max(effective_from) FILTER (WHERE effective_from <= $2) AS last_any
-         FROM instant_price_book WHERE tier = $1`,
-      [t.key, now]
-    );
-    const lastAuto = last.rows[0].last_auto;
-    const lastAny = last.rows[0].last_any;
-    const since = lastAny && new Date(lastAny) > new Date(now.getTime() - opts.windowDays * 86400000)
-      ? new Date(lastAny)
-      : new Date(now.getTime() - opts.windowDays * 86400000);
-    const s = await pool.query(
-      `SELECT source, observed_fare_naira, our_fare_naira
-         FROM instant_price_samples
-        WHERE tier = $1 AND created_at >= $2`,
-      [t.key, since]
-    );
+    const { samples, lastAuto } = await loadEvidence(pool, t.key, now, opts);
     tiers.push(
       planTier({
         tier: t.key,
-        samples: s.rows,
+        samples,
         current: pricingForTier(active, t.key),
         defaults: defaultPricing(t.key),
         lastAutoChangeAt: lastAuto,
@@ -218,4 +250,4 @@ async function runDailyReprice({ db, now = new Date() } = {}) {
   return applyAutoReprice({ db: pool, mode: "auto", now });
 }
 
-module.exports = { settings, planTier, planAutoReprice, applyAutoReprice, runDailyReprice };
+module.exports = { settings, planTier, coverage, coverageForTier, planAutoReprice, applyAutoReprice, runDailyReprice };

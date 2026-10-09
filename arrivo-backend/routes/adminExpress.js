@@ -4,6 +4,9 @@
 //   GET   /api/admin/express/prices/history     every published price, newest first
 //   POST  /api/admin/express/prices             publish new prices (now or scheduled)
 //   POST  /api/admin/express/samples            log a competitor fare for the same trip
+//   POST  /api/admin/express/samples/bulk      log up to 100 competitor fares at once, all or nothing
+//   GET   /api/admin/express/samples/routes    the standard trips to price-check each day
+//   GET   /api/admin/express/samples/coverage  how much data automatic repricing still needs, per tier
 //   GET   /api/admin/express/comparison         us vs the market, per tier, last N days
 //   GET   /api/admin/express/quests             all quests with winners and money owed
 //   POST  /api/admin/express/quests             create a quest
@@ -80,6 +83,18 @@ router.post("/samples", handle(async (req, res) => {
   res.status(201).json({ sample: await intel.logSample(req.body, req.user.id) });
 }));
 
+router.post("/samples/bulk", handle(async (req, res) => {
+  res.status(201).json(await intel.logSamples((req.body || {}).rows, req.user.id));
+}));
+
+router.get("/samples/routes", handle(async (req, res) => {
+  res.json({ routes: require("../services/standardRoutes").STANDARD_ROUTES });
+}));
+
+router.get("/samples/coverage", handle(async (req, res) => {
+  res.json(await autoReprice.coverage());
+}));
+
 router.get("/comparison", handle(async (req, res) => {
   res.json(await intel.comparison({ days: req.query.days }));
 }));
@@ -122,7 +137,8 @@ router.post("/payouts/:id/pay-wallet", handle(async (req, res) => {
   res.json(await questPayout.payToWallet(payoutId, { adminId: req.user.id }));
 }));
 
-const AUTOMATION_KEYS = ["express_auto_payout_enabled", "express_auto_reprice_enabled"];
+const AUTOMATION_KEYS = ["express_auto_payout_enabled", "express_auto_reprice_enabled", "driver_cashout_enabled"];
+const LOG_KIND = { express_auto_payout_enabled: "payout", express_auto_reprice_enabled: "reprice", driver_cashout_enabled: "cashout" };
 
 router.get("/automation", handle(async (req, res) => {
   const all = await systemConfig.listConfig();
@@ -150,7 +166,7 @@ router.patch("/automation", handle(async (req, res) => {
   await systemConfig.setConfig(key, enabled ? "true" : "false", req.user.id);
   await pool.query(
     "INSERT INTO express_automation_log (kind, action, detail) VALUES ($1, $2, $3::jsonb)",
-    [key === "express_auto_payout_enabled" ? "payout" : "reprice", enabled ? "switched_on" : "switched_off", JSON.stringify({ adminId: req.user.id })]
+    [LOG_KIND[key], enabled ? "switched_on" : "switched_off", JSON.stringify({ adminId: req.user.id })]
   );
   res.json({ key, enabled });
 }));
