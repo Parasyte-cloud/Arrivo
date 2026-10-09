@@ -83,6 +83,12 @@
     "plugins": [
       "expo-font",
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "RideArrivo Driver uses your camera for the selfie check that confirms you are the person driving."
+        }
+      ],
       "expo-apple-authentication",
       [
         "expo-splash-screen",

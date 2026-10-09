@@ -167,3 +167,17 @@ export function deleteAccount(token, confirmEmail) {
     body: JSON.stringify({ confirmEmail }),
   });
 }
+
+// Trip safety
+export function verifyPickupPin(token, rideId, pin) {
+  return request(`/api/safety/rides/${rideId}/pin/verify`, authed(token, { method: "POST", body: JSON.stringify({ pin }) }));
+}
+export function getSelfieStatus(token) {
+  return request("/api/safety/selfie/status", authed(token));
+}
+export function submitSelfie(token, imageDataUrl, challenge) {
+  return request("/api/safety/selfie", authed(token, { method: "POST", body: JSON.stringify({ imageDataUrl, challenge }) }));
+}
+export function fileComplaint(token, { rideId, category, description }) {
+  return request("/api/safety/complaints", authed(token, { method: "POST", body: JSON.stringify({ rideId, category, description }) }));
+}

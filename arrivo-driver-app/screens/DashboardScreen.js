@@ -16,6 +16,8 @@ import {
   cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
+import { useT } from "../context/LanguageContext";
+import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
@@ -171,7 +173,12 @@ export default function DashboardScreen({ navigation }) {
       await setOnlineStatus(token, value);
     } catch (e) {
       setIsOnline(!value); // revert on failure
-      setError(e.message);
+      if (e.code === "SELFIE_REQUIRED") {
+        // Not an error to show: send the driver to the selfie check.
+        navigation.navigate("Selfie");
+      } else {
+        setError(e.message);
+      }
     }
   };
 
@@ -266,6 +273,9 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  // Set when the server says the rider's pickup PIN is needed to start this trip.
+  const [pinRideId, setPinRideId] = useState(null);
+
   const advanceTrip = async (nextStatus) => {
     if (!activeRide) return;
     setBusyRideId(activeRide.id);
@@ -277,7 +287,11 @@ export default function DashboardScreen({ navigation }) {
         setActiveRide(ride);
       }
     } catch (e) {
-      setError(e.message);
+      if (e.code === "PICKUP_PIN_REQUIRED") {
+        setPinRideId(activeRide.id); // show the PIN box instead of an error
+      } else {
+        setError(e.message);
+      }
     } finally {
       setBusyRideId(null);
     }
@@ -369,7 +383,7 @@ export default function DashboardScreen({ navigation }) {
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
             {acceptsInstant ? (
@@ -566,7 +580,9 @@ const CANCEL_REASONS = [
   { value: "incorrect_pickup_info", label: "Wrong pickup info" },
 ];
 
-function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation }) {
+function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation, pinNeeded, onPinVerified }) {
+  const { t } = useT();
+  const [showReport, setShowReport] = useState(false);
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
   const streamVideoClient = useStreamVideoClient();
@@ -866,15 +882,31 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         </>
       ) : isAccepted ? (
         <>
-          <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
+          {pinNeeded ? (
+            <PickupPinPrompt rideId={ride.id} onVerified={onPinVerified} />
+          ) : (
+            <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
+          )}
           <View style={{ height: spacing.sm }} />
           <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+          <View style={{ height: spacing.sm }} />
+          {showReport ? (
+            <ReportRiderPanel rideId={ride.id} onClose={() => setShowReport(false)} />
+          ) : (
+            <Button label={t("reportRider")} variant="ghost" tone="dark" onPress={() => setShowReport(true)} />
+          )}
         </>
       ) : (
         <>
           <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
           <View style={{ height: spacing.sm }} />
           <Button label="Report an issue / cancel trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+          <View style={{ height: spacing.sm }} />
+          {showReport ? (
+            <ReportRiderPanel rideId={ride.id} onClose={() => setShowReport(false)} />
+          ) : (
+            <Button label={t("reportRider")} variant="ghost" tone="dark" onPress={() => setShowReport(true)} />
+          )}
         </>
       )}
     </View>

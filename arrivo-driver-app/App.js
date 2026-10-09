@@ -22,6 +22,7 @@ import DashboardScreen from "./screens/DashboardScreen";
 import EarningsScreen from "./screens/EarningsScreen";
 import QuestsScreen from "./screens/QuestsScreen";
 import CashoutScreen from "./screens/CashoutScreen";
+import SelfieScreen from "./screens/SelfieScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ChatScreen from "./screens/ChatScreen";
 
@@ -43,10 +44,12 @@ const stackScreenOptions = {
 // ChatScreen can be pushed on top with a real back button, instead of only
 // being reachable as a modal or a separate tab.
 function DashboardStackScreen() {
+  const { t } = useT();
   return (
     <DashboardStack.Navigator screenOptions={stackScreenOptions}>
       <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <DashboardStack.Screen name="Chat" component={ChatScreen} options={{ title: "Message rider" }} />
+      <DashboardStack.Screen name="Selfie" component={SelfieScreen} options={{ title: t("selfieTitle") }} />
     </DashboardStack.Navigator>
   );
 }
