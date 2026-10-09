@@ -750,6 +750,13 @@ CREATE TABLE IF NOT EXISTS on_the_go_requests (
 CREATE INDEX IF NOT EXISTS idx_on_the_go_status ON on_the_go_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_on_the_go_user ON on_the_go_requests(user_id, created_at);
 
+-- When the rider wanted the car, which service they were booking when it turned
+-- out to be too close, and any details. All optional, so older app builds that
+-- send none of them still work.
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS requested_pickup_at TIMESTAMPTZ;
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS details TEXT;
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS source_service TEXT;
+
 
 -- ============================================================
 -- ARRIVONOW_FOUNDATION_V1

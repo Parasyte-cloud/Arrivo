@@ -2,13 +2,17 @@ const express = require("express");
 const { pool } = require("../db/db");
 const { requireAuth, requireAnyRole } = require("../middleware/auth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const { parseOptionalExtras } = require("../services/onTheGoRequest");
 
 const router = express.Router();
 
 const MAX_PASSENGERS = 20;
 
 // POST /api/on-the-go
-// body: { pickupAddress, destinationAddress, flightNumber?, passengerCount, contactPhone }
+// body: { pickupAddress, destinationAddress, flightNumber?, passengerCount, contactPhone,
+//         requestedPickupAt?, details?, service? }
+// The last three are optional and come from a booking that was too close for
+// the standard flow, so Ops sees the time and trip the rider had in mind.
 //
 // No payment here on purpose. Someone needing a car in the next few hours
 // shouldn't be stopped at a checkout screen, so ops confirms a driver first
@@ -35,10 +39,14 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: phoneErrorMessage("Contact phone number") });
   }
 
+  const extras = parseOptionalExtras(req.body);
+  if (extras.error) return res.status(400).json({ error: extras.error });
+
   const result = await pool.query(
     `INSERT INTO on_the_go_requests
-       (user_id, pickup_address, destination_address, flight_number, passenger_count, contact_phone)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+       (user_id, pickup_address, destination_address, flight_number, passenger_count, contact_phone,
+        requested_pickup_at, details, source_service)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [
       req.user.id,
       pickup,
@@ -46,6 +54,9 @@ router.post("/", requireAuth, async (req, res) => {
       flightNumber ? String(flightNumber).trim().toUpperCase() : null,
       passengers,
       String(contactPhone).trim(),
+      extras.value.requestedPickupAt,
+      extras.value.details,
+      extras.value.service,
     ]
   );
   res.status(201).json({ request: result.rows[0] });
