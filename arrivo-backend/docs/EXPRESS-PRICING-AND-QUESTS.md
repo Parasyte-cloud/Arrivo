@@ -215,7 +215,42 @@ apply (a daily claim row plus a database lock).
 It needs real data: until competitor prices have been logged for the same trips
 (see "Logging competitor prices"), every tier simply holds.
 
+## Getting the competitor data (the 10 minute daily check)
+
+There is no legitimate automatic feed of Bolt, Uber or inDrive prices (they have
+no public price API, and scraping their apps breaks their terms), so the data is
+logged by a person. The Market tab makes that quick:
+
+1. **Today's check** lists 12 standard Lagos trips. Click one, open the other
+   app, type the same two places, note the price per tier. Using the same trips
+   daily keeps days comparable. Replace the typical distance and time with what
+   the other app shows.
+2. **Paste many** takes up to 100 lines (`economy, bolt, 12, 30, 5200, day`),
+   straight from a spreadsheet. If one line is wrong nothing is saved.
+3. **The data panel** says exactly what each tier is still missing (for example
+   "5 more samples and 1 more competitor"), so you know when repricing can act.
+
+A realistic routine: 4 trips x 2 apps x 2 tiers is 16 prices, about 10 minutes.
+Do it at the same time of day, and once a week at night (log those as `night`).
+
+## Going live checklist
+
+1. Merge the PRs (#63, #65, then the cash-out PR).
+2. Paystack dashboard: enable Transfers, turn OFF "confirm transfers before
+   sending", add the webhook `https://api.ridearrivo.com/api/payments/webhook`
+   (events: charge.success and transfer.success, transfer.failed,
+   transfer.reversed), and fund the Paystack balance.
+3. Admin > Express Pricing > Automation. Switches are independent and all start
+   off. Suggested order: Cash-out first with a small test (a driver cashes out
+   the minimum to their own account), then Automatic payout, then Automatic
+   repricing only after the Market tab shows every tier as Ready.
+
 ## Not built yet
 
+- Translations of the admin app (staff tool, English). The driver app has the
+  tabs, Quests, Cash-out and the language picker in 7 languages; the other
+  driver screens are still English. Nigerian drivers may be better served by
+  Pidgin, Yoruba, Hausa and Igbo than by Hindi or Chinese; those need a native
+  speaker, not a machine translation, for the money wording.
 - Pickup PIN, selfie check, expiring trip share links and two-way complaints
   (see the safety plan).

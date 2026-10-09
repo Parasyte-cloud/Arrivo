@@ -26,11 +26,14 @@ const getConfigBool = (...a) => require("./systemConfig").getConfigBool(...a);
 const { api: paystack, PaystackError } = require("./paystackTransfers");
 
 class CashoutError extends Error {
-  constructor(message, status = 400, code = "CASHOUT_ERROR") {
+  // params: the numbers inside the message, so an app can show the same
+  // message in the driver's own language.
+  constructor(message, status = 400, code = "CASHOUT_ERROR", params = undefined) {
     super(message);
     this.name = "CashoutError";
     this.status = status;
     this.code = code;
+    this.params = params;
   }
 }
 
@@ -84,17 +87,17 @@ function computeWithdrawable({ balance, creditsEarned, withdrawnActive }) {
 // { code, message } or null.
 function checkRequest({ amount, withdrawable, spentToday, hoursSinceBankChange }, lim = limits()) {
   if (!Number.isInteger(amount) || amount <= 0) return { code: "INVALID_AMOUNT", message: "Enter a whole number of naira." };
-  if (amount < lim.minNaira) return { code: "BELOW_MINIMUM", message: `The smallest cash-out is ₦${lim.minNaira.toLocaleString()}.` };
-  if (amount > lim.maxNaira) return { code: "ABOVE_MAXIMUM", message: `The most you can cash out at once is ₦${lim.maxNaira.toLocaleString()}.` };
+  if (amount < lim.minNaira) return { code: "BELOW_MINIMUM", params: { min: lim.minNaira }, message: `The smallest cash-out is ₦${lim.minNaira.toLocaleString()}.` };
+  if (amount > lim.maxNaira) return { code: "ABOVE_MAXIMUM", params: { max: lim.maxNaira }, message: `The most you can cash out at once is ₦${lim.maxNaira.toLocaleString()}.` };
   if (hoursSinceBankChange < lim.bankCoolingHours) {
     const wait = Math.ceil(lim.bankCoolingHours - hoursSinceBankChange);
-    return { code: "BANK_COOLING_OFF", message: `You changed your bank account recently. For your safety cash-out opens again in about ${wait} hour${wait === 1 ? "" : "s"}.` };
+    return { code: "BANK_COOLING_OFF", params: { hours: wait }, message: `You changed your bank account recently. For your safety cash-out opens again in about ${wait} hour${wait === 1 ? "" : "s"}.` };
   }
   if (amount + lim.feeNaira > withdrawable) {
-    return { code: "INSUFFICIENT_WITHDRAWABLE", message: `You can cash out up to ₦${Math.floor(withdrawable).toLocaleString()} right now. Only earnings can be withdrawn, not money you added.` };
+    return { code: "INSUFFICIENT_WITHDRAWABLE", params: { amount: Math.floor(withdrawable) }, message: `You can cash out up to ₦${Math.floor(withdrawable).toLocaleString()} right now. Only earnings can be withdrawn, not money you added.` };
   }
   if (spentToday + amount > lim.dailyMaxNaira) {
-    return { code: "DAILY_LIMIT", message: `The daily cash-out limit is ₦${lim.dailyMaxNaira.toLocaleString()}. You have ₦${Math.max(lim.dailyMaxNaira - spentToday, 0).toLocaleString()} left today.` };
+    return { code: "DAILY_LIMIT", params: { left: Math.max(lim.dailyMaxNaira - spentToday, 0) }, message: `The daily cash-out limit is ₦${lim.dailyMaxNaira.toLocaleString()}. You have ₦${Math.max(lim.dailyMaxNaira - spentToday, 0).toLocaleString()} left today.` };
   }
   return null;
 }
@@ -263,7 +266,7 @@ async function requestCashout(userId, { amountNaira, idempotencyKey } = {}, db) 
     const spentToday = await spentTodayNaira(userId, client);
     const hoursSinceBankChange = (Date.now() - new Date(bank.changed_at).getTime()) / 3600000;
     const problem = checkRequest({ amount, withdrawable, spentToday, hoursSinceBankChange }, lim);
-    if (problem) throw new CashoutError(problem.message, 400, problem.code);
+    if (problem) throw new CashoutError(problem.message, 400, problem.code, problem.params);
 
     const total = amount + lim.feeNaira;
     const bal = await client.query("UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 AND wallet_balance_naira >= $1 RETURNING wallet_balance_naira", [total, userId]);

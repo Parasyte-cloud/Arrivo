@@ -7,21 +7,24 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getDriverQuests } from "../services/api";
+import { formatNumber } from "../i18n/i18n";
+import { useT } from "../context/LanguageContext";
 import { questState, questProgressPct, tripsLeft, timeLeftLabel, questRules, sortQuests } from "../utils/quests";
 
 // ArrivoExpress quests: finish a number of real trips, earn a fixed reward.
-// Text is English inline, like the rest of this app.
+// Text comes from i18n/translations.js.
 
 const STATE_TAG = {
-  active: { label: "In progress", tone: "amber" },
-  earned: { label: "Earned", tone: "teal" },
-  paid: { label: "Paid to wallet", tone: "teal" },
-  upcoming: { label: "Starts soon", tone: "amber" },
-  full: { label: "All places taken", tone: "amber" },
-  ended: { label: "Ended", tone: "amber" },
+  active: { key: "tagActive", tone: "amber" },
+  earned: { key: "tagEarned", tone: "teal" },
+  paid: { key: "tagPaid", tone: "teal" },
+  upcoming: { key: "tagUpcoming", tone: "amber" },
+  full: { key: "tagFull", tone: "amber" },
+  ended: { key: "tagEnded", tone: "amber" },
 };
 
 function QuestCard({ quest }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const state = questState(quest);
   const pct = questProgressPct(quest);
@@ -34,12 +37,12 @@ function QuestCard({ quest }) {
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
           <Text style={styles.questTitle}>{quest.title}</Text>
           <Text style={styles.meta}>
-            {quest.tier ? `${quest.tier} trips` : "Any ArrivoExpress trip"} · {timeLeftLabel(quest.endsAt)}
+            {quest.tier ? t("tierTrips", { tier: quest.tier }) : t("anyTrip")} · {timeLeftLabel(quest.endsAt, new Date(), t)}
           </Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={styles.reward}>₦{Number(quest.rewardNaira).toLocaleString()}</Text>
-          <Tag label={tag.label} tone={tag.tone} />
+          <Text style={styles.reward}>₦{formatNumber(quest.rewardNaira)}</Text>
+          <Tag label={t(tag.key)} tone={tag.tone} />
         </View>
       </View>
 
@@ -48,23 +51,26 @@ function QuestCard({ quest }) {
       </View>
       <Text style={styles.progressText}>
         {state === "earned" || state === "paid"
-          ? "Reward earned. It is paid into your wallet."
+          ? t("progressEarned")
           : state === "full"
-            ? "The reward places for this quest have all been taken."
+            ? t("progressFull")
             : state === "ended"
-              ? `You finished ${quest.progress} of ${quest.targetTrips} trips.`
-              : `${quest.progress} of ${quest.targetTrips} trips done${left > 0 ? `, ${left} to go` : ""}`}
+              ? t("progressEnded", { done: quest.progress, target: quest.targetTrips })
+              : left > 0
+                ? t("progressActiveLeft", { done: quest.progress, target: quest.targetTrips, left })
+                : t("progressActive", { done: quest.progress, target: quest.targetTrips })}
       </Text>
 
       <Text style={styles.rulesToggle} onPress={() => setOpen((v) => !v)} accessibilityRole="button">
-        {open ? "Hide the rules" : "See the rules"}
+        {open ? t("rulesHide") : t("rulesShow")}
       </Text>
-      {open ? questRules(quest).map((r, i) => <Text key={i} style={styles.rule}>• {r}</Text>) : null}
+      {open ? questRules(quest, t).map((r, i) => <Text key={i} style={styles.rule}>• {r}</Text>) : null}
     </Card>
   );
 }
 
 export default function QuestsScreen() {
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [quests, setQuests] = useState(null);
@@ -96,13 +102,13 @@ export default function QuestsScreen() {
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
-        <Text style={styles.title}>Quests</Text>
-        <Text style={styles.intro}>Finish real trips, earn a fixed reward. Only trips that were started and ran their full length count.</Text>
+        <Text style={styles.title}>{t("questsTitle")}</Text>
+        <Text style={styles.intro}>{t("questsIntro")}</Text>
 
         {loading && !quests ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {quests && quests.length === 0 && !error ? (
-          <Text style={styles.empty}>No quests are running right now. Check back soon.</Text>
+          <Text style={styles.empty}>{t("questsEmpty")}</Text>
         ) : null}
         {(quests || []).map((q) => (
           <QuestCard key={q.id} quest={q} />

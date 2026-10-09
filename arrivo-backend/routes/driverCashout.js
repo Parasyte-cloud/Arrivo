@@ -19,7 +19,7 @@ function handle(fn) {
       await fn(req, res);
     } catch (error) {
       if (error instanceof cashout.CashoutError) {
-        return res.status(error.status).json({ error: error.message, code: error.code });
+        return res.status(error.status).json({ error: error.message, code: error.code, params: error.params });
       }
       if (error instanceof PaystackError) {
         return res.status(503).json({ error: "The bank service is unavailable right now. Try again in a moment.", code: "BANK_SERVICE_UNAVAILABLE" });

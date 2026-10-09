@@ -11,6 +11,8 @@ async function request(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
+    err.code = data.code; // lets screens show the message in the driver's language
+    err.params = data.params;
     err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
     throw err;
   }
@@ -63,6 +65,19 @@ export function setOnlineStatus(token, isOnline) {
 }
 export function updateLocation(token, lat, lng) {
   return request("/api/drivers/location", authed(token, { method: "PATCH", body: JSON.stringify({ lat, lng }) }));
+}
+// Cash-out (wallet to bank)
+export function getCashout(token) {
+  return request("/api/cashout", authed(token));
+}
+export function getCashoutBanks(token) {
+  return request("/api/cashout/banks", authed(token));
+}
+export function saveCashoutBank(token, bankCode, accountNumber) {
+  return request("/api/cashout/bank", authed(token, { method: "PUT", body: JSON.stringify({ bankCode, accountNumber }) }));
+}
+export function withdrawCashout(token, amountNaira, idempotencyKey) {
+  return request("/api/cashout/withdraw", authed(token, { method: "POST", body: JSON.stringify({ amountNaira, idempotencyKey }) }));
 }
 export function getDriverQuests(token) {
   return request("/api/instant-rides/driver/quests", authed(token));
