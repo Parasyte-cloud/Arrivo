@@ -19,6 +19,7 @@ const { claimPaymentReference, isValidPaystackReference } = require("../services
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { creditMembershipCashback } = require("../services/membershipCashback");
+const { recordQuestProgress } = require("../services/driverQuests");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { sendPanicAlert } = require("../services/panicAlert");
 const { getActivePlanForUser } = require("../services/familyPlan");
@@ -1460,6 +1461,17 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   // above) — see services/membershipCashback.js.
   if (status === "completed" && ride.payment_status === "paid") {
     await creditMembershipCashback(ride, pool);
+  }
+
+  // ArrivoExpress driver quests. Counts this trip if it is an Express ride
+  // inside a running quest. Isolated on purpose: a quest problem must never
+  // fail or delay the driver completing a trip.
+  if (status === "completed") {
+    try {
+      await recordQuestProgress(ride.id, pool);
+    } catch (error) {
+      console.error(`Quest progress failed for ride #${ride.id}:`, error.message);
+    }
   }
 
   const notification = STATUS_NOTIFICATION[status];

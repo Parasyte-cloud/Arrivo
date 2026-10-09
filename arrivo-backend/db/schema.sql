@@ -1466,3 +1466,102 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- ── ArrivoExpress: price book, competitor price log, driver quests ──
+--
+-- The price book lets ops change fares on a schedule WITHOUT a deploy. Each
+-- publish inserts new rows; the active price for a tier is its newest row
+-- whose effective_from has passed. Nothing is overwritten, so every fare ever
+-- charged can be traced to the price in force at the time. If the table is
+-- empty the code defaults in services/instantTiers.js apply.
+CREATE TABLE IF NOT EXISTS instant_price_book (
+  id SERIAL PRIMARY KEY,
+  tier TEXT NOT NULL CHECK (tier IN ('economy', 'comfort', 'xl', 'premium')),
+  base_fare_naira INTEGER NOT NULL CHECK (base_fare_naira > 0),
+  per_km_naira INTEGER NOT NULL CHECK (per_km_naira > 0),
+  per_min_naira INTEGER NOT NULL CHECK (per_min_naira >= 0),
+  minimum_fare_naira INTEGER NOT NULL CHECK (minimum_fare_naira > 0),
+  effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  note TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_instant_price_book_tier
+  ON instant_price_book(tier, effective_from DESC);
+
+-- Same-route fares ops saw in competitor apps (Bolt, Uber, inDrive...), logged
+-- daily. our_fare_naira is what we would have charged for the same distance and
+-- time under the price book at logging time, so the comparison stays valid
+-- after prices change.
+CREATE TABLE IF NOT EXISTS instant_price_samples (
+  id SERIAL PRIMARY KEY,
+  observed_on DATE NOT NULL,
+  period TEXT NOT NULL DEFAULT 'day' CHECK (period IN ('day', 'night')),
+  source TEXT NOT NULL CHECK (source IN ('bolt', 'uber', 'indrive', 'other')),
+  tier TEXT NOT NULL CHECK (tier IN ('economy', 'comfort', 'xl', 'premium')),
+  route_label TEXT,
+  distance_km NUMERIC(8, 2) NOT NULL CHECK (distance_km > 0),
+  duration_min NUMERIC(8, 1) NOT NULL CHECK (duration_min > 0),
+  observed_fare_naira INTEGER NOT NULL CHECK (observed_fare_naira > 0),
+  our_fare_naira INTEGER NOT NULL CHECK (our_fare_naira > 0),
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_instant_price_samples_day
+  ON instant_price_samples(observed_on DESC, tier);
+
+-- Driver quests: "complete N qualifying trips in the window, earn a fixed
+-- amount". Deliberately NOT a blanket bonus or per-trip boost: pay is tied to
+-- reliable work, and max_winners puts a hard ceiling on what one quest can
+-- ever cost (reward_naira * max_winners).
+CREATE TABLE IF NOT EXISTS driver_quests (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  tier TEXT CHECK (tier IS NULL OR tier IN ('economy', 'comfort', 'xl', 'premium')),
+  target_trips INTEGER NOT NULL CHECK (target_trips BETWEEN 1 AND 200),
+  reward_naira INTEGER NOT NULL CHECK (reward_naira BETWEEN 100 AND 500000),
+  max_winners INTEGER NOT NULL CHECK (max_winners BETWEEN 1 AND 100000),
+  min_trip_km NUMERIC(6, 2) NOT NULL DEFAULT 1.0,
+  min_trip_minutes INTEGER NOT NULL DEFAULT 3,
+  max_trips_per_rider INTEGER NOT NULL DEFAULT 2 CHECK (max_trips_per_rider >= 1),
+  min_driver_rating NUMERIC(3, 2),
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at > starts_at)
+);
+
+-- One row per ride that counted toward a quest. UNIQUE(quest_id, ride_id)
+-- makes counting idempotent: completing the same ride twice, or a retry,
+-- can never count it twice.
+CREATE TABLE IF NOT EXISTS driver_quest_trips (
+  id SERIAL PRIMARY KEY,
+  quest_id INTEGER NOT NULL REFERENCES driver_quests(id) ON DELETE CASCADE,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  rider_id INTEGER NOT NULL REFERENCES users(id),
+  counted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (quest_id, ride_id)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_quest_trips_progress
+  ON driver_quest_trips(quest_id, driver_id);
+
+-- What the company owes for completed quests. Payment itself happens through
+-- the existing payout process; this table is the record of who earned what and
+-- whether it has been paid. UNIQUE(quest_id, driver_id): a driver earns a
+-- given quest at most once.
+CREATE TABLE IF NOT EXISTS driver_quest_payouts (
+  id SERIAL PRIMARY KEY,
+  quest_id INTEGER NOT NULL REFERENCES driver_quests(id),
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  reward_naira INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'owed' CHECK (status IN ('owed', 'paid')),
+  earned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at TIMESTAMPTZ,
+  paid_by INTEGER REFERENCES users(id),
+  UNIQUE (quest_id, driver_id)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_quest_payouts_status
+  ON driver_quest_payouts(status, earned_at);
