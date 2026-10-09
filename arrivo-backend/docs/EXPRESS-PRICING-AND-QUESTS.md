@@ -161,9 +161,36 @@ moment it is earned, and a 5 minute sweep retries anything still owed.
 - Admins can credit one reward ("Pay to wallet") or every owed reward ("Pay all
   owed", asks for confirmation) at any time. Manual payments are not counted
   against the cap. "Mark paid" still exists for money sent outside the app.
-- Note: the backend has no driver wallet withdrawal yet, so a credit is balance
-  the driver can spend in the app, not cash in hand. Build the cash-out path
-  before relying on this for real money.
+- Drivers turn the wallet into cash with Cash-out (below).
+
+### Driver cash-out (wallet to bank)
+
+Drivers add one bank account, then withdraw their earnings through Paystack
+transfers. Off until `driver_cashout_enabled` is switched on.
+
+- **Account name check.** Paystack looks up the name on the account and it must
+  share a name with the driver's profile, so money cannot be sent to a stranger.
+- **Cooling-off.** After adding or changing the account, cash-out is blocked for
+  24 hours (`CASHOUT_BANK_COOLING_HOURS`), the standard defence against someone
+  who has taken over an account and redirects the money.
+- **Earnings only.** A driver can withdraw what they were credited (quest
+  rewards, admin credits) minus what they already withdrew. Money added by card
+  top-up cannot be withdrawn.
+- **Limits.** Minimum 1,000, maximum 200,000 per request, 300,000 per day.
+  Requests above 100,000 wait for an admin to approve or decline.
+- **Debit first.** The wallet is debited in the same database transaction that
+  creates the request, under a lock, so racing requests cannot double spend.
+- **Never pays twice.** Our reference goes to Paystack, which refuses it a second
+  time. A retry or a lost reply is settled by asking Paystack, not by sending again.
+- **Money back when it fails.** A failed, declined or reversed transfer credits
+  the wallet again, exactly once. A timeout is NOT refunded on a guess: it stays
+  queued and a 5 minute sweep retries or verifies.
+- **Paystack setup.** Enable Transfers, turn OFF "confirm transfers before
+  sending" (otherwise every transfer waits for an OTP), keep the Paystack balance
+  funded (a short balance leaves requests queued and visible in admin), and
+  point the webhook at `/api/payments/webhook` (it now also handles
+  `transfer.success`, `transfer.failed`, `transfer.reversed`).
+- Admin: Express Pricing, Cash-outs tab.
 
 ### Automatic repricing
 
@@ -190,6 +217,5 @@ It needs real data: until competitor prices have been logged for the same trips
 
 ## Not built yet
 
-- Driver wallet cash-out to a bank account.
 - Pickup PIN, selfie check, expiring trip share links and two-way complaints
   (see the safety plan).

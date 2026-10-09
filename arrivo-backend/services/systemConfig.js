@@ -51,6 +51,7 @@ const DEFAULTS = {
   // ArrivoExpress automation. Both ship OFF: turning either on is a
   // deliberate act by an admin, and turning it off is the kill switch.
   express_auto_payout_enabled: "false",
+  driver_cashout_enabled: "false",
   express_auto_reprice_enabled: "false",
 };
 
@@ -66,6 +67,7 @@ const DESCRIPTIONS = {
   lucky_ride_max_distance_km: "Midday Lucky Ride (12:00pm-1:00pm): maximum trip distance (km) eligible to enter the daily draw.",
   grotto_program_enabled: "Master switch for the the Partner Venues program partner-venue program. Set to \"false\" to stop the area-lock behavior and hide partner venues immediately.",
   partner_venue_dispatch_radius_km: "the Partner Venues program: while a driver has an active reserved pickup from a partner venue, only show them other rides within this many km of that venue.",
+  driver_cashout_enabled: "Let drivers withdraw their wallet earnings to a bank account through Paystack transfers. \"false\" blocks new cash-out requests (transfers already requested still complete).",
   express_auto_payout_enabled: "ArrivoExpress: pay completed driver quests into the driver's wallet automatically. \"false\" leaves them owed for manual payment.",
   express_auto_reprice_enabled: "ArrivoExpress: let the daily job nudge prices toward the market within strict limits. \"false\" turns automatic repricing off immediately.",
 };
