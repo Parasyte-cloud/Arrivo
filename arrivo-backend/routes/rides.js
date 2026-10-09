@@ -1257,6 +1257,16 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
   }
 
+  if (status === "in_progress") {
+    const pin = await require("../services/pickupPin").checkStartAllowed(existing.rows[0].id);
+    if (!pin.allowed) {
+      return res.status(403).json({
+        error: "Ask the rider for their 4 digit pickup PIN and enter it before starting the trip.",
+        code: "PICKUP_PIN_REQUIRED",
+      });
+    }
+  }
+
   // "Reserve now, pay at pickup" was removed as a product decision — every
   // ride is paid in full at booking now, and POST / rejects any new
   // attempt to create a pay-at-pickup ride. This guard is left in place as
@@ -1672,28 +1682,10 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
 // status, never payment info, fare, admin notes, or the rider's own
 // contact details.
 router.get("/track/:token", async (req, res) => {
-  const result = await pool.query(
-    `SELECT rides.id, rides.pickup_address, rides.stops, rides.ride_status,
-            rides.flight_number, rides.booking_type,
-            rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
-            rides.created_at,
-            riders.name as rider_name,
-            driver_users.name as driver_name, driver_users.phone as driver_phone,
-            drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
-            drivers.profile_photo_url as driver_photo_url, drivers.rating as driver_rating,
-            vehicles.make_model, vehicles.plate_number
-     FROM rides
-     JOIN users riders ON riders.id = rides.rider_id
-     LEFT JOIN drivers ON drivers.id = rides.driver_id
-     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
-     LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
-     WHERE rides.share_token = $1`,
-    [req.params.token]
-  );
-  const ride = result.rows[0];
-  if (!ride) return res.status(404).json({ error: "This tracking link is invalid or no longer active." });
-
-  res.json({ ride: withParsedStops(ride) });
+  const out = await require("../services/shareLinks").resolvePublic(req.params.token);
+  if (out.error) return res.status(out.error.status).json({ error: out.error.message, reason: out.error.reason });
+  const { ride, ...rest } = out.view;
+  res.json({ ride: withParsedStops(ride), ...rest });
 });
 
 // GET /api/rides/:id — full details for one ride, including the driver's
@@ -1750,45 +1742,17 @@ router.get("/:id", requireAuth, async (req, res) => {
 // once it exists rather than rotating it, so a link already sent to
 // someone doesn't silently stop working.
 router.get("/:id/share", requireAuth, async (req, res) => {
-  const result = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
-  const ride = result.rows[0];
-  if (!ride) return res.status(404).json({ error: "Ride not found" });
-
-  const driver = await getDriverForUser(req.user.id);
-  const isRider = ride.rider_id === req.user.id;
-  const isAssignedDriver = driver && ride.driver_id === driver.id;
-  // Same "support" allowance as GET /:id and GET /:id/fleet — support can
-  // already view this ride's details/fleet, so it should be able to view
-  // (not rotate) its share link too.
-  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
-    return res.status(403).json({ error: "You don't have access to this ride" });
+  const shareLinks = require("../services/shareLinks");
+  try {
+    // Each call mints a fresh expiring link (old ones keep working until they
+    // expire or the rider stops sharing). The token is shown only now.
+    const { token, expiresAt } = await shareLinks.createLink(Number(req.params.id), req.user);
+    const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html?share=";
+    res.json({ shareToken: token, shareUrl: `${base.includes("?") ? base : base + "?share="}${token}`, expiresAt });
+  } catch (error) {
+    if (error instanceof shareLinks.ShareError) return res.status(error.status).json({ error: error.message, code: error.code });
+    throw error;
   }
-
-  let token = ride.share_token;
-  if (!token) {
-    // Conditioned on share_token IS NULL so two concurrent first "Share
-    // ride" taps can't each generate their own token and both think theirs
-    // is the real one — only one UPDATE can win. If this one loses (another
-    // request already set it a moment earlier), re-read and hand back that
-    // already-persisted token instead of the locally-generated one that
-    // never actually got saved.
-    const generatedToken = crypto.randomBytes(16).toString("hex");
-    const claim = await pool.query(
-      "UPDATE rides SET share_token = $1 WHERE id = $2 AND share_token IS NULL RETURNING share_token",
-      [generatedToken, ride.id]
-    );
-    if (claim.rowCount > 0) {
-      token = claim.rows[0].share_token;
-    } else {
-      const reread = await pool.query("SELECT share_token FROM rides WHERE id = $1", [ride.id]);
-      token = reread.rows[0].share_token;
-    }
-  }
-
-  // Same optional-override-with-hardcoded-fallback pattern as
-  // PASSWORD_RESET_BASE_URL / SCAN_BASE_URL elsewhere in this file/routes.
-  const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html";
-  res.json({ shareToken: token, shareUrl: `${base}?share=${token}` });
 });
 
 // POST /api/rides/:id/share-participants — Arrivo Share. The organizer
