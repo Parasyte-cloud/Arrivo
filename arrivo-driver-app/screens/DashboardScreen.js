@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { startRideRecording, stopRideRecording, startOnPanicIfConsented, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { RECORDING_CONSENT } from "../utils/safetyCopy";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl, Pressable, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -18,15 +19,15 @@ import {
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
-// Consent wording is a placeholder until legal signs off (see PR notes).
+// Wording lives in utils/safetyCopy.js (draft until counsel approves it).
 function askRecordingConsent() {
   return new Promise((resolve) => {
     Alert.alert(
-      "Record audio for safety?",
-      "Audio from this trip will be recorded and stored securely. Only authorised RideArrivo safety staff can listen to it, every listen is logged, and it is deleted after 30 days unless it is needed for a safety investigation. You can stop at any time.",
+      RECORDING_CONSENT.title,
+      RECORDING_CONSENT.body,
       [
-        { text: "Not now", style: "cancel", onPress: () => resolve(false) },
-        { text: "I agree, record", onPress: () => resolve(true) },
+        { text: RECORDING_CONSENT.notNow, style: "cancel", onPress: () => resolve(false) },
+        { text: RECORDING_CONSENT.agree, onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) }
     );
@@ -672,8 +673,8 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         // the same false-safety-reassurance bug already fixed once for
         // panicConfirmed/panicError itself, just missed here.
         setListeningOn(true);
-        // Never asks for consent mid-emergency: only records if this device agreed earlier.
-        startOnPanicIfConsented({ token, rideId: ride.id });
+        // The Emergency Button starts recording at once with no prompt.
+        startOnPanic({ token, rideId: ride.id });
       })
       .catch(() => {
         setPanicError(true);

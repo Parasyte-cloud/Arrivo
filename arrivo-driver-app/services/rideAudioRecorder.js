@@ -7,8 +7,9 @@
 // everything already sent.
 //
 // Nothing here runs unless the server's /api/recordings/config says enabled.
-// Consent is asked by the screen (askConsent) and remembered on this device;
-// the server also refuses a start that does not state consent.
+// Consent for a self-started recording is asked by the screen (askConsent) and
+// remembered on this device; the Emergency Button skips it. The server also
+// refuses a start that does not state consent.
 //
 // NOT covered by automated tests: the expo-audio calls need a real device.
 // The upload queue is (services/audioUploadQueue.test.js).
@@ -111,8 +112,10 @@ export async function startRideRecording({ token, rideId, askConsent, viaPanic =
   if (isRecordingRide(rideId)) return { handled: true, started: true };
   if (session) return { handled: true, started: false, reason: "busy" };
 
-  if (!(await hasStoredConsent())) {
-    if (viaPanic || !askConsent || !(await askConsent())) return { handled: true, started: false, reason: "no_consent" };
+  // The Emergency Button records straight away, with no prompt (counsel, 9 Oct 2026).
+  // A recording the person starts by themselves still asks for agreement first.
+  if (!viaPanic && !(await hasStoredConsent())) {
+    if (!askConsent || !(await askConsent())) return { handled: true, started: false, reason: "no_consent" };
     await storeConsent();
   }
   const perm = await AudioModule.requestRecordingPermissionsAsync();
@@ -145,10 +148,12 @@ export async function stopRideRecording() {
   await s.loop;
 }
 
-// Panic: only if this device already agreed earlier. Never asks in an emergency.
-export async function startOnPanicIfConsented({ token, rideId }) {
+// Emergency Button: start recording at once. It never asks in an emergency; the
+// notice is given beforehand (pre-trip pop-up, policies, driver and vehicle owner
+// agreements). Microphone permission still has to be granted on the phone, so
+// the pre-trip pop-up should ask for it ahead of time.
+export async function startOnPanic({ token, rideId }) {
   try {
-    if (!(await hasStoredConsent())) return;
     await startRideRecording({ token, rideId, viaPanic: true });
   } catch (err) {
     console.warn("Could not start recording on panic:", err && err.message);

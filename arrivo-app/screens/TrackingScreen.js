@@ -14,18 +14,19 @@ import {
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
   addRideShareParticipant, removeRideShareParticipant,
 } from "../services/api";
-import { startRideRecording, stopRideRecording, startOnPanicIfConsented, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { RECORDING_CONSENT } from "../utils/safetyCopy";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
-// Consent wording is a placeholder until legal signs off (see PR notes).
+// Wording lives in utils/safetyCopy.js (draft until counsel approves it).
 function askRecordingConsent() {
   return new Promise((resolve) => {
     Alert.alert(
-      "Record audio for safety?",
-      "Audio from this trip will be recorded and stored securely. Only authorised RideArrivo safety staff can listen to it, every listen is logged, and it is deleted after 30 days unless it is needed for a safety investigation. You can stop at any time.",
+      RECORDING_CONSENT.title,
+      RECORDING_CONSENT.body,
       [
-        { text: "Not now", style: "cancel", onPress: () => resolve(false) },
-        { text: "I agree, record", onPress: () => resolve(true) },
+        { text: RECORDING_CONSENT.notNow, style: "cancel", onPress: () => resolve(false) },
+        { text: RECORDING_CONSENT.agree, onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) }
     );
@@ -418,7 +419,7 @@ export default function TrackingScreen({ route, navigation }) {
       setPanicActive(true);
       // Panic never asks for consent mid-emergency: it only records if this
       // device already agreed earlier. Fire and forget, never blocks the alert.
-      startOnPanicIfConsented({ token, rideId });
+      startOnPanic({ token, rideId });
       Alert.alert(
         "Support has been alerted",
         "Our team has been notified of your ride and location and will reach out. If you're in immediate danger, please also call local emergency services."
