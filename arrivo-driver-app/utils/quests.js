@@ -1,0 +1,55 @@
+// Pure helpers for the Quests screen: no imports, so a plain node test can
+// load this file (same approach as privacyPolicy.js).
+
+// What a quest card should say, from the API's quest row.
+//   state: "earned" | "paid" | "full" | "ended" | "upcoming" | "active"
+export function questState(q, now = new Date()) {
+  if (q.paid) return "paid";
+  if (q.earned) return "earned";
+  if (new Date(q.endsAt) < now) return "ended";
+  if (new Date(q.startsAt) > now) return "upcoming";
+  if (q.quotaFull) return "full";
+  return "active";
+}
+
+export function questProgressPct(q) {
+  const target = Number(q.targetTrips) || 0;
+  if (target <= 0) return 0;
+  const done = q.earned ? target : Math.min(Number(q.progress) || 0, target);
+  return Math.round((done / target) * 100);
+}
+
+export function tripsLeft(q) {
+  return Math.max((Number(q.targetTrips) || 0) - (Number(q.progress) || 0), 0);
+}
+
+// "2 days left", "5 hours left", "Ended".
+export function timeLeftLabel(endsAt, now = new Date()) {
+  const ms = new Date(endsAt).getTime() - now.getTime();
+  if (ms <= 0) return "Ended";
+  const hours = Math.floor(ms / 3600000);
+  if (hours >= 48) return `${Math.floor(hours / 24)} days left`;
+  if (hours >= 1) return `${hours} hour${hours === 1 ? "" : "s"} left`;
+  const mins = Math.max(Math.floor(ms / 60000), 1);
+  return `${mins} min left`;
+}
+
+// The rules a driver should be able to read before chasing a quest.
+export function questRules(q) {
+  const rules = [];
+  rules.push(`Finish ${q.targetTrips} ArrivoExpress trips${q.tier ? ` in ${q.tier}` : ""}.`);
+  rules.push(`Each trip must be at least ${Number(q.minTripKm)} km and ${Number(q.minTripMinutes)} minutes, and actually started.`);
+  rules.push(`At most ${q.maxTripsPerRider} trips with the same rider count.`);
+  if (q.minDriverRating) rules.push(`Your rating must be ${Number(q.minDriverRating)} or higher.`);
+  rules.push("Rewards are limited. When the places are gone, the quest closes.");
+  return rules;
+}
+
+// Quests worth showing first: ones you can still earn, then earned, then the rest.
+export function sortQuests(quests, now = new Date()) {
+  const rank = { active: 0, earned: 1, paid: 2, upcoming: 3, full: 4, ended: 5 };
+  return [...quests].sort((a, b) => {
+    const r = rank[questState(a, now)] - rank[questState(b, now)];
+    return r !== 0 ? r : new Date(a.endsAt) - new Date(b.endsAt);
+  });
+}

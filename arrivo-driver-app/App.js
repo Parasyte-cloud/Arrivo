@@ -19,6 +19,7 @@ import SignupScreen from "./screens/SignupScreen";
 import DriverProfileScreen from "./screens/DriverProfileScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import EarningsScreen from "./screens/EarningsScreen";
+import QuestsScreen from "./screens/QuestsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ChatScreen from "./screens/ChatScreen";
 
@@ -66,7 +67,7 @@ function AuthFlow() {
   );
 }
 
-const ICONS = { Dashboard: "car-sport", Earnings: "cash", Profile: "person" };
+const ICONS = { Dashboard: "car-sport", Earnings: "cash", Quests: "trophy", Profile: "person" };
 
 function MainTabs() {
   return (
@@ -81,6 +82,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Dashboard" component={DashboardStackScreen} />
       <Tab.Screen name="Earnings" component={EarningsScreen} />
+      <Tab.Screen name="Quests" component={QuestsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
