@@ -1,4 +1,6 @@
 import { API_BASE_URL } from "./config";
+import { clientHeaders } from "./clientInfo";
+import { noteResponse } from "../utils/updateRequired";
 
 async function request(path, options = {}) {
   // NOTE: headers must be merged, not spread at the top level — any caller
@@ -9,11 +11,17 @@ async function request(path, options = {}) {
   // Express's body parser never parses the JSON body at all.
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
+  // A 426 means this build is below the backend's minimum. Record it so the
+  // app can swap to the update screen.
+  noteResponse(res.status, data);
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.code = data.code;
+    throw err;
   }
   return data;
 }
@@ -44,6 +52,11 @@ export function getFlightStatus(token, flightNumber, arrIata = "LOS") {
 // request went through, not that an email necessarily exists for it.
 export function forgotPassword(email) {
   return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+// Booking rules, support contacts and the minimum app version. Public.
+export function getBookingConfig() {
+  return request("/api/config/booking");
 }
 
 export function initializePayment(email, amountNaira) {
