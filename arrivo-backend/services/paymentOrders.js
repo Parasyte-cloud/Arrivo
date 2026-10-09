@@ -10,8 +10,15 @@ const ORDER_PURPOSES = ["ride", "wallet_topup", "unknown"];
 // booking, and this column is written from a request that may be anonymous.
 const MAX_PAYLOAD_BYTES = 20 * 1024;
 
+// The rider app (apps project, purpose token build) says "topup" for a wallet
+// top-up. The backend's own name for it is "wallet_topup", so accept both.
+// Other app purposes (overage, tip, family_topup) are recorded as "unknown":
+// they are paid through their own endpoints, not finalized by the webhook.
+const PURPOSE_ALIASES = { topup: "wallet_topup" };
+
 function normalisePurpose(purpose) {
-  return ORDER_PURPOSES.includes(purpose) ? purpose : "unknown";
+  const name = PURPOSE_ALIASES[purpose] || purpose;
+  return ORDER_PURPOSES.includes(name) ? name : "unknown";
 }
 
 // Stored only for a signed-in ride order, and only when it is a plain object of

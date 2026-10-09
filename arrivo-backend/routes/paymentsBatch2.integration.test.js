@@ -142,6 +142,18 @@ const ridesFor = async (ref) => (await pool.query("SELECT * FROM rides WHERE pay
     assert.strictEqual(order.status, "pending");
   });
 
+  await test("the app's purpose names map: topup is a wallet top-up, tip and overage stay unknown", async () => {
+    const user = await makeUser("init_alias");
+    const a = await call("/api/payments/initialize", { method: "POST", token: user.token, body: { email: user.email, amountNaira: 2000, purpose: "topup", refId: "r1" } });
+    assert.strictEqual(a.status, 200, JSON.stringify(a.body));
+    assert.strictEqual((await orderOf(a.body.reference)).purpose, "wallet_topup");
+    for (const purpose of ["tip", "overage", "family_topup"]) {
+      const b = await call("/api/payments/initialize", { method: "POST", token: user.token, body: { email: user.email, amountNaira: 2000, purpose, refId: "r1" } });
+      assert.strictEqual(b.status, 200);
+      assert.strictEqual((await orderOf(b.body.reference)).purpose, "unknown");
+    }
+  });
+
   await test("an old build with no token still works and the order is anonymous", async () => {
     const r = await call("/api/payments/initialize", { method: "POST", body: { email: "old@example.com", amountNaira: 1200 } });
     assert.strictEqual(r.status, 200);
