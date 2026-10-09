@@ -13,7 +13,10 @@ async function request(path, options = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.code = data.code;
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
@@ -544,4 +547,23 @@ export function getSharedWithMeRides(token) {
 export function getPartnerVenues(token) {
   return request("/api/partner-venues", {
     headers: { Authorization: `Bearer ${token}` },  });
+}
+
+// Trip safety
+export function getPickupPin(token, rideId) {
+  return request(`/api/safety/rides/${rideId}/pin`, { headers: { Authorization: `Bearer ${token}` } });
+}
+// A new expiring link each time. The link is only shown now, so share it right away.
+export function createRideShareLink(token, rideId) {
+  return request(`/api/safety/rides/${rideId}/share`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+}
+export function stopSharingRide(token, rideId) {
+  return request(`/api/safety/rides/${rideId}/share`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+}
+export function fileRideComplaint(token, { rideId, category, description }) {
+  return request("/api/safety/complaints", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ rideId, category, description }),
+  });
 }

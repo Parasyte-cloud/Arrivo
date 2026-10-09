@@ -94,5 +94,39 @@
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Viaje agora com o ArrivoExpress",
     "homeBannerSubtitle": "Corridas sob demanda, com tarifa pela distância, motorista em minutos."
+  },
+  "safety": {
+    "pin": {
+      "title": "O seu PIN de embarque",
+      "help": "Diga este PIN ao motorista quando se encontrarem. Ele precisa dele para iniciar a viagem. Não o partilhe antes de estar com o motorista."
+    },
+    "share": {
+      "stop": "Parar de partilhar",
+      "stopped": "Partilha parada. Os links enviados deixaram de funcionar.",
+      "note": "Os links de partilha deixam de funcionar algumas horas após o embarque, ou pouco depois de a viagem terminar. Pode parar a partilha a qualquer momento.",
+      "until": "Este link funciona até às {{time}}.",
+      "failed": "Não foi possível parar a partilha. Tente novamente."
+    },
+    "report": {
+      "button": "Denunciar o motorista",
+      "title": "Denunciar um problema",
+      "help": "Conte-nos o que aconteceu. O motorista não verá a sua denúncia. Se estiver em perigo, use o botão de pânico.",
+      "pick": "O que aconteceu?",
+      "describe": "Descreva (pelo menos 10 caracteres)",
+      "send": "Enviar denúncia",
+      "sent": "Obrigado. Recebemos a sua denúncia e vamos analisá-la.",
+      "cancel": "Cancelar",
+      "failed": "Não foi possível enviar a sua denúncia. Tente novamente."
+    },
+    "cat": {
+      "unsafe_driving": "Condução perigosa",
+      "harassment": "Assédio",
+      "felt_unsafe": "Senti-me inseguro",
+      "wrong_route": "Rota errada",
+      "overcharge": "Cobrança a mais",
+      "vehicle_mismatch": "O carro ou a matrícula não correspondia à app",
+      "rude": "Comportamento rude",
+      "other": "Outra coisa"
+    }
   }
 }

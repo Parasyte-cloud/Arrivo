@@ -94,5 +94,39 @@
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Roulez maintenant avec ArrivoExpress",
     "homeBannerSubtitle": "Courses à la demande, tarifées à la distance, un chauffeur trouvé en quelques minutes."
+  },
+  "safety": {
+    "pin": {
+      "title": "Votre code de prise en charge",
+      "help": "Donnez ce code à votre chauffeur quand vous vous retrouvez. Il en a besoin pour démarrer la course. Ne le partagez pas avant d'être avec votre chauffeur."
+    },
+    "share": {
+      "stop": "Arrêter le partage",
+      "stopped": "Partage arrêté. Les liens envoyés ne fonctionnent plus.",
+      "note": "Les liens de partage cessent de fonctionner quelques heures après la prise en charge, ou peu après la fin de la course. Vous pouvez arrêter le partage à tout moment.",
+      "until": "Ce lien fonctionne jusqu'à {{time}}.",
+      "failed": "Impossible d'arrêter le partage. Veuillez réessayer."
+    },
+    "report": {
+      "button": "Signaler le chauffeur",
+      "title": "Signaler un problème",
+      "help": "Dites-nous ce qui s'est passé. Le chauffeur ne verra pas votre signalement. Si vous êtes en danger, utilisez le bouton d'urgence.",
+      "pick": "Que s'est-il passé ?",
+      "describe": "Décrivez la situation (au moins 10 caractères)",
+      "send": "Envoyer le signalement",
+      "sent": "Merci. Nous avons reçu votre signalement et nous allons l'examiner.",
+      "cancel": "Annuler",
+      "failed": "Impossible d'envoyer votre signalement. Veuillez réessayer."
+    },
+    "cat": {
+      "unsafe_driving": "Conduite dangereuse",
+      "harassment": "Harcèlement",
+      "felt_unsafe": "Je ne me suis pas senti(e) en sécurité",
+      "wrong_route": "Mauvais itinéraire",
+      "overcharge": "Trop facturé",
+      "vehicle_mismatch": "La voiture ou la plaque ne correspondait pas à l'appli",
+      "rude": "Comportement impoli",
+      "other": "Autre chose"
+    }
   }
 }
