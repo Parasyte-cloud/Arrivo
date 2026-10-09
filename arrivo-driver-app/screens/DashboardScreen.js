@@ -11,11 +11,23 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import {
   setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
-  triggerPanic, activateListeningDevice, getDriverProfile,
+  triggerPanic, getDriverProfile,
   getInstantStatus, setInstantAvailability, getInstantOffers, acceptInstantOffer, declineInstantOffer,
   cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
+import EmergencyLinks from "../components/EmergencyLinks";
+import {
+  EMERGENCY_BUTTON_LABEL,
+  EMERGENCY_COUNTDOWN_NOTICE,
+  emergencyCountdownText,
+  EMERGENCY_CANCEL_LABEL,
+  EMERGENCY_ACTIVE_TITLE,
+  EMERGENCY_ACTIVE_SENDING,
+  EMERGENCY_ACTIVE_SENT,
+  EMERGENCY_ACTIVE_FAILED,
+  EMERGENCY_RETRY_LABEL,
+} from "../utils/emergencyCopy";
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
@@ -619,31 +631,14 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
   // confidence to the driver with nobody actually notified.
   const [panicConfirmed, setPanicConfirmed] = useState(false);
   const [panicError, setPanicError] = useState(false);
-  // One-way, matches ridearrivo.com — starts "on" if the ride already shows
-  // an activation (e.g. app reopened mid-trip), otherwise idle. No control
-  // to turn it back off, same as panic.
-  const [listeningOn, setListeningOn] = useState(!!ride.listening_device_activated_at);
-  const [listeningError, setListeningError] = useState(false);
-
   const sendPanicRequest = () => {
     setPanicError(false);
-    setListeningError(false);
     triggerPanic(token, ride.id, "Driver-initiated SOS")
       .then(() => {
         setPanicConfirmed(true);
-        // "One trigger, full response" — panic activates the listening
-        // device server-side in the same write, so only reflect "on" once
-        // the call actually succeeds. Previously this ran unconditionally,
-        // outside the .then/.catch — a failed panic request (network down,
-        // the exact case panicError exists to surface) still showed
-        // "Listening device: on" with no error and no retry affordance,
-        // the same false-safety-reassurance bug already fixed once for
-        // panicConfirmed/panicError itself, just missed here.
-        setListeningOn(true);
       })
       .catch(() => {
         setPanicError(true);
-        setListeningError(true);
       });
   };
 
@@ -667,26 +662,9 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
     setPanicState("idle");
   };
 
-  const activateListening = () => {
-    setListeningOn(true); // optimistic, but listeningError below keeps this honest
-    setListeningError(false);
-    activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
-  };
-
   useEffect(() => {
     if (countdown === 0 && panicState === "counting") setPanicState("active");
   }, [countdown, panicState]);
-
-  // ActiveTripCard isn't remounted while a trip stays active (no `key` prop
-  // and `ride` only ever changes via re-render), so listeningOn previously
-  // only reflected whatever ride.listening_device_activated_at was at the
-  // very first render. Now that the parent polls the active ride (see
-  // DashboardScreen above), this keeps it in sync with the server — e.g. if
-  // it was activated from another device/session. One-way only, matching
-  // the rest of this feature: never flips back to false.
-  useEffect(() => {
-    if (ride.listening_device_activated_at) setListeningOn(true);
-  }, [ride.listening_device_activated_at]);
 
   useEffect(() => () => clearInterval(countdownRef.current), []);
 
@@ -774,42 +752,30 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
 
       {panicState === "active" ? (
         <Card tone="dark" style={styles.panicActiveCard}>
-          <Text style={styles.panicActiveTitle}>Emergency alert active</Text>
+          <Text style={styles.panicActiveTitle}>{EMERGENCY_ACTIVE_TITLE}</Text>
           <Text style={styles.panicActiveBody}>
-            {panicConfirmed
-              ? "Our team has been notified and is monitoring this trip. This can only be cleared once resolved on our end."
-              : "Sending to RideArrivo's team…"}
+            {panicConfirmed ? EMERGENCY_ACTIVE_SENT : EMERGENCY_ACTIVE_SENDING}
           </Text>
           {panicError ? (
             <>
-              <Text style={styles.panicErrorText}>
-                Couldn't confirm this reached RideArrivo's servers. Please also call support directly if you're in danger.
-              </Text>
-              <Button label="Retry sending alert" variant="ghost" tone="dark" onPress={sendPanicRequest} style={{ marginTop: 8 }} />
+              <Text style={styles.panicErrorText}>{EMERGENCY_ACTIVE_FAILED}</Text>
+              <Button label={EMERGENCY_RETRY_LABEL} variant="ghost" tone="dark" onPress={sendPanicRequest} style={{ marginTop: 8 }} />
             </>
           ) : null}
         </Card>
       ) : panicState === "counting" ? (
         <Card tone="dark" style={styles.panicCountingCard}>
-          <Text style={styles.panicCountingText}>Sending emergency alert in {countdown}…</Text>
-          <Button label="Cancel" variant="ghost" tone="dark" onPress={cancelPanicCountdown} style={{ marginTop: 8 }} />
+          <Text style={styles.panicCountingText}>{emergencyCountdownText(countdown)}</Text>
+          <Text style={styles.panicActiveBody}>{EMERGENCY_COUNTDOWN_NOTICE}</Text>
+          <Button label={EMERGENCY_CANCEL_LABEL} variant="ghost" tone="dark" onPress={cancelPanicCountdown} style={{ marginTop: 8 }} />
         </Card>
       ) : (
-        <Button label="Emergency SOS" variant="ghost" tone="dark" style={styles.sosButton} onPress={startPanicCountdown} />
+        <Button label={EMERGENCY_BUTTON_LABEL} variant="ghost" tone="dark" style={styles.sosButton} onPress={startPanicCountdown} />
       )}
 
       <View style={{ height: spacing.sm }} />
 
-      {listeningOn ? (
-        <>
-          <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
-          {listeningError ? (
-            <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
-          ) : null}
-        </>
-      ) : (
-        <Button label="🎙️ Activate listening device" variant="ghost" tone="dark" onPress={activateListening} />
-      )}
+      <EmergencyLinks />
 
       <View style={{ height: spacing.sm }} />
 
@@ -905,7 +871,6 @@ const styles = StyleSheet.create({
   panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
   panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
-  listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
   cancelPickerCard: {
     backgroundColor: "rgba(255,255,255,0.04)",
