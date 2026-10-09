@@ -1,8 +1,10 @@
 const express = require("express");
 const { pool } = require("../db/db");
-const { requireAuth, requireAnyRole } = require("../middleware/auth");
+const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { parseOptionalExtras } = require("../services/onTheGoRequest");
+const { parseStatusUpdate } = require("../services/onTheGoStatus");
+const { sendOnTheGoAlert } = require("../services/onTheGoAlert");
 
 const router = express.Router();
 
@@ -59,6 +61,9 @@ router.post("/", requireAuth, async (req, res) => {
       extras.value.service,
     ]
   );
+  // Page the on-call people. Not awaited, so a slow email or WhatsApp provider
+  // never holds up the rider's response, and it never throws.
+  sendOnTheGoAlert(pool, result.rows[0]);
   res.status(201).json({ request: result.rows[0] });
 });
 
@@ -86,6 +91,23 @@ router.get("/", requireAuth, requireAnyRole(["admin", "support", "operations"]),
      LIMIT 200`
   );
   res.json({ requests: result.rows });
+});
+
+// PATCH /api/on-the-go/:id: ops marks a request confirmed or cancelled once
+// they have rung the rider. Admin only, like the other mutating admin routes;
+// support and operations can read the queue but not change it.
+router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid request id" });
+  const parsed = parseStatusUpdate(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+  const result = await pool.query("UPDATE on_the_go_requests SET status = $1 WHERE id = $2 RETURNING *", [
+    parsed.value,
+    id,
+  ]);
+  if (!result.rows.length) return res.status(404).json({ error: "Request not found" });
+  res.json({ request: result.rows[0] });
 });
 
 module.exports = router;

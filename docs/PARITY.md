@@ -11,6 +11,7 @@ old builds keep working.
 | Backend change | Branch | Used by | Safe for old app builds |
 | --- | --- | --- | --- |
 | `on_the_go_requests` gets `requested_pickup_at`, `details`, `source_service` (nullable). `POST /api/on-the-go` accepts optional `requestedPickupAt`, `details`, `service`, validated in `services/onTheGoRequest.js`. | `feat/late-request-backend` | Rider app: late booking notice passes the entered trip to On the Go | Yes. Old builds send none of the fields. |
+| `GET /api/on-the-go` (existing) and new admin-only `PATCH /api/on-the-go/:id` (status pending, confirmed, cancelled). New staff alert by email and WhatsApp on each new request, using `OPS_ALERT_EMAILS` and `OPS_ALERT_WHATSAPP`. | `feat/on-the-go-ops-backend` (stacked on `feat/late-request-backend`) | Admin app On the Go queue (`feat/on-the-go-ops-admin`) | Yes. Purely additive. |
 
 ## Constants that must match
 
