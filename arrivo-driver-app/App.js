@@ -11,6 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { getDriverProfile } from "./services/api";
 import LaunchIntro from "./components/LaunchIntro";
+import useUpdateRequired from "./hooks/useUpdateRequired";
+import UpdateRequiredScreen from "./components/UpdateRequiredScreen";
 import { CallOverlayProvider } from "./components/CallOverlay";
 import { useNotificationPermission } from "./hooks/useNotificationPermission";
 
@@ -104,6 +106,8 @@ function RootNavigator() {
   // shows up on a slow session restore. Falls through to the exact same
   // initializing/auth logic as before once it finishes.
   const [introDone, setIntroDone] = useState(false);
+  // Set once any request is told this build is below the backend's minimum.
+  const updateRequired = useUpdateRequired();
 
   const checkProfile = useCallback(async () => {
     if (!token) return;
@@ -122,6 +126,7 @@ function RootNavigator() {
     if (isAuthenticated) checkProfile();
   }, [isAuthenticated, checkProfile]);
 
+  if (updateRequired) return <UpdateRequiredScreen info={updateRequired} />;
   if (!introDone) return <LaunchIntro onFinish={() => setIntroDone(true)} />;
   if (initializing) return <Loading />;
   if (!isAuthenticated) return <AuthFlow />;

@@ -1,4 +1,6 @@
 import { API_BASE_URL } from "./config";
+import { clientHeaders } from "./clientInfo";
+import { noteResponse } from "../utils/updateRequired";
 
 async function request(path, options = {}) {
   // See identical note in arrivo-app/services/api.js — headers must be
@@ -6,9 +8,12 @@ async function request(path, options = {}) {
   // Authorization) silently wipes out Content-Type entirely.
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
+  // A 426 means this build is below the backend's minimum. Record it so the
+  // app can swap to the update screen.
+  noteResponse(res.status, data);
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
