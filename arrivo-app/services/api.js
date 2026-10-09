@@ -348,11 +348,25 @@ export function addMembershipProfileUser(token, profileUserEmail) {
 // On-the-Go: the quick form for riders who need a car within about 12 hours.
 // No fare quote and no payment, ops rings the contact number to confirm a
 // driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
-export function createOnTheGoRequest(token, { pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone }) {
+// requestedPickupAt (ISO), details and service are optional and carry what the
+// rider had already entered when a booking turned out to be too close.
+export function createOnTheGoRequest(
+  token,
+  { pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone, requestedPickupAt, details, service }
+) {
   return request("/api/on-the-go", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone }),
+    body: JSON.stringify({
+      pickupAddress,
+      destinationAddress,
+      flightNumber,
+      passengerCount,
+      contactPhone,
+      requestedPickupAt,
+      details,
+      service,
+    }),
   });
 }
 
