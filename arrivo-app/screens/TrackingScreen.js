@@ -8,8 +8,21 @@ import { LiveMap } from "../components/LiveMap";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
+import EmergencyLinks from "../components/EmergencyLinks";
 import {
-  getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
+  EMERGENCY_BUTTON_LABEL,
+  EMERGENCY_CONFIRM_TITLE,
+  EMERGENCY_CONFIRM_BODY,
+  EMERGENCY_CONFIRM_YES,
+  EMERGENCY_CONFIRM_CANCEL,
+  EMERGENCY_ACTIVE_MESSAGE,
+  EMERGENCY_SENT_TITLE,
+  EMERGENCY_SENT_BODY,
+  EMERGENCY_FAILED_TITLE,
+  EMERGENCY_FAILED_BODY,
+} from "../utils/emergencyCopy";
+import {
+  getRideDetails, triggerPanic, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
   addRideShareParticipant, removeRideShareParticipant,
@@ -81,7 +94,6 @@ export default function TrackingScreen({ route, navigation }) {
   const confirmedGenerationRef = useRef(0);
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
-  const [listeningSending, setListeningSending] = useState(false);
   const [starsSelected, setStarsSelected] = useState(0);
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
@@ -379,14 +391,10 @@ export default function TrackingScreen({ route, navigation }) {
   };
 
   const confirmPanic = () => {
-    Alert.alert(
-      "Trigger safety alert?",
-      "This immediately notifies RideArrivo's support team with your ride details and location. Only use this if you feel unsafe right now.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Yes, alert support", style: "destructive", onPress: sendPanic },
-      ]
-    );
+    Alert.alert(EMERGENCY_CONFIRM_TITLE, EMERGENCY_CONFIRM_BODY, [
+      { text: EMERGENCY_CONFIRM_CANCEL, style: "cancel" },
+      { text: EMERGENCY_CONFIRM_YES, style: "destructive", onPress: sendPanic },
+    ]);
   };
 
   const sendPanic = async () => {
@@ -398,30 +406,11 @@ export default function TrackingScreen({ route, navigation }) {
     try {
       await triggerPanic(token, rideId, "Triggered from Live Tracking screen");
       setPanicActive(true);
-      Alert.alert(
-        "Support has been alerted",
-        "Our team has been notified of your ride and location and will reach out. If you're in immediate danger, please also call local emergency services."
-      );
+      Alert.alert(EMERGENCY_SENT_TITLE, EMERGENCY_SENT_BODY);
     } catch (e) {
-      Alert.alert("Couldn't send alert", e.message || "Please try again, or call support directly.");
+      Alert.alert(EMERGENCY_FAILED_TITLE, EMERGENCY_FAILED_BODY);
     } finally {
       setPanicSending(false);
-    }
-  };
-
-  // One-way — matches ridearrivo.com's design. Triggering panic (above)
-  // already activates this server-side too, so this is only needed when
-  // someone wants to turn it on independent of a panic alert.
-  const activateListening = async () => {
-    if (!rideId) return;
-    setListeningSending(true);
-    try {
-      await activateListeningDevice(token, rideId);
-      await fetchRide();
-    } catch (e) {
-      Alert.alert("Couldn't activate", e.message || "Please try again.");
-    } finally {
-      setListeningSending(false);
     }
   };
 
@@ -1086,7 +1075,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {panicActive ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
-            <Text style={styles.panicActiveText}>🚨 Support has been alerted about this ride.</Text>
+            <Text style={styles.panicActiveText}>{EMERGENCY_ACTIVE_MESSAGE}</Text>
           </Card>
         ) : (
           <Pressable
@@ -1097,31 +1086,12 @@ export default function TrackingScreen({ route, navigation }) {
             {panicSending ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.panicText}>🚨 I don't feel safe. Alert support</Text>
+              <Text style={styles.panicText}>{EMERGENCY_BUTTON_LABEL}</Text>
             )}
           </Pressable>
         )}
 
-        {/* One-way, matches ridearrivo.com: once on, stays on for this ride —
-            no toggle-off control, by design. Alerting support above turns
-            this on automatically too. */}
-        <Pressable
-          onPress={activateListening}
-          disabled={!!ride?.listening_device_activated_at || listeningSending}
-          style={({ pressed }) => [
-            styles.listeningBtn,
-            !!ride?.listening_device_activated_at && styles.listeningBtnActive,
-            (pressed || listeningSending) && { opacity: 0.7 },
-          ]}
-        >
-          {listeningSending ? (
-            <ActivityIndicator color={colors.dark.text} />
-          ) : (
-            <Text style={styles.listeningText}>
-              {ride?.listening_device_activated_at ? "🎙️ Listening device: on" : "🎙️ Activate listening device"}
-            </Text>
-          )}
-        </Pressable>
+        <EmergencyLinks />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -1176,13 +1146,4 @@ const styles = StyleSheet.create({
   },
   panicText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
   panicActiveText: { color: "#FF9B8A", fontWeight: "700", fontSize: 13, textAlign: "center" },
-  listeningBtn: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.dark.fieldBg,
-    borderRadius: radius.sm + 2,
-    paddingVertical: 13,
-    alignItems: "center",
-  },
-  listeningBtnActive: { backgroundColor: "rgba(244,163,0,0.18)" },
-  listeningText: { color: colors.dark.text, fontWeight: "700", fontSize: 13 },
 });
