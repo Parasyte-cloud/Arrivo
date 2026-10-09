@@ -1565,3 +1565,30 @@ CREATE TABLE IF NOT EXISTS driver_quest_payouts (
 );
 CREATE INDEX IF NOT EXISTS idx_driver_quest_payouts_status
   ON driver_quest_payouts(status, earned_at);
+
+
+-- ── ArrivoExpress automation: quest payouts to the driver wallet, repricing ──
+--
+-- How a quest reward was settled, and the wallet ledger row that proves it.
+-- paid_via is 'wallet' (credited to the driver's RideArrivo wallet) or
+-- 'manual' (an admin paid it outside the app and marked it paid).
+ALTER TABLE driver_quest_payouts ADD COLUMN IF NOT EXISTS paid_via TEXT
+  CHECK (paid_via IS NULL OR paid_via IN ('wallet', 'manual'));
+ALTER TABLE driver_quest_payouts ADD COLUMN IF NOT EXISTS wallet_transaction_id INTEGER
+  REFERENCES wallet_transactions(id);
+
+-- Every automatic decision, kept as evidence: what it did, what it skipped and
+-- why. run_date makes a daily job claimable exactly once even with several
+-- server instances running (the insert either wins the day or does nothing).
+CREATE TABLE IF NOT EXISTS express_automation_log (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,           -- 'reprice' | 'payout'
+  action TEXT NOT NULL,         -- e.g. 'applied', 'skipped', 'run', 'paid', 'cap_reached'
+  run_date DATE,
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_express_automation_daily
+  ON express_automation_log(kind, run_date) WHERE action = 'run' AND run_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_express_automation_log_recent
+  ON express_automation_log(kind, created_at DESC);

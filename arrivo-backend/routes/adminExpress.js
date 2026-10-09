@@ -9,7 +9,13 @@
 //   POST  /api/admin/express/quests             create a quest
 //   POST  /api/admin/express/quests/:id/end     stop a quest counting new trips
 //   GET   /api/admin/express/payouts            quest rewards owed or paid
-//   POST  /api/admin/express/payouts/:id/paid   mark a reward as paid
+//   POST  /api/admin/express/payouts/:id/paid   mark a reward as paid (money sent outside the app)
+//   POST  /api/admin/express/payouts/:id/pay-wallet   credit a reward to the driver's wallet now
+//   POST  /api/admin/express/payouts/pay-all-owed     credit every owed reward ({ confirm: true })
+//   GET   /api/admin/express/automation         switches, limits, recent automatic actions
+//   PATCH /api/admin/express/automation         turn auto payout / auto repricing on or off
+//   GET   /api/admin/express/reprice/plan       what automatic repricing would do right now
+//   POST  /api/admin/express/reprice/apply      apply that plan now (same guard rails)
 //
 // Admin only, reads included: these are money settings. The "operations"
 // role is read-only elsewhere in the admin area and is not given these.
@@ -19,6 +25,10 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const priceBook = require("../services/instantPriceBook");
 const intel = require("../services/instantPriceIntel");
 const quests = require("../services/driverQuests");
+const questPayout = require("../services/questPayout");
+const autoReprice = require("../services/autoReprice");
+const systemConfig = require("../services/systemConfig");
+const { pool } = require("../db/db");
 
 const router = express.Router();
 router.use(requireAuth, requireRole("admin"));
@@ -31,7 +41,8 @@ function handle(fn) {
       if (
         error instanceof priceBook.PriceBookError ||
         error instanceof intel.PriceSampleError ||
-        error instanceof quests.QuestError
+        error instanceof quests.QuestError ||
+        error instanceof questPayout.PayoutError
       ) {
         return res.status(error.status).json({ error: error.message, code: error.code, details: error.details });
       }
@@ -96,6 +107,60 @@ router.post("/payouts/:id/paid", handle(async (req, res) => {
   const payoutId = id(req);
   if (!payoutId) return res.status(400).json({ error: "Invalid payout id" });
   res.json(await quests.markPayoutPaid(payoutId, req.user.id));
+}));
+
+router.post("/payouts/pay-all-owed", handle(async (req, res) => {
+  if (!req.body || req.body.confirm !== true) {
+    return res.status(400).json({ error: "Send { confirm: true } to credit every owed reward to driver wallets." });
+  }
+  res.json(await questPayout.payAllOwed({ adminId: req.user.id }));
+}));
+
+router.post("/payouts/:id/pay-wallet", handle(async (req, res) => {
+  const payoutId = id(req);
+  if (!payoutId) return res.status(400).json({ error: "Invalid payout id" });
+  res.json(await questPayout.payToWallet(payoutId, { adminId: req.user.id }));
+}));
+
+const AUTOMATION_KEYS = ["express_auto_payout_enabled", "express_auto_reprice_enabled"];
+
+router.get("/automation", handle(async (req, res) => {
+  const all = await systemConfig.listConfig();
+  const switches = all.filter((c) => AUTOMATION_KEYS.includes(c.key));
+  const log = await pool.query(
+    `SELECT id, kind, action, detail, created_at AS "createdAt"
+       FROM express_automation_log WHERE action <> 'run' ORDER BY created_at DESC, id DESC LIMIT 50`
+  );
+  res.json({
+    switches,
+    limits: {
+      payoutDailyCapNaira: questPayout.dailyCapNaira(),
+      payoutPaidTodayNaira: await questPayout.autoPaidTodayNaira(),
+      reprice: autoReprice.settings(),
+    },
+    log: log.rows,
+  });
+}));
+
+router.patch("/automation", handle(async (req, res) => {
+  const { key, enabled } = req.body || {};
+  if (!AUTOMATION_KEYS.includes(key) || typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "Send { key, enabled } where key is an ArrivoExpress automation switch and enabled is true or false." });
+  }
+  await systemConfig.setConfig(key, enabled ? "true" : "false", req.user.id);
+  await pool.query(
+    "INSERT INTO express_automation_log (kind, action, detail) VALUES ($1, $2, $3::jsonb)",
+    [key === "express_auto_payout_enabled" ? "payout" : "reprice", enabled ? "switched_on" : "switched_off", JSON.stringify({ adminId: req.user.id })]
+  );
+  res.json({ key, enabled });
+}));
+
+router.get("/reprice/plan", handle(async (req, res) => {
+  res.json(await autoReprice.planAutoReprice());
+}));
+
+router.post("/reprice/apply", handle(async (req, res) => {
+  res.json(await autoReprice.applyAutoReprice({ mode: "manual", adminId: req.user.id }));
 }));
 
 module.exports = router;

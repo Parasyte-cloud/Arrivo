@@ -236,6 +236,16 @@ async function recordQuestProgress(rideId, db) {
       }
       await client.query("COMMIT");
       outcomes.push({ questId: quest.id, counted: true, progress: progress.rows[0].n, target: quest.target_trips, earned, quotaFull });
+      // Settle straight away when automatic payout is on. Outside the counting
+      // transaction and never allowed to fail it: if this does not run, the
+      // reward simply stays 'owed' and the next sweep (or an admin) pays it.
+      if (earned) {
+        try {
+          await require("./questPayout").autoPayOwed({ db: pool });
+        } catch (error) {
+          console.error(`Auto payout after quest #${quest.id} failed (stays owed):`, error.message);
+        }
+      }
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -319,7 +329,7 @@ async function listPayouts({ status, db } = {}) {
   const result = await (db || getPool()).query(
     `SELECT p.id, p.quest_id AS "questId", q.title, p.driver_id AS "driverId", u.name AS "driverName",
             u.phone AS "driverPhone", p.reward_naira AS "rewardNaira", p.status,
-            p.earned_at AS "earnedAt", p.paid_at AS "paidAt"
+            p.earned_at AS "earnedAt", p.paid_at AS "paidAt", p.paid_via AS "paidVia"
        FROM driver_quest_payouts p
        JOIN driver_quests q ON q.id = p.quest_id
        JOIN drivers d ON d.id = p.driver_id
@@ -337,7 +347,8 @@ async function listPayouts({ status, db } = {}) {
 async function markPayoutPaid(payoutId, adminId, db) {
   const result = await (db || getPool()).query(
     `UPDATE driver_quest_payouts
-        SET status = 'paid', paid_at = COALESCE(paid_at, now()), paid_by = COALESCE(paid_by, $2)
+        SET status = 'paid', paid_at = COALESCE(paid_at, now()), paid_by = COALESCE(paid_by, $2),
+            paid_via = COALESCE(paid_via, 'manual')
       WHERE id = $1
       RETURNING id, status, paid_at AS "paidAt"`,
     [payoutId, adminId || null]

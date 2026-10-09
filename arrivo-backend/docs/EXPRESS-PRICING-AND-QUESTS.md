@@ -141,11 +141,55 @@ Drivers read their own progress at `GET /api/instant-rides/driver/quests`.
 | `INSTANT_PRICE_MAX_CHANGE_PCT` | 25 | Largest price change allowed without explicit confirmation |
 | `QUEST_MAX_BUDGET_NAIRA` | 2000000 | Largest worst-case cost of one quest |
 
+## Automation (both switches are OFF by default)
+
+Turn each on or off in Admin > ArrivoExpress Pricing > Automation. Every
+switch change and every automatic action is written to `express_automation_log`
+and shown on that screen.
+
+### Automatic payout to the driver wallet
+
+When on, a quest reward is credited to the driver's RideArrivo wallet the
+moment it is earned, and a 5 minute sweep retries anything still owed.
+
+- Credited at most once. The payout row is locked while it is paid, so ten
+  simultaneous attempts credit exactly one time. Each credit writes a
+  `wallet_transactions` row, and the payout stores that row's id.
+- Daily ceiling: `QUEST_AUTO_PAYOUT_DAILY_CAP_NAIRA` (default 500,000 per Lagos
+  day). Past it, rewards stay "owed" for a person to review; the first time the
+  cap is hit each day is logged.
+- Admins can credit one reward ("Pay to wallet") or every owed reward ("Pay all
+  owed", asks for confirmation) at any time. Manual payments are not counted
+  against the cap. "Mark paid" still exists for money sent outside the app.
+- Note: the backend has no driver wallet withdrawal yet, so a credit is balance
+  the driver can spend in the app, not cash in hand. Build the cash-out path
+  before relying on this for real money.
+
+### Automatic repricing
+
+When on, once a day after 05:00 Lagos time, each tier is compared with the
+competitor samples logged since that tier's last price change. A tier moves
+only when every rule holds:
+
+| Rule | Default |
+|---|---|
+| Enough samples | at least 8 (`AUTO_REPRICE_MIN_SAMPLES`) |
+| Independent agreement | at least 2 competitors, each with 2+ samples, all on the same side (`AUTO_REPRICE_MIN_SOURCES`) |
+| Cooldown | no automatic change to that tier in the last 24h (`AUTO_REPRICE_COOLDOWN_HOURS`) |
+| Small steps | at most 5% per day (`AUTO_REPRICE_MAX_STEP_PCT`) |
+| Band | result stays within 70% to 150% of the code default (`AUTO_REPRICE_BAND_MIN_PCT`, `AUTO_REPRICE_BAND_MAX_PCT`) |
+
+Changes are ordinary price book rows whose note starts with `AUTO:`, so they
+appear in price history and are reverted by publishing a price by hand. The
+admin screen has a "what would it do now" preview and an "apply now" button
+that follow the same rules. Several servers running at once cannot double
+apply (a daily claim row plus a database lock).
+
+It needs real data: until competitor prices have been logged for the same trips
+(see "Logging competitor prices"), every tier simply holds.
+
 ## Not built yet
 
-- An admin screen. Today this is API only (use curl or a REST client).
-- Showing quests inside the driver app.
-- Paying quest rewards automatically into a driver wallet. Deliberately left
-  manual until the payout process is settled.
-- Automatic repricing. Deliberately not done: a handful of screenshots should
-  never change prices without a person looking.
+- Driver wallet cash-out to a bank account.
+- Pickup PIN, selfie check, expiring trip share links and two-way complaints
+  (see the safety plan).

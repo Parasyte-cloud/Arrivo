@@ -182,7 +182,9 @@ async function publishPriceBook({ tiers, effectiveFrom, note, userId, confirmLar
   }
 
   const pool = db || getPool();
-  const client = pool.connect ? await pool.connect() : pool;
+  // A checked-out client (it has release) is used as is; a pool lends us one.
+  const borrowed = typeof pool.release !== "function" && typeof pool.connect === "function";
+  const client = borrowed ? await pool.connect() : pool;
   try {
     await client.query("BEGIN");
     // Compare against what is in force at the moment the new price starts.
@@ -214,7 +216,7 @@ async function publishPriceBook({ tiers, effectiveFrom, note, userId, confirmLar
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    if (client.release) client.release();
+    if (borrowed) client.release();
   }
 }
 
