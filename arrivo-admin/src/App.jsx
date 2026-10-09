@@ -25,6 +25,7 @@ const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ defaul
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
+const OnTheGoPage = lazy(() => import("./pages/OnTheGoPage").then((m) => ({ default: m.OnTheGoPage })));
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
@@ -33,12 +34,13 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "panics", "riders", "drivers", "rides", "support", "flight-issues",
+  "panics", "on-the-go", "riders", "drivers", "rides", "support", "flight-issues",
   "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "exports",
 ];
 
 const OPERATIONS_PAGES = [
   "panics",
+  "on-the-go",
   "drivers",
   "rides",
   "flight-issues",
@@ -150,6 +152,7 @@ function Dashboard() {
             {page === "riders" && <RidersPage />}
             {page === "drivers" && <DriversPage />}
             {page === "rides" && <RidesPage />}
+            {page === "on-the-go" && <OnTheGoPage />}
             {page === "flight-issues" && <FlightIssuesPage />}
             {page === "vehicles" && <VehiclesPage />}
             {page === "memberships" && <MembershipsPage />}

@@ -5,6 +5,7 @@ import wordmarkLight from "../assets/wordmark-light.png";
 
 const NAV_ITEMS = [
   { id: "panics", label: "Panic Alerts", icon: "🔔", danger: true, badgeColor: "var(--coral)" },
+  { id: "on-the-go", label: "On the Go", icon: "⚡", badgeColor: "var(--amber)" },
   { id: "riders", label: "Riders", icon: "👥" },
   { id: "drivers", label: "Drivers", icon: "🚘" },
   { id: "rides", label: "Rides", icon: "🚗" },
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
 
 const OPERATIONS_NAV_IDS = new Set([
   "panics",
+  "on-the-go",
   "drivers",
   "rides",
   "flight-issues",
@@ -35,6 +37,7 @@ export function Sidebar({ page, setPage, open, onClose }) {
   const { user, token, logout, isReadOnly, isOperations } = useAuth();
   const [panicCount, setPanicCount] = useState(0);
   const [flightIssueCount, setFlightIssueCount] = useState(0);
+  const [onTheGoCount, setOnTheGoCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,13 +48,16 @@ export function Sidebar({ page, setPage, open, onClose }) {
       api.getFlightIssues(token)
         .then(({ flightIssues }) => { if (!cancelled) setFlightIssueCount(flightIssues.length); })
         .catch(() => {});
+      api.getOnTheGo(token)
+        .then(({ requests }) => { if (!cancelled) setOnTheGoCount(requests.filter((r) => r.status === "pending").length); })
+        .catch(() => {});
     }
     poll();
     const interval = setInterval(poll, 10000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [token]);
 
-  const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
+  const badgeCounts = { panics: panicCount, "on-the-go": onTheGoCount, "flight-issues": flightIssueCount };
   const visibleNavItems = isOperations
     ? NAV_ITEMS.filter((item) => OPERATIONS_NAV_IDS.has(item.id))
     : NAV_ITEMS;

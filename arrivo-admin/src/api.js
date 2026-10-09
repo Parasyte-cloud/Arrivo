@@ -118,6 +118,11 @@ export const getMemberships = (token) => request("/api/admin/memberships", token
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
 
+// On the Go: quick requests from riders who need a car within about 12 hours.
+export const getOnTheGo = (token) => request("/api/on-the-go", token);
+export const setOnTheGoStatus = (token, id, status) =>
+  request(`/api/on-the-go/${id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
+
 export const getVehicles = (token) => request("/api/admin/vehicles", token);
 
 export const getWaitlist = (token) => request("/api/admin/waitlist", token);
