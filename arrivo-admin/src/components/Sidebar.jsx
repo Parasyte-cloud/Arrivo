@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { id: "memberships", label: "Memberships", icon: "🎫" },
   { id: "wallet", label: "Wallet", icon: "👛" },
   { id: "arrivo-express", label: "Arrivo Express", icon: "🛡️" },
+  { id: "express-pricing", label: "Express Pricing", icon: "💸" },
   { id: "live-map", label: "Live Map", icon: "📍" },
   { id: "analytics", label: "Analytics", icon: "📊" },
   { id: "exports", label: "Exports", icon: "⬇️" },

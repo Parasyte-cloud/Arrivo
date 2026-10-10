@@ -82,6 +82,9 @@ export function setOnlineStatus(token, isOnline) {
 export function updateLocation(token, lat, lng) {
   return request("/api/drivers/location", authed(token, { method: "PATCH", body: JSON.stringify({ lat, lng }) }));
 }
+export function getDriverQuests(token) {
+  return request("/api/instant-rides/driver/quests", authed(token));
+}
 export function getEarnings(token) {
   return request("/api/drivers/earnings", authed(token));
 }

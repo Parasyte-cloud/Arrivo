@@ -26,6 +26,7 @@ const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) 
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
+const ExpressPricingPage = lazy(() => import("./pages/ExpressPricingPage").then((m) => ({ default: m.ExpressPricingPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
@@ -34,7 +35,7 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // for what "a valid page" means.
 const PAGES = [
   "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "exports",
+  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "exports",
 ];
 
 const OPERATIONS_PAGES = [
@@ -158,6 +159,7 @@ function Dashboard() {
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
             {page === "arrivo-express" && <ArrivoExpressPage />}
+            {page === "express-pricing" && <ExpressPricingPage />}
             {page === "exports" && <ExportsPage />}
           </Suspense>
         </ErrorBoundary>

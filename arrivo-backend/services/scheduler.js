@@ -412,6 +412,9 @@ async function runSweep() {
   await sweepPreferredDriverExpiry().catch((err) => console.error("[scheduler] sweepPreferredDriverExpiry crashed:", err.message));
   await sweepLuckyRideDraw().catch((err) => console.error("[scheduler] sweepLuckyRideDraw crashed:", err.message));
   await sweepUnmatchedPayments().catch((err) => console.error("[scheduler] sweepUnmatchedPayments crashed:", err.message));
+  // ArrivoExpress automation. Both are no-ops until an admin turns them on.
+  await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
+  await require("./autoReprice").runDailyReprice().catch((err) => console.error("[scheduler] auto reprice crashed:", err.message));
 }
 
 function startScheduler() {
