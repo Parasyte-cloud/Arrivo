@@ -161,9 +161,36 @@ moment it is earned, and a 5 minute sweep retries anything still owed.
 - Admins can credit one reward ("Pay to wallet") or every owed reward ("Pay all
   owed", asks for confirmation) at any time. Manual payments are not counted
   against the cap. "Mark paid" still exists for money sent outside the app.
-- Note: the backend has no driver wallet withdrawal yet, so a credit is balance
-  the driver can spend in the app, not cash in hand. Build the cash-out path
-  before relying on this for real money.
+- Drivers turn the wallet into cash with Cash-out (below).
+
+### Driver cash-out (wallet to bank)
+
+Drivers add one bank account, then withdraw their earnings through Paystack
+transfers. Off until `driver_cashout_enabled` is switched on.
+
+- **Account name check.** Paystack looks up the name on the account and it must
+  share a name with the driver's profile, so money cannot be sent to a stranger.
+- **Cooling-off.** After adding or changing the account, cash-out is blocked for
+  24 hours (`CASHOUT_BANK_COOLING_HOURS`), the standard defence against someone
+  who has taken over an account and redirects the money.
+- **Earnings only.** A driver can withdraw what they were credited (quest
+  rewards, admin credits) minus what they already withdrew. Money added by card
+  top-up cannot be withdrawn.
+- **Limits.** Minimum 1,000, maximum 200,000 per request, 300,000 per day.
+  Requests above 100,000 wait for an admin to approve or decline.
+- **Debit first.** The wallet is debited in the same database transaction that
+  creates the request, under a lock, so racing requests cannot double spend.
+- **Never pays twice.** Our reference goes to Paystack, which refuses it a second
+  time. A retry or a lost reply is settled by asking Paystack, not by sending again.
+- **Money back when it fails.** A failed, declined or reversed transfer credits
+  the wallet again, exactly once. A timeout is NOT refunded on a guess: it stays
+  queued and a 5 minute sweep retries or verifies.
+- **Paystack setup.** Enable Transfers, turn OFF "confirm transfers before
+  sending" (otherwise every transfer waits for an OTP), keep the Paystack balance
+  funded (a short balance leaves requests queued and visible in admin), and
+  point the webhook at `/api/payments/webhook` (it now also handles
+  `transfer.success`, `transfer.failed`, `transfer.reversed`).
+- Admin: Express Pricing, Cash-outs tab.
 
 ### Automatic repricing
 
@@ -188,8 +215,42 @@ apply (a daily claim row plus a database lock).
 It needs real data: until competitor prices have been logged for the same trips
 (see "Logging competitor prices"), every tier simply holds.
 
+## Getting the competitor data (the 10 minute daily check)
+
+There is no legitimate automatic feed of Bolt, Uber or inDrive prices (they have
+no public price API, and scraping their apps breaks their terms), so the data is
+logged by a person. The Market tab makes that quick:
+
+1. **Today's check** lists 12 standard Lagos trips. Click one, open the other
+   app, type the same two places, note the price per tier. Using the same trips
+   daily keeps days comparable. Replace the typical distance and time with what
+   the other app shows.
+2. **Paste many** takes up to 100 lines (`economy, bolt, 12, 30, 5200, day`),
+   straight from a spreadsheet. If one line is wrong nothing is saved.
+3. **The data panel** says exactly what each tier is still missing (for example
+   "5 more samples and 1 more competitor"), so you know when repricing can act.
+
+A realistic routine: 4 trips x 2 apps x 2 tiers is 16 prices, about 10 minutes.
+Do it at the same time of day, and once a week at night (log those as `night`).
+
+## Going live checklist
+
+1. Merge the PRs (#63, #65, then the cash-out PR).
+2. Paystack dashboard: enable Transfers, turn OFF "confirm transfers before
+   sending", add the webhook `https://api.ridearrivo.com/api/payments/webhook`
+   (events: charge.success and transfer.success, transfer.failed,
+   transfer.reversed), and fund the Paystack balance.
+3. Admin > Express Pricing > Automation. Switches are independent and all start
+   off. Suggested order: Cash-out first with a small test (a driver cashes out
+   the minimum to their own account), then Automatic payout, then Automatic
+   repricing only after the Market tab shows every tier as Ready.
+
 ## Not built yet
 
-- Driver wallet cash-out to a bank account.
+- Translations of the admin app (staff tool, English). The driver app has the
+  tabs, Quests, Cash-out and the language picker in 7 languages; the other
+  driver screens are still English. Nigerian drivers may be better served by
+  Pidgin, Yoruba, Hausa and Igbo than by Hindi or Chinese; those need a native
+  speaker, not a machine translation, for the money wording.
 - Pickup PIN, selfie check, expiring trip share links and two-way complaints
   (see the safety plan).

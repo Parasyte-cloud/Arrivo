@@ -1599,3 +1599,53 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_express_automation_daily
   ON express_automation_log(kind, run_date) WHERE action = 'run' AND run_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_express_automation_log_recent
   ON express_automation_log(kind, created_at DESC);
+
+-- ── Driver cash-out: wallet balance to a bank account ──
+-- One verified bank account per driver. Paystack resolves the account name,
+-- and the name must match the driver's profile name, so money cannot be sent
+-- to an unrelated person's account. Changing the account starts a cooling-off
+-- period (CASHOUT_BANK_COOLING_HOURS) during which cash-out is blocked: the
+-- classic account takeover move is "change the bank, withdraw everything".
+CREATE TABLE IF NOT EXISTS driver_bank_accounts (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  bank_code TEXT NOT NULL,
+  bank_name TEXT NOT NULL,
+  account_number TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per cash-out request. The wallet is debited when the row is
+-- created (so the same money cannot be withdrawn twice) and credited back
+-- if the transfer fails, is rejected or is reversed. `reference` is sent to
+-- Paystack as the transfer reference, which Paystack refuses to accept twice,
+-- so a retry can never pay the driver twice.
+CREATE TABLE IF NOT EXISTS wallet_withdrawals (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_naira INTEGER NOT NULL CHECK (amount_naira > 0),
+  fee_naira INTEGER NOT NULL DEFAULT 0 CHECK (fee_naira >= 0),
+  status TEXT NOT NULL CHECK (status IN ('pending_review','queued','processing','paid','failed','rejected','reversed')),
+  reference TEXT NOT NULL UNIQUE,
+  idempotency_key TEXT,
+  bank_name TEXT NOT NULL,
+  account_last4 TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  paystack_transfer_code TEXT,
+  debit_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  refund_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  note TEXT,
+  reviewed_by INTEGER REFERENCES users(id),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_withdrawals_idem
+  ON wallet_withdrawals(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_user ON wallet_withdrawals(user_id, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_open ON wallet_withdrawals(status)
+  WHERE status IN ('pending_review','queued','processing');

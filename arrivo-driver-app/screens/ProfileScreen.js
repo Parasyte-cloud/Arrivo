@@ -8,12 +8,15 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import { getDriverProfile } from "../services/api";
+import { useT } from "../context/LanguageContext";
+import { LANGUAGES } from "../i18n/translations";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français" };
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, token, logout } = useAuth();
+  const { t, lang, setLang } = useT();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -43,7 +46,7 @@ export default function ProfileScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
-        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.title}>{t("tabProfile")}</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.name}>{user?.name}</Text>
@@ -97,6 +100,28 @@ export default function ProfileScreen() {
             </Card>
           </>
         ) : null}
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>{t("languageTitle")}</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 6 }}>
+            {LANGUAGES.map((l) => (
+              <Text
+                key={l.code}
+                onPress={() => setLang(l.code)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: lang === l.code }}
+                style={{
+                  color: lang === l.code ? colors.ink : colors.dark.text,
+                  backgroundColor: lang === l.code ? colors.amber : "rgba(255,255,255,0.1)",
+                  fontSize: 13, fontWeight: "600", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
+                  marginRight: 8, marginBottom: 8, overflow: "hidden",
+                }}
+              >
+                {l.name}
+              </Text>
+            ))}
+          </View>
+        </Card>
 
         <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />
 

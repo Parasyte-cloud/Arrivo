@@ -215,3 +215,13 @@ export const setExpressAutomation = (token, key, enabled) =>
   request(`${EX}/automation`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
 export const getExpressRepricePlan = (token) => request(`${EX}/reprice/plan`, token);
 export const applyExpressReprice = (token) => request(`${EX}/reprice/apply`, token, { method: "POST" });
+export const getAdminCashouts = (token, status) =>
+  request(`/api/admin/cashouts${status ? `?status=${status}` : ""}`, token);
+export const approveCashout = (token, id) => request(`/api/admin/cashouts/${id}/approve`, token, { method: "POST" });
+export const declineCashout = (token, id, reason) =>
+  request(`/api/admin/cashouts/${id}/decline`, token, { method: "POST", body: JSON.stringify({ reason }) });
+export const checkCashout = (token, id) => request(`/api/admin/cashouts/${id}/check`, token, { method: "POST" });
+export const getExpressSampleRoutes = (token) => request(`${EX}/samples/routes`, token);
+export const getExpressSampleCoverage = (token) => request(`${EX}/samples/coverage`, token);
+export const logExpressSamplesBulk = (token, rows) =>
+  request(`${EX}/samples/bulk`, token, { method: "POST", body: JSON.stringify({ rows }) });

@@ -8,6 +8,10 @@ assert.ok(!/^\s*import\s/m.test(src), "quests.js has to stay import-free for thi
 const { questState, questProgressPct, tripsLeft, timeLeftLabel, questRules, sortQuests } = new Function(
   src.replace(/^export function /gm, "function ") + "\nreturn { questState, questProgressPct, tripsLeft, timeLeftLabel, questRules, sortQuests };"
 )();
+const load = (f, names) => new Function(fs.readFileSync(path.join(__dirname, "..", "i18n", f), "utf8").replace(/^export (const|function) /gm, "$1 ") + `\nreturn { ${names} };`)();
+const { TRANSLATIONS } = load("translations.js", "TRANSLATIONS");
+const { translate } = load("i18n.js", "translate");
+const t = (key, params) => translate(TRANSLATIONS, "en", key, params);
 
 const now = new Date("2026-10-09T12:00:00Z");
 const h = (n) => new Date(now.getTime() + n * 3600000).toISOString();
@@ -36,20 +40,27 @@ test("progress is capped and an earned quest reads 100%", () => {
 });
 
 test("time left reads naturally", () => {
-  assert.strictEqual(timeLeftLabel(h(72), now), "3 days left");
-  assert.strictEqual(timeLeftLabel(h(5), now), "5 hours left");
-  assert.strictEqual(timeLeftLabel(h(1.2), now), "1 hour left");
-  assert.strictEqual(timeLeftLabel(new Date(now.getTime() + 30 * 60000).toISOString(), now), "30 min left");
-  assert.strictEqual(timeLeftLabel(h(-1), now), "Ended");
+  assert.strictEqual(timeLeftLabel(h(72), now, t), "3 days left");
+  assert.strictEqual(timeLeftLabel(h(5), now, t), "5 h left");
+  assert.strictEqual(timeLeftLabel(h(1.2), now, t), "1 h left");
+  assert.strictEqual(timeLeftLabel(new Date(now.getTime() + 30 * 60000).toISOString(), now, t), "30 min left");
+  assert.strictEqual(timeLeftLabel(h(-1), now, t), "Ended");
 });
 
 test("rules state every condition a driver is held to", () => {
-  const r = questRules(q({ minDriverRating: "4.50", tier: "comfort", minTripKm: "2.50" })).join(" ");
+  const r = questRules(q({ minDriverRating: "4.50", tier: "comfort", minTripKm: "2.50" }), t).join(" ");
   assert.ok(r.includes("10 ArrivoExpress trips in comfort"));
   assert.ok(r.includes("2.5 km"));
   assert.ok(r.includes("same rider"));
   assert.ok(r.includes("4.5 or higher"));
-  assert.ok(!questRules(q()).join(" ").includes("rating"));
+  assert.ok(!questRules(q(), t).join(" ").includes("rating"));
+});
+
+test("the rules read in another language too", () => {
+  const fr = (key, params) => translate(TRANSLATIONS, "fr", key, params);
+  const r = questRules(q({ minDriverRating: "4.50" }), fr).join(" ");
+  assert.ok(r.includes("Terminez 10 courses"));
+  assert.ok(r.includes("4.5"));
 });
 
 test("sorting puts earnable quests first, ended last", () => {
