@@ -11,7 +11,9 @@ import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
-import { earliestStandardBooking, isStandardBookingBlocked } from "../utils/bookingWindow";
+import { isStandardBookingBlocked, ON_THE_GO_ONLY_HOURS } from "../utils/bookingWindow";
+import { combineLagos, wallClockDate, earliestInstant } from "../utils/lagosTime";
+import useMinuteTick from "../hooks/useMinuteTick";
 import {
   PREMIUM_UPGRADE_LABEL,
   premiumUpgradeDescription,
@@ -30,17 +32,17 @@ function formatDateDisplay(d) {
 function formatTimeDisplay(d) {
   return d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
 }
-// Combines the separately-picked date and time into one real Date object —
-// this is what actually gets sent to the backend as scheduledPickupAt.
-// Previously date/time here were just free-typed strings dropped into a
-// display label and NEVER converted into a real timestamp at all — a
-// Chauffeur booking's scheduledPickupAt was silently left undefined the
-// entire time, unlike RouteScreen's equivalent scheduled bookings.
-function combineDateAndTime(datePart, timePart) {
-  if (!datePart || !timePart) return null;
-  const combined = new Date(datePart);
-  combined.setHours(timePart.getHours(), timePart.getMinutes(), 0, 0);
-  return combined;
+// Combines the separately-picked date and time into one real instant, sent to
+// the backend as scheduledPickupAt. The pickers return phone-zone Dates; their
+// fields are read as the Lagos clock the rider chose (see utils/lagosTime.js),
+// so a rider whose phone is set to another zone still books the Lagos time
+// they see.
+const combineDateAndTime = combineLagos;
+
+// Earliest allowed pickup as a picker value (a Date whose fields read as the
+// Lagos clock), so the pickers open at a time the booking will accept.
+function earliestPickerValue(now = Date.now()) {
+  return wallClockDate(earliestInstant(ON_THE_GO_ONLY_HOURS, now));
 }
 
 // Only Sedan/SUV get the upgrade toggle, Executive is already the premium
@@ -116,12 +118,13 @@ export default function ChauffeurScreen({ navigation }) {
   // moving the time forward could previously reach Checkout, get charged by
   // Paystack, and only THEN have ride creation fail on this exact check —
   // mirrors RouteScreen's scheduledTimeValid guard, which blocks earlier.
+  const now = useMinuteTick();
   const scheduledPickupAtValue = combineDateAndTime(dateValue, timeValue);
-  const scheduledTimeValid = !dateValue || !timeValue || scheduledPickupAtValue.getTime() > Date.now();
+  const scheduledTimeValid = !dateValue || !timeValue || (!!scheduledPickupAtValue && scheduledPickupAtValue.getTime() > now);
   // The picker's minimumDate already keeps them out of the blocked window, but
   // the time half can still drag a same-day booking under the line after the
   // date's been chosen, so check the combined value too.
-  const bookingWindowBlocked = !!dateValue && !!timeValue && isStandardBookingBlocked(scheduledPickupAtValue);
+  const bookingWindowBlocked = !!dateValue && !!timeValue && !!scheduledPickupAtValue && isStandardBookingBlocked(scheduledPickupAtValue, now);
   const canConfirm =
     pickupAddress.trim().length > 0 && !!dateValue && !!timeValue && scheduledTimeValid &&
     !bookingWindowBlocked && !!quote && !quoteLoading;
@@ -311,7 +314,7 @@ export default function ChauffeurScreen({ navigation }) {
               // and Android's dialog always returns a value on OK, but this
               // guarantees a value is committed even if someone opens the
               // picker and taps Done/dismiss without touching anything.
-              if (!dateValue) setDateValue(new Date());
+              if (!dateValue) setDateValue(earliestPickerValue());
               setShowDatePicker(true);
             }}
           >
@@ -330,7 +333,7 @@ export default function ChauffeurScreen({ navigation }) {
               // different value, so tapping Done on the default-displayed
               // time (e.g. "now") without scrolling previously left
               // timeValue stuck at null with no visible error as to why.
-              if (!timeValue) setTimeValue(new Date());
+              if (!timeValue) setTimeValue(earliestPickerValue());
               setShowTimePicker(true);
             }}
           >
@@ -370,10 +373,10 @@ export default function ChauffeurScreen({ navigation }) {
             this app (ProfileScreen/SignupScreen), with an explicit Done button. */}
         {showDatePicker && Platform.OS === "android" ? (
           <DateTimePicker
-            value={dateValue || new Date()}
+            value={dateValue || earliestPickerValue(now)}
             mode="date"
             display="default"
-            minimumDate={earliestStandardBooking()}
+            minimumDate={earliestPickerValue(now)}
             onChange={(event, selected) => {
               setShowDatePicker(false);
               if (event.type === "dismissed") return;
@@ -383,7 +386,7 @@ export default function ChauffeurScreen({ navigation }) {
         ) : null}
         {showTimePicker && Platform.OS === "android" ? (
           <DateTimePicker
-            value={timeValue || new Date()}
+            value={timeValue || earliestPickerValue(now)}
             mode="time"
             display="default"
             onChange={(event, selected) => {
@@ -404,10 +407,10 @@ export default function ChauffeurScreen({ navigation }) {
                 </Pressable>
               </View>
               <DateTimePicker
-                value={dateValue || new Date()}
+                value={dateValue || earliestPickerValue(now)}
                 mode="date"
                 display="inline"
-                minimumDate={earliestStandardBooking()}
+                minimumDate={earliestPickerValue(now)}
                 onChange={(event, selected) => {
                   if (selected) setDateValue(selected);
                 }}
@@ -426,7 +429,7 @@ export default function ChauffeurScreen({ navigation }) {
                 </Pressable>
               </View>
               <DateTimePicker
-                value={timeValue || new Date()}
+                value={timeValue || earliestPickerValue(now)}
                 mode="time"
                 display="spinner"
                 onChange={(event, selected) => {
@@ -490,7 +493,21 @@ export default function ChauffeurScreen({ navigation }) {
         </Card>
 
         {bookingWindowBlocked ? (
-          <BookingWindowNotice navigation={navigation} />
+          <BookingWindowNotice
+            navigation={navigation}
+            prefill={{
+              service: "Chauffeur",
+              pickupAddress: pickupAddress.trim(),
+              requestedPickupAt: scheduledPickupAtValue ? scheduledPickupAtValue.toISOString() : undefined,
+              details: `${VEHICLES.find((v) => v.id === choice).label}, ${selectedDuration.label}${purpose ? `, ${purpose}` : ""}`,
+            }}
+            onUseEarliest={() => {
+              const e = earliestPickerValue();
+              setDateValue(e);
+              setTimeValue(e);
+            }}
+            earliestLabel="Use the earliest time I can book"
+          />
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
