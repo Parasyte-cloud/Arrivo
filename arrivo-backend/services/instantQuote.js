@@ -12,6 +12,10 @@ const {
   listTiers,
 } = require("./instantTiers");
 
+const {
+  getActivePricing,
+} = require("./instantPriceBook");
+
 class InstantQuoteError extends Error {
   constructor(message, status = 400, code = "INVALID_INSTANT_QUOTE") {
     super(message);
@@ -150,7 +154,8 @@ async function fetchRoute(trip) {
 }
 
 // Pure pricing step: a validated trip plus a route in, a quote out.
-function buildQuote(trip, { distanceKm, durationMin }) {
+// `priceMap` is the published price book (or null/{} to use the code defaults).
+function buildQuote(trip, { distanceKm, durationMin }, priceMap) {
   let fare;
 
   try {
@@ -165,6 +170,7 @@ function buildQuote(trip, { distanceKm, durationMin }) {
       destinationAddress: trip.destinationAddress,
       distanceKm,
       durationMin,
+      pricing: priceMap ? priceMap[trip.tier] : undefined,
     });
   } catch (error) {
     if (error instanceof InstantFareError) {
@@ -194,13 +200,14 @@ function buildQuote(trip, { distanceKm, durationMin }) {
     durationMin,
     currency: "NGN",
     pricingModel: "arrivonow_metered_v1",
+    pricingSource: priceMap && priceMap[trip.tier] ? "price_book" : "default",
   };
 }
 
 async function quoteInstantRide(input) {
   const trip = validateInstantTripInput(input);
   const route = await fetchRoute(trip);
-  return buildQuote(trip, route);
+  return buildQuote(trip, route, await getActivePricing());
 }
 
 // Prices the same trip for every vehicle tier from ONE route lookup, in the
@@ -212,13 +219,15 @@ async function quoteAllTiers(input = {}) {
     tier: listTiers()[0].key,
   });
   const route = await fetchRoute(baseTrip);
+  const priceMap = await getActivePricing();
 
   return {
     route,
     quotes: listTiers().map((tier) =>
       buildQuote(
         validateInstantTripInput({ ...input, tier: tier.key }),
-        route
+        route,
+        priceMap
       )
     ),
   };

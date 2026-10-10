@@ -49,12 +49,26 @@ function computeInstantFare({
   destinationAddress,
   distanceKm,
   durationMin,
+  pricing,
 }) {
-  const tierConfig = getTier(tier);
+  const baseTier = getTier(tier);
 
-  if (!tierConfig) {
+  if (!baseTier) {
     throw new InstantFareError(`Unknown ArrivoExpress tier '${tier}'`, 400, "UNKNOWN_TIER");
   }
+
+  // `pricing` is the currently published price book entry for this tier
+  // (services/instantPriceBook.js). Only the four price numbers may be
+  // overridden; vehicle type and seat rules always come from the catalogue.
+  const tierConfig = pricing
+    ? {
+        ...baseTier,
+        baseFareNaira: pricing.baseFareNaira,
+        perKmNaira: pricing.perKmNaira,
+        perMinNaira: pricing.perMinNaira,
+        minimumFareNaira: pricing.minimumFareNaira,
+      }
+    : baseTier;
 
   const excluded = findExcludedArea(destinationAddress) || findExcludedArea(pickupAddress);
 
@@ -111,9 +125,29 @@ function computeInstantFare({
   };
 }
 
+// The plain metered fare for a distance and time under a given price entry:
+// no zone uplift, no area exclusions, and the night uplift only when asked.
+// Used to compare our prices with competitors' on the same route (see
+// services/instantPriceIntel.js). Same rounding as a real quote, so the
+// comparison is like for like.
+function baselineFare(pricing, distanceKm, durationMin, { night = false } = {}) {
+  const metered =
+    pricing.baseFareNaira +
+    pricing.perKmNaira * Math.max(0, Number(distanceKm) || 0) +
+    pricing.perMinNaira * Math.max(0, Number(durationMin) || 0);
+  const beforeMinimum = metered * (night ? NIGHT_MULTIPLIER : 1);
+  return Math.round(
+    roundUpToNearest(
+      Math.max(beforeMinimum, pricing.minimumFareNaira) * PLATFORM_FARE_INCREASE,
+      ROUND_TO_NAIRA
+    )
+  );
+}
+
 module.exports = {
   InstantFareError,
   computeInstantFare,
+  baselineFare,
   ZONE_MULTIPLIER,
   NIGHT_MULTIPLIER,
 };
