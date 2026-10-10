@@ -172,6 +172,17 @@ router.patch("/status", requireAuth, requireRole("driver"), async (req, res) => 
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can go online." });
   }
 
+  if (req.body.isOnline) {
+    const selfie = await require("../services/driverSelfie").checkGoOnline(driver.id);
+    if (!selfie.allowed) {
+      return res.status(403).json({
+        error: "Please take a quick selfie check before going online.",
+        code: "SELFIE_REQUIRED",
+        reason: selfie.reason,
+      });
+    }
+  }
+
   await pool.query("UPDATE drivers SET is_online = $1 WHERE id = $2", [!!req.body.isOnline, driver.id]);
   res.json({ isOnline: !!req.body.isOnline });
 });
