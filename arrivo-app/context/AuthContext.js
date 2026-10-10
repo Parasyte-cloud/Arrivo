@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
 import { API_BASE_URL } from "../services/config";
+import { setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
 import { setAppLanguage } from "../i18n";
+import { stopRideRecording } from "../services/rideAudioRecorder";
 
 const TOKEN_KEY = "arrivo_token";
 const AuthContext = createContext(null);
@@ -24,7 +26,10 @@ async function request(path, options = {}) {
     headers: { "Content-Type": "application/json", ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  if (!res.ok) {
+    notifyUnauthorized(res.status, options.headers);
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  }
   return data;
 }
 
@@ -32,6 +37,11 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  // The 401 handler below must only react to the session that is current now. A
+  // slow request from an old session that fails after a fresh sign-in would
+  // otherwise sign the new session out.
+  const tokenRef = useRef(null);
+  tokenRef.current = token;
 
   // On app launch, check if we already have a saved token and restore the session.
   useEffect(() => {
@@ -113,7 +123,21 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  // Sign out once when any authenticated call comes back 401. The flag stops a
+  // burst of parallel failing calls from running the sign-out several times.
+  useEffect(() => {
+    let expiring = false;
+    setUnauthorizedHandler((sentAuthorization) => {
+      if (expiring || !tokenRef.current || sentAuthorization !== `Bearer ${tokenRef.current}`) return;
+      expiring = true;
+      logout().finally(() => { expiring = false; });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   const logout = async () => {
+    // Safety recording must never outlive the session that consented to it.
+    await stopRideRecording().catch(() => {});
     // Stops this device from being registered for incoming-call push under
     // the account that's signing out — without this, a signed-out phone
     // could keep ringing for calls meant for whoever logs in on it next

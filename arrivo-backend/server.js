@@ -31,6 +31,8 @@ const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const adminExportsRouter = require("./routes/adminExports");
+const paymentExceptionsRouter = require("./routes/paymentExceptions");
+const audioRecordingsRouter = require("./routes/audioRecordings");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
@@ -147,7 +149,12 @@ app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
+// Before the general admin router: staff listening is admin-only and Bearer-only.
+app.use("/api/admin/recordings", audioRecordingsRouter.adminRouter);
+app.use("/api/recordings", audioRecordingsRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
+// Before the general admin router, for the same reason as the exports above.
+app.use("/api/admin/payment-exceptions", paymentExceptionsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);

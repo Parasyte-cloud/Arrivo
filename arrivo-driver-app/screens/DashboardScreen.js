@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { RECORDING_CONSENT } from "../utils/safetyCopy";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl, Pressable, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -17,6 +19,22 @@ import {
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
 
+// Wording lives in utils/safetyCopy.js (draft until counsel approves it).
+function askRecordingConsent() {
+  return new Promise((resolve) => {
+    Alert.alert(
+      RECORDING_CONSENT.title,
+      RECORDING_CONSENT.body,
+      [
+        { text: RECORDING_CONSENT.notNow, style: "cancel", onPress: () => resolve(false) },
+        { text: RECORDING_CONSENT.agree, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
+
+
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
 // default 20s) so they're polled on their own, quicker cadence below.
@@ -33,6 +51,11 @@ export default function DashboardScreen({ navigation }) {
   // routes/rides.js for why the queue narrows during that window.
   const [areaLockedToVenue, setAreaLockedToVenue] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
+
+  // No active trip left (completed, cancelled, reassigned): recording stops.
+  useEffect(() => {
+    if (!activeRide) stopRideRecording();
+  }, [activeRide]);
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
   const [error, setError] = useState(null);
@@ -624,6 +647,16 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
   // to turn it back off, same as panic.
   const [listeningOn, setListeningOn] = useState(!!ride.listening_device_activated_at);
   const [listeningError, setListeningError] = useState(false);
+  const [recordingOn, setRecordingOn] = useState(false);
+
+  useEffect(() => {
+    setRecordingOn(isRecordingRide(ride.id));
+    return onRecordingChange(() => setRecordingOn(isRecordingRide(ride.id)));
+  }, [ride.id]);
+
+  useEffect(() => {
+    if (["completed", "cancelled"].includes(ride.ride_status)) stopRideRecording();
+  }, [ride.ride_status]);
 
   const sendPanicRequest = () => {
     setPanicError(false);
@@ -640,6 +673,8 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         // the same false-safety-reassurance bug already fixed once for
         // panicConfirmed/panicError itself, just missed here.
         setListeningOn(true);
+        // The Emergency Button starts recording at once with no prompt.
+        startOnPanic({ token, rideId: ride.id });
       })
       .catch(() => {
         setPanicError(true);
@@ -667,10 +702,30 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
     setPanicState("idle");
   };
 
-  const activateListening = () => {
-    setListeningOn(true); // optimistic, but listeningError below keeps this honest
+  const activateListening = async () => {
     setListeningError(false);
+    try {
+      const rec = await startRideRecording({ token, rideId: ride.id, askConsent: askRecordingConsent });
+      if (rec.handled) {
+        if (rec.started) setListeningOn(true);
+        else if (rec.reason === "permission") {
+          Alert.alert("Microphone is off", "Allow microphone access in your phone settings to record audio for this trip.");
+        }
+        return;
+      }
+    } catch {
+      setListeningError(true);
+      return;
+    }
+    setListeningOn(true); // optimistic, but listeningError below keeps this honest
     activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
+  };
+
+  const stopRecordingPrompt = () => {
+    Alert.alert("Stop recording?", "Audio recording for this trip will stop. What was already recorded stays available to safety staff.", [
+      { text: "Keep recording", style: "cancel" },
+      { text: "Stop", style: "destructive", onPress: () => stopRideRecording() },
+    ]);
   };
 
   useEffect(() => {
@@ -802,7 +857,10 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
 
       {listeningOn ? (
         <>
-          <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
+          <Text style={styles.listeningOnText}>{recordingOn ? "🎙️ Recording audio" : "🎙️ Listening device: on"}</Text>
+          {recordingOn ? (
+            <Button label="Stop recording" variant="ghost" tone="dark" onPress={stopRecordingPrompt} style={{ marginTop: 6 }} />
+          ) : null}
           {listeningError ? (
             <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
           ) : null}

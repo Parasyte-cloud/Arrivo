@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
+import { RideRecordings } from "../components/RideRecordings";
 import { formatDateTime, downloadCsv } from "../utils";
 
 const STATUS_FILTERS = [
@@ -46,7 +47,7 @@ function exportRidesCsv(rides) {
 }
 
 export function RidesPage() {
-  const { token, isReadOnly } = useAuth();
+  const { token, user, isReadOnly } = useAuth();
   const [rides, setRides] = useState([]);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -256,6 +257,7 @@ export function RidesPage() {
                               <div>{r.emergency_contact_name || "No name on file"}{r.emergency_contact_phone ? ` · ${r.emergency_contact_phone}` : ""}</div>
                             </div>
                           ) : null}
+                          {user?.role === "admin" ? <RideRecordings token={token} rideId={r.id} /> : null}
                           {r.fleet_size > 0 ? (
                             <div style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>

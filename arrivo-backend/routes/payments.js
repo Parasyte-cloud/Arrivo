@@ -5,6 +5,15 @@ const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
+const { creditWalletTopup } = require("../services/walletTopup");
+const {
+  normalisePurpose,
+  recordOrder,
+  markOrderPaid,
+  markOrderFinalized,
+  recordPaymentException,
+  autoResolveProcessingErrors,
+} = require("../services/paymentOrders");
 const { computeVehicleCount } = require("../services/fare");
 const { sendWhatsAppMessage } = require("../services/whatsapp");
 const router = express.Router();
@@ -111,6 +120,9 @@ async function initializePaystackTransaction({ email, amountNaira }) {
     {
       email,
       amount: Math.round(amountNaira * 100), // Paystack expects kobo
+      // Every credit and fare check downstream treats amount / 100 as naira, so
+      // say so explicitly instead of relying on the account default.
+      currency: "NGN",
       callback_url: process.env.PAYSTACK_CALLBACK_URL,
     },
     { headers: paystackHeaders(), timeout: 10000 }
@@ -151,12 +163,43 @@ function maybeRequireAuth(req, res, next) {
   next();
 }
 
+// Reads the rider's login if the request carries one, WITHOUT refusing the
+// request when it does not. This is phase 2 of the token plan: builds already
+// in the stores send no token to /initialize, so it cannot be required yet
+// (see PAYMENT_ROUTES_REQUIRE_AUTH above for phase 3). A valid token lets us
+// remember who is paying and for what, so the webhook can finish the job if
+// the app is closed. A missing, expired or bad token just means "anonymous".
+// Reuses requireAuth so a deleted account or revoked session counts as
+// anonymous here exactly as it would be refused everywhere else.
+async function softAuth(req) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) return null;
+  let allowed = false;
+  const fakeRes = {
+    status() { return this; },
+    json() { return this; },
+  };
+  try {
+    await requireAuth(req, fakeRes, () => { allowed = true; });
+  } catch (e) {
+    return null;
+  }
+  return allowed ? req.user : null;
+}
+
 // POST /api/payments/initialize
-// body: { email, amountNaira, reference? }
+// body: { email, amountNaira, purpose?, booking? }
 // Call this from the app right before showing checkout. Returns an
 // authorization_url to open in a browser/webview, and a reference to verify later.
+//
+// purpose ('ride' | 'wallet_topup') and booking (the ride the rider is paying
+// for, same shape as POST /api/rides) are new and optional. Builds that do not
+// send them behave exactly as before. With a valid login token they are stored
+// as a pending order so the Paystack webhook can finish the payment even if the
+// app never comes back from checkout. Without a token they are ignored: a
+// payment is never tied to an account on the say-so of an anonymous request.
 router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res) => {
-  const { email, amountNaira } = req.body;
+  const { email, amountNaira, purpose, booking } = req.body;
 
   if (!email || !amountNaira) {
     return res.status(400).json({ error: "email and amountNaira are required" });
@@ -176,8 +219,30 @@ router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res)
     return res.status(500).json({ error: "PAYSTACK_SECRET_KEY is not configured on the server" });
   }
 
+  const user = await softAuth(req);
+  if (!user) {
+    // Phase 2 of the token plan: count the calls that still come without a
+    // login so we know when it is safe to enforce one (phase 3).
+    console.warn(`[payments] initialize without a valid login token purpose=${normalisePurpose(purpose)}`);
+  }
+
   try {
     const result = await initializePaystackTransaction({ email, amountNaira });
+    // Remembering the order must never stop a payment that Paystack has
+    // already started: the old flow (verify, then create the ride) does not
+    // depend on it.
+    try {
+      await recordOrder(pool, {
+        reference: result.reference,
+        userId: user ? user.id : null,
+        email,
+        purpose,
+        amountNaira,
+        payload: booking,
+      });
+    } catch (orderErr) {
+      console.error("Could not record the pending payment order:", orderErr.message);
+    }
     res.json(result);
   } catch (err) {
     console.error("Paystack initialize failed:", err.response?.data || err.message);
@@ -199,6 +264,307 @@ router.get("/verify/:reference", verifyLimiter, maybeRequireAuth, async (req, re
     res.status(502).json({ error: "Could not verify payment." });
   }
 });
+
+// ── Paystack webhook ──
+//
+// The webhook is the one confirmation Paystack sends even when the rider's app
+// is closed mid-checkout, so it is where a payment must end up somewhere safe.
+// Rules it follows:
+//
+//   * A payment that cannot be matched to anything for a business reason (wrong
+//     currency, wrong amount, reference already spent, a booking that no longer
+//     validates) is written to payment_exceptions for a person to refund or
+//     resolve, and answered 200. Retrying would only repeat the same answer.
+//
+//   * A failure that might pass on its own (database down, a bug, Paystack
+//     unreachable while re-verifying) answers 5xx. Paystack then retries the
+//     delivery, so a payment is not silently dropped just because the database
+//     blinked. The old code logged these and answered 200, which told Paystack
+//     everything was fine and ended the retries.
+//
+//   * Every step is safe to run twice. Paystack redelivers, and the app's own
+//     verify-then-create-ride call can arrive at the same moment.
+
+const KOBO = 100;
+
+async function handleExistingRide(ride, { reference, amountKobo }) {
+  if (ride.payment_status === "paid") {
+    // Already marked paid, for example by a previous delivery.
+    await markOrderFinalized(pool, reference, ride.id);
+    return "already_paid";
+  }
+  // Check the amount BEFORE writing anything: an underpaid or wrong-amount
+  // transaction must never flip a ride to paid.
+  const expectedKobo = Math.round(Number(ride.fare_naira) * KOBO);
+  if (amountKobo !== expectedKobo) {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "amount_mismatch",
+      purpose: "ride",
+      userId: ride.rider_id,
+      amountNaira: amountKobo / KOBO,
+      details: { rideId: ride.id, expectedKobo, paidKobo: amountKobo },
+    });
+    return "amount_mismatch";
+  }
+  // Claim the reference in the SAME transaction as the UPDATE, like the other
+  // card-payment call sites, so a charge this webhook settles cannot be
+  // replayed on a tip, overage charge or wallet top-up.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const claimed = await claimPaymentReference(client, reference, "ride_payment", ride.id);
+    if (!claimed) {
+      await client.query("ROLLBACK");
+      const owner = await pool.query("SELECT used_for, ride_id FROM used_payment_references WHERE reference = $1", [reference]);
+      if (owner.rows[0] && owner.rows[0].used_for === "ride_payment" && owner.rows[0].ride_id === ride.id) {
+        // The app's own call got there first. Nothing left to do.
+        await markOrderFinalized(pool, reference, ride.id);
+        return "already_paid";
+      }
+      await recordPaymentException(pool, {
+        reference,
+        reason: "reference_already_used",
+        purpose: "ride",
+        userId: ride.rider_id,
+        amountNaira: amountKobo / KOBO,
+        details: { rideId: ride.id, claimedBy: owner.rows[0] || null },
+      });
+      return "reference_already_used";
+    }
+    await client.query(
+      `UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 AND payment_status != 'paid'`,
+      [ride.id]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await markOrderFinalized(pool, reference, ride.id);
+  console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference}`);
+  return "paid";
+}
+
+// A support-assisted booking's payment link (routes/support.js). Same
+// amount-then-claim-then-write sequence as a ride, against a different table.
+async function handleAssistedBooking(booking, { reference, amountKobo }) {
+  if (booking.ride_id) {
+    // Already turned into a ride by a previous delivery.
+    await markOrderFinalized(pool, reference, booking.ride_id);
+    return "already_paid";
+  }
+  const expectedKobo = Math.round(Number(booking.fare_naira) * KOBO);
+  if (amountKobo !== expectedKobo) {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "amount_mismatch",
+      purpose: "support_assisted_booking",
+      userId: booking.rider_id,
+      amountNaira: amountKobo / KOBO,
+      details: { assistedBookingId: booking.id, expectedKobo, paidKobo: amountKobo },
+    });
+    return "amount_mismatch";
+  }
+  const client = await pool.connect();
+  let newRide;
+  try {
+    await client.query("BEGIN");
+    // used_payment_references.ride_id is a real FK to rides(id) and no ride
+    // exists yet when the reference must be claimed (claiming first closes the
+    // race against a second delivery), so this claims with ride_id null and
+    // backfills it below.
+    const claimed = await claimPaymentReference(client, reference, "support_assisted_booking", null);
+    if (!claimed) {
+      await client.query("ROLLBACK");
+      await recordPaymentException(pool, {
+        reference,
+        reason: "reference_already_used",
+        purpose: "support_assisted_booking",
+        userId: booking.rider_id,
+        amountNaira: amountKobo / KOBO,
+        details: { assistedBookingId: booking.id },
+      });
+      return "reference_already_used";
+    }
+    newRide = await createRideFromAssistedBooking(client, booking, reference, amountKobo / KOBO);
+    await client.query(
+      `UPDATE support_assisted_bookings SET ride_id = $1, payment_status = 'paid', updated_at = now() WHERE id = $2`,
+      [newRide.id, booking.id]
+    );
+    await client.query(`UPDATE used_payment_references SET ride_id = $1 WHERE reference = $2`, [newRide.id, reference]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await markOrderFinalized(pool, reference, newRide.id);
+  console.log(`Assisted booking #${booking.id} paid via webhook, ref ${reference} -- created ride #${newRide.id}.`);
+
+  const rider = await pool.query("SELECT phone, name FROM users WHERE id = $1", [booking.rider_id]);
+  if (rider.rows[0]?.phone) {
+    sendWhatsAppMessage(
+      rider.rows[0].phone,
+      `Thanks ${rider.rows[0].name || ""}! Your payment went through and your RideArrivo ride #${newRide.id} is booked.`
+    ).catch(() => {});
+  }
+  return "paid";
+}
+
+// Finishes a ride booking from the pending order the rider's app left at
+// initialize. It runs the SAME handler as POST /api/rides (fare recomputed by
+// the server, Paystack asked again, reference claimed in the same transaction
+// as the ride), so a webhook-made ride can never be cheaper or looser than one
+// the app made itself. If the app's own call lands too, the handler finds the
+// reference already spent on this rider's ride and returns that ride.
+async function createRideFromOrder(order, { reference, amountKobo }) {
+  // Lazy: routes/rides.js requires this file for verifyPaystackTransaction.
+  const { createRideHandler } = require("./rides");
+  const captured = { status: 200, body: null };
+  const fakeRes = {
+    status(code) { captured.status = code; return this; },
+    json(body) { captured.body = body; return this; },
+  };
+  const fakeReq = {
+    user: { id: order.user_id, role: "rider" },
+    headers: {},
+    query: {},
+    params: {},
+    body: { ...order.payload, paymentMethod: "card", paymentReference: reference },
+  };
+  await createRideHandler(fakeReq, fakeRes);
+
+  if (captured.status === 200 || captured.status === 201) {
+    const rideId = captured.body && captured.body.ride && captured.body.ride.id;
+    await markOrderFinalized(pool, reference, rideId || null);
+    console.log(`Ride #${rideId} created from the pending order via webhook, ref ${reference}`);
+    return "ride_created";
+  }
+  if (captured.status >= 500) {
+    // Paystack unreachable, database trouble: let Paystack deliver it again.
+    throw new Error(`Creating the ride from the pending order failed with ${captured.status}`);
+  }
+  // The booking no longer validates (the pickup time passed, the fare changed,
+  // the rider was underpaid...). The money is real and the ride is not, so a
+  // person has to decide: refund it, or book it by hand.
+  await recordPaymentException(pool, {
+    reference,
+    reason: "ride_not_created",
+    purpose: "ride",
+    userId: order.user_id,
+    amountNaira: amountKobo / KOBO,
+    details: { status: captured.status, error: captured.body && captured.body.error },
+  });
+  return "ride_not_created";
+}
+
+// A payment with no ride and no assisted booking behind it. Either the app
+// told us what it was for (a pending order from a signed-in rider), or it did
+// not (older builds, or the website's own checkout popup), in which case the
+// app is expected to come back and finish it, and the sweep in
+// services/scheduler.js flags it if nobody ever does.
+async function handleOrder(reference, { amountKobo, email }) {
+  const order = await markOrderPaid(pool, reference, { amountNaira: amountKobo / KOBO, email });
+  if (order.status === "finalized") return "already_finalized";
+
+  const orderKobo = order.amount_naira != null ? Math.round(Number(order.amount_naira) * KOBO) : null;
+  const known = order.user_id && (order.purpose === "wallet_topup" || (order.purpose === "ride" && order.payload));
+  if (!known) return "awaiting_client";
+
+  // What Paystack took must equal what this order asked for.
+  if (orderKobo != null && orderKobo !== amountKobo) {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "amount_mismatch",
+      purpose: order.purpose,
+      userId: order.user_id,
+      amountNaira: amountKobo / KOBO,
+      details: { orderId: order.id, expectedKobo: orderKobo, paidKobo: amountKobo },
+    });
+    return "amount_mismatch";
+  }
+
+  if (order.purpose === "wallet_topup") {
+    const client = await pool.connect();
+    let credit;
+    try {
+      await client.query("BEGIN");
+      credit = await creditWalletTopup(client, { userId: order.user_id, reference, amountNaira: amountKobo / KOBO });
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    if (credit.credited || credit.reason === "already_credited") {
+      await markOrderFinalized(pool, reference);
+      return credit.credited ? "wallet_credited" : "already_credited";
+    }
+    await recordPaymentException(pool, {
+      reference,
+      reason: "reference_already_used",
+      purpose: "wallet_topup",
+      userId: order.user_id,
+      amountNaira: amountKobo / KOBO,
+      details: { orderId: order.id },
+    });
+    return "reference_already_used";
+  }
+
+  return createRideFromOrder(order, { reference, amountKobo });
+}
+
+async function handleChargeSuccess(data) {
+  const { reference, amount, currency, customer } = data;
+  if (typeof reference !== "string" || !reference) {
+    console.error("Webhook charge.success carried no reference; nothing to match it to.");
+    return "no_reference";
+  }
+  const amountKobo = Number(amount);
+  const email = customer && customer.email ? customer.email : null;
+
+  if (!isValidPaystackReference(reference)) {
+    await recordPaymentException(pool, {
+      reference: reference.slice(0, 200),
+      reason: "invalid_reference",
+      amountNaira: Number.isFinite(amountKobo) ? amountKobo / KOBO : null,
+      details: { currency },
+    });
+    return "invalid_reference";
+  }
+  if (!Number.isFinite(amountKobo) || amountKobo <= 0) {
+    await recordPaymentException(pool, { reference, reason: "invalid_amount", details: { amount, currency } });
+    return "invalid_amount";
+  }
+  // Everything downstream reads amount / 100 as naira, so a payment in another
+  // currency must never credit or pay for anything. It is recorded so someone
+  // can refund it.
+  if (currency !== "NGN") {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "wrong_currency",
+      amountNaira: amountKobo / KOBO,
+      details: { currency, email },
+    });
+    return "wrong_currency";
+  }
+
+  const existing = await pool.query(
+    "SELECT id, rider_id, fare_naira, payment_status FROM rides WHERE payment_reference = $1",
+    [reference]
+  );
+  if (existing.rows[0]) return handleExistingRide(existing.rows[0], { reference, amountKobo });
+
+  const assisted = await pool.query(`SELECT * FROM support_assisted_bookings WHERE payment_reference = $1`, [reference]);
+  if (assisted.rows[0]) return handleAssistedBooking(assisted.rows[0], { reference, amountKobo });
+
+  return handleOrder(reference, { amountKobo, email });
+}
 
 // POST /api/payments/webhook
 // Configure this URL in the Paystack dashboard (Settings > API Keys & Webhooks).
@@ -236,152 +602,40 @@ router.post(
       return res.sendStatus(401);
     }
 
-    const event = JSON.parse(req.body.toString());
-    if (event.event === "charge.success") {
-      const { reference, amount, customer } = event.data;
-
-      // This only UPDATES an existing ride — it can't create one from
-      // scratch, since the app currently creates the ride row itself only
-      // after the client-side verify step succeeds (see CheckoutScreen's
-      // verifyAndCreateRide). So this webhook is a backstop for a ride that
-      // already exists with this payment_reference (e.g. the client-side
-      // verify call failed/timed out after the ride was created but before
-      // its status got updated) — not yet a full replacement for that flow.
-      // If a rider closes the app before ever returning from Paystack
-      // checkout, no ride is created either way, webhook or not — fixing
-      // that needs rides to be created as "pending" before redirecting to
-      // Paystack, which is a bigger flow change than this webhook alone.
-      try {
-        // Check the amount BEFORE writing anything — an underpaid or
-        // wrong-amount transaction must never flip a ride to "paid", not
-        // just get logged after the fact. SELECT first (no write yet).
-        const existing = await pool.query(
-          "SELECT id, fare_naira, payment_status FROM rides WHERE payment_reference = $1",
-          [reference]
-        );
-        const ride = existing.rows[0];
-        if (!ride) {
-          // Not a normal-flow ride payment -- check whether this reference
-          // belongs to a support-assisted booking's payment link instead
-          // (routes/support.js's POST /assisted-bookings/:id/payment-link).
-          // Same "check the amount before writing anything" rule as the
-          // ride branch below: this is a real second entity in a different
-          // table, not a variant of the same check, so it gets its own
-          // full amount-then-claim-then-write sequence.
-          const assistedExisting = await pool.query(
-            `SELECT * FROM support_assisted_bookings WHERE payment_reference = $1`,
-            [reference]
-          );
-          const assistedBooking = assistedExisting.rows[0];
-          if (!assistedBooking) {
-            console.log(`Payment confirmed via webhook for ref ${reference}, but no matching ride or assisted booking found yet.`);
-          } else if (assistedBooking.ride_id) {
-            // Already turned into a ride (e.g. a previous webhook delivery) --
-            // Paystack retries webhooks, so this must be a safe no-op.
-          } else {
-            const expectedKobo = Math.round(Number(assistedBooking.fare_naira) * 100);
-            if (Number(amount) !== expectedKobo) {
-              console.error(
-                `Webhook amount mismatch for assisted booking #${assistedBooking.id}: paid ${amount} kobo, expected ${expectedKobo} kobo -- NOT creating a ride.`
-              );
-            } else {
-              const assistedClient = await pool.connect();
-              try {
-                await assistedClient.query("BEGIN");
-                // used_payment_references.ride_id is a real FK to rides(id), and
-                // no ride exists yet at the moment this reference needs to be
-                // claimed (claiming first, before creating anything, is what
-                // closes the race window against a second webhook delivery
-                // hitting this same branch concurrently) -- so this claims
-                // with ride_id left null, then backfills it once the ride
-                // actually exists below. The column is there for audit
-                // trail/debugging, not enforced elsewhere, so a brief null
-                // window on it is harmless.
-                const claimed = await claimPaymentReference(assistedClient, reference, "support_assisted_booking", null);
-                if (!claimed) {
-                  await assistedClient.query("ROLLBACK");
-                  console.error(
-                    `Webhook: payment reference ${reference} for assisted booking #${assistedBooking.id} was already claimed elsewhere -- not creating a ride.`
-                  );
-                } else {
-                  const newRide = await createRideFromAssistedBooking(assistedClient, assistedBooking, reference, Number(amount) / 100);
-                  await assistedClient.query(
-                    `UPDATE support_assisted_bookings SET ride_id = $1, payment_status = 'paid', updated_at = now() WHERE id = $2`,
-                    [newRide.id, assistedBooking.id]
-                  );
-                  await assistedClient.query(
-                    `UPDATE used_payment_references SET ride_id = $1 WHERE reference = $2`,
-                    [newRide.id, reference]
-                  );
-                  await assistedClient.query("COMMIT");
-                  console.log(`Assisted booking #${assistedBooking.id} paid via webhook, ref ${reference} -- created ride #${newRide.id}.`);
-
-                  const rider = await pool.query("SELECT phone, name FROM users WHERE id = $1", [assistedBooking.rider_id]);
-                  if (rider.rows[0]?.phone) {
-                    sendWhatsAppMessage(
-                      rider.rows[0].phone,
-                      `Thanks ${rider.rows[0].name || ""}! Your payment went through and your RideArrivo ride #${newRide.id} is booked.`
-                    ).catch(() => {});
-                  }
-                }
-              } catch (assistedErr) {
-                await assistedClient.query("ROLLBACK");
-                console.error("Assisted-booking webhook ride creation failed:", assistedErr.message);
-              } finally {
-                assistedClient.release();
-              }
-            }
-          }
-        } else if (ride.payment_status === "paid") {
-          // Already marked paid (e.g. by a previous webhook delivery) — Paystack
-          // retries webhooks, so this must be a safe no-op, not an error.
-        } else {
-          const expectedKobo = Math.round(Number(ride.fare_naira) * 100);
-          if (Number(amount) !== expectedKobo) {
-            console.error(
-              `Webhook amount mismatch for ride #${ride.id}: paid ${amount} kobo, expected ${expectedKobo} kobo — NOT marking paid.`
-            );
-          } else {
-            // Claim the reference in the SAME transaction as the UPDATE, exactly
-            // like the other four card-payment call sites (PATCH :id/payment,
-            // POST :id/tip, POST :id/overage-charge, wallet topup verify) — this
-            // webhook was the one path that could mark a ride paid WITHOUT ever
-            // recording the reference as spent, meaning a genuinely-successful
-            // charge (if this webhook is what settles it, e.g. the client-side
-            // verify call never lands) could then be replayed on a tip, overage
-            // charge, or wallet top-up as if it were a brand-new payment.
-            const webhookClient = await pool.connect();
-            try {
-              await webhookClient.query("BEGIN");
-              const claimed = await claimPaymentReference(webhookClient, reference, "ride_payment", ride.id);
-              if (!claimed) {
-                await webhookClient.query("ROLLBACK");
-                console.error(
-                  `Webhook: payment reference ${reference} for ride #${ride.id} was already claimed elsewhere — not marking paid.`
-                );
-              } else {
-                await webhookClient.query(
-                  `UPDATE rides SET payment_status = 'paid', updated_at = now()
-                   WHERE id = $1 AND payment_status != 'paid'`,
-                  [ride.id]
-                );
-                await webhookClient.query("COMMIT");
-                console.log(`Payment confirmed via webhook: ride #${ride.id}, ref ${reference} - NGN ${amount / 100} - ${customer.email}`);
-              }
-            } catch (claimErr) {
-              await webhookClient.query("ROLLBACK");
-              throw claimErr;
-            } finally {
-              webhookClient.release();
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Webhook DB update failed:", e.message);
-      }
+    let event;
+    try {
+      event = JSON.parse(req.body.toString());
+    } catch (e) {
+      // Signed but unreadable: retrying the same bytes cannot help.
+      console.error("Webhook body was signed but is not valid JSON.");
+      return res.sendStatus(400);
     }
 
-    res.sendStatus(200);
+    // Other event types (transfers, refunds...) are acknowledged and ignored.
+    if (event.event !== "charge.success") return res.sendStatus(200);
+
+    const data = event.data || {};
+    try {
+      const outcome = await handleChargeSuccess(data);
+      if (typeof data.reference === "string") {
+        await autoResolveProcessingErrors(pool, data.reference);
+      }
+      console.log(`Webhook charge.success ref=${data.reference} outcome=${outcome}`);
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error(`Webhook processing failed for ref ${data.reference}:`, err.message);
+      // Best effort: leave a trail for a person even if this turns out to be a
+      // database outage, then ask Paystack to deliver it again.
+      if (typeof data.reference === "string") {
+        await recordPaymentException(pool, {
+          reference: data.reference.slice(0, 200),
+          reason: "processing_error",
+          amountNaira: Number.isFinite(Number(data.amount)) ? Number(data.amount) / KOBO : null,
+          details: { message: err.message },
+        }).catch((e) => console.error("Could not record the payment exception either:", e.message));
+      }
+      return res.sendStatus(500);
+    }
   }
 );
 

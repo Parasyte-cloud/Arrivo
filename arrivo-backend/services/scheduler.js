@@ -31,6 +31,8 @@ const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
 const { lookupFlightStatus } = require("../routes/flights");
 const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
 const { getConfigBool } = require("./systemConfig");
+const { recordPaymentException } = require("./paymentOrders");
+const { purgeExpiredRecordings } = require("./audioRetention");
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -367,11 +369,51 @@ async function sweepLuckyRideDraw() {
   }
 }
 
+// 5. Paid but never matched. A payment Paystack confirmed (payment_orders row
+// with status 'paid') should, within minutes, be claimed by a ride, a wallet
+// top-up, a tip, an overage charge or a family top-up, all of which write the
+// reference to used_payment_references. If half an hour has passed and nothing
+// claimed it, the rider paid and got nothing, usually because the app was
+// closed in checkout on a build that cannot finish the job from the webhook.
+// That is written to payment_exceptions for a person to refund or resolve.
+const UNMATCHED_PAYMENT_GRACE_MINUTES = 30;
+async function sweepUnmatchedPayments() {
+  // Already claimed: just tidy the order row.
+  await pool.query(
+    `UPDATE payment_orders o
+        SET status = 'finalized', finalized_at = now()
+      WHERE o.status = 'paid'
+        AND EXISTS (SELECT 1 FROM used_payment_references u WHERE u.reference = o.reference)`
+  );
+  const stale = await pool.query(
+    `SELECT o.* FROM payment_orders o
+      WHERE o.status = 'paid'
+        AND o.paid_at < now() - ($1 || ' minutes')::interval
+        AND NOT EXISTS (SELECT 1 FROM used_payment_references u WHERE u.reference = o.reference)
+        AND NOT EXISTS (SELECT 1 FROM rides r WHERE r.payment_reference = o.reference)
+      LIMIT 100`,
+    [String(UNMATCHED_PAYMENT_GRACE_MINUTES)]
+  );
+  for (const order of stale.rows) {
+    await recordPaymentException(pool, {
+      reference: order.reference,
+      reason: "paid_not_finalized",
+      purpose: order.purpose,
+      userId: order.user_id,
+      amountNaira: order.amount_naira == null ? null : Number(order.amount_naira),
+      details: { orderId: order.id, email: order.email, paidAt: order.paid_at },
+    });
+  }
+  if (stale.rows.length) console.warn(`[scheduler] ${stale.rows.length} paid order(s) were never matched to anything`);
+}
+
 async function runSweep() {
   await sweepReminders().catch((err) => console.error("[scheduler] sweepReminders crashed:", err.message));
   await sweepFlightIssues().catch((err) => console.error("[scheduler] sweepFlightIssues crashed:", err.message));
   await sweepPreferredDriverExpiry().catch((err) => console.error("[scheduler] sweepPreferredDriverExpiry crashed:", err.message));
   await sweepLuckyRideDraw().catch((err) => console.error("[scheduler] sweepLuckyRideDraw crashed:", err.message));
+  await sweepUnmatchedPayments().catch((err) => console.error("[scheduler] sweepUnmatchedPayments crashed:", err.message));
+  await purgeExpiredRecordings().catch((err) => console.error("[scheduler] purgeExpiredRecordings crashed:", err.message));
 }
 
 function startScheduler() {
@@ -380,4 +422,4 @@ function startScheduler() {
   setInterval(runSweep, SWEEP_INTERVAL_MS);
 }
 
-module.exports = { startScheduler, runSweep };
+module.exports = { startScheduler, runSweep, sweepUnmatchedPayments };

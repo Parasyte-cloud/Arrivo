@@ -14,7 +14,24 @@ import {
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
   addRideShareParticipant, removeRideShareParticipant,
 } from "../services/api";
+import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { RECORDING_CONSENT } from "../utils/safetyCopy";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
+
+// Wording lives in utils/safetyCopy.js (draft until counsel approves it).
+function askRecordingConsent() {
+  return new Promise((resolve) => {
+    Alert.alert(
+      RECORDING_CONSENT.title,
+      RECORDING_CONSENT.body,
+      [
+        { text: RECORDING_CONSENT.notNow, style: "cancel", onPress: () => resolve(false) },
+        { text: RECORDING_CONSENT.agree, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
 // amount option for anyone who wants a specific number instead.
@@ -82,6 +99,8 @@ export default function TrackingScreen({ route, navigation }) {
   const [panicSending, setPanicSending] = useState(false);
   const [panicActive, setPanicActive] = useState(false);
   const [listeningSending, setListeningSending] = useState(false);
+  const [recordingOn, setRecordingOn] = useState(false);
+  const [recordingCapable, setRecordingCapable] = useState(false);
   const [starsSelected, setStarsSelected] = useState(0);
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
@@ -398,6 +417,9 @@ export default function TrackingScreen({ route, navigation }) {
     try {
       await triggerPanic(token, rideId, "Triggered from Live Tracking screen");
       setPanicActive(true);
+      // Panic never asks for consent mid-emergency: it only records if this
+      // device already agreed earlier. Fire and forget, never blocks the alert.
+      startOnPanic({ token, rideId });
       Alert.alert(
         "Support has been alerted",
         "Our team has been notified of your ride and location and will reach out. If you're in immediate danger, please also call local emergency services."
@@ -412,10 +434,42 @@ export default function TrackingScreen({ route, navigation }) {
   // One-way — matches ridearrivo.com's design. Triggering panic (above)
   // already activates this server-side too, so this is only needed when
   // someone wants to turn it on independent of a panic alert.
+  useEffect(() => {
+    setRecordingOn(isRecordingRide(rideId));
+    const off = onRecordingChange(() => setRecordingOn(isRecordingRide(rideId)));
+    return off;
+  }, [rideId]);
+
+  useEffect(() => {
+    let alive = true;
+    if (token) getRecordingEnabled(token).then((c) => { if (alive) setRecordingCapable(!!c.enabled); }).catch(() => {});
+    return () => { alive = false; };
+  }, [token]);
+
+  // The trip is over: stop recording so nothing runs after the ride.
+  useEffect(() => {
+    if (["completed", "cancelled"].includes(ride?.ride_status)) stopRideRecording();
+  }, [ride?.ride_status]);
+
   const activateListening = async () => {
     if (!rideId) return;
+    if (recordingOn) {
+      Alert.alert("Stop recording?", "Audio recording for this trip will stop. What was already recorded stays available to safety staff.", [
+        { text: "Keep recording", style: "cancel" },
+        { text: "Stop", style: "destructive", onPress: () => stopRideRecording() },
+      ]);
+      return;
+    }
     setListeningSending(true);
     try {
+      const rec = await startRideRecording({ token, rideId, askConsent: askRecordingConsent });
+      if (rec.handled) {
+        if (!rec.started && rec.reason === "permission") {
+          Alert.alert("Microphone is off", "Allow microphone access in your phone settings to record audio for this trip.");
+        }
+        await fetchRide();
+        return;
+      }
       await activateListeningDevice(token, rideId);
       await fetchRide();
     } catch (e) {
@@ -1107,10 +1161,10 @@ export default function TrackingScreen({ route, navigation }) {
             this on automatically too. */}
         <Pressable
           onPress={activateListening}
-          disabled={!!ride?.listening_device_activated_at || listeningSending}
+          disabled={(!!ride?.listening_device_activated_at && !recordingOn && !recordingCapable) || listeningSending}
           style={({ pressed }) => [
             styles.listeningBtn,
-            !!ride?.listening_device_activated_at && styles.listeningBtnActive,
+            (!!ride?.listening_device_activated_at || recordingOn) && styles.listeningBtnActive,
             (pressed || listeningSending) && { opacity: 0.7 },
           ]}
         >
@@ -1118,7 +1172,9 @@ export default function TrackingScreen({ route, navigation }) {
             <ActivityIndicator color={colors.dark.text} />
           ) : (
             <Text style={styles.listeningText}>
-              {ride?.listening_device_activated_at ? "🎙️ Listening device: on" : "🎙️ Activate listening device"}
+              {recordingOn
+                ? "🎙️ Recording: tap to stop"
+                : ride?.listening_device_activated_at ? "🎙️ Listening device: on" : "🎙️ Activate listening device"}
             </Text>
           )}
         </Pressable>

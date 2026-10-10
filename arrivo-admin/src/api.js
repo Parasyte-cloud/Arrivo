@@ -188,3 +188,11 @@ export async function downloadExport(token, dataset, { from, to } = {}) {
 
   return { filename, rows: Number.isFinite(rows) ? rows : null };
 }
+
+// In-trip audio. Admin role only; the API refuses cookie-only sessions, and
+// every play-urls call is written to the recording's access log.
+export const getRideRecordings = (token, rideId) => request(`/api/admin/recordings?rideId=${encodeURIComponent(rideId)}`, token);
+export const getRecordingPlayUrls = (token, id) => request(`/api/admin/recordings/${id}/play-urls`, token, { method: "POST" });
+export const setRecordingHold = (token, id, hold) =>
+  request(`/api/admin/recordings/${id}/hold`, token, { method: "POST", body: JSON.stringify({ hold }) });
+export const getRecordingAccessLog = (token, id) => request(`/api/admin/recordings/${id}/access-log`, token);
