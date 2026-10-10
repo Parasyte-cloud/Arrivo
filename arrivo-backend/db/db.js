@@ -27,6 +27,15 @@ const pool = new Pool({
 // An error on an idle pooled connection (the database restarting, a managed
 // provider closing idle sessions) is emitted on the pool. With no listener,
 // Node treats it as an uncaught exception and the whole API process exits.
+// Surfaces WARNING messages the schema raises on purpose (for example when the
+// non-negative wallet rule could not be added because a balance is already
+// negative), so they reach the Render logs instead of vanishing.
+pool.on("connect", (client) => {
+  client.on("notice", (n) => {
+    if (n.severity === "WARNING") console.warn("[db]", n.message);
+  });
+});
+
 pool.on("error", (err) => {
   console.error("Idle database connection error (connection discarded):", err.message);
 });
