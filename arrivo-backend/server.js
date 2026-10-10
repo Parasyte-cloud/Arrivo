@@ -24,6 +24,7 @@ const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const adminExportsRouter = require("./routes/adminExports");
+const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
@@ -145,6 +146,8 @@ app.use("/api/drivers", driversRouter);
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
+// Before the general admin router, for the same reason as the exports above.
+app.use("/api/admin/payment-exceptions", paymentExceptionsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);

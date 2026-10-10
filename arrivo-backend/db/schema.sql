@@ -1362,3 +1362,107 @@ CREATE TABLE IF NOT EXISTS export_audit_log (
 CREATE INDEX IF NOT EXISTS idx_export_audit_log_created ON export_audit_log(created_at DESC);
 -- Which door the download came through: the admin console or the Workspace.
 ALTER TABLE export_audit_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'console';
+
+-- ============================================================
+-- PAYMENTS SAFETY (batch 2)
+-- ============================================================
+
+-- ── Payment orders ──
+-- One row per Paystack transaction this API started (POST /api/payments/initialize)
+-- or later learned about from a webhook. Before this, a card payment existed
+-- only inside Paystack until the rider's app came back and called verify then
+-- create-ride. If the app was closed in between, the money was taken and
+-- nothing on our side knew what it was for.
+--
+-- purpose says what the payment is for ('ride', 'wallet_topup', or 'unknown'
+-- for builds that do not say). user_id is only ever set from a verified login
+-- token, never from the request body, so a payment cannot be pointed at
+-- someone else's wallet. payload holds the booking the rider was paying for
+-- (rides only) so the webhook can finish the booking itself.
+--
+-- status: 'pending' (started, not yet paid), 'paid' (Paystack confirmed, not
+-- yet matched to a ride or credit), 'finalized' (matched), 'exception' (needs
+-- a person, see payment_exceptions).
+CREATE TABLE IF NOT EXISTS payment_orders (
+  id SERIAL PRIMARY KEY,
+  reference TEXT UNIQUE NOT NULL,
+  user_id INTEGER REFERENCES users(id),
+  email TEXT,
+  purpose TEXT NOT NULL DEFAULT 'unknown',
+  amount_naira NUMERIC,
+  payload JSONB,
+  status TEXT NOT NULL DEFAULT 'pending',
+  ride_id INTEGER REFERENCES rides(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at TIMESTAMPTZ,
+  finalized_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_status_paid ON payment_orders(status, paid_at);
+
+-- ── Payment exceptions ──
+-- Money that arrived (or was refused) in a way a person has to look at: wrong
+-- currency, wrong amount, a reference already spent on something else, a paid
+-- order the webhook could not turn into a ride, a paid reference nothing ever
+-- claimed. One row per (reference, reason): Paystack retries webhooks, and a
+-- retry must bump occurrences rather than pile up duplicates.
+-- status: 'open', 'resolved', 'refund_pending', 'refunded', 'refund_failed'.
+CREATE TABLE IF NOT EXISTS payment_exceptions (
+  id SERIAL PRIMARY KEY,
+  reference TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  purpose TEXT,
+  user_id INTEGER REFERENCES users(id),
+  amount_naira NUMERIC,
+  details JSONB,
+  status TEXT NOT NULL DEFAULT 'open',
+  occurrences INTEGER NOT NULL DEFAULT 1,
+  refund_response JSONB,
+  resolved_by INTEGER REFERENCES users(id),
+  resolved_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  UNIQUE (reference, reason)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_exceptions_status ON payment_exceptions(status, created_at DESC);
+
+-- ── Membership subscribe idempotency ──
+-- POST /api/memberships/subscribe takes money from the wallet. A lost response
+-- followed by a retry must not charge twice, and must not turn a success into a
+-- confusing "you already have a membership" error. Optional: builds that do not
+-- send an idempotencyKey are still protected by the row lock in the route.
+CREATE TABLE IF NOT EXISTS membership_idempotency_keys (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  idempotency_key TEXT NOT NULL,
+  plan_key TEXT NOT NULL,
+  response_status INTEGER NOT NULL,
+  response_body JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, idempotency_key)
+);
+
+-- ── Wallet balances can never go below zero ──
+-- Every debit in the code checks the balance under a row lock first, so a
+-- negative balance should be impossible. This makes the database refuse one
+-- even if a future code path forgets the check. Added only when no row is
+-- negative today: adding it over existing negative rows would make every later
+-- update to those users fail, and a failing schema step stops the server
+-- booting. If a row is negative the server warns and starts without the rule.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_wallet_balance_nonnegative') THEN
+    IF EXISTS (SELECT 1 FROM users WHERE wallet_balance_naira < 0) THEN
+      RAISE WARNING 'users_wallet_balance_nonnegative NOT added: some users already have a negative wallet balance. Fix those rows, then restart.';
+    ELSE
+      ALTER TABLE users ADD CONSTRAINT users_wallet_balance_nonnegative CHECK (wallet_balance_naira >= 0);
+    END IF;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'family_plans_wallet_balance_nonnegative') THEN
+    IF EXISTS (SELECT 1 FROM family_plans WHERE wallet_balance_naira < 0) THEN
+      RAISE WARNING 'family_plans_wallet_balance_nonnegative NOT added: some family plans already have a negative wallet balance. Fix those rows, then restart.';
+    ELSE
+      ALTER TABLE family_plans ADD CONSTRAINT family_plans_wallet_balance_nonnegative CHECK (wallet_balance_naira >= 0);
+    END IF;
+  END IF;
+END $$;

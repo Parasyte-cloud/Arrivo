@@ -111,7 +111,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const verifyAndCreateRide = async (reference) => {
     setStatus("verifying");
     try {
-      const verification = await verifyPayment(reference);
+      const verification = await verifyPayment(reference, token);
       if (verification.success) {
         // Card has now genuinely been charged (Paystack confirmed it) —
         // from this point on, ANY failure below means the rider paid but
@@ -192,7 +192,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const payWithCard = async () => {
     setStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amountNaira);
+      const { authorizationUrl, reference } = await initializePayment(user.email, amountNaira, token);
       pendingPaymentRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Verification now happens automatically via the AppState listener

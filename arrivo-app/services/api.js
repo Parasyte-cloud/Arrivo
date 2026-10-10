@@ -46,15 +46,21 @@ export function forgotPassword(email) {
   return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 }
 
-export function initializePayment(email, amountNaira) {
+// The token is sent so the backend can require a signed-in rider on these two
+// routes (PAYMENT_ROUTES_REQUIRE_AUTH). Builds that predate this change send
+// none, which is why the backend keeps that switch off until they have aged out.
+export function initializePayment(email, amountNaira, token) {
   return request("/api/payments/initialize", {
     method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: JSON.stringify({ email, amountNaira }),
   });
 }
 
-export function verifyPayment(reference) {
-  return request(`/api/payments/verify/${reference}`);
+export function verifyPayment(reference, token) {
+  return request(`/api/payments/verify/${reference}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
 }
 
 export function createRide(token, rideData) {

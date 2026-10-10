@@ -15,7 +15,7 @@ const {
 } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
-const { claimPaymentReference } = require("../services/paymentReferences");
+const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { creditMembershipCashback } = require("../services/membershipCashback");
@@ -34,6 +34,20 @@ const { isWithinRadiusKm } = require("../services/routeDeviation");
 const MIN_WALLET_BALANCE_USD = 100;
 
 const router = express.Router();
+
+// A rider whose first POST succeeded but whose response was lost (dropped
+// connection, reload, closed tab) will retry with the same payment reference.
+// If that reference already paid for one of THIS rider's rides, hand the same
+// ride back instead of an error. A different rider never gets this.
+async function findRideForSpentReference(db, reference, riderId) {
+  const found = await db.query(
+    `SELECT r.* FROM used_payment_references u
+       JOIN rides r ON r.id = u.ride_id
+      WHERE u.reference = $1 AND u.used_for = 'ride_payment' AND r.rider_id = $2`,
+    [reference, riderId]
+  );
+  return found.rows[0] || null;
+}
 
 function withParsedStops(ride) {
   return { ...ride, stops: JSON.parse(ride.stops || "[]") };
@@ -224,7 +238,7 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
 // bookings — that's what lets the fare actually be re-verified below
 // instead of trusted from the client. Get these (and a live fareNaira to
 // show the rider) from POST /api/rides/quote first.
-router.post("/", requireAuth, async (req, res) => {
+async function createRideHandler(req, res) {
   const {
     pickupAddress: pickupAddressInput, stops, flightNumber, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
@@ -764,6 +778,10 @@ router.post("/", requireAuth, async (req, res) => {
     if (!paymentReference) {
       return res.status(400).json({ error: "A completed card payment is required to book this ride." });
     }
+    if (isValidPaystackReference(paymentReference)) {
+      const prior = await findRideForSpentReference(pool, paymentReference, req.user.id);
+      if (prior) return res.status(200).json({ ride: withParsedStops(prior), replayed: true });
+    }
     let cardVerification;
     try {
       cardVerification = await verifyPaystackTransaction(paymentReference);
@@ -794,6 +812,8 @@ router.post("/", requireAuth, async (req, res) => {
       const claimed = await claimPaymentReference(cardClient, paymentReference, "ride_payment", cardRide.id);
       if (!claimed) {
         await cardClient.query("ROLLBACK");
+        const prior = await findRideForSpentReference(pool, paymentReference, req.user.id);
+        if (prior) return res.status(200).json({ ride: withParsedStops(prior), replayed: true });
         console.error(`Reused payment reference on card ride creation: ${paymentReference} was already used for a different charge.`);
         return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
       }
@@ -820,7 +840,10 @@ router.post("/", requireAuth, async (req, res) => {
   } finally {
     cardClient.release();
   }
-});
+}
+// Registered here, and exported below so the Paystack webhook can finish a
+// card booking from a pending order by running exactly this code.
+router.post("/", requireAuth, createRideHandler);
 
 // POST /api/rides/quote — a live fare estimate, before any payment happens.
 // Uses the exact same formula (services/fare.js) that ride creation above
@@ -2473,3 +2496,4 @@ router.post("/scan", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.createRideHandler = createRideHandler;
