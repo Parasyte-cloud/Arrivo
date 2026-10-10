@@ -24,7 +24,6 @@ function configure({ withKey = true } = {}) {
   process.env.APPLE_KEY_ID = withKey ? "KEY1234567" : "";
   // Stored with escaped newlines, the way an env var has to hold a .p8.
   process.env.APPLE_PRIVATE_KEY = withKey ? privateKey.replace(/\n/g, "\\n") : "";
-  process.env.APPLE_BUNDLE_IDS = "com.arrivo.app,com.arrivo.driver";
 }
 
 // Rider and driver are separate Apple clients. A refresh token issued to one

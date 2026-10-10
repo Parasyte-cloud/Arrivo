@@ -7,7 +7,9 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
-import { isStandardBookingBlocked } from "../utils/bookingWindow";
+import { isStandardBookingBlocked, ON_THE_GO_ONLY_HOURS } from "../utils/bookingWindow";
+import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from "../utils/lagosTime";
+import useMinuteTick from "../hooks/useMinuteTick";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
@@ -107,12 +109,11 @@ const BOOKING_TYPES = [
 // native dependency + a rebuild before it could ship).
 const SCHEDULE_MINUTES = ["00", "15", "30", "45"];
 
-function scheduleDayLabel(offset) {
+// Days are counted from today in Lagos, not from the phone's own date.
+function scheduleDayLabel(offset, now) {
   if (offset === 0) return "Today";
   if (offset === 1) return "Tomorrow";
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  return lagosDayLabel(offset, now);
 }
 
 const QUOTE_DEBOUNCE_MS = 400;
@@ -348,13 +349,33 @@ export default function RouteScreen({ navigation, route }) {
   // driven by the flight-landing event instead (see needsFlightNumber
   // below), and charter bookings collect their own date/time separately.
   const needsScheduledTime = bookingType === "dropoff";
-  const scheduledDateObj = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + scheduleDayOffset);
-    d.setHours(Number(scheduleHour) || 0, Number(scheduleMinute) || 0, 0, 0);
-    return d;
-  }, [scheduleDayOffset, scheduleHour, scheduleMinute]);
-  const scheduledTimeValid = !needsScheduledTime || scheduledDateObj.getTime() > Date.now();
+  // The time is a Lagos wall-clock time whatever zone the phone is in, and
+  // null while the hour is blank or not a real 0-23 value (it is free text).
+  // `now` ticks, so the day rolls over at Lagos midnight and the validity
+  // checks below are re-run while the screen is left open.
+  const now = useMinuteTick();
+  const lagosDayKey = (() => {
+    const p = lagosParts(now);
+    return p.year * 10000 + p.month * 100 + p.day;
+  })();
+  const lastDayKeyRef = useRef(lagosDayKey);
+  useEffect(() => {
+    if (lastDayKeyRef.current === lagosDayKey) return;
+    // The calendar day moved on. Keep the chip pointing at the same date the
+    // rider chose, so "Tomorrow" does not silently become the day after.
+    const prev = lastDayKeyRef.current;
+    lastDayKeyRef.current = lagosDayKey;
+    const toUtc = (k) => Date.UTC(Math.floor(k / 10000), Math.floor((k % 10000) / 100) - 1, k % 100);
+    const days = Math.round((toUtc(lagosDayKey) - toUtc(prev)) / 86400000);
+    setScheduleDayOffset((o) => Math.max(0, o - days));
+  }, [lagosDayKey]);
+  const scheduledDateObj = useMemo(
+    () => lagosScheduleInstant(scheduleDayOffset, scheduleHour, scheduleMinute, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scheduleDayOffset, scheduleHour, scheduleMinute, lagosDayKey]
+  );
+  const scheduledTimeValid = !needsScheduledTime || (!!scheduledDateObj && scheduledDateObj.getTime() > now);
+  const scheduledHourInvalid = needsScheduledTime && !scheduledDateObj;
 
   // Auto-select the recommended vehicle until the rider manually picks one
   // themselves. A manual pick is no longer abandoned just because the
@@ -461,7 +482,32 @@ export default function RouteScreen({ navigation, route }) {
   // Only drop-offs carry a date the rider picks. An airport pickup is timed
   // off the flight, so there's nothing here to measure it against and the rule
   // can't apply to those yet.
-  const bookingWindowBlocked = needsScheduledTime && isStandardBookingBlocked(scheduledDateObj);
+  const bookingWindowBlocked = needsScheduledTime && !!scheduledDateObj && isStandardBookingBlocked(scheduledDateObj, now);
+
+  // One tap from the late notice back to the earliest time a standard booking
+  // allows. Minutes are the chip values (quarter hours), so it rounds up.
+  const useEarliestPickup = () => {
+    const e = earliestInstant(ON_THE_GO_ONLY_HOURS, Date.now(), 15);
+    const ep = lagosParts(e);
+    const tp = lagosParts(Date.now());
+    const days = Math.round(
+      (Date.UTC(ep.year, ep.month - 1, ep.day) - Date.UTC(tp.year, tp.month - 1, tp.day)) / 86400000
+    );
+    setScheduleDayOffset(Math.min(6, Math.max(0, days)));
+    setScheduleHour(String(ep.hour));
+    setScheduleMinute(String(ep.minute).padStart(2, "0"));
+  };
+
+  // Everything already typed, handed to On the Go so the rider is not made to
+  // start again.
+  const lateRequestPrefill = {
+    service: "Airport drop-off",
+    pickupAddress: pickup.trim(),
+    destinationAddress: stops.map((x) => String(x || "").trim()).filter(Boolean)[0] || "",
+    flightNumber: flightNumber.trim() || undefined,
+    passengerCount: Math.max(1, (Number(adults) || 1) + (Number(children) || 0)),
+    requestedPickupAt: scheduledDateObj ? scheduledDateObj.toISOString() : undefined,
+  };
 
   // Optional field, but a half-typed number is worse than none at all —
   // it looks like someone can be reached and nobody can. Blank stays fine.
@@ -499,7 +545,7 @@ export default function RouteScreen({ navigation, route }) {
       pickupLng: pickupCoords?.lng,
       destinationLat: destinationCoords?.lat,
       destinationLng: destinationCoords?.lng,
-      scheduledPickupAt: needsScheduledTime ? scheduledDateObj.toISOString() : undefined,
+      scheduledPickupAt: needsScheduledTime && scheduledDateObj ? scheduledDateObj.toISOString() : undefined,
       linkedRideId: linkedRideId || undefined,
       partnerVenueId: partnerVenueId || undefined,
       partnerVenueName: partnerVenueName || undefined,
@@ -672,7 +718,7 @@ export default function RouteScreen({ navigation, route }) {
                   style={[styles.bookingChip, scheduleDayOffset === offset && styles.bookingChipActive]}
                 >
                   <Text style={[styles.bookingChipText, scheduleDayOffset === offset && styles.bookingChipTextActive]}>
-                    {scheduleDayLabel(offset)}
+                    {scheduleDayLabel(offset, now)}
                   </Text>
                 </Pressable>
               ))}
@@ -703,9 +749,11 @@ export default function RouteScreen({ navigation, route }) {
               ))}
             </View>
             <Text style={[styles.addonNote, { marginTop: 8 }]}>
-              Pickup: {scheduleDayLabel(scheduleDayOffset)} at {String(Number(scheduleHour) || 0).padStart(2, "0")}:{scheduleMinute}
+              Pickup: {scheduleDayLabel(scheduleDayOffset, now)} at {scheduledDateObj ? `${String(lagosParts(scheduledDateObj).hour).padStart(2, "0")}:${scheduleMinute}` : "--:--"} (Lagos time)
             </Text>
-            {!scheduledTimeValid ? (
+            {scheduledHourInvalid ? (
+              <Text style={styles.warningText}>Enter an hour from 0 to 23.</Text>
+            ) : !scheduledTimeValid ? (
               <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
             ) : null}
           </Card>
@@ -891,9 +939,16 @@ export default function RouteScreen({ navigation, route }) {
         {!pickup.trim() || !destination.trim() ? (
           <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
         ) : bookingWindowBlocked ? (
-          <BookingWindowNotice navigation={navigation} />
+          <BookingWindowNotice
+            navigation={navigation}
+            prefill={lateRequestPrefill}
+            onUseEarliest={useEarliestPickup}
+            earliestLabel="Use the earliest time I can book"
+          />
         ) : needsFlightNumber && !flightNumber.trim() ? (
           <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
+        ) : scheduledHourInvalid ? (
+          <Text style={styles.warningText}>Enter an hour from 0 to 23 for your pickup time.</Text>
         ) : !scheduledTimeValid ? (
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : !emergencyPhoneResult.valid ? (

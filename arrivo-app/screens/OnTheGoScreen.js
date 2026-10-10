@@ -20,6 +20,7 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { splitPhone, validatePhone } from "../utils/phoneValidation";
 import { createOnTheGoRequest } from "../services/api";
+import { formatLagos } from "../utils/lagosTime";
 
 const SUPPORT_PHONE_DIAL = "+2348162706078";
 
@@ -29,14 +30,20 @@ const SUPPORT_PHONE_DIAL = "+2348162706078";
 // No vehicle picker, no escort or fleet options, and no payment step. Ops
 // confirms a driver and takes payment then, which is the whole point of it
 // being quicker.
-export default function OnTheGoScreen({ navigation }) {
+export default function OnTheGoScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
 
-  const [pickup, setPickup] = useState("");
-  const [destination, setDestination] = useState("");
-  const [flightNumber, setFlightNumber] = useState("");
-  const [passengers, setPassengers] = useState("1");
+  // Arrives filled in when the rider got here from a booking that was too close
+  // for the standard flow (see components/BookingWindowNotice.js), so nothing
+  // they typed there has to be typed again.
+  const prefill = route?.params?.prefill || null;
+  const [pickup, setPickup] = useState(prefill?.pickupAddress || "");
+  const [destination, setDestination] = useState(prefill?.destinationAddress || "");
+  const [flightNumber, setFlightNumber] = useState(prefill?.flightNumber || "");
+  const [passengers, setPassengers] = useState(String(prefill?.passengerCount || 1));
+  const [details, setDetails] = useState(prefill?.details || "");
+  const requestedPickupAt = prefill?.requestedPickupAt || null;
   // Prefilled from their profile so most people just tap send.
   const [phone, setPhone] = useState(() => splitPhone(user?.phone || user?.whatsapp_number));
   const [sending, setSending] = useState(false);
@@ -72,6 +79,9 @@ export default function OnTheGoScreen({ navigation }) {
         flightNumber: flightNumber.trim() || undefined,
         passengerCount: count,
         contactPhone: phoneResult.full,
+        requestedPickupAt: requestedPickupAt || undefined,
+        details: details.trim() || undefined,
+        service: prefill?.service || undefined,
       });
       setSent(data.request);
     } catch (e) {
@@ -107,7 +117,7 @@ export default function OnTheGoScreen({ navigation }) {
             <Card tone="dark" style={{ marginTop: spacing.lg }}>
               <Text style={styles.successTitle}>We're on it</Text>
               <Text style={[styles.meta, { marginTop: 6 }]}>
-                Request #{sent.id} is with our team. We'll ring {sent.contact_phone} shortly to
+                Request #{sent.id} is with our team.{requestedPickupAt ? ` You asked for ${formatLagos(requestedPickupAt)}.` : ""} We'll ring {sent.contact_phone} shortly to
                 confirm your driver and sort payment.
               </Text>
               <Button
@@ -141,6 +151,11 @@ export default function OnTheGoScreen({ navigation }) {
 
               <Card tone="dark" style={{ marginTop: spacing.md }}>
                 <Text style={styles.cardLabel}>Your details</Text>
+                {requestedPickupAt ? (
+                  <Text style={[styles.meta, { marginBottom: spacing.sm }]}>
+                    Time you asked for: {formatLagos(requestedPickupAt)}
+                  </Text>
+                ) : null}
                 <TextInput
                   style={styles.input}
                   value={flightNumber}
@@ -156,6 +171,15 @@ export default function OnTheGoScreen({ navigation }) {
                   placeholder="Passengers"
                   placeholderTextColor={colors.dark.textMuted}
                   keyboardType="number-pad"
+                />
+                <TextInput
+                  style={styles.input}
+                  value={details}
+                  onChangeText={setDetails}
+                  placeholder="Anything we should know (optional)"
+                  placeholderTextColor={colors.dark.textMuted}
+                  maxLength={1000}
+                  multiline
                 />
                 <PhoneInput
                   tone="dark"

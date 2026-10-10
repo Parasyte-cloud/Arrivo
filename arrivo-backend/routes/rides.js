@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
@@ -1671,7 +1672,18 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
 // version: driver identity/vehicle/live location, pickup/destination, and
 // status, never payment info, fare, admin notes, or the rider's own
 // contact details.
-router.get("/track/:token", async (req, res) => {
+// The tracking link is public by design (anyone holding it can follow the
+// trip), so cap lookups per IP. The token itself is 128 bits and cannot be
+// guessed; this just stops bulk probing and polling abuse.
+const trackLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.TRACK_RATE_LIMIT) || 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Too many requests. Please wait a moment." }),
+});
+
+router.get("/track/:token", trackLimiter, async (req, res) => {
   const result = await pool.query(
     `SELECT rides.id, rides.pickup_address, rides.stops, rides.ride_status,
             rides.flight_number, rides.booking_type,
@@ -1692,6 +1704,16 @@ router.get("/track/:token", async (req, res) => {
   );
   const ride = result.rows[0];
   if (!ride) return res.status(404).json({ error: "This tracking link is invalid or no longer active." });
+
+  // Once the trip is over, the link keeps working for the status page but stops
+  // handing out the driver's phone number and last known position to anyone who
+  // still holds it.
+  if (!["requested", "accepted", "in_progress"].includes(ride.ride_status)) {
+    ride.driver_phone = null;
+    ride.current_lat = null;
+    ride.current_lng = null;
+    ride.location_updated_at = null;
+  }
 
   res.json({ ride: withParsedStops(ride) });
 });
