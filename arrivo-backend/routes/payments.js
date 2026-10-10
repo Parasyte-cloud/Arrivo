@@ -1,4 +1,6 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
+const { requireAuth } = require("../middleware/auth");
 const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
@@ -118,11 +120,42 @@ async function initializePaystackTransaction({ email, amountNaira }) {
   return { authorizationUrl: authorization_url, accessCode: access_code, reference };
 }
 
+// These two routes are public (the shipped rider app calls them without a
+// token, so requiring auth would break installed apps). They cannot credit
+// money, but /initialize creates Paystack transactions and /verify makes an
+// outbound Paystack call per request, so cap both per IP. Limits are high
+// enough for shared carrier NAT addresses and tunable through env vars.
+function paymentLimiter(limit, message) {
+  return rateLimit({
+    windowMs: 10 * 60 * 1000,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+const initializeLimiter = paymentLimiter(
+  Number(process.env.PAYMENT_INIT_RATE_LIMIT) || 30,
+  "Too many payment attempts. Please wait a few minutes and try again."
+);
+const verifyLimiter = paymentLimiter(
+  Number(process.env.PAYMENT_VERIFY_RATE_LIMIT) || 120,
+  "Too many payment checks. Please wait a few minutes and try again."
+);
+
+// Off by default because app builds released before the token change send no
+// Authorization header to these routes. Set PAYMENT_ROUTES_REQUIRE_AUTH=true
+// once those builds are retired. Read per request so flipping it needs no code.
+function maybeRequireAuth(req, res, next) {
+  if (process.env.PAYMENT_ROUTES_REQUIRE_AUTH === "true") return requireAuth(req, res, next);
+  next();
+}
+
 // POST /api/payments/initialize
 // body: { email, amountNaira, reference? }
 // Call this from the app right before showing checkout. Returns an
 // authorization_url to open in a browser/webview, and a reference to verify later.
-router.post("/initialize", async (req, res) => {
+router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res) => {
   const { email, amountNaira } = req.body;
 
   if (!email || !amountNaira) {
@@ -156,7 +189,7 @@ router.post("/initialize", async (req, res) => {
 // Call this after the checkout browser closes, to confirm the payment
 // actually succeeded before marking a ride as paid. Never trust the
 // frontend's word alone that a payment succeeded.
-router.get("/verify/:reference", async (req, res) => {
+router.get("/verify/:reference", verifyLimiter, maybeRequireAuth, async (req, res) => {
   try {
     const result = await verifyPaystackTransaction(req.params.reference);
     res.json(result);

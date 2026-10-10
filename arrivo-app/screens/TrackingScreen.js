@@ -501,7 +501,7 @@ export default function TrackingScreen({ route, navigation }) {
   const verifyAndApplyCardTip = async (reference) => {
     setTipStatus("verifying");
     try {
-      const verification = await verifyPayment(reference);
+      const verification = await verifyPayment(reference, token);
       if (!verification.success) {
         setTipStatus("error");
         setTipMessage(`Tip payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
@@ -519,7 +519,7 @@ export default function TrackingScreen({ route, navigation }) {
   const verifyAndApplyCardOverage = async (reference) => {
     setOverageStatus("verifying");
     try {
-      const verification = await verifyPayment(reference);
+      const verification = await verifyPayment(reference, token);
       if (!verification.success) {
         setOverageStatus("error");
         setOverageMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
@@ -555,7 +555,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setOverageStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira);
+      const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira, token);
       pendingOverageRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
@@ -593,7 +593,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setTipStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount);
+      const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount, token);
       pendingTipRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
