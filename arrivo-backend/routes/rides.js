@@ -239,7 +239,7 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
 // bookings — that's what lets the fare actually be re-verified below
 // instead of trusted from the client. Get these (and a live fareNaira to
 // show the rider) from POST /api/rides/quote first.
-router.post("/", requireAuth, async (req, res) => {
+async function createRideHandler(req, res) {
   const {
     pickupAddress: pickupAddressInput, stops, flightNumber, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
@@ -841,7 +841,10 @@ router.post("/", requireAuth, async (req, res) => {
   } finally {
     cardClient.release();
   }
-});
+}
+// Registered here, and exported below so the Paystack webhook can finish a
+// card booking from a pending order by running exactly this code.
+router.post("/", requireAuth, createRideHandler);
 
 // POST /api/rides/quote — a live fare estimate, before any payment happens.
 // Uses the exact same formula (services/fare.js) that ride creation above
@@ -2515,3 +2518,4 @@ router.post("/scan", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.createRideHandler = createRideHandler;

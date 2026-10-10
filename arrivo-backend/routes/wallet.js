@@ -2,7 +2,8 @@ const express = require("express");
 const axios = require("axios");
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
-const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
+const { isValidPaystackReference } = require("../services/paymentReferences");
+const { creditWalletTopup } = require("../services/walletTopup");
 
 const router = express.Router();
 const PAYSTACK_BASE = "https://api.paystack.co";
@@ -61,38 +62,27 @@ router.post("/topup/verify", requireAuth, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // The UNIQUE constraint on paystack_reference is the real safety net;
-    // this check just lets us respond cleanly instead of a raw DB error
-    // if the same reference is verified twice (e.g. a page reload).
-    const existing = await client.query("SELECT * FROM wallet_transactions WHERE paystack_reference = $1", [reference]);
-    if (existing.rows[0]) {
+    // The shared crediting code (services/walletTopup.js) is also what the
+    // Paystack webhook uses, so whichever of the two arrives second finds the
+    // reference already credited and does nothing. The UNIQUE constraint on
+    // paystack_reference is the real safety net underneath.
+    const credit = await creditWalletTopup(client, {
+      userId: req.user.id,
+      reference,
+      amountNaira: paystackData.amount / 100,
+    });
+    if (!credit.credited && credit.reason === "already_credited") {
       await client.query("ROLLBACK");
-      const balance = await pool.query("SELECT wallet_balance_naira FROM users WHERE id = $1", [req.user.id]);
-      return res.json({ success: true, balanceNaira: Number(balance.rows[0].wallet_balance_naira), alreadyCredited: true });
+      return res.json({ success: true, balanceNaira: credit.balanceNaira, alreadyCredited: true });
     }
-
-    // Beyond the same-topup replay check above, this reference must not
-    // already have been spent on a ride payment/tip/overage charge either —
-    // see services/paymentReferences.js.
-    const claimed = await claimPaymentReference(client, reference, "wallet_topup");
-    if (!claimed) {
+    if (!credit.credited) {
+      // Spent on a ride payment, tip or overage charge already -- see
+      // services/paymentReferences.js.
       await client.query("ROLLBACK");
-      console.error(`Reused payment reference on wallet top-up: ${reference} was already used to pay for a ride.`);
+      console.error(`Reused payment reference on wallet top-up: ${reference} was already used for a different charge.`);
       return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
     }
-
-    const paidAmountNaira = paystackData.amount / 100;
-    const userResult = await client.query(
-      "UPDATE users SET wallet_balance_naira = wallet_balance_naira + $1 WHERE id = $2 RETURNING wallet_balance_naira",
-      [paidAmountNaira, req.user.id]
-    );
-    const newBalance = Number(userResult.rows[0].wallet_balance_naira);
-
-    await client.query(
-      `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, paystack_reference, description)
-       VALUES ($1, 'topup', 'completed', $2, $3, $4, 'Wallet top-up')`,
-      [req.user.id, paidAmountNaira, newBalance, reference]
-    );
+    const newBalance = credit.balanceNaira;
 
     await client.query("COMMIT");
     res.json({ success: true, balanceNaira: newBalance });

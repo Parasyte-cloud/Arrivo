@@ -7,7 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
-import { isStandardBookingBlocked, ON_THE_GO_ONLY_HOURS } from "../utils/bookingWindow";
+import { isStandardBookingBlocked, getBookingRules } from "../utils/bookingWindow";
 import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from "../utils/lagosTime";
 import useMinuteTick from "../hooks/useMinuteTick";
 import { colors, spacing, radius } from "../theme/tokens";
@@ -487,7 +487,7 @@ export default function RouteScreen({ navigation, route }) {
   // One tap from the late notice back to the earliest time a standard booking
   // allows. Minutes are the chip values (quarter hours), so it rounds up.
   const useEarliestPickup = () => {
-    const e = earliestInstant(ON_THE_GO_ONLY_HOURS, Date.now(), 15);
+    const e = earliestInstant(getBookingRules().onTheGoOnlyHours, Date.now(), 15);
     const ep = lagosParts(e);
     const tp = lagosParts(Date.now());
     const days = Math.round(

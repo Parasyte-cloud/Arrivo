@@ -21,8 +21,7 @@ import { useAuth } from "../context/AuthContext";
 import { splitPhone, validatePhone } from "../utils/phoneValidation";
 import { createOnTheGoRequest } from "../services/api";
 import { formatLagos } from "../utils/lagosTime";
-
-const SUPPORT_PHONE_DIAL = "+2348162706078";
+import { whatsappUrl } from "../utils/supportContacts";
 
 // The short path for someone flying in within about 12 hours who hasn't got
 // time for the full Plan Route flow. Essentials only: where from, where to,
@@ -126,7 +125,7 @@ export default function OnTheGoScreen({ navigation, route }) {
                 tone="dark"
                 style={{ marginTop: spacing.md }}
                 onPress={() =>
-                  Linking.openURL(`https://wa.me/${SUPPORT_PHONE_DIAL.replace("+", "")}`).catch(() => {})
+                  Linking.openURL(whatsappUrl()).catch(() => {})
                 }
               />
             </Card>
@@ -201,7 +200,7 @@ export default function OnTheGoScreen({ navigation, route }) {
               <Pressable
                 style={styles.whatsappRow}
                 onPress={() =>
-                  Linking.openURL(`https://wa.me/${SUPPORT_PHONE_DIAL.replace("+", "")}`).catch(() => {})
+                  Linking.openURL(whatsappUrl()).catch(() => {})
                 }
               >
                 <Text style={styles.whatsappText}>Rather just talk to someone? Message us on WhatsApp</Text>

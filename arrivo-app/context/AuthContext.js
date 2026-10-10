@@ -1,9 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
 import { API_BASE_URL } from "../services/config";
+import { setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
 import { setAppLanguage } from "../i18n";
+import { clientHeaders } from "../services/clientInfo";
+import { noteResponse } from "../utils/updateRequired";
 
 const TOKEN_KEY = "arrivo_token";
 const AuthContext = createContext(null);
@@ -21,10 +24,15 @@ async function request(path, options = {}) {
   // screen would show "Saved ✓" without actually saving anything.
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  // Sign-in is a request too: an out-of-date build learns it here.
+  noteResponse(res.status, data);
+  if (!res.ok) {
+    notifyUnauthorized(res.status, options.headers);
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  }
   return data;
 }
 
@@ -32,6 +40,11 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  // The 401 handler below must only react to the session that is current now. A
+  // slow request from an old session that fails after a fresh sign-in would
+  // otherwise sign the new session out.
+  const tokenRef = useRef(null);
+  tokenRef.current = token;
 
   // On app launch, check if we already have a saved token and restore the session.
   useEffect(() => {
@@ -112,6 +125,18 @@ export function AuthProvider({ children }) {
     setAppLanguage(data.user.preferred_language);
     return data;
   };
+
+  // Sign out once when any authenticated call comes back 401. The flag stops a
+  // burst of parallel failing calls from running the sign-out several times.
+  useEffect(() => {
+    let expiring = false;
+    setUnauthorizedHandler((sentAuthorization) => {
+      if (expiring || !tokenRef.current || sentAuthorization !== `Bearer ${tokenRef.current}`) return;
+      expiring = true;
+      logout().finally(() => { expiring = false; });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   const logout = async () => {
     // Stops this device from being registered for incoming-call push under
