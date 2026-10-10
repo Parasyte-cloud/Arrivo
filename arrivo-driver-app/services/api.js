@@ -1,5 +1,22 @@
 import { API_BASE_URL } from "./config";
 
+// One place that hears about a rejected sign-in. Any call that carried an
+// Authorization header and got a 401 means the saved session is dead (expired,
+// revoked, or the account was removed), so AuthContext signs the user out
+// cleanly instead of every screen showing its own "Request failed (401)".
+// Calls with no Authorization header (login, signup, forgot-password) never
+// trigger it, so a wrong password does not sign anyone out.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+export function notifyUnauthorized(status, headers) {
+  if (status !== 401 || !unauthorizedHandler) return;
+  const sent = headers && (headers.Authorization || headers.authorization);
+  if (!sent) return;
+  try { unauthorizedHandler(sent); } catch { /* signing out must never throw into a screen */ }
+}
+
 async function request(path, options = {}) {
   // See identical note in arrivo-app/services/api.js — headers must be
   // merged, not spread at the top level, or a caller's own `headers` (e.g.
@@ -14,6 +31,7 @@ async function request(path, options = {}) {
     err.code = data.code; // lets screens show the message in the driver's language
     err.params = data.params;
     err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
+    notifyUnauthorized(res.status, options.headers);
     throw err;
   }
   return data;

@@ -16,7 +16,12 @@ async function requireAuth(req, res, next) {
 
   let payload;
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET);
+    // Pin the algorithm. For a plain string secret jsonwebtoken already
+    // defaults to the HMAC family, but pinning makes the intent explicit and
+    // keeps a future change (a public key, a library upgrade) from silently
+    // accepting "alg: none" or an RS/HS key confusion token. signToken in
+    // routes/auth.js signs with the default, which is HS256.
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
   } catch (err) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }

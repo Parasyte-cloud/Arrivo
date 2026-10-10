@@ -12,9 +12,15 @@ const router = express.Router();
 // POST /api/owners/vehicles — list a new vehicle
 // body: { makeModel, plateNumber, vehicleType?, seats? }
 router.post("/vehicles", requireAuth, async (req, res) => {
-  const { makeModel, plateNumber, vehicleType = "sedan", seats = 4 } = req.body;
-  if (!makeModel || !plateNumber) {
+  const { makeModel, plateNumber, vehicleType = "sedan", seats = 4 } = req.body || {};
+  if (typeof makeModel !== "string" || typeof plateNumber !== "string" || !makeModel.trim() || !plateNumber.trim()) {
     return res.status(400).json({ error: "makeModel and plateNumber are required" });
+  }
+  if (makeModel.trim().length > 100 || plateNumber.trim().length > 20) {
+    return res.status(400).json({ error: "makeModel must be at most 100 characters and plateNumber at most 20." });
+  }
+  if (!Number.isInteger(seats) || seats < 1 || seats > 20) {
+    return res.status(400).json({ error: "seats must be a whole number from 1 to 20" });
   }
   if (!["sedan", "suv", "truck", "pickup"].includes(vehicleType)) {
     return res.status(400).json({ error: "vehicleType must be one of: sedan, suv, truck, pickup" });
@@ -23,7 +29,7 @@ router.post("/vehicles", requireAuth, async (req, res) => {
   const inserted = await pool.query(
     `INSERT INTO vehicles (owner_user_id, make_model, plate_number, vehicle_type, seats)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [req.user.id, makeModel, plateNumber, vehicleType, seats]
+    [req.user.id, makeModel.trim(), plateNumber.trim(), vehicleType, seats]
   );
   res.status(201).json({ vehicle: inserted.rows[0] });
 });

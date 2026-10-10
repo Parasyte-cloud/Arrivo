@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
@@ -1681,7 +1682,18 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
 // version: driver identity/vehicle/live location, pickup/destination, and
 // status, never payment info, fare, admin notes, or the rider's own
 // contact details.
-router.get("/track/:token", async (req, res) => {
+// The tracking link is public by design (anyone holding it can follow the
+// trip), so cap lookups per IP. The token itself is 128 bits and cannot be
+// guessed; this just stops bulk probing and polling abuse.
+const trackLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.TRACK_RATE_LIMIT) || 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Too many requests. Please wait a moment." }),
+});
+
+router.get("/track/:token", trackLimiter, async (req, res) => {
   const out = await require("../services/shareLinks").resolvePublic(req.params.token);
   if (out.error) return res.status(out.error.status).json({ error: out.error.message, reason: out.error.reason });
   const { ride, ...rest } = out.view;

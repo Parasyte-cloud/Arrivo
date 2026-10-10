@@ -23,7 +23,8 @@ async function request(path, token, options = {}) {
     if (res.status === 401) {
       window.dispatchEvent(new Event("auth:expired"));
     }
-    throw new Error(data.error || `Request failed (${res.status})`);
+    // status lets callers tell a rejected token (401/403) from a network or server fault.
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   }
   return data;
 }
