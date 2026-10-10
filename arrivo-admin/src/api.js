@@ -215,3 +215,31 @@ export const setExpressAutomation = (token, key, enabled) =>
   request(`${EX}/automation`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
 export const getExpressRepricePlan = (token) => request(`${EX}/reprice/plan`, token);
 export const applyExpressReprice = (token) => request(`${EX}/reprice/apply`, token, { method: "POST" });
+export const getAdminCashouts = (token, status) =>
+  request(`/api/admin/cashouts${status ? `?status=${status}` : ""}`, token);
+export const approveCashout = (token, id) => request(`/api/admin/cashouts/${id}/approve`, token, { method: "POST" });
+export const declineCashout = (token, id, reason) =>
+  request(`/api/admin/cashouts/${id}/decline`, token, { method: "POST", body: JSON.stringify({ reason }) });
+export const checkCashout = (token, id) => request(`/api/admin/cashouts/${id}/check`, token, { method: "POST" });
+export const getExpressSampleRoutes = (token) => request(`${EX}/samples/routes`, token);
+export const getExpressSampleCoverage = (token) => request(`${EX}/samples/coverage`, token);
+export const logExpressSamplesBulk = (token, rows) =>
+  request(`${EX}/samples/bulk`, token, { method: "POST", body: JSON.stringify({ rows }) });
+
+// ── Trip safety (admin only) ────────────────────────────────────────────
+const SF = "/api/admin/safety";
+export const getSafetyOverview = (token) => request(`${SF}/overview`, token);
+export const setSafetySwitch = (token, key, enabled) =>
+  request(`${SF}/switches`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getSafetyComplaints = (token, status) =>
+  request(`${SF}/complaints${status ? `?status=${status}` : ""}`, token);
+export const resolveSafetyComplaint = (token, id, body) =>
+  request(`${SF}/complaints/${id}`, token, { method: "PATCH", body: JSON.stringify(body) });
+export const getSafetySelfies = (token) => request(`${SF}/selfies`, token);
+export const reviewSafetySelfie = (token, id, body) =>
+  request(`${SF}/selfies/${id}/review`, token, { method: "POST", body: JSON.stringify(body) });
+export const requireDriverRecheck = (token, driverId) =>
+  request(`${SF}/drivers/${driverId}/recheck`, token, { method: "POST" });
+export const overridePickupPin = (token, rideId, note) =>
+  request(`${SF}/rides/${rideId}/pin-override`, token, { method: "POST", body: JSON.stringify({ note }) });
+export const getSafetyEvents = (token) => request(`${SF}/events`, token);

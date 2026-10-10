@@ -414,6 +414,7 @@ async function runSweep() {
   await sweepUnmatchedPayments().catch((err) => console.error("[scheduler] sweepUnmatchedPayments crashed:", err.message));
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.
   await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
+  await require("./driverCashout").sweepCashouts().catch((err) => console.error("[scheduler] cash-out sweep crashed:", err.message));
   await require("./autoReprice").runDailyReprice().catch((err) => console.error("[scheduler] auto reprice crashed:", err.message));
 }
 

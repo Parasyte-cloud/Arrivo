@@ -94,5 +94,39 @@
     "durationMin": "{{duration}} 分钟",
     "homeBannerTitle": "立即使用 ArrivoExpress 出行",
     "homeBannerSubtitle": "按需叫车，按距离计费，几分钟内为您匹配司机。"
+  },
+  "safety": {
+    "pin": {
+      "title": "您的上车验证码",
+      "help": "见到司机时请告诉他这个验证码，他需要它才能开始行程。在见到司机之前请勿透露。"
+    },
+    "share": {
+      "stop": "停止分享",
+      "stopped": "已停止分享。您发出的链接已失效。",
+      "note": "分享链接会在上车几小时后或行程结束后不久失效。您可以随时停止分享。",
+      "until": "此链接有效至 {{time}}。",
+      "failed": "无法停止分享，请重试。"
+    },
+    "report": {
+      "button": "举报司机",
+      "title": "举报问题",
+      "help": "请告诉我们发生了什么。司机不会看到您的举报。如果您身处危险，请使用紧急按钮。",
+      "pick": "发生了什么？",
+      "describe": "请描述情况（至少10个字符）",
+      "send": "提交举报",
+      "sent": "谢谢。我们已收到您的举报并会进行调查。",
+      "cancel": "取消",
+      "failed": "无法发送举报，请重试。"
+    },
+    "cat": {
+      "unsafe_driving": "危险驾驶",
+      "harassment": "骚扰",
+      "felt_unsafe": "我感到不安全",
+      "wrong_route": "路线错误",
+      "overcharge": "多收费",
+      "vehicle_mismatch": "车辆或车牌与应用不符",
+      "rude": "态度粗鲁",
+      "other": "其他"
+    }
   }
 }

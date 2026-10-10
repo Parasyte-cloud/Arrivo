@@ -12,8 +12,10 @@ import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
-  addRideShareParticipant, removeRideShareParticipant,
+  addRideShareParticipant, removeRideShareParticipant, createRideShareLink, stopSharingRide,
 } from "../services/api";
+import { useTranslation } from "react-i18next";
+import { PickupPinCard, ReportDriverCard } from "../components/SafetyCards";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
@@ -42,6 +44,7 @@ function initials(name) {
 export default function TrackingScreen({ route, navigation }) {
   const { rideId, offlinePending, offlineDriverInfo, offlineRideSummary } = route?.params || {};
   const { user, token } = useAuth();
+  const { t } = useTranslation();
   const { formatFare } = useCurrency(token);
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready — guarded against
@@ -308,6 +311,19 @@ export default function TrackingScreen({ route, navigation }) {
     return () => clearInterval(flightPollRef.current);
   }, [ride?.flight_number, ride?.ride_status, fetchFlightStatus]);
 
+  const [shareUntil, setShareUntil] = useState(null);
+  const [shareStopMsg, setShareStopMsg] = useState(null);
+  const stopSharing = async () => {
+    setShareStopMsg(null);
+    try {
+      await stopSharingRide(token, ride.id);
+      setShareUntil(null);
+      setShareStopMsg(t("safety.share.stopped"));
+    } catch (e) {
+      setShareStopMsg(t("safety.share.failed"));
+    }
+  };
+
   const shareRide = async () => {
     try {
       const driverPart = ride?.driver_name ? ` with ${ride.driver_name}` : "";
@@ -319,8 +335,11 @@ export default function TrackingScreen({ route, navigation }) {
       // if the link fetch fails, still share the descriptive text alone
       // rather than blocking the whole share sheet on it.
       try {
-        const shareResult = await getRideShareLink(token, ride.id);
+        // An expiring link: it stops working a few hours after pickup or soon
+        // after the trip ends, and "Stop sharing" kills it at any time.
+        const shareResult = await createRideShareLink(token, ride.id).catch(() => getRideShareLink(token, ride.id));
         if (shareResult?.shareUrl) linkPart = ` Track live: ${shareResult.shareUrl}`;
+        if (shareResult?.expiresAt) setShareUntil(new Date(shareResult.expiresAt));
       } catch (e) {
         // ignore — share the text-only message below instead
       }
@@ -1045,6 +1064,8 @@ export default function TrackingScreen({ route, navigation }) {
           </Card>
         ) : null}
 
+        {ride?.driver_user_id ? <PickupPinCard rideId={rideId} rideStatus={ride?.ride_status} /> : null}
+
         <View style={styles.grid2}>
           <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
           <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriverInApp} style={{ flex: 1 }} />
@@ -1075,6 +1096,16 @@ export default function TrackingScreen({ route, navigation }) {
             trailingIcon
           />
         ) : null}
+
+        <Card tone="dark" style={{ marginTop: spacing.md }}>
+          <Text style={styles.shareNote}>{t("safety.share.note")}</Text>
+          {shareUntil ? <Text style={[styles.shareNote, { marginTop: 4 }]}>{t("safety.share.until", { time: shareUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}</Text> : null}
+          {shareStopMsg ? <Text style={[styles.shareNote, { marginTop: 4 }]}>{shareStopMsg}</Text> : null}
+          <View style={{ height: spacing.sm }} />
+          <Button label={t("safety.share.stop")} variant="ghost" tone="dark" onPress={stopSharing} />
+        </Card>
+
+        {ride?.driver_user_id ? <ReportDriverCard rideId={rideId} /> : null}
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>

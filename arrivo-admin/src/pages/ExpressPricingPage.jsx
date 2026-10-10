@@ -13,6 +13,7 @@ const TABS = [
   { id: "market", label: "Market" },
   { id: "quests", label: "Driver quests" },
   { id: "payouts", label: "Payouts" },
+  { id: "cashouts", label: "Cash-outs" },
   { id: "automation", label: "Automation" },
 ];
 
@@ -171,9 +172,66 @@ const VERDICTS = {
   not_enough_data: { label: "Not enough data", tone: "muted" },
 };
 
+// "tier, source, km, minutes, their fare[, day|night[, route]]" per line.
+// Pure, exported for testing by eye in the console; returns { rows, errors }.
+export function parseSampleLines(text) {
+  const rows = [];
+  const errors = [];
+  String(text || "").split(/\r?\n/).forEach((line, i) => {
+    const raw = line.trim();
+    if (!raw || /^tier\b/i.test(raw)) return; // blank line or a header row
+    // A spreadsheet paste is tab separated. With commas, a fare typed as 5,200
+    // would split in two, so glue a lone 3 digit group back onto the fare.
+    const p = (raw.includes("\t") ? raw.split("\t") : raw.split(",")).map((x) => x.trim());
+    if (!raw.includes("\t") && /^[₦\d]{1,4}$/.test(p[4] || "") && /^\d{3}$/.test(p[5] || "")) p.splice(4, 2, `${p[4]}${p[5]}`);
+    if (p.length < 5) { errors.push(`Line ${i + 1}: needs tier, source, km, minutes and their fare.`); return; }
+    const fare = Number(String(p[4]).replace(/[₦,\s]/g, ""));
+    rows.push({
+      tier: p[0].toLowerCase(), source: p[1].toLowerCase(), distanceKm: Number(p[2]), durationMin: Number(p[3]),
+      observedFareNaira: fare, period: (p[5] || "day").toLowerCase(), routeLabel: p[6] || undefined,
+    });
+  });
+  return { rows, errors };
+}
+
+function CoveragePanel({ coverage }) {
+  if (!coverage) return null;
+  const allReady = coverage.tiers.every((t) => t.ready);
+  return (
+    <div className="table-wrap" style={{ padding: 18, marginBottom: 24 }}>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>{allReady ? "Every tier has enough data for automatic repricing" : "Data automatic repricing is still waiting for"}</div>
+      <Note>
+        Counted since each tier's last price change, over the last {coverage.windowDays} days. A tier needs {coverage.minSamples} samples
+        from at least {coverage.minSources} competitors with 2 or more samples each.
+      </Note>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+        {coverage.tiers.map((t) => (
+          <div key={t.tier} style={{ border: "1px solid var(--glass-border)", borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ textTransform: "capitalize" }}>{t.tier}</strong>
+              <StatusPill label={t.ready ? "Ready" : "Needs data"} tone={t.ready ? "teal" : "amber"} />
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 6 }}>
+              {t.samples} sample{t.samples === 1 ? "" : "s"}
+              {Object.keys(t.bySource).length ? ` (${Object.entries(t.bySource).map(([s, n]) => `${s} ${n}`).join(", ")})` : ""}
+            </div>
+            {!t.ready ? <div style={{ fontSize: 12.5, marginTop: 4 }}>Needs {t.missing}.</div> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MarketTab({ token }) {
   const [days, setDays] = useState(7);
   const cmp = useLoad(() => api.getExpressComparison(token, days), [token, days]);
+  const coverage = useLoad(() => api.getExpressSampleCoverage(token), [token]);
+  const routes = useLoad(() => api.getExpressSampleRoutes(token), [token]);
+  const [pasted, setPasted] = useState("");
+  const [bulkMsg, setBulkMsg] = useState(null);
+  const [bulkErr, setBulkErr] = useState(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [form, setForm] = useState({ tier: "economy", source: "bolt", period: "day", distanceKm: "", durationMin: "", observedFareNaira: "", routeLabel: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -192,7 +250,7 @@ function MarketTab({ token }) {
       });
       setMsg(`Logged. We would have charged ${naira(s.ourFareNaira)} for the same trip.`);
       setForm((f) => ({ ...f, distanceKm: "", durationMin: "", observedFareNaira: "", routeLabel: "" }));
-      await cmp.reload();
+      await Promise.all([cmp.reload(), coverage.reload()]);
     } catch (e2) {
       setErr(e2.message);
     } finally {
@@ -200,8 +258,28 @@ function MarketTab({ token }) {
     }
   };
 
+  const submitBulk = async () => {
+    setBulkErr(null); setBulkMsg(null);
+    const { rows, errors } = parseSampleLines(pasted);
+    if (errors.length) { setBulkErr(errors[0] + (errors.length > 1 ? ` (and ${errors.length - 1} more)` : "")); return; }
+    if (!rows.length) { setBulkErr("Paste at least one line."); return; }
+    setBulkBusy(true);
+    try {
+      const r = await api.logExpressSamplesBulk(token, rows);
+      setBulkMsg(`Saved ${r.saved} price${r.saved === 1 ? "" : "s"}.`);
+      setPasted("");
+      await Promise.all([cmp.reload(), coverage.reload()]);
+    } catch (e) {
+      setBulkErr(e.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+  const pickRoute = (r) => setForm((f) => ({ ...f, routeLabel: r.label, distanceKm: String(r.distanceKm), durationMin: String(r.durationMin) }));
+
   return (
     <div>
+      <CoveragePanel coverage={coverage.data} />
       <Note>
         Check the same trip in another app, then log what it showed. Verdicts use the median of at least 5 samples, so one odd
         price (a surge, a promo) cannot swing the answer. Automatic repricing reads the same data.
@@ -235,6 +313,17 @@ function MarketTab({ token }) {
         </table>
       </div>
 
+      <h3 style={{ marginBottom: 6 }}>Today's check</h3>
+      <Note>
+        Pick a trip, open Bolt, Uber or inDrive, type the same two places, and note the price for each tier you can see. Using the same
+        trips every day keeps days comparable. The distance and time are typical; replace them with what the other app shows.
+      </Note>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {(routes.data ? routes.data.routes : []).map((r) => (
+          <button key={r.id} className={`btn ${form.routeLabel === r.label ? "primary" : "ghost"}`} onClick={() => pickRoute(r)}>{r.label}</button>
+        ))}
+      </div>
+
       <h3 style={{ marginBottom: 10 }}>Log a competitor price</h3>
       <form className="table-wrap" style={{ padding: 18 }} onSubmit={submit}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
@@ -250,6 +339,18 @@ function MarketTab({ token }) {
         {err ? <div className="error-text" style={{ marginTop: 10 }}>{err}</div> : null}
         {msg ? <div style={{ marginTop: 10, color: "var(--teal)", fontSize: 13 }}>{msg}</div> : null}
       </form>
+
+      <h3 style={{ margin: "28px 0 6px" }}>Paste many at once</h3>
+      <Note>
+        One price per line: tier, source, km, minutes, their fare, then optionally day or night and the route. For example:
+        {" "}<code>economy, bolt, 12, 30, 5200, day, Lekki to VI</code>. Up to 100 lines. If any line is wrong nothing is saved.
+      </Note>
+      <div className="table-wrap" style={{ padding: 18 }}>
+        <textarea className="field" rows={6} style={{ fontFamily: "monospace" }} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="economy, bolt, 12, 30, 5200" />
+        <button className="btn primary" disabled={bulkBusy || !pasted.trim()} onClick={submitBulk}>{bulkBusy ? "Saving…" : "Save all"}</button>
+        {bulkErr ? <div className="error-text" style={{ marginTop: 10 }}>{bulkErr}</div> : null}
+        {bulkMsg ? <div style={{ marginTop: 10, color: "var(--teal)", fontSize: 13 }}>{bulkMsg}</div> : null}
+      </div>
     </div>
   );
 }
@@ -414,8 +515,94 @@ function PayoutsTab({ token }) {
   );
 }
 
+// ── Cash-outs ────────────────────────────────────────────────────────────
+const CASHOUT_STATUS = {
+  pending_review: { label: "Needs review", tone: "amber" },
+  queued: { label: "Sending", tone: "amber" },
+  processing: { label: "On its way", tone: "amber" },
+  paid: { label: "Paid", tone: "teal" },
+  failed: { label: "Failed, refunded", tone: "coral" },
+  rejected: { label: "Declined, refunded", tone: "muted" },
+  reversed: { label: "Reversed, refunded", tone: "coral" },
+};
+
+function CashoutsTab({ token }) {
+  const [status, setStatus] = useState("pending_review");
+  const list = useLoad(() => api.getAdminCashouts(token, status), [token, status]);
+  const [busyId, setBusyId] = useState(null);
+  const [err, setErr] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const rows = list.data ? list.data.cashouts : [];
+
+  const run = async (id, fn, okMsg) => {
+    setBusyId(id); setErr(null); setMsg(null);
+    try { await fn(); setMsg(okMsg); await list.reload(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusyId(null); }
+  };
+  const decline = (c) => {
+    const reason = window.prompt(`Decline ${naira(c.amountNaira)} for ${c.driverName}? The money goes back to their wallet. Reason (shown to the driver):`);
+    if (reason === null) return;
+    run(c.id, () => api.declineCashout(token, c.id, reason), "Declined. The money is back in the driver's wallet.");
+  };
+
+  return (
+    <div>
+      <Note>
+        Requests above the review limit wait here. Approving sends the transfer through Paystack to the account the driver verified
+        (name checked, 24 hour cooling-off). Declining puts the money back in their wallet. "Sending" with a note about the Paystack
+        balance means fund the Paystack balance and it retries by itself.
+      </Note>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {[["pending_review", "Needs review"], ["queued", "Sending"], ["processing", "On its way"], ["paid", "Paid"], ["failed", "Failed"], [undefined, "All"]].map(([s, label]) => (
+          <button key={label} className={`btn ${status === s ? "primary" : "ghost"}`} onClick={() => setStatus(s)}>{label}</button>
+        ))}
+      </div>
+      {err ? <div className="error-text">{err}</div> : null}
+      {msg ? <div style={{ marginBottom: 10, color: "var(--teal)", fontSize: 13 }}>{msg}</div> : null}
+      {list.error ? <div className="error-text">{list.error}</div> : null}
+      <div className="table-wrap">
+        {rows.length ? (
+          <table>
+            <thead><tr><th>Driver</th><th>Amount</th><th>To</th><th>Status</th><th>Requested</th><th></th></tr></thead>
+            <tbody>
+              {rows.map((c) => {
+                const st = CASHOUT_STATUS[c.status] || { label: c.status, tone: "muted" };
+                return (
+                  <tr key={c.id}>
+                    <td><div style={{ fontWeight: 600 }}>{c.driverName}</div><div style={{ color: "var(--text-muted)", fontSize: 12 }}>{c.driverPhone || ""}</div></td>
+                    <td>{naira(c.amountNaira)}</td>
+                    <td><div>{c.bankName} ending {c.accountLast4}</div><div style={{ color: "var(--text-muted)", fontSize: 12 }}>{c.accountName}</div></td>
+                    <td><StatusPill label={st.label} tone={st.tone} />{c.note ? <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>{c.note}</div> : null}</td>
+                    <td>{formatDateTime(c.requestedAt)}</td>
+                    <td style={{ display: "flex", gap: 8 }}>
+                      {c.status === "pending_review" ? (
+                        <>
+                          <button className="btn verify" disabled={busyId === c.id} onClick={() => run(c.id, () => api.approveCashout(token, c.id), "Approved and sent.")}>Approve</button>
+                          <button className="btn revoke" disabled={busyId === c.id} onClick={() => decline(c)}>Decline</button>
+                        </>
+                      ) : null}
+                      {c.status === "processing" || c.status === "queued" ? (
+                        <button className="btn ghost" disabled={busyId === c.id} onClick={() => run(c.id, () => api.checkCashout(token, c.id), "Checked with Paystack.")}>Check now</button>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : <div className="empty-state">Nothing here.</div>}
+      </div>
+    </div>
+  );
+}
+
 // ── Automation ───────────────────────────────────────────────────────────
 const SWITCH_COPY = {
+  driver_cashout_enabled: {
+    title: "Driver cash-out to bank",
+    body: "Lets drivers withdraw their wallet earnings to their own bank account through Paystack. Needs Transfers enabled and a funded Paystack balance. Turning it off stops new requests; ones already sent still finish.",
+  },
   express_auto_payout_enabled: {
     title: "Automatic payout to driver wallets",
     body: "When a driver earns a quest reward it is credited to their wallet straight away, up to a daily limit. Past the limit rewards wait here for you.",
@@ -470,7 +657,7 @@ function AutomationTab({ token }) {
 
   return (
     <div>
-      <Note>Both switches are off until you turn them on. Every automatic action is logged below.</Note>
+      <Note>All three switches are off until you turn them on. Every automatic action is logged below.</Note>
       {err ? <div className="error-text">{err}</div> : null}
       {msg ? <div style={{ marginBottom: 10, color: "var(--teal)", fontSize: 13 }}>{msg}</div> : null}
       {info.error ? <div className="error-text">{info.error}</div> : null}
@@ -569,6 +756,7 @@ export function ExpressPricingPage() {
       {tab === "market" ? <MarketTab token={token} /> : null}
       {tab === "quests" ? <QuestsTab token={token} /> : null}
       {tab === "payouts" ? <PayoutsTab token={token} /> : null}
+      {tab === "cashouts" ? <CashoutsTab token={token} /> : null}
       {tab === "automation" ? <AutomationTab token={token} /> : null}
     </div>
   );

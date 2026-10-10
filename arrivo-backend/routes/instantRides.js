@@ -230,6 +230,17 @@ router.post(
       });
     }
 
+    const restricted = await pool.query(
+      "SELECT express_restricted_at FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    if (restricted.rows[0]?.express_restricted_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is not available on your account right now. Please contact support.",
+        code: "EXPRESS_RESTRICTED",
+      });
+    }
+
     try {
       const quote = await quoteInstantRide(req.body);
 
@@ -480,6 +491,13 @@ router.patch(
       return res.status(403).json({
         error:
           "Your driver profile must be verified before enabling ArrivoExpress.",
+      });
+    }
+
+    if (acceptsInstant && driver.express_paused_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is paused on your account while we review a report. Support will contact you.",
+        code: "EXPRESS_PAUSED",
       });
     }
 

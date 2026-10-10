@@ -1,6 +1,6 @@
 // Pure rules of automatic repricing: when a price may move and when it must hold.
 const assert = require("assert");
-const { planTier } = require("./autoReprice");
+const { planTier, coverageForTier } = require("./autoReprice");
 
 const OPTS = { maxStepPct: 5, minSamples: 8, minSources: 2, windowDays: 3, cooldownHours: 24, bandMinPct: 70, bandMaxPct: 150, tolerancePct: 8 };
 const defaults = { baseFareNaira: 500, perKmNaira: 100, perMinNaira: 20, minimumFareNaira: 1000 };
@@ -76,6 +76,19 @@ test("the minimum fare never drops below the base fare", () => {
   const cur = { baseFareNaira: 900, perKmNaira: 100, perMinNaira: 20, minimumFareNaira: 900 };
   const p = plan({ current: cur, defaults: { ...defaults, baseFareNaira: 900, minimumFareNaira: 900 } });
   assert.ok(p.proposed.minimumFareNaira >= p.proposed.baseFareNaira);
+});
+
+test("coverage says exactly what is still missing", () => {
+  const some = samples(1.3, ["bolt"], 3);
+  const c = coverageForTier("economy", some, OPTS);
+  assert.strictEqual(c.ready, false);
+  assert.strictEqual(c.needSamples, 5);
+  assert.strictEqual(c.needSources, 1);
+  assert.ok(c.missing.includes("5 more samples") && c.missing.includes("1 more competitor"));
+  const enough = coverageForTier("economy", samples(1.3), OPTS);
+  assert.strictEqual(enough.ready, true);
+  assert.strictEqual(enough.missing, "");
+  assert.strictEqual(coverageForTier("economy", [], OPTS).needSamples, 8);
 });
 
 console.log(`\n${passed} passed`);

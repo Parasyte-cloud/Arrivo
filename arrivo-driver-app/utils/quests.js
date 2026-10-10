@@ -23,25 +23,24 @@ export function tripsLeft(q) {
   return Math.max((Number(q.targetTrips) || 0) - (Number(q.progress) || 0), 0);
 }
 
-// "2 days left", "5 hours left", "Ended".
-export function timeLeftLabel(endsAt, now = new Date()) {
+// "2 days left", "5 h left", "Ended". t is the app's translate function.
+export function timeLeftLabel(endsAt, now = new Date(), t) {
   const ms = new Date(endsAt).getTime() - now.getTime();
-  if (ms <= 0) return "Ended";
+  if (ms <= 0) return t("timeEnded");
   const hours = Math.floor(ms / 3600000);
-  if (hours >= 48) return `${Math.floor(hours / 24)} days left`;
-  if (hours >= 1) return `${hours} hour${hours === 1 ? "" : "s"} left`;
-  const mins = Math.max(Math.floor(ms / 60000), 1);
-  return `${mins} min left`;
+  if (hours >= 48) return t("timeDays", { n: Math.floor(hours / 24) });
+  if (hours >= 1) return t("timeHours", { n: hours });
+  return t("timeMin", { n: Math.max(Math.floor(ms / 60000), 1) });
 }
 
 // The rules a driver should be able to read before chasing a quest.
-export function questRules(q) {
+export function questRules(q, t) {
   const rules = [];
-  rules.push(`Finish ${q.targetTrips} ArrivoExpress trips${q.tier ? ` in ${q.tier}` : ""}.`);
-  rules.push(`Each trip must be at least ${Number(q.minTripKm)} km and ${Number(q.minTripMinutes)} minutes, and actually started.`);
-  rules.push(`At most ${q.maxTripsPerRider} trips with the same rider count.`);
-  if (q.minDriverRating) rules.push(`Your rating must be ${Number(q.minDriverRating)} or higher.`);
-  rules.push("Rewards are limited. When the places are gone, the quest closes.");
+  rules.push(q.tier ? t("ruleFinishTier", { target: q.targetTrips, tier: q.tier }) : t("ruleFinish", { target: q.targetTrips }));
+  rules.push(t("ruleTrip", { km: Number(q.minTripKm), min: Number(q.minTripMinutes) }));
+  rules.push(t("ruleRider", { n: q.maxTripsPerRider }));
+  if (q.minDriverRating) rules.push(t("ruleRating", { rating: Number(q.minDriverRating) }));
+  rules.push(t("ruleLimited"));
   return rules;
 }
 

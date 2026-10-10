@@ -7,9 +7,10 @@
 // and this turns the log into a plain answer per tier: above market, in line,
 // or below market, with a suggested adjustment.
 //
-// It only SUGGESTS. A person publishes the new price (instantPriceBook.js),
-// where the change-size guard applies. Automatic repricing from a handful of
-// screenshots would be a reliable way to cause an outage-grade mistake.
+// This module only SUGGESTS. A person can publish the new price
+// (instantPriceBook.js, where the change-size guard applies), or switch on the
+// guarded automatic repricing (autoReprice.js), which reads the same samples
+// and moves prices in small, capped steps.
 
 const { listTiers } = require("./instantTiers");
 const { baselineFare } = require("./instantFare");
@@ -151,6 +152,47 @@ async function logSample(input, userId, db) {
   return result.rows[0];
 }
 
+// Logs many samples at once, all or nothing. A bad row stops the import and
+// says which row, so a half-pasted sheet never leaves half its data behind.
+//   rows: array of the same objects validateSample accepts
+const MAX_BULK = 100;
+async function logSamples(rows, userId, db) {
+  if (!Array.isArray(rows) || !rows.length) throw new PriceSampleError("Send at least one row.");
+  if (rows.length > MAX_BULK) throw new PriceSampleError(`Send at most ${MAX_BULK} rows at a time.`);
+  const clean = [];
+  const errors = [];
+  rows.forEach((r, i) => {
+    try { clean.push(validateSample(r)); } catch (e) { errors.push({ row: i + 1, error: e.message }); }
+  });
+  if (errors.length) {
+    const err = new PriceSampleError(`Row ${errors[0].row}: ${errors[0].error}${errors.length > 1 ? ` (and ${errors.length - 1} more row${errors.length === 2 ? "" : "s"} with problems)` : ""}. Nothing was saved.`, 400, "INVALID_PRICE_SAMPLE_ROWS");
+    err.details = errors;
+    throw err;
+  }
+  const pool = db || getPool();
+  const active = await getActivePricing(pool);
+  const client = pool.release ? pool : await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const s of clean) {
+      const ourFare = baselineFare(pricingForTier(active, s.tier), s.distanceKm, s.durationMin, { night: s.period === "night" });
+      await client.query(
+        `INSERT INTO instant_price_samples
+           (observed_on, period, source, tier, route_label, distance_km, duration_min, observed_fare_naira, our_fare_naira, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [s.observedOn, s.period, s.source, s.tier, s.routeLabel, s.distanceKm, s.durationMin, s.observedFareNaira, ourFare, userId || null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    if (!pool.release && client.release) client.release();
+  }
+  return { saved: clean.length };
+}
+
 async function comparison({ days = 7, db } = {}) {
   const window = Math.min(Math.max(Number(days) || 7, 1), 90);
   const result = await (db || getPool()).query(
@@ -169,5 +211,7 @@ module.exports = {
   validateSample,
   buildComparison,
   logSample,
+  logSamples,
+  MAX_BULK,
   comparison,
 };

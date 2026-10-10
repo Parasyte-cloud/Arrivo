@@ -6,7 +6,10 @@ import { Card, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getEarnings, getMyDriverRides } from "../services/api";
+import { getEarnings, getMyDriverRides, getCashout } from "../services/api";
+import { useT } from "../context/LanguageContext";
+import { formatNumber } from "../i18n/i18n";
+import { Button } from "../components/UI";
 
 function tripTypeLabel(bookingType) {
   if (bookingType === "dropoff") return "Airport Drop-off";
@@ -24,7 +27,9 @@ function scheduledLabel(ride) {
   });
 }
 
-export default function EarningsScreen() {
+export default function EarningsScreen({ navigation }) {
+  const { t } = useT();
+  const [wallet, setWallet] = useState(null);
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [summary, setSummary] = useState(null);
@@ -36,6 +41,7 @@ export default function EarningsScreen() {
     try {
       const [earnings, history] = await Promise.all([getEarnings(token), getMyDriverRides(token)]);
       setSummary(earnings);
+      getCashout(token).then(setWallet).catch(() => setWallet(null)); // the wallet card is optional; earnings never wait on it
       setRides(history.rides.filter((r) => r.ride_status === "completed"));
       setError(null);
     } catch (e) {
@@ -58,7 +64,24 @@ export default function EarningsScreen() {
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
-        <Text style={styles.title}>Earnings</Text>
+        <Text style={styles.title}>{t("tabEarnings")}</Text>
+
+        {wallet ? (
+          <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
+            <View style={styles.statsRow}>
+              <View>
+                <Text style={styles.statNum}>₦{formatNumber(wallet.balanceNaira)}</Text>
+                <Text style={styles.statLabel}>{t("walletTitle")}</Text>
+              </View>
+              <View>
+                <Text style={[styles.statNum, { color: colors.amber }]}>₦{formatNumber(wallet.withdrawableNaira)}</Text>
+                <Text style={styles.statLabel}>{t("canCashOut")}</Text>
+              </View>
+            </View>
+            <View style={{ height: spacing.sm }} />
+            <Button label={t("cashOutBtn")} tone="dark" onPress={() => navigation.navigate("Cashout")} />
+          </Card>
+        ) : null}
 
         {loading && !summary ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}

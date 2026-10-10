@@ -94,5 +94,39 @@
     "durationMin": "{{duration}} min",
     "homeBannerTitle": "Ride Now with ArrivoExpress",
     "homeBannerSubtitle": "On-demand rides, priced by distance, matched in minutes."
+  },
+  "safety": {
+    "pin": {
+      "title": "Your pickup PIN",
+      "help": "Tell your driver this PIN when you meet. They need it to start the trip. Do not share it before you are with your driver."
+    },
+    "share": {
+      "stop": "Stop sharing",
+      "stopped": "Sharing stopped. Links you sent no longer work.",
+      "note": "Share links stop working a few hours after pickup, or soon after the trip ends. You can stop sharing at any time.",
+      "until": "This link works until {{time}}.",
+      "failed": "Could not stop sharing. Please try again."
+    },
+    "report": {
+      "button": "Report the driver",
+      "title": "Report a problem",
+      "help": "Tell us what happened. The driver will not see your report. If you are in danger, use the panic button.",
+      "pick": "What happened?",
+      "describe": "Describe it (at least 10 characters)",
+      "send": "Send report",
+      "sent": "Thank you. We received your report and will look into it.",
+      "cancel": "Cancel",
+      "failed": "Could not send your report. Please try again."
+    },
+    "cat": {
+      "unsafe_driving": "Unsafe driving",
+      "harassment": "Harassment",
+      "felt_unsafe": "I felt unsafe",
+      "wrong_route": "Wrong route",
+      "overcharge": "Overcharged",
+      "vehicle_mismatch": "Car or plate did not match the app",
+      "rude": "Rude behaviour",
+      "other": "Something else"
+    }
   }
 }

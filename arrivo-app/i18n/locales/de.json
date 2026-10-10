@@ -94,5 +94,39 @@
     "durationMin": "{{duration}} Min.",
     "homeBannerTitle": "Jetzt fahren mit ArrivoExpress",
     "homeBannerSubtitle": "Fahrten auf Abruf, berechnet nach Entfernung, in Minuten vermittelt."
+  },
+  "safety": {
+    "pin": {
+      "title": "Ihre Abhol-PIN",
+      "help": "Nennen Sie Ihrem Fahrer diese PIN, wenn Sie sich treffen. Er braucht sie, um die Fahrt zu starten. Geben Sie sie nicht weiter, bevor Sie bei Ihrem Fahrer sind."
+    },
+    "share": {
+      "stop": "Teilen beenden",
+      "stopped": "Teilen beendet. Gesendete Links funktionieren nicht mehr.",
+      "note": "Freigabelinks funktionieren nur einige Stunden nach der Abholung oder kurz nach Ende der Fahrt. Sie können das Teilen jederzeit beenden.",
+      "until": "Dieser Link funktioniert bis {{time}}.",
+      "failed": "Teilen konnte nicht beendet werden. Bitte versuchen Sie es erneut."
+    },
+    "report": {
+      "button": "Fahrer melden",
+      "title": "Ein Problem melden",
+      "help": "Schildern Sie uns, was passiert ist. Der Fahrer sieht Ihre Meldung nicht. Wenn Sie in Gefahr sind, nutzen Sie den Notfallknopf.",
+      "pick": "Was ist passiert?",
+      "describe": "Beschreiben Sie es (mindestens 10 Zeichen)",
+      "send": "Meldung senden",
+      "sent": "Danke. Wir haben Ihre Meldung erhalten und gehen ihr nach.",
+      "cancel": "Abbrechen",
+      "failed": "Ihre Meldung konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
+    },
+    "cat": {
+      "unsafe_driving": "Gefährliche Fahrweise",
+      "harassment": "Belästigung",
+      "felt_unsafe": "Ich habe mich unsicher gefühlt",
+      "wrong_route": "Falsche Route",
+      "overcharge": "Zu viel berechnet",
+      "vehicle_mismatch": "Auto oder Kennzeichen passte nicht zur App",
+      "rude": "Unhöfliches Verhalten",
+      "other": "Etwas anderes"
+    }
   }
 }

@@ -278,6 +278,51 @@ let admin;
     assert.strictEqual((await reprice.runDailyReprice({ now: early })).reason, "too_early");
   });
 
+  // ── Getting the data ─────────────────────────────────────────────────
+  const goodRow = (o = {}) => ({ tier: "economy", source: "bolt", distanceKm: 12, durationMin: 30, observedFareNaira: 5000, ...o });
+
+  await test("bulk logging saves every row, or none if any row is bad", async () => {
+    await pool.query("DELETE FROM instant_price_samples");
+    const ok = await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: [goodRow(), goodRow({ source: "uber" }), goodRow({ tier: "comfort", observedFareNaira: 7000 })] });
+    assert.strictEqual(ok.status, 201);
+    assert.strictEqual(ok.body.saved, 3);
+    assert.strictEqual((await pool.query("SELECT count(*)::int AS n FROM instant_price_samples")).rows[0].n, 3);
+    const bad = await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: [goodRow(), goodRow({ observedFareNaira: 5 }), goodRow({ source: "taxify" })] });
+    assert.strictEqual(bad.status, 400);
+    assert.ok(bad.body.error.includes("Row 2") && bad.body.error.includes("Nothing was saved"));
+    assert.strictEqual(bad.body.details.length, 2);
+    assert.strictEqual((await pool.query("SELECT count(*)::int AS n FROM instant_price_samples")).rows[0].n, 3, "nothing from the bad batch was kept");
+  });
+
+  await test("bulk logging refuses an empty or oversized batch", async () => {
+    assert.strictEqual((await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: [] })).status, 400);
+    assert.strictEqual((await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: Array.from({ length: 101 }, () => goodRow()) })).status, 400);
+  });
+
+  await test("coverage tells the admin how far each tier is from usable data", async () => {
+    await pool.query("DELETE FROM instant_price_samples; DELETE FROM instant_price_book");
+    priceBook.invalidateCache();
+    await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: [goodRow(), goodRow(), goodRow({ source: "uber" })] });
+    const res = await call("GET", "/api/admin/express/samples/coverage", adminToken);
+    assert.strictEqual(res.status, 200);
+    const e = res.body.tiers.find((t) => t.tier === "economy");
+    assert.strictEqual(e.samples, 3);
+    assert.strictEqual(e.ready, false);
+    assert.strictEqual(e.needSamples, 5);
+    assert.strictEqual(e.needSources, 1);
+    const more = Array.from({ length: 6 }, (_, i) => goodRow({ source: i % 2 ? "uber" : "bolt" }));
+    await call("POST", "/api/admin/express/samples/bulk", adminToken, { rows: more });
+    const after = (await call("GET", "/api/admin/express/samples/coverage", adminToken)).body.tiers.find((t) => t.tier === "economy");
+    assert.strictEqual(after.ready, true);
+  });
+
+  await test("the standard route list is served for the daily check", async () => {
+    const res = await call("GET", "/api/admin/express/samples/routes", adminToken);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.routes.length >= 10);
+    assert.ok(res.body.routes.every((r) => r.label && r.distanceKm > 0 && r.durationMin > 0));
+  });
+
   // ── Admin controls ───────────────────────────────────────────────────
   await test("an admin can read and flip the automation switches, and it is logged", async () => {
     const off = await call("PATCH", "/api/admin/express/automation", adminToken, { key: "express_auto_payout_enabled", enabled: false });
@@ -285,7 +330,7 @@ let admin;
     assert.strictEqual(await systemConfig.getConfigBool("express_auto_payout_enabled", true), false);
     const info = await call("GET", "/api/admin/express/automation", adminToken);
     assert.strictEqual(info.status, 200);
-    assert.strictEqual(info.body.switches.length, 2);
+    assert.strictEqual(info.body.switches.length, 3);
     assert.ok(info.body.log.some((l) => l.action === "switched_off"));
     assert.strictEqual(info.body.limits.payoutDailyCapNaira, 8000);
   });

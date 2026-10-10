@@ -33,6 +33,10 @@ const adminRouter = require("./routes/admin");
 const adminExportsRouter = require("./routes/adminExports");
 const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const adminExpressRouter = require("./routes/adminExpress");
+const adminCashoutsRouter = require("./routes/adminCashouts");
+const safetyRouter = require("./routes/safety");
+const adminSafetyRouter = require("./routes/adminSafety");
+const driverCashoutRouter = require("./routes/driverCashout");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
@@ -150,6 +154,9 @@ app.use("/api/drivers", driversRouter);
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
 app.use("/api/admin/express", adminExpressRouter);
+app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/safety", adminSafetyRouter);
+app.use("/api/safety", safetyRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
 // Before the general admin router, for the same reason as the exports above.
 app.use("/api/admin/payment-exceptions", paymentExceptionsRouter);
@@ -158,6 +165,7 @@ app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
+app.use("/api/cashout", driverCashoutRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
 app.use("/api/places", placesRouter);

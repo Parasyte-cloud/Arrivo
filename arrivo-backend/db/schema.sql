@@ -1599,3 +1599,149 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_express_automation_daily
   ON express_automation_log(kind, run_date) WHERE action = 'run' AND run_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_express_automation_log_recent
   ON express_automation_log(kind, created_at DESC);
+
+-- ── Driver cash-out: wallet balance to a bank account ──
+-- One verified bank account per driver. Paystack resolves the account name,
+-- and the name must match the driver's profile name, so money cannot be sent
+-- to an unrelated person's account. Changing the account starts a cooling-off
+-- period (CASHOUT_BANK_COOLING_HOURS) during which cash-out is blocked: the
+-- classic account takeover move is "change the bank, withdraw everything".
+CREATE TABLE IF NOT EXISTS driver_bank_accounts (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  bank_code TEXT NOT NULL,
+  bank_name TEXT NOT NULL,
+  account_number TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per cash-out request. The wallet is debited when the row is
+-- created (so the same money cannot be withdrawn twice) and credited back
+-- if the transfer fails, is rejected or is reversed. `reference` is sent to
+-- Paystack as the transfer reference, which Paystack refuses to accept twice,
+-- so a retry can never pay the driver twice.
+CREATE TABLE IF NOT EXISTS wallet_withdrawals (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_naira INTEGER NOT NULL CHECK (amount_naira > 0),
+  fee_naira INTEGER NOT NULL DEFAULT 0 CHECK (fee_naira >= 0),
+  status TEXT NOT NULL CHECK (status IN ('pending_review','queued','processing','paid','failed','rejected','reversed')),
+  reference TEXT NOT NULL UNIQUE,
+  idempotency_key TEXT,
+  bank_name TEXT NOT NULL,
+  account_last4 TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  paystack_transfer_code TEXT,
+  debit_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  refund_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  note TEXT,
+  reviewed_by INTEGER REFERENCES users(id),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_withdrawals_idem
+  ON wallet_withdrawals(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_user ON wallet_withdrawals(user_id, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_open ON wallet_withdrawals(status)
+  WHERE status IN ('pending_review','queued','processing');
+
+-- ── Trip safety: pickup PIN, expiring share links, driver selfie check, two-way complaints ──
+
+-- Pickup PIN. The 4 digit PIN itself is NOT stored: it is derived from the ride
+-- id and `nonce` with a server secret (services/pickupPin.js), so a database leak
+-- reveals nothing. This row only tracks attempts and whether the driver got it right.
+CREATE TABLE IF NOT EXISTS ride_pickup_pins (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id),
+  nonce INTEGER NOT NULL DEFAULT 0,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  verified_at TIMESTAMPTZ,
+  override_by INTEGER REFERENCES users(id),
+  override_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Expiring, revocable trip share links. Only a SHA-256 hash of the token is
+-- kept. A link works until it expires, is revoked, or a short grace period after
+-- the trip ends, whichever comes first (services/shareLinks.js).
+CREATE TABLE IF NOT EXISTS ride_share_links (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER REFERENCES users(id),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revoked_by INTEGER REFERENCES users(id),
+  view_count INTEGER NOT NULL DEFAULT 0,
+  last_viewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_share_links_ride ON ride_share_links(ride_id);
+
+-- Driver selfie check: a fresh selfie, with a challenge so a stored photo cannot
+-- be replayed, compared with the profile photo. 'manual' provider means a person
+-- reviews it in admin; a face matching vendor can fill match_score instead.
+CREATE TABLE IF NOT EXISTS driver_selfie_checks (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  image_data_url TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+  provider TEXT NOT NULL DEFAULT 'manual',
+  match_score NUMERIC(5, 2),
+  reviewed_by INTEGER REFERENCES users(id),
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_driver_selfie_checks_driver ON driver_selfie_checks(driver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_driver_selfie_checks_pending ON driver_selfie_checks(status) WHERE status = 'pending';
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS selfie_recheck_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS express_paused_at TIMESTAMPTZ;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS express_paused_reason TEXT;
+
+-- Two-way complaints: a rider reports a driver, or a driver reports a rider, about
+-- one ride. `against_user_id` is always worked out from the ride, never trusted
+-- from the client. The accused never sees the report.
+CREATE TABLE IF NOT EXISTS ride_complaints (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  filed_by INTEGER NOT NULL REFERENCES users(id),
+  filer_role TEXT NOT NULL CHECK (filer_role IN ('rider', 'driver')),
+  against_user_id INTEGER NOT NULL REFERENCES users(id),
+  category TEXT NOT NULL,
+  priority TEXT NOT NULL CHECK (priority IN ('urgent', 'normal')),
+  description TEXT NOT NULL,
+  photo_data_url TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'investigating', 'resolved', 'dismissed')),
+  resolution TEXT,
+  action TEXT,
+  resolved_by INTEGER REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  respond_by TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ride_id, filed_by, category)
+);
+CREATE INDEX IF NOT EXISTS idx_ride_complaints_open ON ride_complaints(status, priority, respond_by) WHERE status IN ('open', 'investigating');
+CREATE INDEX IF NOT EXISTS idx_ride_complaints_against ON ride_complaints(against_user_id, created_at DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS express_restricted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS express_restricted_reason TEXT;
+
+-- Audit trail for safety actions: PIN lockouts and overrides, selfie decisions,
+-- automatic pauses, complaint actions.
+CREATE TABLE IF NOT EXISTS safety_events (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  ride_id INTEGER,
+  user_id INTEGER,
+  driver_id INTEGER,
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_safety_events_recent ON safety_events(created_at DESC);
