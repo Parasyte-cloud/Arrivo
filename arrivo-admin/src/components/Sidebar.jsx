@@ -4,6 +4,7 @@ import * as api from "../api";
 import wordmarkLight from "../assets/wordmark-light.png";
 
 const NAV_ITEMS = [
+  { id: "ride-desk", label: "Ride Desk", icon: "🎧" },
   { id: "panics", label: "Panic Alerts", icon: "🔔", danger: true, badgeColor: "var(--coral)" },
   { id: "riders", label: "Riders", icon: "👥" },
   { id: "drivers", label: "Drivers", icon: "🚘" },
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
 ];
 
 const OPERATIONS_NAV_IDS = new Set([
+  "ride-desk",
   "panics",
   "drivers",
   "rides",
