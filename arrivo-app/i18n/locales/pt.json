@@ -128,5 +128,95 @@
       "rude": "Comportamento rude",
       "other": "Outra coisa"
     }
+  },
+  "call": {
+    "connecting": "A ligar…",
+    "callWho": "Ligar para {{who}}",
+    "freeSub": "Grátis, na app. O seu número fica privado.",
+    "opensWhen": "Disponível quando um {{role}} for atribuído",
+    "roleDriver": "motorista",
+    "roleRider": "passageiro",
+    "yourDriver": "o seu motorista",
+    "yourRider": "o seu passageiro",
+    "message": "Mensagem",
+    "needHelp": "Precisa de ajuda?",
+    "callingWho": "A ligar para {{who}}…",
+    "ringing": "A tocar na app · {{seconds}} s",
+    "cancel": "Cancelar",
+    "tryAgain": "Tentar de novo",
+    "messageInApp": "Mensagem na app",
+    "supportTold": "O suporte foi avisado",
+    "talkToSupport": "Falar com o Suporte",
+    "close": "Fechar",
+    "supportDone": "O suporte tem a sua viagem e o que aconteceu. Entrará em contacto consigo na app em breve.",
+    "supportOpening": "Não conseguimos abrir um pedido a partir daqui. A abrir o chat de suporte da RideArrivo.",
+    "supportFailed": "Não conseguimos contactar o suporte a partir daqui. Abra Suporte no menu.",
+    "care": "Nós tratamos de si.",
+    "a11yCall": "Ligar para {{who}} na app. Nenhum número de telefone é partilhado.",
+    "a11yMessage": "Enviar mensagem a {{who}}",
+    "a11yHelp": "Obter ajuda do suporte da RideArrivo",
+    "a11yCancel": "Cancelar a chamada",
+    "fail": {
+      "no_answer": {
+        "title": "{{who}} não atende",
+        "body": "Pode estar a conduzir ou sem rede. Tente de novo ou envie uma mensagem."
+      },
+      "declined": {
+        "title": "{{who}} não pode falar agora",
+        "body": "Envie antes uma mensagem e será vista de imediato."
+      },
+      "dropped": {
+        "title": "A chamada caiu",
+        "body": "A ligação perdeu-se. Tente de novo ou envie uma mensagem."
+      },
+      "network": {
+        "title": "Sem ligação",
+        "body": "Verifique os seus dados ou o Wi-Fi e tente de novo."
+      },
+      "rate_limited": {
+        "title": "Muitas chamadas em pouco tempo",
+        "body": "Aguarde alguns minutos ou envie uma mensagem."
+      },
+      "calling_unavailable": {
+        "title": "As chamadas não estão disponíveis agora",
+        "body": "Estamos a tratar disso. Envie uma mensagem na app ou fale com o suporte."
+      },
+      "call_failed": {
+        "title": "Não conseguimos ligar a chamada",
+        "body": "A culpa não foi sua. Tente de novo ou envie uma mensagem."
+      },
+      "no_driver": {
+        "title": "As chamadas abrem em breve",
+        "body": "Poderá ligar assim que um motorista aceitar esta viagem."
+      },
+      "not_active": {
+        "title": "As chamadas abrem em breve",
+        "body": "Poderá ligar quando o motorista aceitar a viagem."
+      },
+      "cancelled": {
+        "title": "Esta viagem foi cancelada",
+        "body": "As chamadas são só para viagens ativas."
+      },
+      "trip_over": {
+        "title": "Esta viagem terminou",
+        "body": "Para qualquer assunto sobre ela, fale com o suporte."
+      },
+      "signed_out": {
+        "title": "Inicie sessão de novo",
+        "body": "A sua sessão terminou."
+      },
+      "incoming_call": {
+        "title": "Está a ligar-lhe agora",
+        "body": "Atenda a chamada no ecrã. Se não a vir, abra a app de novo."
+      },
+      "already_in_call": {
+        "title": "Já está numa chamada",
+        "body": "Termine primeiro a chamada atual."
+      },
+      "unknown": {
+        "title": "Algo correu mal",
+        "body": "Tente de novo ou envie uma mensagem. O suporte está aqui se precisar."
+      }
+    }
   }
 }

@@ -128,5 +128,95 @@
       "rude": "Trato grosero",
       "other": "Otra cosa"
     }
+  },
+  "call": {
+    "connecting": "Conectando…",
+    "callWho": "Llamar a {{who}}",
+    "freeSub": "Gratis, dentro de la app. Tu número sigue siendo privado.",
+    "opensWhen": "Se activa cuando se asigne un {{role}}",
+    "roleDriver": "conductor",
+    "roleRider": "pasajero",
+    "yourDriver": "tu conductor",
+    "yourRider": "tu pasajero",
+    "message": "Mensaje",
+    "needHelp": "¿Necesitas ayuda?",
+    "callingWho": "Llamando a {{who}}…",
+    "ringing": "Sonando en la app · {{seconds}} s",
+    "cancel": "Cancelar",
+    "tryAgain": "Reintentar",
+    "messageInApp": "Mensaje en la app",
+    "supportTold": "Soporte ya fue avisado",
+    "talkToSupport": "Hablar con Soporte",
+    "close": "Cerrar",
+    "supportDone": "Soporte tiene tu viaje y lo que pasó. Te contactará en la app en breve.",
+    "supportOpening": "No pudimos abrir un ticket desde aquí. Abriendo el chat de soporte de RideArrivo.",
+    "supportFailed": "No pudimos contactar con soporte desde aquí. Abre Soporte en el menú.",
+    "care": "Nos ocupamos de ti.",
+    "a11yCall": "Llamar a {{who}} en la app. No se comparten números de teléfono.",
+    "a11yMessage": "Enviar mensaje a {{who}}",
+    "a11yHelp": "Obtener ayuda del soporte de RideArrivo",
+    "a11yCancel": "Cancelar la llamada",
+    "fail": {
+      "no_answer": {
+        "title": "{{who}} no contesta",
+        "body": "Puede que esté conduciendo o sin señal. Reintenta o envía un mensaje."
+      },
+      "declined": {
+        "title": "{{who}} no puede hablar ahora",
+        "body": "Envía un mensaje y lo verá enseguida."
+      },
+      "dropped": {
+        "title": "Se cortó la llamada",
+        "body": "Se perdió la conexión. Reintenta o envía un mensaje."
+      },
+      "network": {
+        "title": "Sin conexión",
+        "body": "Revisa tus datos o el Wi-Fi y vuelve a intentarlo."
+      },
+      "rate_limited": {
+        "title": "Muchas llamadas en poco tiempo",
+        "body": "Espera unos minutos o envía un mensaje."
+      },
+      "calling_unavailable": {
+        "title": "Las llamadas no están disponibles ahora",
+        "body": "Estamos en ello. Envía un mensaje en la app o habla con soporte."
+      },
+      "call_failed": {
+        "title": "No pudimos conectar la llamada",
+        "body": "No fue tu culpa. Reintenta o envía un mensaje."
+      },
+      "no_driver": {
+        "title": "Las llamadas se activarán pronto",
+        "body": "Podrás llamar en cuanto un conductor acepte este viaje."
+      },
+      "not_active": {
+        "title": "Las llamadas se activarán pronto",
+        "body": "Podrás llamar cuando el conductor haya aceptado el viaje."
+      },
+      "cancelled": {
+        "title": "Este viaje fue cancelado",
+        "body": "Las llamadas son solo para viajes activos."
+      },
+      "trip_over": {
+        "title": "Este viaje ha terminado",
+        "body": "Para cualquier asunto sobre él, habla con soporte."
+      },
+      "signed_out": {
+        "title": "Inicia sesión de nuevo",
+        "body": "Tu sesión terminó."
+      },
+      "incoming_call": {
+        "title": "Te está llamando ahora mismo",
+        "body": "Contesta la llamada en tu pantalla. Si no la ves, abre la app de nuevo."
+      },
+      "already_in_call": {
+        "title": "Ya estás en una llamada",
+        "body": "Termina primero la llamada actual."
+      },
+      "unknown": {
+        "title": "Algo salió mal",
+        "body": "Reintenta o envía un mensaje. Soporte está aquí si nos necesitas."
+      }
+    }
   }
 }

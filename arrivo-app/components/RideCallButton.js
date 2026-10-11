@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useReducer, useRef, useState } from "rea
 import { View, Text, Pressable, Modal, StyleSheet, ActivityIndicator, Linking, Animated, Easing, AccessibilityInfo } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStreamVideoClient } from "@stream-io/video-react-native-sdk";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import { startRideCall, reportCallEvent, requestCallSupport } from "../services/api";
 import { PHASE, initialState, reduce, failureFromError, failureView, ringRemaining } from "../utils/callFlow";
@@ -20,6 +21,7 @@ const SUPPORT_CHAT_FALLBACK = "https://wa.me/2348162706078";
 
 export default function RideCallButton({ rideId, role, counterpart, navigation, enabled = true, compact = false, supportRoute = "Support" }) {
   const { token } = useAuth();
+  const { t } = useTranslation();
   const client = useStreamVideoClient();
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
   const [remaining, setRemaining] = useState(45);
@@ -31,8 +33,13 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
   const sessionRef = useRef(null);
   const pulse = useRef(new Animated.Value(0)).current;
 
-  const who = role === "rider" ? "driver" : "rider";
-  const label = counterpart || (role === "rider" ? "your driver" : "your rider");
+  const who = role === "rider" ? t("call.roleDriver", { defaultValue: "driver" }) : t("call.roleRider", { defaultValue: "rider" });
+  // The screens pass the English "your driver"/"your rider" as a default; show the
+  // translated words for those, and a real name as it is.
+  const isDefaultLabel = !counterpart || counterpart === "your driver" || counterpart === "your rider";
+  const label = isDefaultLabel
+    ? (role === "rider" ? t("call.yourDriver", { defaultValue: "your driver" }) : t("call.yourRider", { defaultValue: "your rider" }))
+    : counterpart;
 
   useEffect(() => {
     let off = false;
@@ -159,12 +166,14 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
       }
       const r = await requestCallSupport(token, id);
       dispatch({ type: "SUPPORT_DONE", ticketId: r.ticketId });
-      setSupportMsg("Support has your ride and what happened. They'll reach you in the app shortly.");
+      setSupportMsg(t("call.supportDone", { defaultValue: "Support has your ride and what happened. They'll reach you in the app shortly." }));
     } catch (e) {
       dispatch({ type: "SUPPORT_FAILED" });
       // Last resort that still works with no session: the company's own line.
       const url = (e && e.support && e.support.whatsappUrl) || (state.failure && state.failure.support && state.failure.support.whatsappUrl) || null;
-      setSupportMsg(url ? "We couldn't open a ticket from here. Opening the RideArrivo support chat." : "We couldn't reach support from here. Please open Support in the menu.");
+      setSupportMsg(url
+        ? t("call.supportOpening", { defaultValue: "We couldn't open a ticket from here. Opening the RideArrivo support chat." })
+        : t("call.supportFailed", { defaultValue: "We couldn't reach support from here. Please open Support in the menu." }));
       if (url) Linking.openURL(url).catch(() => {});
     }
   };
@@ -184,7 +193,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
         onPress={() => begin("audio")}
         disabled={!enabled || busy}
         accessibilityRole="button"
-        accessibilityLabel={`Call ${label} in the app. No phone numbers are shared.`}
+        accessibilityLabel={t("call.a11yCall", { who: label, defaultValue: "Call {{who}} in the app. No phone numbers are shared." })}
         accessibilityState={{ disabled: !enabled || busy, busy }}
         style={({ pressed }) => [styles.big, compact && styles.bigCompact, (!enabled) && styles.bigOff, pressed && { transform: [{ scale: 0.98 }] }]}
       >
@@ -193,17 +202,17 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
           {busy ? <ActivityIndicator color={colors.ink} /> : <Ionicons name="call" size={compact ? 22 : 28} color={colors.ink} />}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.bigTitle}>{busy ? "Connecting…" : `Call ${label}`}</Text>
-          <Text style={styles.bigSub}>{enabled ? "Free, in the app. Your number stays private." : `Opens once your ${who} is assigned`}</Text>
+          <Text style={styles.bigTitle}>{busy ? t("call.connecting", { defaultValue: "Connecting…" }) : t("call.callWho", { who: label, defaultValue: "Call {{who}}" })}</Text>
+          <Text style={styles.bigSub}>{enabled ? t("call.freeSub", { defaultValue: "Free, in the app. Your number stays private." }) : t("call.opensWhen", { role: who, defaultValue: "Opens once your {{role}} is assigned" })}</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.ink} />
       </Pressable>
 
       <View style={styles.row}>
         {navigation ? (
-          <Pressable style={styles.link} onPress={() => navigation.navigate("Chat", { rideId })} accessibilityRole="button" accessibilityLabel={`Message ${label}`}>
+          <Pressable style={styles.link} onPress={() => navigation.navigate("Chat", { rideId })} accessibilityRole="button" accessibilityLabel={t("call.a11yMessage", { who: label, defaultValue: "Message {{who}}" })}>
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.dark.text} />
-            <Text style={styles.linkText}>Message</Text>
+            <Text style={styles.linkText}>{t("call.message", { defaultValue: "Message" })}</Text>
           </Pressable>
         ) : null}
         {navigation && supportRoute ? (
@@ -211,10 +220,10 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
             style={styles.link}
             onPress={() => navigation.navigate(supportRoute, { rideId })}
             accessibilityRole="button"
-            accessibilityLabel="Get help from RideArrivo support"
+            accessibilityLabel={t("call.a11yHelp", { defaultValue: "Get help from RideArrivo support" })}
           >
             <Ionicons name="shield-checkmark-outline" size={16} color={colors.dark.text} />
-            <Text style={styles.linkText}>Need help?</Text>
+            <Text style={styles.linkText}>{t("call.needHelp", { defaultValue: "Need help?" })}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -223,11 +232,11 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
         <View style={styles.scrim}>
           <View style={styles.sheet} accessibilityViewIsModal>
             <View style={styles.ringIcon}><Ionicons name="call" size={36} color={colors.ink} /></View>
-            <Text style={styles.sheetTitle} accessibilityLiveRegion="polite">Calling {label}…</Text>
-            <Text style={styles.sheetBody}>Ringing in the app · {remaining}s</Text>
-            <Pressable onPress={cancel} style={styles.cancel} accessibilityRole="button" accessibilityLabel="Cancel the call">
+            <Text style={styles.sheetTitle} accessibilityLiveRegion="polite">{t("call.callingWho", { who: label, defaultValue: "Calling {{who}}…" })}</Text>
+            <Text style={styles.sheetBody}>{t("call.ringing", { seconds: remaining, defaultValue: "Ringing in the app · {{seconds}}s" })}</Text>
+            <Pressable onPress={cancel} style={styles.cancel} accessibilityRole="button" accessibilityLabel={t("call.a11yCancel", { defaultValue: "Cancel the call" })}>
               <Ionicons name="close" size={20} color="#fff" />
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.cancelText}>{t("call.cancel", { defaultValue: "Cancel" })}</Text>
             </Pressable>
           </View>
         </View>
@@ -238,22 +247,22 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
           <View style={[styles.sheet, { alignItems: "stretch" }]} accessibilityViewIsModal>
             {view ? (
               <>
-                <Text style={[styles.sheetTitle, { textAlign: "center" }]} accessibilityLiveRegion="assertive">{view.title}</Text>
-                <Text style={[styles.sheetBody, { textAlign: "center" }]}>{view.body}</Text>
+                <Text style={[styles.sheetTitle, { textAlign: "center" }]} accessibilityLiveRegion="assertive">{t(view.titleKey, { who: view.who, defaultValue: view.title })}</Text>
+                <Text style={[styles.sheetBody, { textAlign: "center" }]}>{t(view.bodyKey, { defaultValue: view.body })}</Text>
                 {view.actions.includes("retry") ? (
-                  <Pressable onPress={retry} style={styles.primary} accessibilityRole="button"><Ionicons name="refresh" size={18} color={colors.ink} /><Text style={styles.primaryText}>Try again</Text></Pressable>
+                  <Pressable onPress={retry} style={styles.primary} accessibilityRole="button"><Ionicons name="refresh" size={18} color={colors.ink} /><Text style={styles.primaryText}>{t("call.tryAgain", { defaultValue: "Try again" })}</Text></Pressable>
                 ) : null}
                 {view.actions.includes("chat") ? (
-                  <Pressable onPress={message} style={styles.secondary} accessibilityRole="button"><Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" /><Text style={styles.secondaryText}>Message in app</Text></Pressable>
+                  <Pressable onPress={message} style={styles.secondary} accessibilityRole="button"><Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" /><Text style={styles.secondaryText}>{t("call.messageInApp", { defaultValue: "Message in app" })}</Text></Pressable>
                 ) : null}
                 {view.actions.includes("support") ? (
                   <Pressable onPress={talkToSupport} disabled={state.supportBusy || !!state.ticketId} style={[styles.support, !!state.ticketId && { opacity: 0.8 }]} accessibilityRole="button">
                     {state.supportBusy ? <ActivityIndicator color={colors.ink} /> : <Ionicons name={state.ticketId ? "checkmark-circle" : "headset"} size={18} color={colors.ink} />}
-                    <Text style={styles.supportText}>{state.ticketId ? "Support has been told" : "Talk to Support"}</Text>
+                    <Text style={styles.supportText}>{state.ticketId ? t("call.supportTold", { defaultValue: "Support has been told" }) : t("call.talkToSupport", { defaultValue: "Talk to Support" })}</Text>
                   </Pressable>
                 ) : null}
-                <Text style={styles.care}>{supportMsg || view.reassurance}</Text>
-                <Pressable onPress={dismiss} style={{ alignSelf: "center", padding: spacing.sm }} accessibilityRole="button"><Text style={styles.close}>Close</Text></Pressable>
+                <Text style={styles.care}>{supportMsg || t("call.care", { defaultValue: view.reassurance })}</Text>
+                <Pressable onPress={dismiss} style={{ alignSelf: "center", padding: spacing.sm }} accessibilityRole="button"><Text style={styles.close}>{t("call.close", { defaultValue: "Close" })}</Text></Pressable>
               </>
             ) : null}
           </View>

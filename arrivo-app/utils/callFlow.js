@@ -123,7 +123,10 @@ export function failureView(failure, { counterpart = "them", canChat = true } = 
   if (f.retry !== false) actions.push("retry");
   if (canChat && !["no_driver", "not_active", "cancelled", "trip_over", "signed_out", "incoming_call", "already_in_call"].includes(f.code)) actions.push("chat");
   if (f.code !== "signed_out") actions.push("support");
-  return { title, body, actions, reassurance: "We'll take care of you." };
+  // titleKey/bodyKey let an app with translations show its own wording; title and
+  // body stay as the English defaults.
+  const key = copy[f.code] ? f.code : "unknown";
+  return { title, body, actions, reassurance: "We'll take care of you.", titleKey: `call.fail.${key}.title`, bodyKey: `call.fail.${key}.body`, who: cap(counterpart) };
 }
 
 function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }

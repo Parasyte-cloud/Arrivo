@@ -128,5 +128,95 @@
       "rude": "Unhöfliches Verhalten",
       "other": "Etwas anderes"
     }
+  },
+  "call": {
+    "connecting": "Verbindung wird hergestellt…",
+    "callWho": "{{who}} anrufen",
+    "freeSub": "Kostenlos, in der App. Ihre Nummer bleibt privat.",
+    "opensWhen": "Verfügbar, sobald ein {{role}} zugewiesen ist",
+    "roleDriver": "Fahrer",
+    "roleRider": "Fahrgast",
+    "yourDriver": "Ihr Fahrer",
+    "yourRider": "Ihr Fahrgast",
+    "message": "Nachricht",
+    "needHelp": "Hilfe nötig?",
+    "callingWho": "{{who}} wird angerufen…",
+    "ringing": "Es klingelt in der App · {{seconds}} s",
+    "cancel": "Abbrechen",
+    "tryAgain": "Erneut versuchen",
+    "messageInApp": "Nachricht in der App",
+    "supportTold": "Der Support ist informiert",
+    "talkToSupport": "Mit dem Support sprechen",
+    "close": "Schließen",
+    "supportDone": "Der Support kennt Ihre Fahrt und was passiert ist. Er meldet sich in Kürze in der App bei Ihnen.",
+    "supportOpening": "Wir konnten von hier kein Ticket öffnen. Der RideArrivo-Support-Chat wird geöffnet.",
+    "supportFailed": "Wir konnten den Support von hier nicht erreichen. Bitte öffnen Sie Support im Menü.",
+    "care": "Wir kümmern uns um Sie.",
+    "a11yCall": "{{who}} in der App anrufen. Es werden keine Telefonnummern weitergegeben.",
+    "a11yMessage": "{{who}} eine Nachricht senden",
+    "a11yHelp": "Hilfe vom RideArrivo-Support erhalten",
+    "a11yCancel": "Anruf abbrechen",
+    "fail": {
+      "no_answer": {
+        "title": "{{who}} nimmt nicht ab",
+        "body": "Vielleicht fährt er gerade oder hat keinen Empfang. Versuchen Sie es erneut oder schreiben Sie eine Nachricht."
+      },
+      "declined": {
+        "title": "{{who}} kann gerade nicht sprechen",
+        "body": "Senden Sie stattdessen eine Nachricht, sie wird sofort angezeigt."
+      },
+      "dropped": {
+        "title": "Der Anruf wurde unterbrochen",
+        "body": "Die Verbindung ging verloren. Versuchen Sie es erneut oder schreiben Sie eine Nachricht."
+      },
+      "network": {
+        "title": "Keine Verbindung",
+        "body": "Prüfen Sie Ihre Daten oder das WLAN und versuchen Sie es erneut."
+      },
+      "rate_limited": {
+        "title": "Viele Anrufe in kurzer Zeit",
+        "body": "Warten Sie ein paar Minuten oder schreiben Sie stattdessen eine Nachricht."
+      },
+      "calling_unavailable": {
+        "title": "Anrufe sind gerade nicht verfügbar",
+        "body": "Wir kümmern uns darum. Schreiben Sie in der App oder sprechen Sie mit dem Support."
+      },
+      "call_failed": {
+        "title": "Der Anruf konnte nicht verbunden werden",
+        "body": "Es liegt nicht an Ihnen. Versuchen Sie es erneut oder schreiben Sie eine Nachricht."
+      },
+      "no_driver": {
+        "title": "Anrufe sind bald möglich",
+        "body": "Sie können anrufen, sobald ein Fahrer diese Fahrt annimmt."
+      },
+      "not_active": {
+        "title": "Anrufe sind bald möglich",
+        "body": "Sie können anrufen, sobald der Fahrer die Fahrt angenommen hat."
+      },
+      "cancelled": {
+        "title": "Diese Fahrt wurde storniert",
+        "body": "Anrufe gibt es nur für aktive Fahrten."
+      },
+      "trip_over": {
+        "title": "Diese Fahrt ist beendet",
+        "body": "Bei Fragen dazu wenden Sie sich an den Support."
+      },
+      "signed_out": {
+        "title": "Bitte erneut anmelden",
+        "body": "Ihre Sitzung ist abgelaufen."
+      },
+      "incoming_call": {
+        "title": "Er ruft Sie gerade an",
+        "body": "Nehmen Sie den Anruf auf Ihrem Bildschirm an. Wenn Sie ihn nicht sehen, öffnen Sie die App erneut."
+      },
+      "already_in_call": {
+        "title": "Sie telefonieren bereits",
+        "body": "Beenden Sie zuerst das aktuelle Gespräch."
+      },
+      "unknown": {
+        "title": "Etwas ist schiefgelaufen",
+        "body": "Versuchen Sie es erneut oder schreiben Sie eine Nachricht. Der Support ist für Sie da."
+      }
+    }
   }
 }

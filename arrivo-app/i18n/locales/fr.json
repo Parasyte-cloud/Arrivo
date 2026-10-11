@@ -128,5 +128,95 @@
       "rude": "Comportement impoli",
       "other": "Autre chose"
     }
+  },
+  "call": {
+    "connecting": "Connexion…",
+    "callWho": "Appeler {{who}}",
+    "freeSub": "Gratuit, dans l'application. Votre numéro reste privé.",
+    "opensWhen": "Disponible dès qu'un {{role}} est attribué",
+    "roleDriver": "chauffeur",
+    "roleRider": "passager",
+    "yourDriver": "votre chauffeur",
+    "yourRider": "votre passager",
+    "message": "Message",
+    "needHelp": "Besoin d'aide ?",
+    "callingWho": "Appel de {{who}}…",
+    "ringing": "Ça sonne dans l'application · {{seconds}} s",
+    "cancel": "Annuler",
+    "tryAgain": "Réessayer",
+    "messageInApp": "Message dans l'application",
+    "supportTold": "Le support est prévenu",
+    "talkToSupport": "Parler au support",
+    "close": "Fermer",
+    "supportDone": "Le support a votre course et ce qui s'est passé. Il vous contactera bientôt dans l'application.",
+    "supportOpening": "Nous n'avons pas pu ouvrir de ticket d'ici. Ouverture du chat d'assistance RideArrivo.",
+    "supportFailed": "Nous n'avons pas pu joindre le support d'ici. Ouvrez Assistance dans le menu.",
+    "care": "Nous prenons soin de vous.",
+    "a11yCall": "Appeler {{who}} dans l'application. Aucun numéro de téléphone n'est partagé.",
+    "a11yMessage": "Écrire à {{who}}",
+    "a11yHelp": "Obtenir de l'aide auprès du support RideArrivo",
+    "a11yCancel": "Annuler l'appel",
+    "fail": {
+      "no_answer": {
+        "title": "{{who}} ne répond pas",
+        "body": "Il est peut-être en train de conduire ou sans réseau. Réessayez ou envoyez un message."
+      },
+      "declined": {
+        "title": "{{who}} ne peut pas parler maintenant",
+        "body": "Envoyez plutôt un message, il le verra tout de suite."
+      },
+      "dropped": {
+        "title": "L'appel s'est coupé",
+        "body": "La connexion a été perdue. Réessayez ou envoyez un message."
+      },
+      "network": {
+        "title": "Pas de connexion",
+        "body": "Vérifiez vos données ou le Wi-Fi, puis réessayez."
+      },
+      "rate_limited": {
+        "title": "Beaucoup d'appels en peu de temps",
+        "body": "Patientez quelques minutes ou envoyez un message."
+      },
+      "calling_unavailable": {
+        "title": "Les appels ne sont pas disponibles pour le moment",
+        "body": "Nous nous en occupons. Envoyez un message dans l'application ou parlez au support."
+      },
+      "call_failed": {
+        "title": "Nous n'avons pas pu établir l'appel",
+        "body": "Ce n'est pas de votre faute. Réessayez ou envoyez un message."
+      },
+      "no_driver": {
+        "title": "Les appels ouvrent bientôt",
+        "body": "Vous pourrez appeler dès qu'un chauffeur accepte cette course."
+      },
+      "not_active": {
+        "title": "Les appels ouvrent bientôt",
+        "body": "Vous pourrez appeler dès que le chauffeur aura accepté la course."
+      },
+      "cancelled": {
+        "title": "Cette course a été annulée",
+        "body": "Les appels ne servent que pour les trajets en cours."
+      },
+      "trip_over": {
+        "title": "Ce trajet est terminé",
+        "body": "Pour toute question à ce sujet, parlez au support."
+      },
+      "signed_out": {
+        "title": "Veuillez vous reconnecter",
+        "body": "Votre session a expiré."
+      },
+      "incoming_call": {
+        "title": "Il vous appelle en ce moment",
+        "body": "Répondez à l'appel sur votre écran. Si vous ne le voyez pas, rouvrez l'application."
+      },
+      "already_in_call": {
+        "title": "Vous êtes déjà en communication",
+        "body": "Terminez d'abord l'appel en cours."
+      },
+      "unknown": {
+        "title": "Une erreur est survenue",
+        "body": "Réessayez ou envoyez un message. Le support est là si besoin."
+      }
+    }
   }
 }
