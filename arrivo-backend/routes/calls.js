@@ -302,7 +302,20 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
     db.release();
   }
 
-  // Create the call at the provider and ring the other side.
+  return provisionCall(res, {
+    session,
+    reused,
+    rideId,
+    caller: { id: callerId, role: req.user.role, name: role === "rider" ? ride.rider_name : ride.driver_name },
+    callee: { id: calleeId, name: calleeName, pushToken: calleePush, label: role === "rider" ? "driver" : "rider" },
+    pushTitle: role === "rider" ? "Your rider is calling" : "Your driver is calling",
+    callerLabel: firstName(role === "rider" ? ride.rider_name : ride.driver_name),
+  });
+});
+
+// Creates the call at Stream, rings the callee and answers the HTTP request.
+// Shared by rider/driver calls and calls placed by staff.
+async function provisionCall(res, { session, reused, rideId, caller, callee, pushTitle, callerLabel }) {
   let clients;
   try {
     clients = clientsProvider();
@@ -317,13 +330,12 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
     });
   }
 
-  const callerIdStr = String(callerId);
-  const calleeIdStr = String(calleeId);
-  const callerName = role === "rider" ? ride.rider_name : ride.driver_name;
+  const callerIdStr = String(caller.id);
+  const calleeIdStr = String(callee.id);
   try {
     await clients.video.upsertUsers([
-      { id: callerIdStr, role: streamRoleFor(req.user.role), name: callerName || undefined },
-      { id: calleeIdStr, role: "user", name: calleeName || undefined },
+      { id: callerIdStr, role: streamRoleFor(caller.role), name: caller.name || undefined },
+      { id: calleeIdStr, role: "user", name: callee.name || undefined },
     ]);
     const call = clients.video.call(session.stream_call_type, session.stream_call_id);
     if (!reused) {
@@ -333,7 +345,7 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
         data: {
           created_by_id: callerIdStr,
           members: [{ user_id: callerIdStr }, { user_id: calleeIdStr }],
-          custom: { kind: "ride", rideId, sessionId: session.id, callerName: firstName(callerName) },
+          custom: { kind: "ride", rideId, sessionId: session.id, callerName: callerLabel },
         },
       });
     }
@@ -348,8 +360,8 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
       // A second, ordinary push in case the call ring does not reach a phone
       // that is locked or has the app closed.
       sendPushNotification(
-        calleePush,
-        role === "rider" ? "Your rider is calling" : "Your driver is calling",
+        callee.pushToken,
+        pushTitle,
         "Open RideArrivo to answer.",
         { type: "incoming_call", rideId, sessionId: session.id }
       ).catch(() => {});
@@ -359,7 +371,7 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
       session: publicSession(session),
       call: { type: session.stream_call_type, id: session.stream_call_id },
       join: { apiKey: process.env.STREAM_API_KEY, userId: callerIdStr, token },
-      callee: { role: role === "rider" ? "driver" : "rider", firstName: firstName(calleeName) },
+      callee: { role: callee.label, firstName: firstName(callee.name) },
       ringTimeoutSeconds: rules.RING_TIMEOUT_SECONDS,
       reused,
       support: supportInfo(),
@@ -374,6 +386,97 @@ router.post("/ride/:rideId/start", requireAuth, async (req, res) => {
       support: supportInfo(),
     });
   }
+}
+
+// POST /api/calls/staff/ride/:rideId/start   body: { target: "rider" | "driver", media? }
+// A support agent, operations person, head of support or admin calls the rider
+// or driver of a ride from the workspace. It rings in their app, shows the
+// staff member's first name, and is recorded like any other call. No number is
+// shown or dialled. Only the people on the ride's team (and the head of support
+// and admins) may place the call.
+router.post("/staff/ride/:rideId/start", requireAuth, requireAnyRole(["admin", "support", "operations"]), async (req, res) => {
+  const rideId = parseId(req.params.rideId);
+  const target = req.body && req.body.target;
+  if (!rideId || !["rider", "driver"].includes(target)) return res.status(400).json({ error: "Need a ride and a target (rider or driver)." });
+  const media = rules.normaliseMedia(req.body && req.body.media);
+
+  const ride = await loadRide(pool, rideId);
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  const calleeId = target === "rider" ? Number(ride.rider_id) : (ride.driver_user_id != null ? Number(ride.driver_user_id) : null);
+  if (!calleeId) return res.status(409).json({ error: "This ride has no driver yet.", code: "no_driver" });
+
+  const team = await pool.query("SELECT support_user_id, operations_user_id FROM ride_team WHERE ride_id = $1", [rideId]);
+  const t = team.rows[0] || {};
+  const onTeam = t.support_user_id === req.user.id || t.operations_user_id === req.user.id;
+  const manager = req.user.role === "admin" || (await require("../services/rideTeam").isLead(req.user.id));
+  if (!onTeam && !manager) {
+    return res.status(403).json({ error: "This ride is with another member of the team. Ask them, or the head of support.", code: "not_on_team" });
+  }
+
+  const me = await pool.query("SELECT name FROM users WHERE id = $1", [req.user.id]);
+  const myName = me.rows[0] && me.rows[0].name;
+  const calleeName = target === "rider" ? ride.rider_name : ride.driver_name;
+  const calleePush = target === "rider" ? ride.rider_push_token : ride.driver_push_token;
+
+  const db = await pool.connect();
+  let session;
+  let reused = false;
+  try {
+    await db.query("BEGIN");
+    await db.query("SELECT pg_advisory_xact_lock(7003, $1)", [calleeId]);
+    await db.query(
+      `UPDATE call_sessions SET status = 'missed', failure_reason = 'ring_timeout', ended_at = now()
+       WHERE status = 'ringing' AND (callee_user_id = $1 OR caller_user_id = $1)
+         AND created_at < now() - ($2 || ' seconds')::interval`,
+      [calleeId, String(rules.RING_TIMEOUT_SECONDS + rules.RING_GRACE_SECONDS)]
+    );
+    const live = await db.query(
+      `SELECT * FROM call_sessions WHERE status IN ('ringing','connected') AND (callee_user_id = $1 OR caller_user_id = $1)
+       ORDER BY created_at DESC LIMIT 1`, [calleeId]);
+    const existing = live.rows[0];
+    if (existing) {
+      await db.query("COMMIT");
+      if (existing.status === "ringing" && existing.caller_user_id === req.user.id && existing.callee_user_id === calleeId) {
+        reused = true;
+        session = existing;
+      } else {
+        return res.status(409).json({ error: `${firstName(calleeName) || "They"} is on another call right now. Try again in a moment.`, code: "callee_busy", support: supportInfo() });
+      }
+    } else {
+      const perHour = await db.query(
+        "SELECT count(*)::int AS n FROM call_sessions WHERE caller_user_id = $1 AND created_at > now() - interval '1 hour'", [req.user.id]);
+      if (perHour.rows[0].n >= 60) {
+        await db.query("ROLLBACK");
+        return res.status(429).json({ error: "That's a lot of calls this hour.", code: "rate_limited" });
+      }
+      const ins = await db.query(
+        `INSERT INTO call_sessions (id, ride_id, caller_user_id, callee_user_id, stream_call_id, media, placed_by_staff)
+         VALUES ($1,$2,$3,$4,$5,$6,true) RETURNING *`,
+        [crypto.randomUUID(), rideId, req.user.id, calleeId, `ride-${rideId}-${crypto.randomUUID()}`, media]);
+      session = ins.rows[0];
+      await db.query(
+        `INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action) VALUES ($1,$2,$3,$4,'call_in_app')`,
+        [req.user.id, rideId, calleeId, target]);
+      await db.query("COMMIT");
+    }
+  } catch (err) {
+    try { await db.query("ROLLBACK"); } catch (_) {}
+    console.error("Staff call start failed:", err.message);
+    return res.status(503).json({ error: "We couldn't start the call. Please try again.", code: "try_again" });
+  } finally {
+    db.release();
+  }
+
+  const staffFirst = firstName(myName) || "RideArrivo";
+  return provisionCall(res, {
+    session,
+    reused,
+    rideId,
+    caller: { id: req.user.id, role: req.user.role, name: `${staffFirst} (RideArrivo)` },
+    callee: { id: calleeId, name: calleeName, pushToken: calleePush, label: target },
+    pushTitle: `${staffFirst} from RideArrivo is calling`,
+    callerLabel: `${staffFirst} from RideArrivo`,
+  });
 });
 
 async function markFailed(sessionId, reason) {
@@ -509,8 +612,8 @@ router.post("/:sessionId/support", requireAuth, async (req, res) => {
     ].filter(Boolean).join("\n");
 
     const ticket = await db.query(
-      `INSERT INTO support_tickets (user_id, ride_id, type, subject, description)
-       VALUES ($1, $2, 'support', $3, $4) RETURNING id`,
+      `INSERT INTO support_tickets (user_id, ride_id, type, subject, description, assigned_to)
+       VALUES ($1, $2, 'support', $3, $4, (SELECT support_user_id FROM ride_team WHERE ride_id = $2)) RETURNING id`,
       [req.user.id, s.ride_id, `Call problem on ride #${s.ride_id}`, description]
     );
     await db.query("UPDATE call_sessions SET support_ticket_id = $2 WHERE id = $1", [s.id, ticket.rows[0].id]);

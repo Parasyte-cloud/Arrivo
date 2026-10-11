@@ -42,6 +42,8 @@ const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
+const staffRidesRouter = require("./routes/staffRides");
+const { startRideTeamSweep } = require("./services/rideTeam");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
 const instantRidesRouter = require("./routes/instantRides");
@@ -172,6 +174,7 @@ app.use("/api/owners", ownersRouter);
 app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
+app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
 app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
@@ -206,4 +209,7 @@ ready.then(() => {
   // services/scheduler.js. Started once, after the schema is ready, same
   // as the HTTP listener above.
   startScheduler();
+  // Keeps every open ride staffed: fills gaps and moves rides off anyone who
+  // has gone off duty. See services/rideTeam.js.
+  startRideTeamSweep();
 });
