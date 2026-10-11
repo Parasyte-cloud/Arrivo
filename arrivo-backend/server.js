@@ -22,6 +22,7 @@ const { originLock } = require("./middleware/originLock");
 const { createHealthRouter } = require("./routes/health");
 
 const authRouter = require("./routes/auth");
+const { maskCounterpartyPhones } = require("./services/contactPrivacy");
 const ridesRouter = require("./routes/rides");
 const flightsRouter = require("./routes/flights");
 const paymentsRouter = require("./routes/payments");
@@ -148,7 +149,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
-app.use("/api/rides", ridesRouter);
+app.use("/api/rides", maskCounterpartyPhones, ridesRouter);
 app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
@@ -173,7 +174,7 @@ app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
-app.use("/api/instant-rides", instantRidesRouter);
+app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/live-map", liveMapRouter);

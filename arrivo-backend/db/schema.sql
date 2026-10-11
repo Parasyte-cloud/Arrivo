@@ -1745,3 +1745,31 @@ CREATE TABLE IF NOT EXISTS safety_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_safety_events_recent ON safety_events(created_at DESC);
+
+
+-- ── In-app calls between a rider and their driver ──
+--
+-- One row per call attempt. Nobody ever sees the other person's phone number:
+-- the server creates the call (routes/calls.js), the apps join it by id, and
+-- this table records what happened so support can help when it goes wrong.
+--
+-- status: ringing | connected | ended | missed | declined | cancelled | failed
+CREATE TABLE IF NOT EXISTS call_sessions (
+  id TEXT PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  caller_user_id INTEGER NOT NULL REFERENCES users(id),
+  callee_user_id INTEGER NOT NULL REFERENCES users(id),
+  stream_call_type TEXT NOT NULL DEFAULT 'default',
+  stream_call_id TEXT NOT NULL UNIQUE,
+  media TEXT NOT NULL DEFAULT 'audio',
+  status TEXT NOT NULL DEFAULT 'ringing',
+  failure_reason TEXT,
+  support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  answered_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  duration_seconds INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_ride ON call_sessions(ride_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_caller ON call_sessions(caller_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_live ON call_sessions(status) WHERE status IN ('ringing', 'connected');
