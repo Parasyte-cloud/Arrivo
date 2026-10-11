@@ -23,7 +23,8 @@ async function request(path, token, options = {}) {
     if (res.status === 401) {
       window.dispatchEvent(new Event("auth:expired"));
     }
-    throw new Error(data.error || `Request failed (${res.status})`);
+    // status lets callers tell a rejected token (401/403) from a network or server fault.
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   }
   return data;
 }
@@ -188,3 +189,85 @@ export async function downloadExport(token, dataset, { from, to } = {}) {
 
   return { filename, rows: Number.isFinite(rows) ? rows : null };
 }
+
+// ── ArrivoExpress pricing, quests and automation (admin only) ───────────
+const EX = "/api/admin/express";
+export const getExpressPrices = (token) => request(`${EX}/prices`, token);
+export const getExpressPriceHistory = (token, tier) =>
+  request(`${EX}/prices/history${tier ? `?tier=${encodeURIComponent(tier)}` : ""}`, token);
+export const publishExpressPrices = (token, body) =>
+  request(`${EX}/prices`, token, { method: "POST", body: JSON.stringify(body) });
+export const logExpressSample = (token, body) =>
+  request(`${EX}/samples`, token, { method: "POST", body: JSON.stringify(body) });
+export const getExpressComparison = (token, days = 7) => request(`${EX}/comparison?days=${days}`, token);
+export const getExpressQuests = (token) => request(`${EX}/quests`, token);
+export const createExpressQuest = (token, body) =>
+  request(`${EX}/quests`, token, { method: "POST", body: JSON.stringify(body) });
+export const endExpressQuest = (token, id) => request(`${EX}/quests/${id}/end`, token, { method: "POST" });
+export const getExpressPayouts = (token, status) =>
+  request(`${EX}/payouts${status ? `?status=${status}` : ""}`, token);
+export const markExpressPayoutPaid = (token, id) => request(`${EX}/payouts/${id}/paid`, token, { method: "POST" });
+export const payExpressPayoutToWallet = (token, id) => request(`${EX}/payouts/${id}/pay-wallet`, token, { method: "POST" });
+export const payAllExpressPayouts = (token) =>
+  request(`${EX}/payouts/pay-all-owed`, token, { method: "POST", body: JSON.stringify({ confirm: true }) });
+export const getExpressAutomation = (token) => request(`${EX}/automation`, token);
+export const setExpressAutomation = (token, key, enabled) =>
+  request(`${EX}/automation`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getExpressRepricePlan = (token) => request(`${EX}/reprice/plan`, token);
+export const applyExpressReprice = (token) => request(`${EX}/reprice/apply`, token, { method: "POST" });
+export const getAdminCashouts = (token, status) =>
+  request(`/api/admin/cashouts${status ? `?status=${status}` : ""}`, token);
+export const approveCashout = (token, id) => request(`/api/admin/cashouts/${id}/approve`, token, { method: "POST" });
+export const declineCashout = (token, id, reason) =>
+  request(`/api/admin/cashouts/${id}/decline`, token, { method: "POST", body: JSON.stringify({ reason }) });
+export const checkCashout = (token, id) => request(`/api/admin/cashouts/${id}/check`, token, { method: "POST" });
+export const getExpressSampleRoutes = (token) => request(`${EX}/samples/routes`, token);
+export const getExpressSampleCoverage = (token) => request(`${EX}/samples/coverage`, token);
+export const logExpressSamplesBulk = (token, rows) =>
+  request(`${EX}/samples/bulk`, token, { method: "POST", body: JSON.stringify({ rows }) });
+
+// ── Trip safety (admin only) ────────────────────────────────────────────
+const SF = "/api/admin/safety";
+export const getSafetyOverview = (token) => request(`${SF}/overview`, token);
+export const setSafetySwitch = (token, key, enabled) =>
+  request(`${SF}/switches`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getSafetyComplaints = (token, status) =>
+  request(`${SF}/complaints${status ? `?status=${status}` : ""}`, token);
+export const resolveSafetyComplaint = (token, id, body) =>
+  request(`${SF}/complaints/${id}`, token, { method: "PATCH", body: JSON.stringify(body) });
+export const getSafetySelfies = (token) => request(`${SF}/selfies`, token);
+export const reviewSafetySelfie = (token, id, body) =>
+  request(`${SF}/selfies/${id}/review`, token, { method: "POST", body: JSON.stringify(body) });
+export const requireDriverRecheck = (token, driverId) =>
+  request(`${SF}/drivers/${driverId}/recheck`, token, { method: "POST" });
+export const overridePickupPin = (token, rideId, note) =>
+  request(`${SF}/rides/${rideId}/pin-override`, token, { method: "POST", body: JSON.stringify({ note }) });
+export const getSafetyEvents = (token) => request(`${SF}/events`, token);
+
+// ── Ride Desk: every ride with its team (support, operations, driver) ──
+// See arrivo-backend/routes/staffRides.js. Numbers only come with the detail view.
+export const getDesk = (token, { scope = "mine", state = "open", q = "" } = {}) =>
+  request(`/api/staff/rides?scope=${scope}&state=${state}${q ? `&q=${encodeURIComponent(q)}` : ""}`, token);
+export const getDeskRide = (token, id) => request(`/api/staff/rides/${id}`, token);
+export const getMyDuty = (token) => request("/api/staff/duty", token);
+export const setDuty = (token, body) => request("/api/staff/duty", token, { method: "PUT", body: JSON.stringify(body) });
+export const getDeskTeam = (token) => request("/api/staff/team", token);
+export const getAccessLog = (token) => request("/api/staff/access-log", token);
+export const reassignRide = (token, id, team, userId) =>
+  request(`/api/staff/rides/${id}/reassign`, token, { method: "POST", body: JSON.stringify({ team, userId }) });
+export const logPhoneCall = (token, rideId, subject) =>
+  request(`/api/staff/rides/${rideId}/contact-log`, token, { method: "POST", body: JSON.stringify({ subject, action: "call_from_phone" }) });
+export const startStaffCall = (token, rideId, target, media = "audio") =>
+  request(`/api/calls/staff/ride/${rideId}/start`, token, { method: "POST", body: JSON.stringify({ target, media }) });
+export const reportCall = (token, sessionId, event, reason) =>
+  request(`/api/calls/${encodeURIComponent(sessionId)}/events`, token, { method: "POST", body: JSON.stringify({ event, reason }) });
+export const setSupportLead = (token, userId, isLead) =>
+  request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
+export const getPeople = (token) => request("/api/staff/people", token);
+export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
+export const promotePerson = (token, email, role, note) =>
+  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const changePersonRole = (token, id, role, note) =>
+  request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
+export const setCanManageStaff = (token, id, allowed) =>
+  request(`/api/staff/people/${id}/manage`, token, { method: "PUT", body: JSON.stringify({ allowed }) });

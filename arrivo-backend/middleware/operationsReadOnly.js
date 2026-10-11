@@ -18,6 +18,25 @@ const OPERATIONS_GET_RULES = [
   /^\/api\/on-the-go\/?$/,
 ];
 
+// The few writes operations may make: go on or off duty, say they phoned
+// someone from their own phone, ring a rider or driver in the app, and report
+// on a call they are in. Everything else stays read-only.
+const OPERATIONS_WRITE_RULES = [
+  { method: "PUT", pattern: /^\/api\/staff\/duty\/?$/ },
+  { method: "POST", pattern: /^\/api\/staff\/rides\/\d+\/contact-log\/?$/ },
+  { method: "POST", pattern: /^\/api\/calls\/staff\/ride\/\d+\/start\/?$/ },
+  { method: "POST", pattern: /^\/api\/calls\/token\/?$/ },
+  { method: "POST", pattern: /^\/api\/calls\/[^/]+\/events\/?$/ },
+];
+
+// Operations sees the same Rides section as support.
+const OPERATIONS_STAFF_GET = [
+  /^\/api\/staff\/rides\/?$/,
+  /^\/api\/staff\/rides\/\d+\/?$/,
+  /^\/api\/staff\/duty\/?$/,
+  /^\/api\/staff\/team\/?$/,
+];
+
 function requestPath(req) {
   return String(req.originalUrl || req.url || "").split("?")[0];
 }
@@ -31,8 +50,11 @@ function enforceOperationsReadOnly(req, res, next) {
 
   if (
     req.method === "GET"
-    && OPERATIONS_GET_RULES.some((rule) => rule.test(path))
+    && (OPERATIONS_GET_RULES.some((rule) => rule.test(path)) || OPERATIONS_STAFF_GET.some((rule) => rule.test(path)))
   ) {
+    return next();
+  }
+  if (OPERATIONS_WRITE_RULES.some((rule) => rule.method === req.method && rule.pattern.test(path))) {
     return next();
   }
 
@@ -44,5 +66,7 @@ function enforceOperationsReadOnly(req, res, next) {
 
 module.exports = {
   OPERATIONS_GET_RULES,
+  OPERATIONS_WRITE_RULES,
+  OPERATIONS_STAFF_GET,
   enforceOperationsReadOnly,
 };

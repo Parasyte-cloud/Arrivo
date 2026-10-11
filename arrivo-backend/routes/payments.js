@@ -611,7 +611,24 @@ router.post(
       return res.sendStatus(400);
     }
 
-    // Other event types (transfers, refunds...) are acknowledged and ignored.
+    // Driver cash-out transfers report their outcome here. Settling is safe to
+    // repeat (Paystack retries), so always acknowledge unless it threw.
+    if (typeof event.event === "string" && event.event.startsWith("transfer.")) {
+      const outcome = { "transfer.success": "success", "transfer.failed": "failed", "transfer.reversed": "reversed" }[event.event];
+      if (outcome && event.data && event.data.reference) {
+        try {
+          await require("../services/driverCashout").settleByReference(event.data.reference, outcome, {
+            transferCode: event.data.transfer_code, reason: event.data.reason,
+          });
+        } catch (err) {
+          console.error("Cash-out webhook settle failed:", err.message);
+          return res.sendStatus(500); // make Paystack retry
+        }
+      }
+      return res.sendStatus(200);
+    }
+
+    // Other event types (refunds...) are acknowledged and ignored.
     if (event.event !== "charge.success") return res.sendStatus(200);
 
     const data = event.data || {};
