@@ -72,7 +72,7 @@ export function Sidebar({ page, setPage, open, onClose }) {
           borderRadius: 999, fontSize: 10.5, fontWeight: 700, color: "var(--amber)",
           textAlign: "center", letterSpacing: "0.04em",
         }}>
-          READ-ONLY · {isOperations ? "OPERATIONS" : "SUPPORT"}
+          {isOperations ? "OPERATIONS" : "SUPPORT"} · VIEW AND RIDES
         </div>
       ) : null}
 

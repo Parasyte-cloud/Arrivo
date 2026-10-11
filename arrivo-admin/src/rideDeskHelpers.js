@@ -45,6 +45,7 @@ export function tabsFor({ role, isLead }) {
     { id: "team", label: "Team" },
   ];
   if (role === "admin" || isLead) base.push({ id: "log", label: "Number access log" });
+  if (role === "admin" || isLead) base.push({ id: "people", label: "People" });
   return base;
 }
 
@@ -66,4 +67,14 @@ export function teamLine(team) {
   if (team && team.support) parts.push(`${team.support.firstName} (Support)`);
   if (team && team.operations) parts.push(`${team.operations.firstName} (Operations)`);
   return parts.length ? parts.join(" and ") : "Waiting for a team";
+}
+
+// Roles the viewer may move this person to. Mirrors the server's rules (the
+// server decides; this only keeps buttons honest). "rider" means remove.
+//   me: { isOwner, canManage }   target: { id, role, is_owner }
+export function roleOptions(me, target, selfId) {
+  if (!me || !me.canManage || !target || target.is_owner || target.id === selfId) return [];
+  const all = me.isOwner ? ["admin", "support", "operations"] : ["support", "operations"];
+  if (!me.isOwner && target.role === "admin") return [];
+  return all.filter((r) => r !== target.role);
 }

@@ -1966,3 +1966,20 @@ END $$;
 -- agent's workload, can move rides between support agents, put agents on or off
 -- duty, and read the number-access log. Set by an admin only.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS support_lead BOOLEAN NOT NULL DEFAULT false;
+
+-- Owner and staff management. The owner (set only from the command line, see
+-- scripts/set-owner.js) can promote and remove anyone and can delegate that to
+-- named admins with can_manage_staff. Every change is written to staff_role_events.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_staff BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS staff_role_events (
+  id BIGSERIAL PRIMARY KEY,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  from_role TEXT,
+  to_role TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_role_events_created ON staff_role_events(created_at DESC);

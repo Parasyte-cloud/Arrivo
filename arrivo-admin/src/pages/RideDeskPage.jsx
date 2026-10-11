@@ -4,7 +4,7 @@ import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { StaffCallButton } from "../components/StaffCallButton";
 import { formatDateTime } from "../utils";
-import { greeting, callOutcome, statusLabel, tabsFor, reassignableTeams, canManageDuty, teamLine, firstName } from "../rideDeskHelpers";
+import { greeting, callOutcome, statusLabel, tabsFor, reassignableTeams, canManageDuty, teamLine, firstName, roleOptions } from "../rideDeskHelpers";
 
 // Ride Desk: the one place support, operations and admins deal with a ride.
 // Every ride has a support agent, an operations person and (once accepted) a
@@ -214,6 +214,88 @@ function TeamTab({ me, isLead, token }) {
   );
 }
 
+function PeopleTab({ token, meId }) {
+  const [data, setData] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [err, setErr] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("support");
+  const load = useCallback(async () => {
+    try { setData(await api.getPeople(token)); setEvents((await api.getPeopleEvents(token)).events); setErr(null); } catch (e) { setErr(e.message); }
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+  if (err && !data) return <div className="error-text">{err}</div>;
+  if (!data) return <div className="empty-state">Loading…</div>;
+  const { me, people } = data;
+  const act = async (fn, ok) => {
+    setErr(null); setMsg(null);
+    try { await fn(); setMsg(ok); await load(); } catch (e) { setErr(e.message); }
+  };
+  const change = (p, r) => {
+    const word = r === "rider" ? `Remove ${firstName(p.name)} from staff? They will be signed out and their open rides move to others.` : `Make ${firstName(p.name)} ${r}? They will be signed out and must sign in again.`;
+    if (window.confirm(word)) act(() => api.changePersonRole(token, p.id, r), `${firstName(p.name)} is now ${r === "rider" ? "removed from staff" : r}.`);
+  };
+  const eventText = { promote: "brought onto staff", change: "changed role", remove: "removed from staff", grant_manage: "given staff management", revoke_manage: "staff management taken away" };
+  return (
+    <div data-testid="people">
+      {msg ? <div className="desk-waiting">{msg}</div> : null}
+      {err ? <div className="error-text">{err}</div> : null}
+      {me.canManage ? (
+        <form className="desk-promote" onSubmit={(e) => { e.preventDefault(); act(() => api.promotePerson(token, email.trim(), role), "Done. They must sign in again."); setEmail(""); }}>
+          <input type="email" required placeholder="Email of an existing account" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
+          <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role">
+            <option value="support">Support</option>
+            <option value="operations">Operations</option>
+            {me.isOwner ? <option value="admin">Admin</option> : null}
+          </select>
+          <button className="btn" type="submit">Add to staff</button>
+        </form>
+      ) : <div className="desk-waiting">You can see everyone on staff. Only the owner, or an admin the owner has given staff management, can change it.</div>}
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>On duty</th><th>Open rides</th><th></th></tr></thead>
+          <tbody>
+            {people.map((p) => {
+              const opts = roleOptions(me, p, meId);
+              return (
+                <tr key={p.id}>
+                  <td>{p.name}<div className="desk-sub">{p.email}</div></td>
+                  <td>{p.is_owner ? "Owner" : p.role}{p.support_lead ? <span className="desk-lead"> Head of support</span> : null}{p.can_manage_staff ? <span className="desk-lead"> Manages staff</span> : null}</td>
+                  <td>{p.on_duty ? <StatusPill label="On duty" tone="teal" /> : <StatusPill label="Off duty" tone="muted" />}</td>
+                  <td>{p.openRides}</td>
+                  <td className="desk-actions">
+                    {opts.map((r) => <button key={r} className="btn ghost" onClick={() => change(p, r)}>Make {r}</button>)}
+                    {opts.length ? <button className="btn ghost" onClick={() => change(p, "rider")}>Remove</button> : null}
+                    {me.isOwner && p.role === "admin" && !p.is_owner ? (
+                      <button className="btn ghost" onClick={() => act(() => api.setCanManageStaff(token, p.id, !p.can_manage_staff), "Saved.")}>
+                        {p.can_manage_staff ? "Take away staff management" : "Let manage staff"}
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <h3 className="desk-h3">Recent changes</h3>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>
+          <tbody>
+            {events.map((e) => (
+              <tr key={e.id}><td>{formatDateTime(e.created_at)}</td><td>{e.actor_name || "Someone"}</td>
+                <td>{e.target_name || "A person"} {eventText[e.action] || e.action}{e.from_role && e.to_role && e.from_role !== e.to_role ? ` (${e.from_role} to ${e.to_role})` : ""}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        {!events.length ? <div className="empty-state">No changes yet.</div> : null}
+      </div>
+    </div>
+  );
+}
+
 function LogTab({ token }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
@@ -306,6 +388,7 @@ export function RideDeskPage() {
 
       {tab === "team" ? <TeamTab me={user} isLead={isLead} token={token} /> : null}
       {tab === "log" ? <LogTab token={token} /> : null}
+      {tab === "people" ? <PeopleTab token={token} meId={user.id} /> : null}
 
       {isRides ? (
         <div className="desk-split">

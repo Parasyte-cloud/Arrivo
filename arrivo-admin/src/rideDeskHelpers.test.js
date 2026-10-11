@@ -1,6 +1,6 @@
 // Run directly: node src/rideDeskHelpers.test.js
 import assert from "node:assert";
-import { firstName, greeting, callOutcome, formatSeconds, tabsFor, reassignableTeams, canManageDuty, teamLine } from "./rideDeskHelpers.js";
+import { roleOptions, firstName, greeting, callOutcome, formatSeconds, tabsFor, reassignableTeams, canManageDuty, teamLine } from "./rideDeskHelpers.js";
 
 let passed = 0;
 const test = (n, f) => { try { f(); console.log(`  ok  ${n}`); passed++; } catch (e) { console.log(`FAIL  ${n}\n${e.stack}`); process.exitCode = 1; } };
@@ -42,3 +42,15 @@ test("team line", () => {
   assert.strictEqual(teamLine(null), "Waiting for a team");
 });
 console.log(`\n${passed} passed`);
+
+{
+  const owner = { isOwner: true, canManage: true }, dele = { isOwner: false, canManage: true }, none = { isOwner: false, canManage: false };
+  assert.deepStrictEqual(roleOptions(owner, { id: 5, role: "support" }, 1), ["admin", "operations"]);
+  assert.deepStrictEqual(roleOptions(dele, { id: 5, role: "support" }, 1), ["operations"]);
+  assert.deepStrictEqual(roleOptions(dele, { id: 5, role: "admin" }, 1), []);
+  assert.deepStrictEqual(roleOptions(owner, { id: 1, role: "admin" }, 1), []);
+  assert.deepStrictEqual(roleOptions(owner, { id: 2, role: "admin", is_owner: true }, 1), []);
+  assert.deepStrictEqual(roleOptions(none, { id: 5, role: "support" }, 1), []);
+  console.log("roleOptions ok");
+}
+
