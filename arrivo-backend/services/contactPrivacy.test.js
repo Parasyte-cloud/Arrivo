@@ -72,4 +72,15 @@ test("user set after wrapping (requireAuth runs later) is honoured", () => {
   assert.ok(has(sent, "driver_phone"));
 });
 
+test("co-riders' phones (shareParticipants) are hidden from the driver, kept for the owning rider, and a nested driver phone never is", () => {
+  const r = { id: 9, rider_id: 1, shareParticipants: [{ id: 1, name: "Bola", phone: "+2348099999999" }], driver: { name: "Ibrahim", phone: "+2348055500123" } };
+  const d = JSON.stringify(stripPhones(r, { id: 2, role: "driver" }));
+  assert.ok(!/2348099999999|2348055500123/.test(d), d);
+  const o = JSON.stringify(stripPhones(r, { id: 1, role: "rider" }));
+  assert.ok(o.includes("2348099999999"), "owner keeps co-rider phone");
+  assert.ok(!o.includes("2348055500123"), "owner never gets the driver phone");
+  const other = JSON.stringify(stripPhones(r, { id: 3, role: "rider" }));
+  assert.ok(!/2348099999999|2348055500123/.test(other));
+});
+
 console.log(`\n${passed} passed`);

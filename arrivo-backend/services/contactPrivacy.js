@@ -22,6 +22,9 @@ const COUNTERPARTY_PHONE_KEYS = new Set([
   "phone_number",
   "contact_phone",
   "owner_whatsapp",
+  // Plain "phone" appears on people attached to a ride (shareParticipants
+  // are other riders in the party). Only the rider who owns the ride sees them.
+  "phone",
 ]);
 
 // The rider's own emergency contact is for RideArrivo to use if the rider
@@ -44,21 +47,24 @@ function stripPhones(value, viewer, ctx = {}) {
   if (value instanceof Date || Buffer.isBuffer(value)) return value;
 
   const viewerId = viewer && viewer.id != null ? Number(viewer.id) : null;
+  // A ride the viewer owns passes that fact down to everything nested in it.
   const ownsThisRide =
-    viewerId !== null && value.rider_id !== undefined && Number(value.rider_id) === viewerId;
+    !!ctx.ownsRide ||
+    (viewerId !== null && value.rider_id !== undefined && Number(value.rider_id) === viewerId);
+  const childCtx = ownsThisRide ? { ...ctx, ownsRide: true } : ctx;
   const viewerIsRider = viewer && viewer.role === "rider";
 
   const out = {};
   for (const [key, v] of Object.entries(value)) {
     if (COUNTERPARTY_PHONE_KEYS.has(key)) {
       // A rider reading their own booking may see the number they gave us.
-      if (ownsThisRide && viewerIsRider && (key === "rider_phone" || key === "rider_whatsapp_number" || key === "rider_whatsapp")) {
+      if (ownsThisRide && viewerIsRider && (key === "rider_phone" || key === "rider_whatsapp_number" || key === "rider_whatsapp" || (key === "phone" && ctx.parentKey === "shareParticipants"))) {
         out[key] = v;
       }
       continue;
     }
     if (EMERGENCY_KEYS.has(key) && !(ownsThisRide && viewerIsRider)) continue;
-    out[key] = stripPhones(v, viewer, ctx);
+    out[key] = stripPhones(v, viewer, { ...childCtx, parentKey: key });
   }
   return out;
 }
