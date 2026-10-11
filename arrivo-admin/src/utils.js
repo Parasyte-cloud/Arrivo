@@ -37,7 +37,7 @@ export function downloadCsv(filename, rows, columns) {
     // is opened, not plain text. Prefixing with a single quote is the
     // standard mitigation -- it neutralizes the formula and is invisible
     // in every spreadsheet app's rendered view.
-    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const header = columns.map((c) => c.label).join(",");

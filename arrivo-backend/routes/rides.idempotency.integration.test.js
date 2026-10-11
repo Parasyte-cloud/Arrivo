@@ -130,10 +130,20 @@ await test("wallet booking without an idempotencyKey is rejected", async () => {
   assert.ok(/idempotencyKey/.test(r.body.error), `expected an idempotencyKey error, got ${JSON.stringify(r.body)}`);
 });
 
-await test("card booking does not require an idempotencyKey", async () => {
+await test("card booking does not require an idempotencyKey (it needs a real payment instead)", async () => {
   const rider = await makeRider("no-key-card");
-  const r = await call("/api/rides", { method: "POST", token: rider.token, body: rideBody({ paymentMethod: "card" }) });
-  assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+  // The booking now asks Paystack whether the payment is real, so the test
+  // answers for it: a successful naira payment large enough for any fare.
+  const axios = require("axios");
+  const realGet = axios.get;
+  axios.get = async () => ({ data: { data: { status: "success", amount: 1000000000, currency: "NGN", paid_at: new Date().toISOString() } } });
+  try {
+    const r = await call("/api/rides", { method: "POST", token: rider.token, body: rideBody({ paymentMethod: "card", paymentReference: `idem-card-${stamp}` }) });
+    assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+    assert.strictEqual(r.body.ride.payment_status, "paid");
+  } finally {
+    axios.get = realGet;
+  }
 });
 
 console.log("");

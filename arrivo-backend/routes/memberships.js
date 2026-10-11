@@ -81,14 +81,55 @@ router.get("/mine", requireAuth, async (req, res) => {
   });
 });
 
-// POST /api/memberships/subscribe   body: { plan: 'premium' | 'executive' }
+// POST /api/memberships/subscribe
+// body: { plan: 'premium' | 'executive', idempotencyKey? }
+//
+// Takes the price from the wallet, so two things must never happen:
+//   * two requests at once both charging (a double tap, two devices);
+//   * a retry after a lost response charging again, or turning a success the
+//     rider never saw into an "already a member" error.
+//
+// The first is closed by locking the rider's user row BEFORE checking for an
+// existing membership. Every subscribe for the same rider then queues behind
+// the one in progress, and the second sees the first's committed membership.
+// (This used to check for an existing membership first and lock the balance
+// afterwards, so both requests passed the check and both debited.)
+//
+// The second is closed by idempotencyKey. It is optional so builds already in
+// the stores, which send none, keep working; the row lock still protects them
+// from a double charge. A retry with the same key and the same plan gets the
+// original answer back; the same key for a different plan is refused.
 router.post("/subscribe", requireAuth, async (req, res) => {
   const plan = getPlan(req.body?.plan);
   if (!plan) return res.status(400).json({ error: "plan must be 'premium' or 'executive'." });
 
+  const rawKey = req.body?.idempotencyKey;
+  const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
+  if (rawKey !== undefined && rawKey !== null && (!idempotencyKey || idempotencyKey.length > 100)) {
+    return res.status(400).json({ error: "idempotencyKey must be a string of 1 to 100 characters." });
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // The lock. Held until COMMIT or ROLLBACK.
+    const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+    const balance = Number(userResult.rows[0].wallet_balance_naira);
+
+    if (idempotencyKey) {
+      const prior = await client.query(
+        "SELECT plan_key, response_status, response_body FROM membership_idempotency_keys WHERE user_id = $1 AND idempotency_key = $2",
+        [req.user.id, idempotencyKey]
+      );
+      if (prior.rows[0]) {
+        await client.query("ROLLBACK");
+        if (prior.rows[0].plan_key !== plan.key) {
+          return res.status(409).json({ error: "This idempotency key was already used for a different plan." });
+        }
+        return res.status(prior.rows[0].response_status).json(prior.rows[0].response_body);
+      }
+    }
 
     const existing = await client.query(
       `SELECT * FROM memberships WHERE user_id = $1 AND plan_type IN ('premium', 'executive') AND status = 'active' AND expires_at > now()`,
@@ -99,8 +140,6 @@ router.post("/subscribe", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "You already have an active membership.", membership: existing.rows[0] });
     }
 
-    const userResult = await client.query("SELECT wallet_balance_naira FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
-    const balance = Number(userResult.rows[0].wallet_balance_naira);
     if (balance < plan.priceNaira) {
       await client.query("ROLLBACK");
       return res.status(400).json({
@@ -126,11 +165,21 @@ router.post("/subscribe", requireAuth, async (req, res) => {
     await client.query(
       `INSERT INTO wallet_transactions (user_id, type, status, amount_naira, balance_after_naira, description)
        VALUES ($1, 'membership_charge', 'completed', $2, $3, $4)`,
-      [req.user.id, -plan.priceNaira, newBalance, `${plan.label} membership — monthly`]
+      [req.user.id, -plan.priceNaira, newBalance, `${plan.label} membership, monthly`]
     );
 
+    const responseBody = { membership: membershipResult.rows[0], walletBalanceNaira: newBalance };
+    if (idempotencyKey) {
+      // Same transaction as the charge: both commit, or neither does.
+      await client.query(
+        `INSERT INTO membership_idempotency_keys (user_id, idempotency_key, plan_key, response_status, response_body)
+         VALUES ($1, $2, $3, 201, $4)`,
+        [req.user.id, idempotencyKey, plan.key, JSON.stringify(responseBody)]
+      );
+    }
+
     await client.query("COMMIT");
-    res.status(201).json({ membership: membershipResult.rows[0], walletBalanceNaira: newBalance });
+    res.status(201).json(responseBody);
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Membership subscribe failed:", err.message);

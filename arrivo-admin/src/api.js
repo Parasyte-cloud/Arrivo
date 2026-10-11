@@ -23,7 +23,8 @@ async function request(path, token, options = {}) {
     if (res.status === 401) {
       window.dispatchEvent(new Event("auth:expired"));
     }
-    throw new Error(data.error || `Request failed (${res.status})`);
+    // status lets callers tell a rejected token (401/403) from a network or server fault.
+    throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
   }
   return data;
 }
@@ -146,3 +147,135 @@ export const createPartnerVenue = (token, venue) =>
   request("/api/admin/partner-venues", token, { method: "POST", body: JSON.stringify(venue) });
 export const updatePartnerVenue = (token, id, updates) =>
   request(`/api/admin/partner-venues/${id}`, token, { method: "PATCH", body: JSON.stringify(updates) });
+
+// ── Operations CSV exports ──────────────────────────────────────────────
+export const getExportList = (token) => request("/api/admin/exports", token);
+export const getExportHistory = (token) => request("/api/admin/exports/history", token);
+
+// A download cannot go through request(): that parses JSON, and this answers
+// with a file. It also cannot be a plain link, because the file is behind the
+// sign-in token, which a link cannot carry. So fetch it with the token, then
+// hand the bytes to the browser as a download.
+export async function downloadExport(token, dataset, { from, to } = {}) {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/exports/${encodeURIComponent(dataset)}${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event("auth:expired"));
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed (${res.status})`);
+  }
+
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : `arrivo-${dataset}.csv`;
+  const rows = Number(res.headers.get("X-Row-Count"));
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return { filename, rows: Number.isFinite(rows) ? rows : null };
+}
+
+// In-trip audio. Admin role only; the API refuses cookie-only sessions, and
+// every play-urls call is written to the recording's access log.
+export const getRideRecordings = (token, rideId) => request(`/api/admin/recordings?rideId=${encodeURIComponent(rideId)}`, token);
+export const getRecordingPlayUrls = (token, id) => request(`/api/admin/recordings/${id}/play-urls`, token, { method: "POST" });
+export const setRecordingHold = (token, id, hold) =>
+  request(`/api/admin/recordings/${id}/hold`, token, { method: "POST", body: JSON.stringify({ hold }) });
+export const getRecordingAccessLog = (token, id) => request(`/api/admin/recordings/${id}/access-log`, token);
+
+// ── ArrivoExpress pricing, quests and automation (admin only) ───────────
+const EX = "/api/admin/express";
+export const getExpressPrices = (token) => request(`${EX}/prices`, token);
+export const getExpressPriceHistory = (token, tier) =>
+  request(`${EX}/prices/history${tier ? `?tier=${encodeURIComponent(tier)}` : ""}`, token);
+export const publishExpressPrices = (token, body) =>
+  request(`${EX}/prices`, token, { method: "POST", body: JSON.stringify(body) });
+export const logExpressSample = (token, body) =>
+  request(`${EX}/samples`, token, { method: "POST", body: JSON.stringify(body) });
+export const getExpressComparison = (token, days = 7) => request(`${EX}/comparison?days=${days}`, token);
+export const getExpressQuests = (token) => request(`${EX}/quests`, token);
+export const createExpressQuest = (token, body) =>
+  request(`${EX}/quests`, token, { method: "POST", body: JSON.stringify(body) });
+export const endExpressQuest = (token, id) => request(`${EX}/quests/${id}/end`, token, { method: "POST" });
+export const getExpressPayouts = (token, status) =>
+  request(`${EX}/payouts${status ? `?status=${status}` : ""}`, token);
+export const markExpressPayoutPaid = (token, id) => request(`${EX}/payouts/${id}/paid`, token, { method: "POST" });
+export const payExpressPayoutToWallet = (token, id) => request(`${EX}/payouts/${id}/pay-wallet`, token, { method: "POST" });
+export const payAllExpressPayouts = (token) =>
+  request(`${EX}/payouts/pay-all-owed`, token, { method: "POST", body: JSON.stringify({ confirm: true }) });
+export const getExpressAutomation = (token) => request(`${EX}/automation`, token);
+export const setExpressAutomation = (token, key, enabled) =>
+  request(`${EX}/automation`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getExpressRepricePlan = (token) => request(`${EX}/reprice/plan`, token);
+export const applyExpressReprice = (token) => request(`${EX}/reprice/apply`, token, { method: "POST" });
+export const getAdminCashouts = (token, status) =>
+  request(`/api/admin/cashouts${status ? `?status=${status}` : ""}`, token);
+export const approveCashout = (token, id) => request(`/api/admin/cashouts/${id}/approve`, token, { method: "POST" });
+export const declineCashout = (token, id, reason) =>
+  request(`/api/admin/cashouts/${id}/decline`, token, { method: "POST", body: JSON.stringify({ reason }) });
+export const checkCashout = (token, id) => request(`/api/admin/cashouts/${id}/check`, token, { method: "POST" });
+export const getExpressSampleRoutes = (token) => request(`${EX}/samples/routes`, token);
+export const getExpressSampleCoverage = (token) => request(`${EX}/samples/coverage`, token);
+export const logExpressSamplesBulk = (token, rows) =>
+  request(`${EX}/samples/bulk`, token, { method: "POST", body: JSON.stringify({ rows }) });
+
+// ── Trip safety (admin only) ────────────────────────────────────────────
+const SF = "/api/admin/safety";
+export const getSafetyOverview = (token) => request(`${SF}/overview`, token);
+export const setSafetySwitch = (token, key, enabled) =>
+  request(`${SF}/switches`, token, { method: "PATCH", body: JSON.stringify({ key, enabled }) });
+export const getSafetyComplaints = (token, status) =>
+  request(`${SF}/complaints${status ? `?status=${status}` : ""}`, token);
+export const resolveSafetyComplaint = (token, id, body) =>
+  request(`${SF}/complaints/${id}`, token, { method: "PATCH", body: JSON.stringify(body) });
+export const getSafetySelfies = (token) => request(`${SF}/selfies`, token);
+export const reviewSafetySelfie = (token, id, body) =>
+  request(`${SF}/selfies/${id}/review`, token, { method: "POST", body: JSON.stringify(body) });
+export const requireDriverRecheck = (token, driverId) =>
+  request(`${SF}/drivers/${driverId}/recheck`, token, { method: "POST" });
+export const overridePickupPin = (token, rideId, note) =>
+  request(`${SF}/rides/${rideId}/pin-override`, token, { method: "POST", body: JSON.stringify({ note }) });
+export const getSafetyEvents = (token) => request(`${SF}/events`, token);
+
+// ── Ride Desk: every ride with its team (support, operations, driver) ──
+// See arrivo-backend/routes/staffRides.js. Numbers only come with the detail view.
+export const getDesk = (token, { scope = "mine", state = "open", q = "" } = {}) =>
+  request(`/api/staff/rides?scope=${scope}&state=${state}${q ? `&q=${encodeURIComponent(q)}` : ""}`, token);
+export const getDeskRide = (token, id) => request(`/api/staff/rides/${id}`, token);
+export const getMyDuty = (token) => request("/api/staff/duty", token);
+export const setDuty = (token, body) => request("/api/staff/duty", token, { method: "PUT", body: JSON.stringify(body) });
+export const getDeskTeam = (token) => request("/api/staff/team", token);
+export const getAccessLog = (token) => request("/api/staff/access-log", token);
+export const reassignRide = (token, id, team, userId) =>
+  request(`/api/staff/rides/${id}/reassign`, token, { method: "POST", body: JSON.stringify({ team, userId }) });
+export const logPhoneCall = (token, rideId, subject) =>
+  request(`/api/staff/rides/${rideId}/contact-log`, token, { method: "POST", body: JSON.stringify({ subject, action: "call_from_phone" }) });
+export const startStaffCall = (token, rideId, target, media = "audio") =>
+  request(`/api/calls/staff/ride/${rideId}/start`, token, { method: "POST", body: JSON.stringify({ target, media }) });
+export const reportCall = (token, sessionId, event, reason) =>
+  request(`/api/calls/${encodeURIComponent(sessionId)}/events`, token, { method: "POST", body: JSON.stringify({ event, reason }) });
+export const setSupportLead = (token, userId, isLead) =>
+  request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
+export const getPeople = (token) => request("/api/staff/people", token);
+export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
+export const promotePerson = (token, email, role, note) =>
+  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const changePersonRole = (token, id, role, note) =>
+  request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
+export const setCanManageStaff = (token, id, allowed) =>
+  request(`/api/staff/people/${id}/manage`, token, { method: "PUT", body: JSON.stringify({ allowed }) });

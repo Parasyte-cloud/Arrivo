@@ -1,5 +1,22 @@
 import { API_BASE_URL } from "./config";
 
+// One place that hears about a rejected sign-in. Any call that carried an
+// Authorization header and got a 401 means the saved session is dead (expired,
+// revoked, or the account was removed), so AuthContext signs the user out
+// cleanly instead of every screen showing its own "Request failed (401)".
+// Calls with no Authorization header (login, signup, forgot-password) never
+// trigger it, so a wrong password does not sign anyone out.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+export function notifyUnauthorized(status, headers) {
+  if (status !== 401 || !unauthorizedHandler) return;
+  const sent = headers && (headers.Authorization || headers.authorization);
+  if (!sent) return;
+  try { unauthorizedHandler(sent); } catch { /* signing out must never throw into a screen */ }
+}
+
 async function request(path, options = {}) {
   // See identical note in arrivo-app/services/api.js — headers must be
   // merged, not spread at the top level, or a caller's own `headers` (e.g.
@@ -11,7 +28,12 @@ async function request(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
+    err.code = data.code;
+    err.support = data.support; // company support details, never a rider's or driver's number
+    err.sessionId = data.sessionId; // lets screens show the message in the driver's language
+    err.params = data.params;
     err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
+    notifyUnauthorized(res.status, options.headers);
     throw err;
   }
   return data;
@@ -63,6 +85,22 @@ export function setOnlineStatus(token, isOnline) {
 }
 export function updateLocation(token, lat, lng) {
   return request("/api/drivers/location", authed(token, { method: "PATCH", body: JSON.stringify({ lat, lng }) }));
+}
+// Cash-out (wallet to bank)
+export function getCashout(token) {
+  return request("/api/cashout", authed(token));
+}
+export function getCashoutBanks(token) {
+  return request("/api/cashout/banks", authed(token));
+}
+export function saveCashoutBank(token, bankCode, accountNumber) {
+  return request("/api/cashout/bank", authed(token, { method: "PUT", body: JSON.stringify({ bankCode, accountNumber }) }));
+}
+export function withdrawCashout(token, amountNaira, idempotencyKey) {
+  return request("/api/cashout/withdraw", authed(token, { method: "POST", body: JSON.stringify({ amountNaira, idempotencyKey }) }));
+}
+export function getDriverQuests(token) {
+  return request("/api/instant-rides/driver/quests", authed(token));
 }
 export function getEarnings(token) {
   return request("/api/drivers/earnings", authed(token));
@@ -148,4 +186,51 @@ export function deleteAccount(token, confirmEmail) {
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ confirmEmail }),
   });
+}
+
+// ── In-trip audio recording (off unless the server says so) ──
+export function getRecordingConfig(token) {
+  return request("/api/recordings/config", authed(token));
+}
+export function startAudioRecording(token, rideId, viaPanic) {
+  return request("/api/recordings/start", authed(token, { method: "POST", body: JSON.stringify({ rideId, consent: true, viaPanic: !!viaPanic }) }));
+}
+export function requestAudioChunk(token, recordingId, seq, contentType, sizeBytes) {
+  return request(`/api/recordings/${recordingId}/chunks`, authed(token, { method: "POST", body: JSON.stringify({ seq, contentType, sizeBytes }) }));
+}
+export function completeAudioChunk(token, recordingId, seq, durationSec) {
+  return request(`/api/recordings/${recordingId}/chunks/${seq}/complete`, authed(token, { method: "POST", body: JSON.stringify({ durationSec }) }));
+}
+export function finishAudioRecording(token, recordingId) {
+  return request(`/api/recordings/${recordingId}/finish`, authed(token, { method: "POST" }));
+}
+
+// Trip safety
+export function verifyPickupPin(token, rideId, pin) {
+  return request(`/api/safety/rides/${rideId}/pin/verify`, authed(token, { method: "POST", body: JSON.stringify({ pin }) }));
+}
+export function getSelfieStatus(token) {
+  return request("/api/safety/selfie/status", authed(token));
+}
+export function submitSelfie(token, imageDataUrl, challenge) {
+  return request("/api/safety/selfie", authed(token, { method: "POST", body: JSON.stringify({ imageDataUrl, challenge }) }));
+}
+export function fileComplaint(token, { rideId, category, description }) {
+  return request("/api/safety/complaints", authed(token, { method: "POST", body: JSON.stringify({ rideId, category, description }) }));
+}
+
+// ── Ride calls (server-controlled; no phone numbers anywhere) ──
+// See arrivo-backend/routes/calls.js. The server decides who may call whom,
+// creates and rings the call, and records every attempt.
+export function getCallAvailability(token, rideId) {
+  return request(`/api/calls/ride/${rideId}/availability`, authed(token));
+}
+export function startRideCall(token, rideId, media = "audio") {
+  return request(`/api/calls/ride/${rideId}/start`, authed(token, { method: "POST", body: JSON.stringify({ media }) }));
+}
+export function reportCallEvent(token, sessionId, event, reason) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/events`, authed(token, { method: "POST", body: JSON.stringify({ event, reason }) }));
+}
+export function requestCallSupport(token, sessionId, note) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }

@@ -101,7 +101,7 @@ export default function FamilyPlanScreen({ navigation }) {
     }
     setTopUpStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amount);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: amount, purpose: "family_topup" });
       pendingTopUpRef.current = reference;
       await Linking.openURL(authorizationUrl);
     } catch (e) {

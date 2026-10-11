@@ -1,4 +1,11 @@
 require("dotenv").config();
+
+// Refuse to run without a usable JWT_SECRET. Checked before anything else
+// loads so a misconfigured deploy fails loudly at boot, not on the first login.
+if (!require("./services/jwtSecretCheck").checkJwtSecretAtStartup()) {
+  process.exit(1);
+}
+
 const express = require("express");
 // Patches express.Router so a rejected promise inside any async route
 // handler is forwarded to Express's error handling instead of becoming an
@@ -9,9 +16,13 @@ const express = require("express");
 require("express-async-errors");
 const cors = require("cors");
 
-const { ready } = require("./db/db"); // resolves once the Postgres schema is initialized
+const { ready, pool } = require("./db/db"); // ready resolves once the Postgres schema is initialized
+const { secureHeaders } = require("./middleware/secureHeaders");
+const { originLock } = require("./middleware/originLock");
+const { createHealthRouter } = require("./routes/health");
 
 const authRouter = require("./routes/auth");
+const { maskCounterpartyPhones } = require("./services/contactPrivacy");
 const ridesRouter = require("./routes/rides");
 const flightsRouter = require("./routes/flights");
 const paymentsRouter = require("./routes/payments");
@@ -20,10 +31,20 @@ const membershipsRouter = require("./routes/memberships");
 const ownersRouter = require("./routes/owners");
 const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
+const adminExportsRouter = require("./routes/adminExports");
+const paymentExceptionsRouter = require("./routes/paymentExceptions");
+const audioRecordingsRouter = require("./routes/audioRecordings");
+const adminExpressRouter = require("./routes/adminExpress");
+const adminCashoutsRouter = require("./routes/adminCashouts");
+const safetyRouter = require("./routes/safety");
+const adminSafetyRouter = require("./routes/adminSafety");
+const driverCashoutRouter = require("./routes/driverCashout");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
+const staffRidesRouter = require("./routes/staffRides");
+const { startRideTeamSweep } = require("./services/rideTeam");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
 const instantRidesRouter = require("./routes/instantRides");
@@ -33,6 +54,7 @@ const liveMapRouter = require("./routes/live-map");
 const supportRouter = require("./routes/support");
 const familyRouter = require("./routes/family");
 const partnerVenuesRouter = require("./routes/partnerVenues");
+const publicBookingRequestsRouter = require("./routes/publicBookingRequests");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -45,6 +67,17 @@ const app = express();
 // req.protocol below (routes/auth.js) silently downgrade to http://. Only
 // the first hop is trusted (Render's own edge), not an arbitrary chain.
 app.set("trust proxy", 1);
+
+// Ops layer. Order matters:
+//  1. Do not advertise the framework.
+//  2. Baseline security headers on every response (middleware/secureHeaders.js).
+//  3. Health endpoints before the origin lock and CORS, so Render's health
+//     check and the uptime probes never depend on either (routes/health.js).
+//  4. Origin lock, off unless ORIGIN_LOCK_MODE is set (middleware/originLock.js).
+app.disable("x-powered-by");
+app.use(secureHeaders());
+app.use(createHealthRouter({ query: (sql) => pool.query(sql) }));
+app.use(originLock());
 
 // Locked down 2026-09-17 (security audit follow-up): previously cors() with
 // no options, which reflects any Origin and allows credentials-less
@@ -59,32 +92,50 @@ app.set("trust proxy", 1);
 // unconditionally -- CORS is a browser-only enforcement mechanism, the
 // rider/driver apps never send a browser-style Origin header, so this
 // allowlist cannot break them regardless of how strict it is.
+const { csrfOriginCheck } = require("./middleware/sessionCookie");
+const { makeOriginCheck, respondIfCorsRejection } = require("./middleware/corsPolicy");
+
 const ALLOWED_ORIGINS = [
   "https://ridearrivo.com",
   "https://www.ridearrivo.com",
   "https://admin.ridearrivo.com",
+  // The public self-service booking form (POST /api/public/booking-requests)
+  // -- a standalone static page, not part of the main ridearrivo-website
+  // deploy, so it needs its own origin here. Rename this if the subdomain
+  // ends up called something other than easybook.
+  "https://easybook.ridearrivo.com",
   // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
   // posts to /api/auth/google and /api/auth/apple directly from the
   // browser, same as login.html/signup.html on the main site, so a
   // membership sign-up is a real account on this same backend, not a
   // separate identity silo.
   "https://membership.ridearrivo.com",
+  // ArrivoExpress runs standalone on its own subdomain and calls this API
+  // straight from the browser.
+  "https://express.ridearrivo.com",
 ];
+
+// Extra origins (for example a Cloudflare Pages preview URL while testing a
+// deploy) can be added without a code change: set EXTRA_ALLOWED_ORIGINS to a
+// comma-separated list of full origins. Exact match only, no wildcards.
+(process.env.EXTRA_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean)
+  .forEach((o) => ALLOWED_ORIGINS.push(o));
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, true);
-      }
-      // .status = 403 so this reaches the client as a clean 403, not the
-      // generic error handler's 500 (it defaults to err.status || 500).
-      const err = new Error("Not allowed by CORS");
-      err.status = 403;
-      return callback(err);
-    },
+    // Needed so browsers send/accept the shared session cookie on
+    // cross-subdomain fetches. Safe because origins are an exact allowlist
+    // (a wildcard origin is refused by browsers when credentials are on).
+    credentials: true,
+    origin: makeOriginCheck(ALLOWED_ORIGINS),
   })
 );
+
+// Second CSRF layer for the cookie session (SameSite=Lax is the first).
+app.use(csrfOriginCheck(ALLOWED_ORIGINS));
 
 // The Paystack webhook needs the RAW request body to verify its signature,
 // so we skip the JSON parser for that one path and let routes/payments.js
@@ -101,27 +152,44 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
-app.use("/api/rides", ridesRouter);
+app.use("/api/rides", maskCounterpartyPhones, ridesRouter);
 app.use("/api/drivers", driversRouter);
+// Before the general admin router: exports are admin and operations only,
+// and the router applies that itself.
+app.use("/api/admin/exports", adminExportsRouter);
+// Before the general admin router: staff listening is admin-only and Bearer-only.
+app.use("/api/admin/recordings", audioRecordingsRouter.adminRouter);
+app.use("/api/recordings", audioRecordingsRouter);
+app.use("/api/admin/express", adminExpressRouter);
+app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/safety", adminSafetyRouter);
+app.use("/api/safety", safetyRouter);
+app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
+// Before the general admin router, for the same reason as the exports above.
+app.use("/api/admin/payment-exceptions", paymentExceptionsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
+app.use("/api/cashout", driverCashoutRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
 app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
+app.use("/api/staff/people", require("./routes/staffPeople"));
+app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
-app.use("/api/instant-rides", instantRidesRouter);
+app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/live-map", liveMapRouter);
 app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
+app.use("/api/public", publicBookingRequestsRouter);
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.
@@ -129,6 +197,7 @@ app.use("/api/partner-venues", partnerVenuesRouter);
 // forwarded errors would fall through to Express's default HTML error page
 // instead of the JSON error shape every client in this codebase expects.
 app.use((err, req, res, next) => {
+  if (!res.headersSent && respondIfCorsRejection(err, res)) return;
   console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
@@ -145,4 +214,7 @@ ready.then(() => {
   // services/scheduler.js. Started once, after the schema is ready, same
   // as the HTTP listener above.
   startScheduler();
+  // Keeps every open ride staffed: fills gaps and moves rides off anyone who
+  // has gone off duty. See services/rideTeam.js.
+  startRideTeamSweep();
 });

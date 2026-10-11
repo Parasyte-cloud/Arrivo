@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
@@ -15,10 +16,11 @@ const {
 } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
-const { claimPaymentReference } = require("../services/paymentReferences");
+const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { creditMembershipCashback } = require("../services/membershipCashback");
+const { recordQuestProgress } = require("../services/driverQuests");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { sendPanicAlert } = require("../services/panicAlert");
 const { getActivePlanForUser } = require("../services/familyPlan");
@@ -34,6 +36,20 @@ const { isWithinRadiusKm } = require("../services/routeDeviation");
 const MIN_WALLET_BALANCE_USD = 100;
 
 const router = express.Router();
+
+// A rider whose first POST succeeded but whose response was lost (dropped
+// connection, reload, closed tab) will retry with the same payment reference.
+// If that reference already paid for one of THIS rider's rides, hand the same
+// ride back instead of an error. A different rider never gets this.
+async function findRideForSpentReference(db, reference, riderId) {
+  const found = await db.query(
+    `SELECT r.* FROM used_payment_references u
+       JOIN rides r ON r.id = u.ride_id
+      WHERE u.reference = $1 AND u.used_for = 'ride_payment' AND r.rider_id = $2`,
+    [reference, riderId]
+  );
+  return found.rows[0] || null;
+}
 
 function withParsedStops(ride) {
   return { ...ride, stops: JSON.parse(ride.stops || "[]") };
@@ -224,7 +240,7 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
 // bookings — that's what lets the fare actually be re-verified below
 // instead of trusted from the client. Get these (and a live fareNaira to
 // show the rider) from POST /api/rides/quote first.
-router.post("/", requireAuth, async (req, res) => {
+async function createRideHandler(req, res) {
   const {
     pickupAddress: pickupAddressInput, stops, flightNumber, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
@@ -752,6 +768,39 @@ router.post("/", requireAuth, async (req, res) => {
   // Same transaction reasoning as the membership/wallet branches above — a
   // fleet-companion insert failure must not leave a real card-paid ride
   // with a half-built convoy and no clean way to retry.
+  // A card booking is only a booking once the card payment is real. Until
+  // now the reference was stored without being checked, so a ride could be
+  // created with a made-up reference, shown to drivers and driven for free.
+  // Ask Paystack, require success in naira for at least the fare (the fare is
+  // the server's own figure, never the client's), and spend the reference
+  // below in the same transaction as the ride, so it cannot also pay for
+  // anything else. A free ride (fare 0) has nothing to verify.
+  const cardPaymentRequired = Number(fareNaira) > 0;
+  if (cardPaymentRequired) {
+    if (!paymentReference) {
+      return res.status(400).json({ error: "A completed card payment is required to book this ride." });
+    }
+    if (isValidPaystackReference(paymentReference)) {
+      const prior = await findRideForSpentReference(pool, paymentReference, req.user.id);
+      if (prior) return res.status(200).json({ ride: withParsedStops(prior), replayed: true });
+    }
+    let cardVerification;
+    try {
+      cardVerification = await verifyPaystackTransaction(paymentReference);
+    } catch (err) {
+      if (err.invalidReference) return res.status(400).json({ error: "Invalid payment reference." });
+      console.error("Paystack verify failed while creating a card ride:", err.response?.data || err.message);
+      return res.status(502).json({ error: "We could not confirm your payment yet. You have not been booked, please try again in a moment." });
+    }
+    if (!cardVerification.success) {
+      return res.status(400).json({ error: `Payment not confirmed (status: ${cardVerification.status}).` });
+    }
+    if (Math.round(cardVerification.amountNaira) < Math.round(Number(fareNaira))) {
+      console.error(`Card ride underpaid: paid ₦${cardVerification.amountNaira}, fare ₦${fareNaira}, ref ${paymentReference}`);
+      return res.status(400).json({ error: "The amount paid is less than this ride's fare. Contact support with your payment reference: " + paymentReference });
+    }
+  }
+
   const cardClient = await pool.connect();
   try {
     await cardClient.query("BEGIN");
@@ -760,10 +809,32 @@ router.post("/", requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'card', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
       [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, paymentReference || null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
     );
-    await createFleetCompanions(cardClient, inserted.rows[0]);
-    await recordLuckyRideEntry(cardClient, inserted.rows[0], luckyRideEntryDate);
+    let cardRide = inserted.rows[0];
+    if (cardPaymentRequired) {
+      const claimed = await claimPaymentReference(cardClient, paymentReference, "ride_payment", cardRide.id);
+      if (!claimed) {
+        await cardClient.query("ROLLBACK");
+        const prior = await findRideForSpentReference(pool, paymentReference, req.user.id);
+        if (prior) return res.status(200).json({ ride: withParsedStops(prior), replayed: true });
+        console.error(`Reused payment reference on card ride creation: ${paymentReference} was already used for a different charge.`);
+        return res.status(400).json({ error: "This payment reference has already been used for a different charge. Contact support." });
+      }
+      cardRide = (
+        await cardClient.query("UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *", [cardRide.id])
+      ).rows[0];
+    }
+    await createFleetCompanions(cardClient, cardRide);
+    await recordLuckyRideEntry(cardClient, cardRide, luckyRideEntryDate);
     await cardClient.query("COMMIT");
-    res.status(201).json({ ride: withParsedStops(inserted.rows[0]) });
+
+    // The website used to send this from PATCH /:id/payment. A ride that is
+    // paid at creation returns early there, so it is sent here instead.
+    if (cardPaymentRequired) {
+      pool.query("SELECT email FROM users WHERE id = $1", [req.user.id])
+        .then((rider) => rider.rows[0] && sendBookingConfirmationEmail(rider.rows[0].email, cardRide))
+        .catch((e) => console.error("Booking confirmation email failed:", e.message));
+    }
+    res.status(201).json({ ride: withParsedStops(cardRide) });
   } catch (err) {
     await cardClient.query("ROLLBACK");
     console.error("Card ride creation failed:", err.message);
@@ -771,7 +842,10 @@ router.post("/", requireAuth, async (req, res) => {
   } finally {
     cardClient.release();
   }
-});
+}
+// Registered here, and exported below so the Paystack webhook can finish a
+// card booking from a pending order by running exactly this code.
+router.post("/", requireAuth, createRideHandler);
 
 // POST /api/rides/quote — a live fare estimate, before any payment happens.
 // Uses the exact same formula (services/fare.js) that ride creation above
@@ -997,6 +1071,14 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   const driver = await getDriverForUser(req.user.id);
   const driverId = driver?.id || null;
 
+  // The queue carries riders' names and phone numbers. Anyone can sign up as
+  // a driver, so it is only shown once an admin has approved the profile,
+  // the same rule POST /:id/accept already applies. An empty queue (not an
+  // error) keeps the driver app's screens working while approval is pending.
+  if (!driver || !driver.is_verified) {
+    return res.json({ rides: [], areaLockedToVenue: null, pendingVerification: true });
+  }
+
   // Arrivo Express Phase 3 -- the Partner Venues program area lock. "The driver
   // will only get orders around the area for as long as they are online
   // and have accepted the ride [from a partner venue]" -- while this
@@ -1062,6 +1144,11 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
   }
   rides = rides.slice(0, 20);
   rides = await attachShareParticipants(rides);
+
+  // rides.* includes columns a driver has no use for: staff notes, the public
+  // tracking key (anyone holding it can follow the trip, after the driver has
+  // finished with it too) and the payment reference.
+  rides = rides.map(({ admin_notes, share_token, payment_reference, ...safe }) => safe);
 
   res.json({ rides: rides.map(withParsedStops), areaLockedToVenue: areaLockVenue ? areaLockVenue.name : null });
 });
@@ -1169,6 +1256,16 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   const nextAllowed = VALID_STATUS_TRANSITIONS[currentStatus] || [];
   if (!nextAllowed.includes(status)) {
     return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
+  }
+
+  if (status === "in_progress") {
+    const pin = await require("../services/pickupPin").checkStartAllowed(existing.rows[0].id);
+    if (!pin.allowed) {
+      return res.status(403).json({
+        error: "Ask the rider for their 4 digit pickup PIN and enter it before starting the trip.",
+        code: "PICKUP_PIN_REQUIRED",
+      });
+    }
   }
 
   // "Reserve now, pay at pickup" was removed as a product decision — every
@@ -1377,6 +1474,17 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     await creditMembershipCashback(ride, pool);
   }
 
+  // ArrivoExpress driver quests. Counts this trip if it is an Express ride
+  // inside a running quest. Isolated on purpose: a quest problem must never
+  // fail or delay the driver completing a trip.
+  if (status === "completed") {
+    try {
+      await recordQuestProgress(ride.id, pool);
+    } catch (error) {
+      console.error(`Quest progress failed for ride #${ride.id}:`, error.message);
+    }
+  }
+
   const notification = STATUS_NOTIFICATION[status];
   if (notification) {
     const rider = await pool.query("SELECT push_token FROM users WHERE id = $1", [ride.rider_id]);
@@ -1438,9 +1546,16 @@ router.post("/:id/cancel-request", requireAuth, requireRole("driver"), async (re
       `UPDATE rides
           SET ride_status = 'requested', driver_id = NULL, tracking_started_at = NULL,
               reassignment_priority = reassignment_priority + 1, previously_cancelled_at = now(), updated_at = now()
-        WHERE id = $1 RETURNING *`,
-      [ride.id]
+        WHERE id = $1 AND driver_id = $2 AND ride_status IN ('accepted', 'in_progress') RETURNING *`,
+      [ride.id, driver.id]
     );
+    // The status check above was read earlier, so the ride may have moved on
+    // (completed, or already cancelled) in between. Without this guard a
+    // completed and paid ride could be put back in the queue.
+    if (updated.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "This ride changed while you were cancelling it. Please refresh." });
+    }
 
     await client.query("COMMIT");
     const freshRide = updated.rows[0];
@@ -1567,29 +1682,22 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
 // version: driver identity/vehicle/live location, pickup/destination, and
 // status, never payment info, fare, admin notes, or the rider's own
 // contact details.
-router.get("/track/:token", async (req, res) => {
-  const result = await pool.query(
-    `SELECT rides.id, rides.pickup_address, rides.stops, rides.ride_status,
-            rides.flight_number, rides.booking_type,
-            rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
-            rides.created_at,
-            riders.name as rider_name,
-            driver_users.name as driver_name, driver_users.phone as driver_phone,
-            drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
-            drivers.profile_photo_url as driver_photo_url, drivers.rating as driver_rating,
-            vehicles.make_model, vehicles.plate_number
-     FROM rides
-     JOIN users riders ON riders.id = rides.rider_id
-     LEFT JOIN drivers ON drivers.id = rides.driver_id
-     LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
-     LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
-     WHERE rides.share_token = $1`,
-    [req.params.token]
-  );
-  const ride = result.rows[0];
-  if (!ride) return res.status(404).json({ error: "This tracking link is invalid or no longer active." });
+// The tracking link is public by design (anyone holding it can follow the
+// trip), so cap lookups per IP. The token itself is 128 bits and cannot be
+// guessed; this just stops bulk probing and polling abuse.
+const trackLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.TRACK_RATE_LIMIT) || 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Too many requests. Please wait a moment." }),
+});
 
-  res.json({ ride: withParsedStops(ride) });
+router.get("/track/:token", trackLimiter, async (req, res) => {
+  const out = await require("../services/shareLinks").resolvePublic(req.params.token);
+  if (out.error) return res.status(out.error.status).json({ error: out.error.message, reason: out.error.reason });
+  const { ride, ...rest } = out.view;
+  res.json({ ride: withParsedStops(ride), ...rest });
 });
 
 // GET /api/rides/:id — full details for one ride, including the driver's
@@ -1646,45 +1754,17 @@ router.get("/:id", requireAuth, async (req, res) => {
 // once it exists rather than rotating it, so a link already sent to
 // someone doesn't silently stop working.
 router.get("/:id/share", requireAuth, async (req, res) => {
-  const result = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
-  const ride = result.rows[0];
-  if (!ride) return res.status(404).json({ error: "Ride not found" });
-
-  const driver = await getDriverForUser(req.user.id);
-  const isRider = ride.rider_id === req.user.id;
-  const isAssignedDriver = driver && ride.driver_id === driver.id;
-  // Same "support" allowance as GET /:id and GET /:id/fleet — support can
-  // already view this ride's details/fleet, so it should be able to view
-  // (not rotate) its share link too.
-  if (!isRider && !isAssignedDriver && !["admin", "support"].includes(req.user.role)) {
-    return res.status(403).json({ error: "You don't have access to this ride" });
+  const shareLinks = require("../services/shareLinks");
+  try {
+    // Each call mints a fresh expiring link (old ones keep working until they
+    // expire or the rider stops sharing). The token is shown only now.
+    const { token, expiresAt } = await shareLinks.createLink(Number(req.params.id), req.user);
+    const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html?share=";
+    res.json({ shareToken: token, shareUrl: `${base.includes("?") ? base : base + "?share="}${token}`, expiresAt });
+  } catch (error) {
+    if (error instanceof shareLinks.ShareError) return res.status(error.status).json({ error: error.message, code: error.code });
+    throw error;
   }
-
-  let token = ride.share_token;
-  if (!token) {
-    // Conditioned on share_token IS NULL so two concurrent first "Share
-    // ride" taps can't each generate their own token and both think theirs
-    // is the real one — only one UPDATE can win. If this one loses (another
-    // request already set it a moment earlier), re-read and hand back that
-    // already-persisted token instead of the locally-generated one that
-    // never actually got saved.
-    const generatedToken = crypto.randomBytes(16).toString("hex");
-    const claim = await pool.query(
-      "UPDATE rides SET share_token = $1 WHERE id = $2 AND share_token IS NULL RETURNING share_token",
-      [generatedToken, ride.id]
-    );
-    if (claim.rowCount > 0) {
-      token = claim.rows[0].share_token;
-    } else {
-      const reread = await pool.query("SELECT share_token FROM rides WHERE id = $1", [ride.id]);
-      token = reread.rows[0].share_token;
-    }
-  }
-
-  // Same optional-override-with-hardcoded-fallback pattern as
-  // PASSWORD_RESET_BASE_URL / SCAN_BASE_URL elsewhere in this file/routes.
-  const base = process.env.TRACK_SHARE_BASE_URL || "https://ridearrivo.com/track.html";
-  res.json({ shareToken: token, shareUrl: `${base}?share=${token}` });
 });
 
 // POST /api/rides/:id/share-participants — Arrivo Share. The organizer
@@ -2250,6 +2330,10 @@ router.post("/:id/panic", requireAuth, async (req, res) => {
     [note || null, req.params.id]
   );
 
+  // Any audio already recorded on this ride is kept past the normal retention.
+  pool.query("UPDATE ride_audio_recordings SET hold = true WHERE ride_id = $1 AND deleted_at IS NULL", [req.params.id])
+    .catch((e) => console.error("Could not hold ride audio after panic:", e.message));
+
   console.warn(`🚨 PANIC ALERT — ride #${req.params.id}, triggered by user ${req.user.email}`);
   // Pages whoever is on call (OPS_ALERT_EMAILS / OPS_ALERT_WHATSAPP) right
   // now, instead of relying on someone having the admin dashboard open.
@@ -2404,3 +2488,4 @@ router.post("/scan", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.createRideHandler = createRideHandler;

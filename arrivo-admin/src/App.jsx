@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { StreamClientProvider } from "./StreamClientContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -25,6 +25,10 @@ const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ defaul
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
+const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
+const ExpressPricingPage = lazy(() => import("./pages/ExpressPricingPage").then((m) => ({ default: m.ExpressPricingPage })));
+const SafetyPage = lazy(() => import("./pages/SafetyPage").then((m) => ({ default: m.SafetyPage })));
+const RideDeskPage = lazy(() => import("./pages/RideDeskPage").then((m) => ({ default: m.RideDeskPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
@@ -32,11 +36,12 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express",
+  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
+  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
 const OPERATIONS_PAGES = [
+  "ride-desk",
   "panics",
   "drivers",
   "rides",
@@ -44,6 +49,7 @@ const OPERATIONS_PAGES = [
   "vehicles",
   "live-map",
   "analytics",
+  "exports",
 ];
 
 
@@ -54,9 +60,10 @@ function pageFromHash(allowedPages = PAGES) {
 
 function Dashboard() {
   const { isOperations } = useAuth();
-  const allowedPages = isOperations
-    ? OPERATIONS_PAGES
-    : PAGES;
+  const allowedPages = useMemo(
+    () => (isOperations ? OPERATIONS_PAGES : PAGES),
+    [isOperations]
+  );
 
   // Default to Panic Alerts on login — the safety-critical view should be
   // the first thing an ops person sees, not something they have to
@@ -143,6 +150,7 @@ function Dashboard() {
       <main className="main">
         <ErrorBoundary resetKey={page}>
           <Suspense fallback={<div className="empty-state">Loading…</div>}>
+            {page === "ride-desk" && <RideDeskPage />}
             {page === "panics" && <PanicsPage />}
             {page === "riders" && <RidersPage />}
             {page === "drivers" && <DriversPage />}
@@ -155,6 +163,9 @@ function Dashboard() {
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
             {page === "arrivo-express" && <ArrivoExpressPage />}
+            {page === "express-pricing" && <ExpressPricingPage />}
+            {page === "safety" && <SafetyPage />}
+            {page === "exports" && <ExportsPage />}
           </Suspense>
         </ErrorBoundary>
       </main>
@@ -166,7 +177,6 @@ function Root() {
   const {
     isAuthenticated,
     initializing,
-    isOperations,
   } = useAuth();
 
   if (initializing) {
@@ -181,10 +191,6 @@ function Root() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
-  }
-
-  if (isOperations) {
-    return <Dashboard />;
   }
 
   return (

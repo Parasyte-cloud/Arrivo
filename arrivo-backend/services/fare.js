@@ -162,6 +162,14 @@ function isLagosNightTime(date = new Date()) {
 // to the everyday fare riders are actually complaining about.
 const STANDARD_FARE_ADJUSTMENT = 0.88;
 
+// Platform-wide fare increase: +7% on every trip fare (one-way, drop-off,
+// charter, and ArrivoExpress). Business decision, 2026-10-06. Applied as the
+// LAST step on the ride fare itself (after the 0.88 market adjustment and
+// the night multiplier), so it stacks on top of whatever the trip would
+// otherwise cost. Flat add-ons (security escort, fleet, luxury) are not
+// scaled. Change this one number to move every fare, and nothing else.
+const PLATFORM_FARE_INCREASE = 1.07;
+
 const ROUND_TO_NAIRA = 500;
 
 function roundUpToNearest(amount, step) {
@@ -302,7 +310,7 @@ function computeOneWayFare({ pickupAddress, destinationAddress, vehicleType }) {
     total = total * NIGHT_MULTIPLIER;
   }
 
-  return roundUpToNearest(total, ROUND_TO_NAIRA);
+  return roundUpToNearest(total * PLATFORM_FARE_INCREASE, ROUND_TO_NAIRA);
 }
 
 function computeCharterFare({ vehicleType, bookingType, durationDays }) {
@@ -314,7 +322,7 @@ function computeCharterFare({ vehicleType, bookingType, durationDays }) {
   // already fixed multi-day packages, so durationDays is ignored for those
   // regardless of what a client sends.
   const dayCount = bookingType === "full_day" ? Math.min(Math.max(Number(durationDays) || 1, 1), MAX_FULL_DAY_COUNT) : 1;
-  return (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * multiplier * dayCount;
+  return Math.round((CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * multiplier * dayCount * PLATFORM_FARE_INCREASE);
 }
 
 // Shared by the /quote endpoint (rider is just previewing) and ride
@@ -374,7 +382,7 @@ function computeOverageNaira({ vehicleType, includedHoursPerDay, elapsedHours, f
   const overageHours = elapsedHours - includedHoursPerDay - OVERAGE_GRACE_HOURS;
   if (overageHours <= 0) return 0;
 
-  const dayRateNaira = (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * (CHARTER_MULTIPLIER.full_day || 0);
+  const dayRateNaira = (CHARTER_FLAT_BASE_NAIRA[vehicleType] || 0) * (CHARTER_MULTIPLIER.full_day || 0) * PLATFORM_FARE_INCREASE;
   const perHourNaira = dayRateNaira / includedHoursPerDay;
 
   const rawOverage = roundUpToNearest(perHourNaira * overageHours, ROUND_TO_NAIRA);
@@ -495,6 +503,7 @@ module.exports = {
   DEFAULT_AREA_PRICE_NAIRA,
   EXCLUDED_AREAS,
   NIGHT_MULTIPLIER,
+  PLATFORM_FARE_INCREASE,
   MAX_FULL_DAY_COUNT,
   MAX_PASSENGERS,
   MAX_AUTO_VEHICLE_COUNT,

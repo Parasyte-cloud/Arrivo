@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
+import { RECORDING_CONSENT } from "../utils/safetyCopy";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl, Pressable, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import * as Crypto from "expo-crypto";
-import { useStreamVideoClient } from "@stream-io/video-react-native-sdk";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import RideCallButton from "../components/RideCallButton";
 import {
   setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
   triggerPanic, activateListeningDevice, getDriverProfile,
@@ -16,6 +17,24 @@ import {
   cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
+import { useT } from "../context/LanguageContext";
+import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
+
+// Wording lives in utils/safetyCopy.js (draft until counsel approves it).
+function askRecordingConsent() {
+  return new Promise((resolve) => {
+    Alert.alert(
+      RECORDING_CONSENT.title,
+      RECORDING_CONSENT.body,
+      [
+        { text: RECORDING_CONSENT.notNow, style: "cancel", onPress: () => resolve(false) },
+        { text: RECORDING_CONSENT.agree, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
+
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
@@ -33,6 +52,11 @@ export default function DashboardScreen({ navigation }) {
   // routes/rides.js for why the queue narrows during that window.
   const [areaLockedToVenue, setAreaLockedToVenue] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
+
+  // No active trip left (completed, cancelled, reassigned): recording stops.
+  useEffect(() => {
+    if (!activeRide) stopRideRecording();
+  }, [activeRide]);
   const [loading, setLoading] = useState(true);
   const [busyRideId, setBusyRideId] = useState(null);
   const [error, setError] = useState(null);
@@ -171,7 +195,12 @@ export default function DashboardScreen({ navigation }) {
       await setOnlineStatus(token, value);
     } catch (e) {
       setIsOnline(!value); // revert on failure
-      setError(e.message);
+      if (e.code === "SELFIE_REQUIRED") {
+        // Not an error to show: send the driver to the selfie check.
+        navigation.navigate("Selfie");
+      } else {
+        setError(e.message);
+      }
     }
   };
 
@@ -266,6 +295,9 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  // Set when the server says the rider's pickup PIN is needed to start this trip.
+  const [pinRideId, setPinRideId] = useState(null);
+
   const advanceTrip = async (nextStatus) => {
     if (!activeRide) return;
     setBusyRideId(activeRide.id);
@@ -277,7 +309,11 @@ export default function DashboardScreen({ navigation }) {
         setActiveRide(ride);
       }
     } catch (e) {
-      setError(e.message);
+      if (e.code === "PICKUP_PIN_REQUIRED") {
+        setPinRideId(activeRide.id); // show the PIN box instead of an error
+      } else {
+        setError(e.message);
+      }
     } finally {
       setBusyRideId(null);
     }
@@ -369,7 +405,7 @@ export default function DashboardScreen({ navigation }) {
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
-          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
+          <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
             {acceptsInstant ? (
@@ -566,10 +602,11 @@ const CANCEL_REASONS = [
   { value: "incorrect_pickup_info", label: "Wrong pickup info" },
 ];
 
-function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation }) {
+function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation, pinNeeded, onPinVerified }) {
+  const { t } = useT();
+  const [showReport, setShowReport] = useState(false);
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
-  const streamVideoClient = useStreamVideoClient();
   const isAccepted = ride.ride_status === "accepted";
   const isInProgress = ride.ride_status === "in_progress";
   // "Reserve now, pay at pickup" was removed as a product decision — every
@@ -624,6 +661,16 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
   // to turn it back off, same as panic.
   const [listeningOn, setListeningOn] = useState(!!ride.listening_device_activated_at);
   const [listeningError, setListeningError] = useState(false);
+  const [recordingOn, setRecordingOn] = useState(false);
+
+  useEffect(() => {
+    setRecordingOn(isRecordingRide(ride.id));
+    return onRecordingChange(() => setRecordingOn(isRecordingRide(ride.id)));
+  }, [ride.id]);
+
+  useEffect(() => {
+    if (["completed", "cancelled"].includes(ride.ride_status)) stopRideRecording();
+  }, [ride.ride_status]);
 
   const sendPanicRequest = () => {
     setPanicError(false);
@@ -640,6 +687,8 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         // the same false-safety-reassurance bug already fixed once for
         // panicConfirmed/panicError itself, just missed here.
         setListeningOn(true);
+        // The Emergency Button starts recording at once with no prompt.
+        startOnPanic({ token, rideId: ride.id });
       })
       .catch(() => {
         setPanicError(true);
@@ -667,10 +716,30 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
     setPanicState("idle");
   };
 
-  const activateListening = () => {
-    setListeningOn(true); // optimistic, but listeningError below keeps this honest
+  const activateListening = async () => {
     setListeningError(false);
+    try {
+      const rec = await startRideRecording({ token, rideId: ride.id, askConsent: askRecordingConsent });
+      if (rec.handled) {
+        if (rec.started) setListeningOn(true);
+        else if (rec.reason === "permission") {
+          Alert.alert("Microphone is off", "Allow microphone access in your phone settings to record audio for this trip.");
+        }
+        return;
+      }
+    } catch {
+      setListeningError(true);
+      return;
+    }
+    setListeningOn(true); // optimistic, but listeningError below keeps this honest
     activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
+  };
+
+  const stopRecordingPrompt = () => {
+    Alert.alert("Stop recording?", "Audio recording for this trip will stop. What was already recorded stays available to safety staff.", [
+      { text: "Keep recording", style: "cancel" },
+      { text: "Stop", style: "destructive", onPress: () => stopRideRecording() },
+    ]);
   };
 
   useEffect(() => {
@@ -689,39 +758,6 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
   }, [ride.listening_device_activated_at]);
 
   useEffect(() => () => clearInterval(countdownRef.current), []);
-
-  // In-app call (the primary action) — a real internet voice OR video call
-  // routed through Stream, ringing on the rider's phone (even locked/
-  // backgrounded — see arrivo-app's own CallKit/push setup) with no phone
-  // numbers exchanged. rides.rider_id is already the rider's own users.id
-  // (riders don't have a separate profile table the way drivers do), so no
-  // lookup is needed here unlike the rider-side "call driver" button.
-  // video: true just enables the call to carry a video track — the
-  // prebuilt CallContent UI (components/CallOverlay.js) already surfaces a
-  // camera toggle, so either side can still keep their camera off and use
-  // it as a voice-only call if they prefer.
-  const callRiderInApp = async () => {
-    if (!ride?.rider_id) {
-      Alert.alert("Not available yet", "You'll be able to call your rider once this trip is active.");
-      return;
-    }
-    if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
-      return;
-    }
-    try {
-      const call = streamVideoClient.call("default", Crypto.randomUUID());
-      await call.getOrCreate({
-        ring: true,
-        video: true,
-        data: {
-          members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.rider_id) }],
-        },
-      });
-    } catch (e) {
-      Alert.alert("Couldn't start the call", e.message || "Please try again, or dial their number below instead.");
-    }
-  };
 
   return (
     <View>
@@ -751,24 +787,18 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         {ride.is_arrivo_share && ride.shareParticipants?.length ? (
           <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
         ) : null}
-        <Pressable onPress={callRiderInApp}>
-          <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
-        </Pressable>
-        <Pressable onPress={() => navigation?.navigate("Chat", { rideId: ride.id })}>
-          <Text style={[styles.meta, { textDecorationLine: "underline" }]}>💬 Message rider</Text>
-        </Pressable>
-        {ride.rider_phone ? (
-          <Pressable
-            onPress={() =>
-              Linking.openURL(`tel:${ride.rider_phone}`).catch(() =>
-                Alert.alert("Couldn't open dialer", "Please dial the number manually: " + ride.rider_phone)
-              )
-            }
-          >
-            <Text style={[styles.meta, { textDecorationLine: "underline" }]}>Or dial their number directly</Text>
-          </Pressable>
-        ) : null}
+        <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
       </Card>
+
+      <View style={{ height: spacing.md }} />
+      <RideCallButton
+        rideId={ride.id}
+        role="driver"
+        counterpart="your rider"
+        navigation={navigation}
+        supportRoute={null}
+        enabled={["accepted", "in_progress"].includes(ride.ride_status)}
+      />
 
       <View style={{ height: spacing.md }} />
 
@@ -802,7 +832,10 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
 
       {listeningOn ? (
         <>
-          <Text style={styles.listeningOnText}>🎙️ Listening device: on</Text>
+          <Text style={styles.listeningOnText}>{recordingOn ? "🎙️ Recording audio" : "🎙️ Listening device: on"}</Text>
+          {recordingOn ? (
+            <Button label="Stop recording" variant="ghost" tone="dark" onPress={stopRecordingPrompt} style={{ marginTop: 6 }} />
+          ) : null}
           {listeningError ? (
             <Button label="Couldn't confirm: tap to retry" variant="ghost" tone="dark" onPress={activateListening} style={{ marginTop: 6 }} />
           ) : null}
@@ -866,15 +899,31 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation 
         </>
       ) : isAccepted ? (
         <>
-          <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
+          {pinNeeded ? (
+            <PickupPinPrompt rideId={ride.id} onVerified={onPinVerified} />
+          ) : (
+            <Button label="Start Trip" onPress={() => onAdvance("in_progress")} trailingIcon />
+          )}
           <View style={{ height: spacing.sm }} />
           <Button label="Cancel Trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+          <View style={{ height: spacing.sm }} />
+          {showReport ? (
+            <ReportRiderPanel rideId={ride.id} onClose={() => setShowReport(false)} />
+          ) : (
+            <Button label={t("reportRider")} variant="ghost" tone="dark" onPress={() => setShowReport(true)} />
+          )}
         </>
       ) : (
         <>
           <Button label="Complete Trip" onPress={() => onAdvance("completed")} trailingIcon />
           <View style={{ height: spacing.sm }} />
           <Button label="Report an issue / cancel trip" variant="ghost" tone="dark" onPress={() => setShowCancelPicker(true)} />
+          <View style={{ height: spacing.sm }} />
+          {showReport ? (
+            <ReportRiderPanel rideId={ride.id} onClose={() => setShowReport(false)} />
+          ) : (
+            <Button label={t("reportRider")} variant="ghost" tone="dark" onPress={() => setShowReport(true)} />
+          )}
         </>
       )}
     </View>

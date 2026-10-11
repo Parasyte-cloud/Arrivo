@@ -1,0 +1,16 @@
+# Dependencies and local environment
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Logs and OS noise
+*.log
+.DS_Store
+
+# Local archives and merge leftovers that were sitting untracked in the repo
+# root. Ignored so a stray `git add .` cannot commit a tarball of the backend
+# source. Delete them when you no longer need them.
+*.tgz
+.claude-*
+*.resolved.js

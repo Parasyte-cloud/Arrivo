@@ -12,6 +12,10 @@ const {
   listTiers,
 } = require("./instantTiers");
 
+const {
+  getActivePricing,
+} = require("./instantPriceBook");
+
 class InstantQuoteError extends Error {
   constructor(message, status = 400, code = "INVALID_INSTANT_QUOTE") {
     super(message);
@@ -107,9 +111,9 @@ function validateInstantTripInput(input = {}) {
   };
 }
 
-async function quoteInstantRide(input) {
-  const trip = validateInstantTripInput(input);
-
+// One Google Distance Matrix lookup. Shared by the single-tier quote and the
+// all-tier quote so a rider comparing vehicles costs one routing call, not four.
+async function fetchRoute(trip) {
   let route;
 
   try {
@@ -146,6 +150,12 @@ async function quoteInstantRide(input) {
     );
   }
 
+  return { distanceKm, durationMin };
+}
+
+// Pure pricing step: a validated trip plus a route in, a quote out.
+// `priceMap` is the published price book (or null/{} to use the code defaults).
+function buildQuote(trip, { distanceKm, durationMin }, priceMap) {
   let fare;
 
   try {
@@ -160,6 +170,7 @@ async function quoteInstantRide(input) {
       destinationAddress: trip.destinationAddress,
       distanceKm,
       durationMin,
+      pricing: priceMap ? priceMap[trip.tier] : undefined,
     });
   } catch (error) {
     if (error instanceof InstantFareError) {
@@ -189,6 +200,36 @@ async function quoteInstantRide(input) {
     durationMin,
     currency: "NGN",
     pricingModel: "arrivonow_metered_v1",
+    pricingSource: priceMap && priceMap[trip.tier] ? "price_book" : "default",
+  };
+}
+
+async function quoteInstantRide(input) {
+  const trip = validateInstantTripInput(input);
+  const route = await fetchRoute(trip);
+  return buildQuote(trip, route, await getActivePricing());
+}
+
+// Prices the same trip for every vehicle tier from ONE route lookup, in the
+// catalogue's display order. Each entry is a complete quote, identical in
+// shape to what POST /quote returns, so a client can book straight from it.
+async function quoteAllTiers(input = {}) {
+  const baseTrip = validateInstantTripInput({
+    ...input,
+    tier: listTiers()[0].key,
+  });
+  const route = await fetchRoute(baseTrip);
+  const priceMap = await getActivePricing();
+
+  return {
+    route,
+    quotes: listTiers().map((tier) =>
+      buildQuote(
+        validateInstantTripInput({ ...input, tier: tier.key }),
+        route,
+        priceMap
+      )
+    ),
   };
 }
 
@@ -196,4 +237,5 @@ module.exports = {
   InstantQuoteError,
   validateInstantTripInput,
   quoteInstantRide,
+  quoteAllTiers,
 };

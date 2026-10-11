@@ -28,4 +28,21 @@ async function claimPaymentReference(dbClient, reference, usedFor, rideId = null
   return result.rows.length > 0;
 }
 
-module.exports = { claimPaymentReference };
+// A Paystack reference goes into a URL path (/transaction/verify/<reference>)
+// that is called with the merchant secret key. Anything that is not a plain
+// reference token must never reach that URL: axios normalises "../123456" to
+// "/transaction/123456", which is Paystack's "fetch any transaction by id"
+// call, and that would let a caller present someone else's successful payment
+// as their own. Paystack itself only issues letters, digits and - . = _ so
+// that is all that is allowed, with no ".." and no leading dot.
+const PAYSTACK_REFERENCE = /^[A-Za-z0-9=_-][A-Za-z0-9._=-]{3,99}$/;
+
+function isValidPaystackReference(reference) {
+  return (
+    typeof reference === "string" &&
+    PAYSTACK_REFERENCE.test(reference) &&
+    !reference.includes("..")
+  );
+}
+
+module.exports = { claimPaymentReference, isValidPaystackReference };

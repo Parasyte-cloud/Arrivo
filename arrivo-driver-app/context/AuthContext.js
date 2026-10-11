@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
 import { StreamVideoRN } from "@stream-io/video-react-native-sdk";
 import * as api from "../services/api";
+import { setUnauthorizedHandler } from "../services/api";
 import { LOCATION_TASK_NAME } from "../tasks/backgroundLocationTask";
 import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
+import { stopRideRecording } from "../services/rideAudioRecorder";
 
 const TOKEN_KEY = "arrivo_driver_token";
 // Caches the last successfully-fetched profile so a cold start with no
@@ -36,6 +38,11 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  // The 401 handler below must only react to the session that is current now. A
+  // slow request from an old session that fails after a fresh sign-in would
+  // otherwise sign the new session out.
+  const tokenRef = useRef(null);
+  tokenRef.current = token;
 
   useEffect(() => {
     (async () => {
@@ -124,7 +131,24 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const logout = async () => {
+  // Sign out once when any authenticated call comes back 401. The flag stops a
+  // burst of parallel failing calls from running the sign-out several times.
+  useEffect(() => {
+    let expiring = false;
+    setUnauthorizedHandler((sentAuthorization) => {
+      if (expiring || !tokenRef.current || sentAuthorization !== `Bearer ${tokenRef.current}`) return;
+      expiring = true;
+      logout({ sessionExpired: true }).finally(() => { expiring = false; });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
+  // sessionExpired skips telling the backend we went offline: the token is
+  // already rejected, so that call would only fail with another 401.
+  const logout = async (options) => {
+    const sessionExpired = !!(options && options.sessionExpired === true);
+    // Safety recording must never outlive the session that consented to it.
+    await stopRideRecording().catch(() => {});
     await stopBackgroundLocation();
     // Tell the backend this driver went offline before dropping the token —
     // otherwise a driver who signs out while online (rather than flipping
@@ -132,7 +156,7 @@ export function AuthProvider({ children }) {
     // is_online in the backend forever, still showing up as available to
     // riders/admin with no way for the ex-session to ever say otherwise.
     // Wrapped in try/catch so a network failure never blocks logout itself.
-    if (token) {
+    if (token && !sessionExpired) {
       try {
         await api.setOnlineStatus(token, false);
       } catch {

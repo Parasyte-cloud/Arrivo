@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
 const {
   requireAuth,
@@ -18,14 +19,19 @@ const {
 const {
   getInstantDispatchConfig,
   createOfferBatch,
+  redispatchOpenRequest,
   expireStaleOffers,
   listDriverOffers,
   declineOffer,
 } = require("../services/instantDispatch");
 const {
   quoteInstantRide,
+  quoteAllTiers,
   InstantQuoteError,
 } = require("../services/instantQuote");
+const { estimateNearbyDrivers } = require("../services/instantNearby");
+const { listDriverQuests } = require("../services/driverQuests");
+const { getActivePricing, pricingForTier } = require("../services/instantPriceBook");
 const {
   InstantWalletError,
   createWalletFundedRequest,
@@ -152,10 +158,60 @@ router.get("/status", requireAuth, (req, res) => {
 // app renders this list as the "choose your vehicle" step before quoting.
 // Available regardless of the ARRIVO_NOW_ENABLED flag so the UI can be
 // built and reviewed before the feature is switched on for riders.
-router.get("/tiers", requireAuth, (req, res) => {
+router.get("/tiers", requireAuth, async (req, res) => {
+  // Show the prices actually in force (the published price book), not the
+  // code defaults, so no client displays a stale number.
+  const map = await getActivePricing();
   res.json({
-    tiers: listTiers(),
+    tiers: listTiers().map((tier) => ({ ...tier, ...pricingForTier(map, tier.key) })),
   });
+});
+
+// GET /api/instant-rides/driver/quests
+//
+// Quests a driver can earn right now (and ones that ended in the last week,
+// so a just-earned reward stays visible), with their own progress.
+router.get(
+  "/driver/quests",
+  requireAuth,
+  requireRole("driver"),
+  async (req, res) => {
+    const driver = await getDriverForUser(req.user.id);
+
+    if (!driver) {
+      return res.status(404).json({
+        error: "Complete your driver profile first",
+      });
+    }
+
+    res.json({ quests: await listDriverQuests(driver.id) });
+  }
+);
+
+// Per-rider limits (not per-IP, so a shared carrier NAT cannot lock out real
+// riders). /quote calls Google Distance Matrix on every hit, so it is the
+// route most worth protecting from a runaway client or a script.
+function riderLimiter({ windowMs, limit, message }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req) => "rider:" + (req.user && req.user.id),
+    handler: (req, res) => res.status(429).json({ error: message }),
+  });
+}
+
+const quoteLimiter = riderLimiter({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.INSTANT_QUOTE_RATE_LIMIT) || 40,
+  message: "Too many fare checks. Please wait a few minutes and try again.",
+});
+
+const createLimiter = riderLimiter({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.INSTANT_CREATE_RATE_LIMIT) || 15,
+  message: "Too many ride requests. Please wait a few minutes and try again.",
 });
 
 // POST /api/instant-rides/quote
@@ -166,10 +222,22 @@ router.post(
   "/quote",
   requireAuth,
   requireRole("rider"),
+  quoteLimiter,
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
         error: "ArrivoExpress is not available yet.",
+      });
+    }
+
+    const restricted = await pool.query(
+      "SELECT express_restricted_at FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    if (restricted.rows[0]?.express_restricted_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is not available on your account right now. Please contact support.",
+        code: "EXPRESS_RESTRICTED",
       });
     }
 
@@ -192,6 +260,53 @@ router.post(
   }
 );
 
+// POST /api/instant-rides/quote/all
+//
+// The "choose your ride" screen: the fare for EVERY vehicle tier plus how many
+// drivers are near the pickup and roughly how soon one could arrive, from a
+// single request and a single routing lookup. Each quote is complete (same
+// shape as POST /quote), so the app can book from the one the rider taps.
+// The driver availability part is advisory: if it fails the fares still come
+// back, with availability null, rather than blocking the rider from booking.
+router.post(
+  "/quote/all",
+  requireAuth,
+  requireRole("rider"),
+  quoteLimiter,
+  async (req, res) => {
+    if (!isArrivoNowEnabled()) {
+      return res.status(503).json({
+        error: "ArrivoExpress is not available yet.",
+      });
+    }
+
+    try {
+      const { route, quotes } = await quoteAllTiers(req.body);
+
+      let availability = null;
+      try {
+        availability = await estimateNearbyDrivers({
+          lat: quotes[0].pickupLat,
+          lng: quotes[0].pickupLng,
+        });
+      } catch (error) {
+        console.error("ArrivoExpress availability lookup failed:", error.message);
+      }
+
+      return res.json({ route, quotes, availability });
+    } catch (error) {
+      if (error instanceof InstantQuoteError) {
+        return res.status(error.status).json({
+          error: error.message,
+          code: error.code,
+        });
+      }
+
+      throw error;
+    }
+  }
+);
+
 // POST /api/instant-rides
 //
 // Wallet is the first enabled settlement rail. The route computes the fare
@@ -201,6 +316,7 @@ router.post(
   "/",
   requireAuth,
   requireRole("rider"),
+  createLimiter,
   async (req, res) => {
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
@@ -221,6 +337,24 @@ router.post(
 
     try {
       const quote = await quoteInstantRide(req.body);
+
+      // Optional, additive guard: a client that shows the rider a fare and
+      // then confirms it can send expectedFareNaira. Fares move with live
+      // traffic, so a lower fare is always fine, but if the fare to be
+      // charged is now meaningfully HIGHER than what the rider agreed to,
+      // stop before any money moves and let them re-confirm.
+      const expected = Number(req.body.expectedFareNaira);
+      if (Number.isFinite(expected) && expected > 0) {
+        const tolerancePct = Number(process.env.INSTANT_FARE_TOLERANCE_PCT);
+        const pct = Number.isFinite(tolerancePct) && tolerancePct >= 0 ? tolerancePct : 10;
+        if (quote.fareNaira > Math.ceil(expected * (1 + pct / 100))) {
+          return res.status(409).json({
+            error: "The fare changed while you were confirming. Please review the new fare.",
+            code: "FARE_CHANGED",
+            fareNaira: quote.fareNaira,
+          });
+        }
+      }
 
       const funded =
         await createWalletFundedRequest({
@@ -357,6 +491,13 @@ router.patch(
       return res.status(403).json({
         error:
           "Your driver profile must be verified before enabling ArrivoExpress.",
+      });
+    }
+
+    if (acceptsInstant && driver.express_paused_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is paused on your account while we review a report. Support will contact you.",
+        code: "EXPRESS_PAUSED",
       });
     }
 
@@ -642,19 +783,46 @@ router.get(
     // rider sees their current ArrivoExpress state.
     await expireStaleOffers(pool);
 
-    const result = await pool.query(
-      `SELECT *
-         FROM instant_ride_requests
-        WHERE rider_id = $1
-          AND status IN (
+    // A request stays 'matched' forever once a driver accepts. Without the
+    // join below, a rider whose last Express trip has long since finished
+    // would be reported as still active and bounced to its tracking page
+    // on every visit. Only a matched request whose ride is still live counts.
+    const findActive = () => pool.query(
+      `SELECT irr.*
+         FROM instant_ride_requests irr
+         LEFT JOIN rides ON rides.id = irr.ride_id
+        WHERE irr.rider_id = $1
+          AND irr.status IN (
             'searching',
             'offering',
             'matched'
           )
-        ORDER BY created_at DESC
+          AND NOT (
+            irr.status = 'matched'
+            AND rides.ride_status IN ('completed', 'cancelled', 'canceled')
+          )
+        ORDER BY irr.created_at DESC
         LIMIT 1`,
       [req.user.id]
     );
+
+    let result = await findActive();
+
+    // The rider app polls this every few seconds while searching, so it is
+    // also what keeps the search going: when the last batch of offers has
+    // lapsed with no taker, offer the trip to the next nearest drivers in a
+    // wider radius. A failure here must never break the rider's status.
+    if (result.rows[0] && result.rows[0].status !== "matched") {
+      try {
+        await redispatchOpenRequest(result.rows[0]);
+        result = await findActive();
+      } catch (error) {
+        console.error(
+          `ArrivoExpress re-dispatch failed for request #${result.rows[0].id}:`,
+          error.message
+        );
+      }
+    }
 
     res.json({
       enabled: true,

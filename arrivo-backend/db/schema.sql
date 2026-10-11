@@ -466,10 +466,16 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS escort_payout_naira NUMERIC;
 -- services/paymentReferences.js). The UNIQUE constraint makes the claim
 -- itself atomic even under two simultaneous requests racing with the same
 -- reference — a plain SELECT-then-UPDATE check can't guarantee that.
+-- Bumped to sign a user out everywhere: a password reset, or an unverified
+-- sign-up claimed by the real owner of the email. Tokens carry the value they
+-- were issued with (claim "tv"; older tokens count as 0) and stop working when
+-- it no longer matches.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS used_payment_references (
   id SERIAL PRIMARY KEY,
   reference TEXT UNIQUE NOT NULL,
-  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup'
+  used_for TEXT NOT NULL, -- 'ride_payment' | 'ride_tip' | 'ride_overage' | 'wallet_topup' | 'family_topup'
   ride_id INTEGER REFERENCES rides(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -557,6 +563,163 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status, created_at);
 
+
+-- ── Support-assisted bookings ──
+--
+-- A trusted RideArrivo Workspace employee may create a booking for an
+-- existing Arrivo rider without ever receiving or impersonating the
+-- rider's password/JWT.
+--
+-- actor_employee_id is the Workspace employee UUID.
+-- rider_id is the Arrivo users.id INTEGER.
+--
+-- actor_request_id is the signed Workspace actor JWT jti and provides
+-- a second replay boundary in addition to the client idempotency key.
+
+CREATE TABLE IF NOT EXISTS support_assisted_bookings (
+  id SERIAL PRIMARY KEY,
+  -- Bound only after verified customer payment creates the real ride.
+  ride_id INTEGER UNIQUE
+    REFERENCES rides(id) ON DELETE RESTRICT,
+  rider_id INTEGER NOT NULL
+    REFERENCES users(id) ON DELETE RESTRICT,
+  actor_employee_id UUID NOT NULL,
+  actor_role TEXT NOT NULL
+    CHECK (actor_role IN ('support','admin')),
+  actor_request_id UUID NOT NULL UNIQUE,
+  idempotency_key UUID NOT NULL UNIQUE,
+  request_fingerprint TEXT NOT NULL
+    CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+  source TEXT NOT NULL DEFAULT 'support_assisted'
+    CHECK (source = 'support_assisted'),
+  payment_method TEXT NOT NULL DEFAULT 'card'
+    CHECK (payment_method = 'card'),
+  payment_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      payment_status IN (
+        'pending',
+        'paid',
+        'failed',
+        'cancelled'
+      )
+    ),
+  -- Set once a Paystack payment link has been generated for this booking
+  -- (see POST /:id/payment-link). NULL until then. UNIQUE for the same
+  -- reason payment_reference is unique everywhere else in this schema --
+  -- the webhook looks a payment up by reference alone, so two rows must
+  -- never be able to share one.
+  payment_reference TEXT UNIQUE,
+  -- Stored alongside payment_reference so the same link can be re-sent
+  -- (customer lost the WhatsApp message, wants it emailed too) without
+  -- ever calling Paystack /transaction/initialize a second time for the
+  -- same booking. Paystack only returns authorization_url at initialize
+  -- time -- there's no later "look up the URL for this reference" call --
+  -- so if this weren't stored, a resend would have to mint a second,
+  -- different reference, and a customer who still pays via the FIRST
+  -- (now-orphaned) link would have a real, successful charge that this
+  -- system could never bind back to a ride.
+  payment_link_url TEXT,
+  payment_link_sent_at TIMESTAMPTZ,
+  payment_status_at_creation TEXT NOT NULL DEFAULT 'pending'
+    CHECK (payment_status_at_creation = 'pending'),
+  booking_request JSONB NOT NULL
+    CHECK (jsonb_typeof(booking_request) = 'object'),
+  fare_naira INTEGER NOT NULL
+    CHECK (fare_naira > 0),
+  quoted_ngn_per_usd NUMERIC(14,4) NOT NULL
+    CHECK (quoted_ngn_per_usd > 0),
+  quoted_usd_amount NUMERIC(14,2) NOT NULL
+    CHECK (quoted_usd_amount >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_rider
+ON support_assisted_bookings(
+  rider_id,
+  created_at
+);
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_actor
+ON support_assisted_bookings(
+  actor_employee_id,
+  created_at
+);
+
+
+-- Widen support_assisted_bookings to also accept a customer's own
+-- self-service submission (see POST /api/public/booking-requests), not
+-- just a staff-created one. A public submission has no Workspace actor at
+-- all -- there's no employee behind it to sign a token -- so
+-- actor_employee_id/actor_role/actor_request_id move from NOT NULL
+-- (staff-required) to nullable. The CHECK below is the real guardrail:
+-- it still forces every staff-attributed row to carry full actor
+-- identity exactly as before, and separately forces every public row to
+-- carry NONE of it, so a public submission can never forge staff
+-- attribution and a staff submission can never accidentally lose its
+-- audit trail. ALTER TABLE, not a CREATE TABLE edit, because by the time
+-- this change ships the table may already be live with the old,
+-- staff-only shape -- every statement here is safe to re-run.
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_employee_id DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_role DROP NOT NULL;
+ALTER TABLE support_assisted_bookings
+  ALTER COLUMN actor_request_id DROP NOT NULL;
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_role_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_role_check
+  CHECK (actor_role IS NULL OR actor_role IN ('support', 'admin'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_source_check
+  CHECK (source IN ('support_assisted', 'public_self_service'));
+
+ALTER TABLE support_assisted_bookings
+  DROP CONSTRAINT IF EXISTS support_assisted_bookings_actor_matches_source_check;
+ALTER TABLE support_assisted_bookings
+  ADD CONSTRAINT support_assisted_bookings_actor_matches_source_check
+  CHECK (
+    (
+      source = 'support_assisted'
+      AND actor_employee_id IS NOT NULL
+      AND actor_role IS NOT NULL
+      AND actor_request_id IS NOT NULL
+    )
+    OR
+    (
+      source = 'public_self_service'
+      AND actor_employee_id IS NULL
+      AND actor_role IS NULL
+      AND actor_request_id IS NULL
+    )
+  );
+
+-- Free-text note on how the customer got this link -- "instagram DM",
+-- "a friend", a support agent's name typed in on the form. Never
+-- validated against anything; it exists only so the team can later see
+-- which channel is actually driving completed bookings. NULL for every
+-- staff-created row, since staff attribution already covers that case.
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via TEXT;
+ALTER TABLE support_assisted_bookings
+  ADD COLUMN IF NOT EXISTS submitted_via_ip TEXT;
+
+CREATE INDEX IF NOT EXISTS
+  idx_support_assisted_bookings_source
+ON support_assisted_bookings(
+  source,
+  created_at
+);
+
+
+
 -- ── On-the-Go requests ──
 -- The quick path for someone who needs a car within 12 hours and hasn't got
 -- time for the full Plan Route flow. Only the essentials, no vehicle choice,
@@ -586,6 +749,13 @@ CREATE TABLE IF NOT EXISTS on_the_go_requests (
 -- Ops works the pending list oldest first, so that's the index that matters.
 CREATE INDEX IF NOT EXISTS idx_on_the_go_status ON on_the_go_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_on_the_go_user ON on_the_go_requests(user_id, created_at);
+
+-- When the rider wanted the car, which service they were booking when it turned
+-- out to be too close, and any details. All optional, so older app builds that
+-- send none of them still work.
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS requested_pickup_at TIMESTAMPTZ;
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS details TEXT;
+ALTER TABLE on_the_go_requests ADD COLUMN IF NOT EXISTS source_service TEXT;
 
 
 -- ============================================================
@@ -1176,3 +1346,686 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ride_idempotency_key_once ON ride_idempote
 -- ============================================================
 -- END ARRIVO EXPRESS PHASE 3
 -- ============================================================
+
+-- ── Operations CSV exports: audit trail ──
+-- One row per download attempt, written before any data leaves, then updated
+-- with the final row count and outcome. Exports carry personal data out of
+-- the system, so who took what and when has to be answerable later.
+CREATE TABLE IF NOT EXISTS export_audit_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT NOT NULL,
+  user_role TEXT NOT NULL,
+  dataset TEXT NOT NULL,
+  date_from DATE,
+  date_to DATE,
+  row_count INTEGER,
+  status TEXT NOT NULL DEFAULT 'started', -- 'started' | 'completed' | 'failed' | 'aborted'
+  ip TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_export_audit_log_created ON export_audit_log(created_at DESC);
+-- Which door the download came through: the admin console or the Workspace.
+ALTER TABLE export_audit_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'console';
+
+-- ============================================================
+-- PAYMENTS SAFETY (batch 2)
+-- ============================================================
+
+-- ── Payment orders ──
+-- One row per Paystack transaction this API started (POST /api/payments/initialize)
+-- or later learned about from a webhook. Before this, a card payment existed
+-- only inside Paystack until the rider's app came back and called verify then
+-- create-ride. If the app was closed in between, the money was taken and
+-- nothing on our side knew what it was for.
+--
+-- purpose says what the payment is for ('ride', 'wallet_topup', or 'unknown'
+-- for builds that do not say). user_id is only ever set from a verified login
+-- token, never from the request body, so a payment cannot be pointed at
+-- someone else's wallet. payload holds the booking the rider was paying for
+-- (rides only) so the webhook can finish the booking itself.
+--
+-- status: 'pending' (started, not yet paid), 'paid' (Paystack confirmed, not
+-- yet matched to a ride or credit), 'finalized' (matched), 'exception' (needs
+-- a person, see payment_exceptions).
+CREATE TABLE IF NOT EXISTS payment_orders (
+  id SERIAL PRIMARY KEY,
+  reference TEXT UNIQUE NOT NULL,
+  user_id INTEGER REFERENCES users(id),
+  email TEXT,
+  purpose TEXT NOT NULL DEFAULT 'unknown',
+  amount_naira NUMERIC,
+  payload JSONB,
+  status TEXT NOT NULL DEFAULT 'pending',
+  ride_id INTEGER REFERENCES rides(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at TIMESTAMPTZ,
+  finalized_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_status_paid ON payment_orders(status, paid_at);
+
+-- ── Payment exceptions ──
+-- Money that arrived (or was refused) in a way a person has to look at: wrong
+-- currency, wrong amount, a reference already spent on something else, a paid
+-- order the webhook could not turn into a ride, a paid reference nothing ever
+-- claimed. One row per (reference, reason): Paystack retries webhooks, and a
+-- retry must bump occurrences rather than pile up duplicates.
+-- status: 'open', 'resolved', 'refund_pending', 'refunded', 'refund_failed'.
+CREATE TABLE IF NOT EXISTS payment_exceptions (
+  id SERIAL PRIMARY KEY,
+  reference TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  purpose TEXT,
+  user_id INTEGER REFERENCES users(id),
+  amount_naira NUMERIC,
+  details JSONB,
+  status TEXT NOT NULL DEFAULT 'open',
+  occurrences INTEGER NOT NULL DEFAULT 1,
+  refund_response JSONB,
+  resolved_by INTEGER REFERENCES users(id),
+  resolved_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  UNIQUE (reference, reason)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_exceptions_status ON payment_exceptions(status, created_at DESC);
+
+-- ── Membership subscribe idempotency ──
+-- POST /api/memberships/subscribe takes money from the wallet. A lost response
+-- followed by a retry must not charge twice, and must not turn a success into a
+-- confusing "you already have a membership" error. Optional: builds that do not
+-- send an idempotencyKey are still protected by the row lock in the route.
+CREATE TABLE IF NOT EXISTS membership_idempotency_keys (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  idempotency_key TEXT NOT NULL,
+  plan_key TEXT NOT NULL,
+  response_status INTEGER NOT NULL,
+  response_body JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, idempotency_key)
+);
+
+-- ── Wallet balances can never go below zero ──
+-- Every debit in the code checks the balance under a row lock first, so a
+-- negative balance should be impossible. This makes the database refuse one
+-- even if a future code path forgets the check. Added only when no row is
+-- negative today: adding it over existing negative rows would make every later
+-- update to those users fail, and a failing schema step stops the server
+-- booting. If a row is negative the server warns and starts without the rule.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_wallet_balance_nonnegative') THEN
+    IF EXISTS (SELECT 1 FROM users WHERE wallet_balance_naira < 0) THEN
+      RAISE WARNING 'users_wallet_balance_nonnegative NOT added: some users already have a negative wallet balance. Fix those rows, then restart.';
+    ELSE
+      ALTER TABLE users ADD CONSTRAINT users_wallet_balance_nonnegative CHECK (wallet_balance_naira >= 0);
+    END IF;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'family_plans_wallet_balance_nonnegative') THEN
+    IF EXISTS (SELECT 1 FROM family_plans WHERE wallet_balance_naira < 0) THEN
+      RAISE WARNING 'family_plans_wallet_balance_nonnegative NOT added: some family plans already have a negative wallet balance. Fix those rows, then restart.';
+    ELSE
+      ALTER TABLE family_plans ADD CONSTRAINT family_plans_wallet_balance_nonnegative CHECK (wallet_balance_naira >= 0);
+    END IF;
+  END IF;
+END $$;
+-- ── In-trip audio recording ──
+-- Off unless RIDE_AUDIO_RECORDING_ENABLED=true (see services/audioStorage.js).
+-- One recording per start by one person on one ride; audio arrives in short
+-- chunks so a crash or a lost signal keeps everything uploaded so far.
+CREATE TABLE IF NOT EXISTS ride_audio_recordings (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  consent_at TIMESTAMPTZ NOT NULL,
+  started_via_panic BOOLEAN NOT NULL DEFAULT false,
+  -- A hold (set automatically by a panic alert, or by an admin) stops the
+  -- retention sweep from deleting this recording.
+  hold BOOLEAN NOT NULL DEFAULT false,
+  ended_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_recordings_ride ON ride_audio_recordings(ride_id);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_recordings_retention ON ride_audio_recordings(created_at) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS ride_audio_chunks (
+  id SERIAL PRIMARY KEY,
+  recording_id INTEGER NOT NULL REFERENCES ride_audio_recordings(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  declared_size_bytes INTEGER NOT NULL,
+  size_bytes INTEGER,
+  duration_sec NUMERIC,
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'uploaded'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  uploaded_at TIMESTAMPTZ,
+  UNIQUE (recording_id, seq)
+);
+
+-- Who listened to what. Written before any listening link is issued.
+CREATE TABLE IF NOT EXISTS ride_audio_access_log (
+  id SERIAL PRIMARY KEY,
+  recording_id INTEGER NOT NULL REFERENCES ride_audio_recordings(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT NOT NULL,
+  action TEXT NOT NULL, -- 'play' | 'hold' | 'release'
+  ip TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_audio_access_log_recording ON ride_audio_access_log(recording_id, created_at DESC);
+
+-- ── ArrivoExpress: price book, competitor price log, driver quests ──
+--
+-- The price book lets ops change fares on a schedule WITHOUT a deploy. Each
+-- publish inserts new rows; the active price for a tier is its newest row
+-- whose effective_from has passed. Nothing is overwritten, so every fare ever
+-- charged can be traced to the price in force at the time. If the table is
+-- empty the code defaults in services/instantTiers.js apply.
+CREATE TABLE IF NOT EXISTS instant_price_book (
+  id SERIAL PRIMARY KEY,
+  tier TEXT NOT NULL CHECK (tier IN ('economy', 'comfort', 'xl', 'premium')),
+  base_fare_naira INTEGER NOT NULL CHECK (base_fare_naira > 0),
+  per_km_naira INTEGER NOT NULL CHECK (per_km_naira > 0),
+  per_min_naira INTEGER NOT NULL CHECK (per_min_naira >= 0),
+  minimum_fare_naira INTEGER NOT NULL CHECK (minimum_fare_naira > 0),
+  effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  note TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_instant_price_book_tier
+  ON instant_price_book(tier, effective_from DESC);
+
+-- Same-route fares ops saw in competitor apps (Bolt, Uber, inDrive...), logged
+-- daily. our_fare_naira is what we would have charged for the same distance and
+-- time under the price book at logging time, so the comparison stays valid
+-- after prices change.
+CREATE TABLE IF NOT EXISTS instant_price_samples (
+  id SERIAL PRIMARY KEY,
+  observed_on DATE NOT NULL,
+  period TEXT NOT NULL DEFAULT 'day' CHECK (period IN ('day', 'night')),
+  source TEXT NOT NULL CHECK (source IN ('bolt', 'uber', 'indrive', 'other')),
+  tier TEXT NOT NULL CHECK (tier IN ('economy', 'comfort', 'xl', 'premium')),
+  route_label TEXT,
+  distance_km NUMERIC(8, 2) NOT NULL CHECK (distance_km > 0),
+  duration_min NUMERIC(8, 1) NOT NULL CHECK (duration_min > 0),
+  observed_fare_naira INTEGER NOT NULL CHECK (observed_fare_naira > 0),
+  our_fare_naira INTEGER NOT NULL CHECK (our_fare_naira > 0),
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_instant_price_samples_day
+  ON instant_price_samples(observed_on DESC, tier);
+
+-- Driver quests: "complete N qualifying trips in the window, earn a fixed
+-- amount". Deliberately NOT a blanket bonus or per-trip boost: pay is tied to
+-- reliable work, and max_winners puts a hard ceiling on what one quest can
+-- ever cost (reward_naira * max_winners).
+CREATE TABLE IF NOT EXISTS driver_quests (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  tier TEXT CHECK (tier IS NULL OR tier IN ('economy', 'comfort', 'xl', 'premium')),
+  target_trips INTEGER NOT NULL CHECK (target_trips BETWEEN 1 AND 200),
+  reward_naira INTEGER NOT NULL CHECK (reward_naira BETWEEN 100 AND 500000),
+  max_winners INTEGER NOT NULL CHECK (max_winners BETWEEN 1 AND 100000),
+  min_trip_km NUMERIC(6, 2) NOT NULL DEFAULT 1.0,
+  min_trip_minutes INTEGER NOT NULL DEFAULT 3,
+  max_trips_per_rider INTEGER NOT NULL DEFAULT 2 CHECK (max_trips_per_rider >= 1),
+  min_driver_rating NUMERIC(3, 2),
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at > starts_at)
+);
+
+-- One row per ride that counted toward a quest. UNIQUE(quest_id, ride_id)
+-- makes counting idempotent: completing the same ride twice, or a retry,
+-- can never count it twice.
+CREATE TABLE IF NOT EXISTS driver_quest_trips (
+  id SERIAL PRIMARY KEY,
+  quest_id INTEGER NOT NULL REFERENCES driver_quests(id) ON DELETE CASCADE,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  rider_id INTEGER NOT NULL REFERENCES users(id),
+  counted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (quest_id, ride_id)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_quest_trips_progress
+  ON driver_quest_trips(quest_id, driver_id);
+
+-- What the company owes for completed quests. Payment itself happens through
+-- the existing payout process; this table is the record of who earned what and
+-- whether it has been paid. UNIQUE(quest_id, driver_id): a driver earns a
+-- given quest at most once.
+CREATE TABLE IF NOT EXISTS driver_quest_payouts (
+  id SERIAL PRIMARY KEY,
+  quest_id INTEGER NOT NULL REFERENCES driver_quests(id),
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  reward_naira INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'owed' CHECK (status IN ('owed', 'paid')),
+  earned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at TIMESTAMPTZ,
+  paid_by INTEGER REFERENCES users(id),
+  UNIQUE (quest_id, driver_id)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_quest_payouts_status
+  ON driver_quest_payouts(status, earned_at);
+
+
+-- ── ArrivoExpress automation: quest payouts to the driver wallet, repricing ──
+--
+-- How a quest reward was settled, and the wallet ledger row that proves it.
+-- paid_via is 'wallet' (credited to the driver's RideArrivo wallet) or
+-- 'manual' (an admin paid it outside the app and marked it paid).
+ALTER TABLE driver_quest_payouts ADD COLUMN IF NOT EXISTS paid_via TEXT
+  CHECK (paid_via IS NULL OR paid_via IN ('wallet', 'manual'));
+ALTER TABLE driver_quest_payouts ADD COLUMN IF NOT EXISTS wallet_transaction_id INTEGER
+  REFERENCES wallet_transactions(id);
+
+-- Every automatic decision, kept as evidence: what it did, what it skipped and
+-- why. run_date makes a daily job claimable exactly once even with several
+-- server instances running (the insert either wins the day or does nothing).
+CREATE TABLE IF NOT EXISTS express_automation_log (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,           -- 'reprice' | 'payout'
+  action TEXT NOT NULL,         -- e.g. 'applied', 'skipped', 'run', 'paid', 'cap_reached'
+  run_date DATE,
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_express_automation_daily
+  ON express_automation_log(kind, run_date) WHERE action = 'run' AND run_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_express_automation_log_recent
+  ON express_automation_log(kind, created_at DESC);
+
+-- ── Driver cash-out: wallet balance to a bank account ──
+-- One verified bank account per driver. Paystack resolves the account name,
+-- and the name must match the driver's profile name, so money cannot be sent
+-- to an unrelated person's account. Changing the account starts a cooling-off
+-- period (CASHOUT_BANK_COOLING_HOURS) during which cash-out is blocked: the
+-- classic account takeover move is "change the bank, withdraw everything".
+CREATE TABLE IF NOT EXISTS driver_bank_accounts (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  bank_code TEXT NOT NULL,
+  bank_name TEXT NOT NULL,
+  account_number TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per cash-out request. The wallet is debited when the row is
+-- created (so the same money cannot be withdrawn twice) and credited back
+-- if the transfer fails, is rejected or is reversed. `reference` is sent to
+-- Paystack as the transfer reference, which Paystack refuses to accept twice,
+-- so a retry can never pay the driver twice.
+CREATE TABLE IF NOT EXISTS wallet_withdrawals (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_naira INTEGER NOT NULL CHECK (amount_naira > 0),
+  fee_naira INTEGER NOT NULL DEFAULT 0 CHECK (fee_naira >= 0),
+  status TEXT NOT NULL CHECK (status IN ('pending_review','queued','processing','paid','failed','rejected','reversed')),
+  reference TEXT NOT NULL UNIQUE,
+  idempotency_key TEXT,
+  bank_name TEXT NOT NULL,
+  account_last4 TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  paystack_recipient_code TEXT NOT NULL,
+  paystack_transfer_code TEXT,
+  debit_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  refund_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  note TEXT,
+  reviewed_by INTEGER REFERENCES users(id),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_withdrawals_idem
+  ON wallet_withdrawals(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_user ON wallet_withdrawals(user_id, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_open ON wallet_withdrawals(status)
+  WHERE status IN ('pending_review','queued','processing');
+
+-- ── Trip safety: pickup PIN, expiring share links, driver selfie check, two-way complaints ──
+
+-- Pickup PIN. The 4 digit PIN itself is NOT stored: it is derived from the ride
+-- id and `nonce` with a server secret (services/pickupPin.js), so a database leak
+-- reveals nothing. This row only tracks attempts and whether the driver got it right.
+CREATE TABLE IF NOT EXISTS ride_pickup_pins (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id),
+  nonce INTEGER NOT NULL DEFAULT 0,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  verified_at TIMESTAMPTZ,
+  override_by INTEGER REFERENCES users(id),
+  override_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Expiring, revocable trip share links. Only a SHA-256 hash of the token is
+-- kept. A link works until it expires, is revoked, or a short grace period after
+-- the trip ends, whichever comes first (services/shareLinks.js).
+CREATE TABLE IF NOT EXISTS ride_share_links (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER REFERENCES users(id),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revoked_by INTEGER REFERENCES users(id),
+  view_count INTEGER NOT NULL DEFAULT 0,
+  last_viewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_share_links_ride ON ride_share_links(ride_id);
+
+-- Driver selfie check: a fresh selfie, with a challenge so a stored photo cannot
+-- be replayed, compared with the profile photo. 'manual' provider means a person
+-- reviews it in admin; a face matching vendor can fill match_score instead.
+CREATE TABLE IF NOT EXISTS driver_selfie_checks (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  image_data_url TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+  provider TEXT NOT NULL DEFAULT 'manual',
+  match_score NUMERIC(5, 2),
+  reviewed_by INTEGER REFERENCES users(id),
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_driver_selfie_checks_driver ON driver_selfie_checks(driver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_driver_selfie_checks_pending ON driver_selfie_checks(status) WHERE status = 'pending';
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS selfie_recheck_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS express_paused_at TIMESTAMPTZ;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS express_paused_reason TEXT;
+
+-- Two-way complaints: a rider reports a driver, or a driver reports a rider, about
+-- one ride. `against_user_id` is always worked out from the ride, never trusted
+-- from the client. The accused never sees the report.
+CREATE TABLE IF NOT EXISTS ride_complaints (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id),
+  filed_by INTEGER NOT NULL REFERENCES users(id),
+  filer_role TEXT NOT NULL CHECK (filer_role IN ('rider', 'driver')),
+  against_user_id INTEGER NOT NULL REFERENCES users(id),
+  category TEXT NOT NULL,
+  priority TEXT NOT NULL CHECK (priority IN ('urgent', 'normal')),
+  description TEXT NOT NULL,
+  photo_data_url TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'investigating', 'resolved', 'dismissed')),
+  resolution TEXT,
+  action TEXT,
+  resolved_by INTEGER REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  respond_by TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ride_id, filed_by, category)
+);
+CREATE INDEX IF NOT EXISTS idx_ride_complaints_open ON ride_complaints(status, priority, respond_by) WHERE status IN ('open', 'investigating');
+CREATE INDEX IF NOT EXISTS idx_ride_complaints_against ON ride_complaints(against_user_id, created_at DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS express_restricted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS express_restricted_reason TEXT;
+
+-- Audit trail for safety actions: PIN lockouts and overrides, selfie decisions,
+-- automatic pauses, complaint actions.
+CREATE TABLE IF NOT EXISTS safety_events (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  ride_id INTEGER,
+  user_id INTEGER,
+  driver_id INTEGER,
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_safety_events_recent ON safety_events(created_at DESC);
+
+
+-- ── In-app calls between a rider and their driver ──
+--
+-- One row per call attempt. Nobody ever sees the other person's phone number:
+-- the server creates the call (routes/calls.js), the apps join it by id, and
+-- this table records what happened so support can help when it goes wrong.
+--
+-- status: ringing | connected | ended | missed | declined | cancelled | failed
+CREATE TABLE IF NOT EXISTS call_sessions (
+  id TEXT PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  caller_user_id INTEGER NOT NULL REFERENCES users(id),
+  callee_user_id INTEGER NOT NULL REFERENCES users(id),
+  stream_call_type TEXT NOT NULL DEFAULT 'default',
+  stream_call_id TEXT NOT NULL UNIQUE,
+  media TEXT NOT NULL DEFAULT 'audio',
+  status TEXT NOT NULL DEFAULT 'ringing',
+  failure_reason TEXT,
+  support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  answered_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  duration_seconds INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_ride ON call_sessions(ride_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_caller ON call_sessions(caller_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_live ON call_sessions(status) WHERE status IN ('ringing', 'connected');
+
+
+-- ── Ride teams: a support agent and an operations person on every ride ──
+--
+-- Every booked ride is handed, automatically, to the on-duty support agent and
+-- the on-duty operations person with the fewest open rides. The driver is
+-- attached by rides.driver_id as soon as one accepts. Together they are the
+-- "ride team" the rider and driver deal with, by name.
+--
+-- The assignment runs inside Postgres (assign_ride_team below), fired by a
+-- trigger on rides, so every way a ride can be created gets a team without
+-- anyone remembering to call it. A periodic sweep (rebalance_ride_teams) fills
+-- gaps when nobody was on duty, and moves rides off anyone who has gone off
+-- duty or whose account has gone.
+CREATE TABLE IF NOT EXISTS staff_duty (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  team TEXT NOT NULL CHECK (team IN ('support', 'operations')),
+  on_duty BOOLEAN NOT NULL DEFAULT false,
+  max_open INTEGER NOT NULL DEFAULT 25 CHECK (max_open >= 1), -- soft cap: past it, others are preferred
+  last_assigned_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ride_team (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id) ON DELETE CASCADE,
+  support_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  operations_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_team_support ON ride_team(support_user_id);
+CREATE INDEX IF NOT EXISTS idx_ride_team_operations ON ride_team(operations_user_id);
+
+CREATE TABLE IF NOT EXISTS ride_team_events (
+  id BIGSERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  team TEXT NOT NULL,
+  kind TEXT NOT NULL, -- 'assigned' | 'reassigned' | 'unassigned'
+  from_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_team_events_ride ON ride_team_events(ride_id, created_at);
+
+-- Every time staff look at, or reach for, a rider's or driver's phone number.
+-- Riders and drivers are promised their numbers stay private; this is how that
+-- promise stays checkable.
+CREATE TABLE IF NOT EXISTS staff_contact_access (
+  id BIGSERIAL PRIMARY KEY,
+  staff_user_id INTEGER NOT NULL REFERENCES users(id),
+  ride_id INTEGER REFERENCES rides(id) ON DELETE SET NULL,
+  subject_user_id INTEGER NOT NULL REFERENCES users(id),
+  subject_role TEXT NOT NULL, -- 'rider' | 'driver'
+  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_contact_access_subject ON staff_contact_access(subject_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_staff_contact_access_staff ON staff_contact_access(staff_user_id, created_at DESC);
+
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_support_tickets_assigned ON support_tickets(assigned_to, status);
+
+-- Calls placed by staff are recorded in call_sessions too, with the staff
+-- member as the caller. Marked so reports can tell them from rider/driver calls.
+ALTER TABLE call_sessions ADD COLUMN IF NOT EXISTS placed_by_staff BOOLEAN NOT NULL DEFAULT false;
+
+-- How many open rides this person is carrying for the team they work in.
+CREATE OR REPLACE FUNCTION staff_open_load(p_user INTEGER, p_team TEXT) RETURNS INTEGER AS $$
+  SELECT count(*)::int
+  FROM ride_team rt
+  JOIN rides r ON r.id = rt.ride_id
+  WHERE r.ride_status NOT IN ('completed', 'cancelled')
+    AND ((p_team = 'support' AND rt.support_user_id = p_user)
+      OR (p_team = 'operations' AND rt.operations_user_id = p_user));
+$$ LANGUAGE sql STABLE;
+
+-- Fewest open rides wins. Anyone past their soft cap is only picked when
+-- everyone is. Ties go to whoever has waited longest for a ride.
+CREATE OR REPLACE FUNCTION pick_staff(p_team TEXT) RETURNS INTEGER AS $$
+  SELECT sd.user_id
+  FROM staff_duty sd
+  JOIN users u ON u.id = sd.user_id
+  WHERE sd.team = p_team AND sd.on_duty
+    AND u.deleted_at IS NULL
+    AND u.role IN ('admin', 'support', 'operations')
+  ORDER BY
+    (CASE WHEN staff_open_load(sd.user_id, p_team) >= sd.max_open THEN 1 ELSE 0 END),
+    staff_open_load(sd.user_id, p_team),
+    sd.last_assigned_at NULLS FIRST,
+    sd.user_id
+  LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION staff_is_available(p_user INTEGER, p_team TEXT) RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff_duty sd JOIN users u ON u.id = sd.user_id
+    WHERE sd.user_id = p_user AND sd.team = p_team AND sd.on_duty
+      AND u.deleted_at IS NULL AND u.role IN ('admin', 'support', 'operations')
+  );
+$$ LANGUAGE sql STABLE;
+
+-- Gives one ride its support and operations people, replacing anyone who is no
+-- longer available. Safe to call again and again.
+DROP FUNCTION IF EXISTS assign_ride_team(INTEGER, TEXT);
+CREATE OR REPLACE FUNCTION assign_ride_team(p_ride INTEGER, p_reason TEXT DEFAULT 'booked') RETURNS BOOLEAN AS $$
+DECLARE
+  changed BOOLEAN := false;
+  cur ride_team%ROWTYPE;
+  picked INTEGER;
+  t TEXT;
+  current_user_id INTEGER;
+BEGIN
+  -- One assignment at a time, so two rides booked in the same instant cannot
+  -- both be handed to the same "least loaded" person. Held until commit.
+  PERFORM pg_advisory_xact_lock(7002, 0);
+
+  INSERT INTO ride_team (ride_id) VALUES (p_ride) ON CONFLICT (ride_id) DO NOTHING;
+  SELECT * INTO cur FROM ride_team WHERE ride_id = p_ride FOR UPDATE;
+
+  FOREACH t IN ARRAY ARRAY['support', 'operations'] LOOP
+    current_user_id := CASE WHEN t = 'support' THEN cur.support_user_id ELSE cur.operations_user_id END;
+    IF current_user_id IS NOT NULL AND staff_is_available(current_user_id, t) THEN
+      CONTINUE;
+    END IF;
+
+    picked := pick_staff(t);
+    IF picked IS NULL THEN
+      -- Nobody on duty. Leave it queued; the sweep fills it when someone is.
+      IF current_user_id IS NOT NULL THEN
+        IF t = 'support' THEN UPDATE ride_team SET support_user_id = NULL, updated_at = now() WHERE ride_id = p_ride;
+        ELSE UPDATE ride_team SET operations_user_id = NULL, updated_at = now() WHERE ride_id = p_ride; END IF;
+        INSERT INTO ride_team_events (ride_id, team, kind, from_user_id, to_user_id, reason)
+          VALUES (p_ride, t, 'unassigned', current_user_id, NULL, p_reason);
+        changed := true;
+      END IF;
+      CONTINUE;
+    END IF;
+
+    IF t = 'support' THEN UPDATE ride_team SET support_user_id = picked, updated_at = now() WHERE ride_id = p_ride;
+    ELSE UPDATE ride_team SET operations_user_id = picked, updated_at = now() WHERE ride_id = p_ride; END IF;
+    UPDATE staff_duty SET last_assigned_at = now() WHERE user_id = picked;
+    INSERT INTO ride_team_events (ride_id, team, kind, from_user_id, to_user_id, reason)
+      VALUES (p_ride, t, CASE WHEN current_user_id IS NULL THEN 'assigned' ELSE 'reassigned' END, current_user_id, picked, p_reason);
+    changed := true;
+  END LOOP;
+  RETURN changed;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Goes through every open ride that is missing a team member, or whose team
+-- member is off duty or gone, oldest first. Returns how many rides it touched.
+CREATE OR REPLACE FUNCTION rebalance_ride_teams(p_reason TEXT DEFAULT 'rebalance') RETURNS INTEGER AS $$
+DECLARE
+  r RECORD;
+  n INTEGER := 0;
+BEGIN
+  FOR r IN
+    SELECT rides.id
+    FROM rides
+    LEFT JOIN ride_team rt ON rt.ride_id = rides.id
+    WHERE rides.ride_status NOT IN ('completed', 'cancelled')
+      AND (
+        rt.ride_id IS NULL
+        OR rt.support_user_id IS NULL OR NOT staff_is_available(rt.support_user_id, 'support')
+        OR rt.operations_user_id IS NULL OR NOT staff_is_available(rt.operations_user_id, 'operations')
+      )
+    ORDER BY rides.created_at, rides.id
+  LOOP
+    IF assign_ride_team(r.id, p_reason) THEN n := n + 1; END IF;
+  END LOOP;
+  RETURN n;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION rides_assign_team_trg() RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM assign_ride_team(NEW.id, 'booked');
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'rides_assign_team' AND tgrelid = 'rides'::regclass) THEN
+    CREATE TRIGGER rides_assign_team AFTER INSERT ON rides FOR EACH ROW EXECUTE FUNCTION rides_assign_team_trg();
+  END IF;
+END $$;
+
+-- The head of support. Still a 'support' user, but sees every ride and every
+-- agent's workload, can move rides between support agents, put agents on or off
+-- duty, and read the number-access log. Set by an admin only.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS support_lead BOOLEAN NOT NULL DEFAULT false;
+
+-- Owner and staff management. The owner (set only from the command line, see
+-- scripts/set-owner.js) can promote and remove anyone and can delegate that to
+-- named admins with can_manage_staff. Every change is written to staff_role_events.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_staff BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS staff_role_events (
+  id BIGSERIAL PRIMARY KEY,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  from_role TEXT,
+  to_role TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_role_events_created ON staff_role_events(created_at DESC);
