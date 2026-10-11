@@ -28,7 +28,9 @@ async function request(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
-    err.code = data.code; // lets screens show the message in the driver's language
+    err.code = data.code;
+    err.support = data.support; // company support details, never a rider's or driver's number
+    err.sessionId = data.sessionId; // lets screens show the message in the driver's language
     err.params = data.params;
     err.status = res.status; // lets callers (e.g. AuthContext) tell "invalid/expired token" apart from a network failure
     notifyUnauthorized(res.status, options.headers);
@@ -186,6 +188,23 @@ export function deleteAccount(token, confirmEmail) {
   });
 }
 
+// ── In-trip audio recording (off unless the server says so) ──
+export function getRecordingConfig(token) {
+  return request("/api/recordings/config", authed(token));
+}
+export function startAudioRecording(token, rideId, viaPanic) {
+  return request("/api/recordings/start", authed(token, { method: "POST", body: JSON.stringify({ rideId, consent: true, viaPanic: !!viaPanic }) }));
+}
+export function requestAudioChunk(token, recordingId, seq, contentType, sizeBytes) {
+  return request(`/api/recordings/${recordingId}/chunks`, authed(token, { method: "POST", body: JSON.stringify({ seq, contentType, sizeBytes }) }));
+}
+export function completeAudioChunk(token, recordingId, seq, durationSec) {
+  return request(`/api/recordings/${recordingId}/chunks/${seq}/complete`, authed(token, { method: "POST", body: JSON.stringify({ durationSec }) }));
+}
+export function finishAudioRecording(token, recordingId) {
+  return request(`/api/recordings/${recordingId}/finish`, authed(token, { method: "POST" }));
+}
+
 // Trip safety
 export function verifyPickupPin(token, rideId, pin) {
   return request(`/api/safety/rides/${rideId}/pin/verify`, authed(token, { method: "POST", body: JSON.stringify({ pin }) }));
@@ -198,4 +217,20 @@ export function submitSelfie(token, imageDataUrl, challenge) {
 }
 export function fileComplaint(token, { rideId, category, description }) {
   return request("/api/safety/complaints", authed(token, { method: "POST", body: JSON.stringify({ rideId, category, description }) }));
+}
+
+// ── Ride calls (server-controlled; no phone numbers anywhere) ──
+// See arrivo-backend/routes/calls.js. The server decides who may call whom,
+// creates and rings the call, and records every attempt.
+export function getCallAvailability(token, rideId) {
+  return request(`/api/calls/ride/${rideId}/availability`, authed(token));
+}
+export function startRideCall(token, rideId, media = "audio") {
+  return request(`/api/calls/ride/${rideId}/start`, authed(token, { method: "POST", body: JSON.stringify({ media }) }));
+}
+export function reportCallEvent(token, sessionId, event, reason) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/events`, authed(token, { method: "POST", body: JSON.stringify({ event, reason }) }));
+}
+export function requestCallSupport(token, sessionId, note) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }

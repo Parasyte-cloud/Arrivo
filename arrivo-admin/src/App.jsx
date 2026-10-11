@@ -28,6 +28,7 @@ const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ defa
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
 const ExpressPricingPage = lazy(() => import("./pages/ExpressPricingPage").then((m) => ({ default: m.ExpressPricingPage })));
 const SafetyPage = lazy(() => import("./pages/SafetyPage").then((m) => ({ default: m.SafetyPage })));
+const RideDeskPage = lazy(() => import("./pages/RideDeskPage").then((m) => ({ default: m.RideDeskPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
 
 // Every page key Dashboard actually knows how to render — used both to
@@ -35,11 +36,12 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "panics", "riders", "drivers", "rides", "support", "flight-issues",
+  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
   "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
 const OPERATIONS_PAGES = [
+  "ride-desk",
   "panics",
   "drivers",
   "rides",
@@ -148,6 +150,7 @@ function Dashboard() {
       <main className="main">
         <ErrorBoundary resetKey={page}>
           <Suspense fallback={<div className="empty-state">Loading…</div>}>
+            {page === "ride-desk" && <RideDeskPage />}
             {page === "panics" && <PanicsPage />}
             {page === "riders" && <RidersPage />}
             {page === "drivers" && <DriversPage />}
@@ -174,7 +177,6 @@ function Root() {
   const {
     isAuthenticated,
     initializing,
-    isOperations,
   } = useAuth();
 
   if (initializing) {
@@ -189,10 +191,6 @@ function Root() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
-  }
-
-  if (isOperations) {
-    return <Dashboard />;
   }
 
   return (
