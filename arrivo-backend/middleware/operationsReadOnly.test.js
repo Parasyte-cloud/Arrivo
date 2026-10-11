@@ -113,8 +113,14 @@ const blockedOperationsRequests = [
   ["GET", "/api/events"],
   ["GET", "/api/wallet"],
   ["GET", "/api/memberships/mine"],
-  ["POST", "/api/calls/token"],
   ["POST", "/api/on-the-go"],
+  ["POST", "/api/staff/rides/12/reassign"],
+  ["PUT", "/api/staff/lead/5"],
+  ["GET", "/api/staff/access-log"],
+  ["PUT", "/api/staff/duty/extra"],
+  ["POST", "/api/calls/ride/12/start"],
+  ["POST", "/api/calls/abc/support"],
+  ["POST", "/api/staff/rides/x/contact-log"],
   ["POST", "/api/rides"],
   ["POST", "/api/rides/quote"],
   ["PATCH", "/api/auth/me"],
@@ -140,6 +146,23 @@ test("operations is deny-by-default outside approved GET views", async () => {
       result.responseBody?.error || "",
       /Operations access is read-only/
     );
+  }
+});
+
+test("operations may do the few things the Rides section needs", async () => {
+  for (const [method, url] of [
+    ["GET", "/api/staff/rides"],
+    ["GET", "/api/staff/rides/42"],
+    ["GET", "/api/staff/duty"],
+    ["GET", "/api/staff/team"],
+    ["PUT", "/api/staff/duty"],
+    ["POST", "/api/staff/rides/42/contact-log"],
+    ["POST", "/api/calls/staff/ride/42/start"],
+    ["POST", "/api/calls/token"],
+    ["POST", "/api/calls/some-session-id/events"],
+  ]) {
+    const result = await requestFor("operations", method, url);
+    assert.equal(result.nextCalled, true, `expected ${method} ${url} to be allowed`);
   }
 });
 

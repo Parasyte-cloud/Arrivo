@@ -30,6 +30,8 @@ const {
   InstantQuoteError,
 } = require("../services/instantQuote");
 const { estimateNearbyDrivers } = require("../services/instantNearby");
+const { listDriverQuests } = require("../services/driverQuests");
+const { getActivePricing, pricingForTier } = require("../services/instantPriceBook");
 const {
   InstantWalletError,
   createWalletFundedRequest,
@@ -156,11 +158,35 @@ router.get("/status", requireAuth, (req, res) => {
 // app renders this list as the "choose your vehicle" step before quoting.
 // Available regardless of the ARRIVO_NOW_ENABLED flag so the UI can be
 // built and reviewed before the feature is switched on for riders.
-router.get("/tiers", requireAuth, (req, res) => {
+router.get("/tiers", requireAuth, async (req, res) => {
+  // Show the prices actually in force (the published price book), not the
+  // code defaults, so no client displays a stale number.
+  const map = await getActivePricing();
   res.json({
-    tiers: listTiers(),
+    tiers: listTiers().map((tier) => ({ ...tier, ...pricingForTier(map, tier.key) })),
   });
 });
+
+// GET /api/instant-rides/driver/quests
+//
+// Quests a driver can earn right now (and ones that ended in the last week,
+// so a just-earned reward stays visible), with their own progress.
+router.get(
+  "/driver/quests",
+  requireAuth,
+  requireRole("driver"),
+  async (req, res) => {
+    const driver = await getDriverForUser(req.user.id);
+
+    if (!driver) {
+      return res.status(404).json({
+        error: "Complete your driver profile first",
+      });
+    }
+
+    res.json({ quests: await listDriverQuests(driver.id) });
+  }
+);
 
 // Per-rider limits (not per-IP, so a shared carrier NAT cannot lock out real
 // riders). /quote calls Google Distance Matrix on every hit, so it is the
@@ -201,6 +227,17 @@ router.post(
     if (!isArrivoNowEnabled()) {
       return res.status(503).json({
         error: "ArrivoExpress is not available yet.",
+      });
+    }
+
+    const restricted = await pool.query(
+      "SELECT express_restricted_at FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    if (restricted.rows[0]?.express_restricted_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is not available on your account right now. Please contact support.",
+        code: "EXPRESS_RESTRICTED",
       });
     }
 
@@ -454,6 +491,13 @@ router.patch(
       return res.status(403).json({
         error:
           "Your driver profile must be verified before enabling ArrivoExpress.",
+      });
+    }
+
+    if (acceptsInstant && driver.express_paused_at) {
+      return res.status(403).json({
+        error: "ArrivoExpress is paused on your account while we review a report. Support will contact you.",
+        code: "EXPRESS_PAUSED",
       });
     }
 

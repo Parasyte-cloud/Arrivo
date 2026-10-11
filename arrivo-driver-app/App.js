@@ -9,6 +9,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { LanguageProvider, useT } from "./context/LanguageContext";
 import { getDriverProfile } from "./services/api";
 import LaunchIntro from "./components/LaunchIntro";
 import { CallOverlayProvider } from "./components/CallOverlay";
@@ -19,6 +20,9 @@ import SignupScreen from "./screens/SignupScreen";
 import DriverProfileScreen from "./screens/DriverProfileScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import EarningsScreen from "./screens/EarningsScreen";
+import QuestsScreen from "./screens/QuestsScreen";
+import CashoutScreen from "./screens/CashoutScreen";
+import SelfieScreen from "./screens/SelfieScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ChatScreen from "./screens/ChatScreen";
 
@@ -26,6 +30,7 @@ import { colors } from "./theme/tokens";
 
 const AuthStack = createNativeStackNavigator();
 const DashboardStack = createNativeStackNavigator();
+const EarningsStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const stackScreenOptions = {
@@ -39,11 +44,24 @@ const stackScreenOptions = {
 // ChatScreen can be pushed on top with a real back button, instead of only
 // being reachable as a modal or a separate tab.
 function DashboardStackScreen() {
+  const { t } = useT();
   return (
     <DashboardStack.Navigator screenOptions={stackScreenOptions}>
       <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <DashboardStack.Screen name="Chat" component={ChatScreen} options={{ title: "Message rider" }} />
+      <DashboardStack.Screen name="Selfie" component={SelfieScreen} options={{ title: t("selfieTitle") }} />
     </DashboardStack.Navigator>
+  );
+}
+
+// Earnings tab gets a stack so Cash-out opens with a real back button.
+function EarningsStackScreen() {
+  const { t } = useT();
+  return (
+    <EarningsStack.Navigator screenOptions={stackScreenOptions}>
+      <EarningsStack.Screen name="EarningsMain" component={EarningsScreen} options={{ headerShown: false }} />
+      <EarningsStack.Screen name="Cashout" component={CashoutScreen} options={{ title: t("cashoutTitle") }} />
+    </EarningsStack.Navigator>
   );
 }
 
@@ -66,9 +84,10 @@ function AuthFlow() {
   );
 }
 
-const ICONS = { Dashboard: "car-sport", Earnings: "cash", Profile: "person" };
+const ICONS = { Dashboard: "car-sport", Earnings: "cash", Quests: "trophy", Profile: "person" };
 
 function MainTabs() {
+  const { t } = useT();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -79,9 +98,10 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardStackScreen} />
-      <Tab.Screen name="Earnings" component={EarningsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Dashboard" component={DashboardStackScreen} options={{ tabBarLabel: t("tabDashboard") }} />
+      <Tab.Screen name="Earnings" component={EarningsStackScreen} options={{ tabBarLabel: t("tabEarnings") }} />
+      <Tab.Screen name="Quests" component={QuestsScreen} options={{ tabBarLabel: t("tabQuests") }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: t("tabProfile") }} />
     </Tab.Navigator>
   );
 }
@@ -139,14 +159,16 @@ export default function App() {
     // silently doesn't respond to touches at all.
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <CallOverlayProvider>
-            <NavigationContainer theme={navTheme}>
-              <StatusBar style="light" />
-              <RootNavigator />
-            </NavigationContainer>
-          </CallOverlayProvider>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <CallOverlayProvider>
+              <NavigationContainer theme={navTheme}>
+                <StatusBar style="light" />
+                <RootNavigator />
+              </NavigationContainer>
+            </CallOverlayProvider>
+          </AuthProvider>
+        </LanguageProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

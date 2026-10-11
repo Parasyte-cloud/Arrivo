@@ -94,5 +94,129 @@
     "durationMin": "{{duration}} 分钟",
     "homeBannerTitle": "立即使用 ArrivoExpress 出行",
     "homeBannerSubtitle": "按需叫车，按距离计费，几分钟内为您匹配司机。"
+  },
+  "safety": {
+    "pin": {
+      "title": "您的上车验证码",
+      "help": "见到司机时请告诉他这个验证码，他需要它才能开始行程。在见到司机之前请勿透露。"
+    },
+    "share": {
+      "stop": "停止分享",
+      "stopped": "已停止分享。您发出的链接已失效。",
+      "note": "分享链接会在上车几小时后或行程结束后不久失效。您可以随时停止分享。",
+      "until": "此链接有效至 {{time}}。",
+      "failed": "无法停止分享，请重试。"
+    },
+    "report": {
+      "button": "举报司机",
+      "title": "举报问题",
+      "help": "请告诉我们发生了什么。司机不会看到您的举报。如果您身处危险，请使用紧急按钮。",
+      "pick": "发生了什么？",
+      "describe": "请描述情况（至少10个字符）",
+      "send": "提交举报",
+      "sent": "谢谢。我们已收到您的举报并会进行调查。",
+      "cancel": "取消",
+      "failed": "无法发送举报，请重试。"
+    },
+    "cat": {
+      "unsafe_driving": "危险驾驶",
+      "harassment": "骚扰",
+      "felt_unsafe": "我感到不安全",
+      "wrong_route": "路线错误",
+      "overcharge": "多收费",
+      "vehicle_mismatch": "车辆或车牌与应用不符",
+      "rude": "态度粗鲁",
+      "other": "其他"
+    }
+  },
+  "call": {
+    "connecting": "正在连接…",
+    "callWho": "呼叫{{who}}",
+    "freeSub": "免费，在应用内通话。您的号码保持私密。",
+    "opensWhen": "分配{{role}}后开放",
+    "roleDriver": "司机",
+    "roleRider": "乘客",
+    "yourDriver": "您的司机",
+    "yourRider": "您的乘客",
+    "message": "消息",
+    "needHelp": "需要帮助？",
+    "callingWho": "正在呼叫{{who}}…",
+    "ringing": "应用内响铃中 · {{seconds}} 秒",
+    "cancel": "取消",
+    "tryAgain": "重试",
+    "messageInApp": "在应用内发消息",
+    "supportTold": "已通知客服",
+    "talkToSupport": "联系客服",
+    "close": "关闭",
+    "supportDone": "客服已掌握您的行程和发生的情况，会很快在应用内联系您。",
+    "supportOpening": "我们无法在此创建工单，正在打开 RideArrivo 客服聊天。",
+    "supportFailed": "我们无法在此联系客服，请在菜单中打开客服。",
+    "care": "我们会照顾好您。",
+    "a11yCall": "在应用内呼叫{{who}}。不会分享任何电话号码。",
+    "a11yMessage": "给{{who}}发消息",
+    "a11yHelp": "向 RideArrivo 客服求助",
+    "a11yCancel": "取消通话",
+    "fail": {
+      "no_answer": {
+        "title": "{{who}}没有接听",
+        "body": "对方可能正在驾驶或没有信号。请重试，或发送消息。"
+      },
+      "declined": {
+        "title": "{{who}}现在不方便通话",
+        "body": "请改发消息，对方会马上看到。"
+      },
+      "dropped": {
+        "title": "通话中断",
+        "body": "连接已断开。请重试，或发送消息。"
+      },
+      "network": {
+        "title": "没有网络连接",
+        "body": "请检查流量或 Wi-Fi，然后重试。"
+      },
+      "rate_limited": {
+        "title": "短时间内通话过多",
+        "body": "请稍等几分钟，或改发消息。"
+      },
+      "calling_unavailable": {
+        "title": "暂时无法通话",
+        "body": "我们正在处理。请在应用内发消息，或联系客服。"
+      },
+      "call_failed": {
+        "title": "无法接通通话",
+        "body": "这不是您的问题。请重试，或发送消息。"
+      },
+      "no_driver": {
+        "title": "通话即将开放",
+        "body": "司机接单后即可通话。"
+      },
+      "not_active": {
+        "title": "通话即将开放",
+        "body": "司机接受行程后即可通话。"
+      },
+      "cancelled": {
+        "title": "该行程已取消",
+        "body": "通话仅适用于进行中的行程。"
+      },
+      "trip_over": {
+        "title": "该行程已结束",
+        "body": "如有相关问题，请联系客服。"
+      },
+      "signed_out": {
+        "title": "请重新登录",
+        "body": "您的登录已过期。"
+      },
+      "incoming_call": {
+        "title": "对方正在呼叫您",
+        "body": "请在屏幕上接听。如果看不到，请重新打开应用。"
+      },
+      "already_in_call": {
+        "title": "您已在通话中",
+        "body": "请先结束当前通话。"
+      },
+      "unknown": {
+        "title": "出了点问题",
+        "body": "请重试，或发送消息。需要时客服随时在这里。"
+      }
+    }
   }
 }

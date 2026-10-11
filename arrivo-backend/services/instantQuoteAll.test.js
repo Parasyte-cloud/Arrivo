@@ -18,6 +18,15 @@ require.cache[mapsPath] = {
   },
 };
 
+// No database in unit tests: no published prices, so the code defaults apply.
+const bookPath = require.resolve("./instantPriceBook");
+require.cache[bookPath] = {
+  id: bookPath,
+  filename: bookPath,
+  loaded: true,
+  exports: { getActivePricing: async () => null },
+};
+
 const { quoteAllTiers, quoteInstantRide, InstantQuoteError } = require("./instantQuote");
 
 let passed = 0;

@@ -11,7 +11,7 @@ import { useAuth } from "../context/AuthContext";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
-import { isStandardBookingBlocked, ON_THE_GO_ONLY_HOURS } from "../utils/bookingWindow";
+import { isStandardBookingBlocked, getBookingRules } from "../utils/bookingWindow";
 import { combineLagos, wallClockDate, earliestInstant } from "../utils/lagosTime";
 import useMinuteTick from "../hooks/useMinuteTick";
 import {
@@ -42,7 +42,14 @@ const combineDateAndTime = combineLagos;
 // Earliest allowed pickup as a picker value (a Date whose fields read as the
 // Lagos clock), so the pickers open at a time the booking will accept.
 function earliestPickerValue(now = Date.now()) {
-  return wallClockDate(earliestInstant(ON_THE_GO_ONLY_HOURS, now));
+  return wallClockDate(earliestInstant(getBookingRules().onTheGoOnlyHours, now));
+}
+
+// Furthest allowed pickup date as a picker value, or undefined when no limit
+// has been decided (the backend config says so with maxAdvanceDays: null).
+function latestPickerValue(now = Date.now()) {
+  const days = getBookingRules().maxAdvanceDays;
+  return days ? wallClockDate(now + days * 24 * 60 * 60 * 1000) : undefined;
 }
 
 // Only Sedan/SUV get the upgrade toggle, Executive is already the premium
@@ -377,6 +384,7 @@ export default function ChauffeurScreen({ navigation }) {
             mode="date"
             display="default"
             minimumDate={earliestPickerValue(now)}
+            maximumDate={latestPickerValue(now)}
             onChange={(event, selected) => {
               setShowDatePicker(false);
               if (event.type === "dismissed") return;
@@ -411,6 +419,7 @@ export default function ChauffeurScreen({ navigation }) {
                 mode="date"
                 display="inline"
                 minimumDate={earliestPickerValue(now)}
+            maximumDate={latestPickerValue(now)}
                 onChange={(event, selected) => {
                   if (selected) setDateValue(selected);
                 }}

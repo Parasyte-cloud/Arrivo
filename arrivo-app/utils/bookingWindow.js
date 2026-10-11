@@ -13,6 +13,45 @@
 export const STANDARD_MIN_HOURS = 48;
 export const ON_THE_GO_ONLY_HOURS = 12;
 
+// What the rules are right now. Starts as the constants above and can be
+// replaced by GET /api/config/booking (see services/bookingConfig.js), so Ops
+// can change the notice period without an app release. If the config never
+// arrives, the constants above apply. They have to match the backend's own,
+// see the parity test in arrivo-backend/services/bookingWindow.test.js.
+let rules = {
+  standardMinHours: STANDARD_MIN_HOURS,
+  onTheGoOnlyHours: ON_THE_GO_ONLY_HOURS,
+  maxAdvanceDays: null, // null: no limit has been decided
+};
+
+export function getBookingRules() {
+  return rules;
+}
+
+function wholeNumber(value, min, max) {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : null;
+}
+
+// Takes the config response. Each field is checked on its own, a bad one is
+// ignored, and the result is never self-contradictory (the standard notice
+// cannot be shorter than the On the Go cutoff).
+export function setBookingRulesFromConfig(raw) {
+  if (!raw || typeof raw !== "object") return;
+  const onTheGo = wholeNumber(raw.minHours, 1, 168);
+  const standard = wholeNumber(raw.standardMinHours, 1, 720);
+  const next = {
+    onTheGoOnlyHours: onTheGo != null ? onTheGo : rules.onTheGoOnlyHours,
+    standardMinHours: standard != null ? standard : rules.standardMinHours,
+    maxAdvanceDays: raw.maxAdvanceDays === null ? null : wholeNumber(raw.maxAdvanceDays, 1, 730) ?? rules.maxAdvanceDays,
+  };
+  if (next.standardMinHours < next.onTheGoOnlyHours) return;
+  rules = next;
+}
+
+export function resetBookingRules() {
+  rules = { standardMinHours: STANDARD_MIN_HOURS, onTheGoOnlyHours: ON_THE_GO_ONLY_HOURS, maxAdvanceDays: null };
+}
+
 export function hoursUntil(when, now = Date.now()) {
   // Check for nothing BEFORE building a Date. new Date(null) is epoch 0, which
   // is a perfectly finite number, so without this a booking with no scheduled
@@ -30,8 +69,8 @@ export function bookingWindow(when, now = Date.now()) {
   // No date to judge, so don't stand in the way. Airport pickups are timed off
   // the flight rather than a date the rider picks, see the note in the PR.
   if (hours == null) return "standard";
-  if (hours >= STANDARD_MIN_HOURS) return "standard";
-  if (hours >= ON_THE_GO_ONLY_HOURS) return "gap";
+  if (hours >= rules.standardMinHours) return "standard";
+  if (hours >= rules.onTheGoOnlyHours) return "gap";
   return "on_the_go_only";
 }
 
@@ -42,5 +81,5 @@ export function isStandardBookingBlocked(when, now = Date.now()) {
 // Earliest moment a standard booking is allowed, for the date picker's
 // minimumDate so the rider can't pick their way into a blocked slot.
 export function earliestStandardBooking(now = Date.now()) {
-  return new Date(now + ON_THE_GO_ONLY_HOURS * 60 * 60 * 1000);
+  return new Date(now + rules.onTheGoOnlyHours * 60 * 60 * 1000);
 }

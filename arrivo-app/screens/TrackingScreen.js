@@ -1,21 +1,22 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, Share, Pressable, ActivityIndicator, Linking, TextInput, AppState, KeyboardAvoidingView, Platform } from "react-native";
-import * as Crypto from "expo-crypto";
-import { useStreamVideoClient } from "@stream-io/video-react-native-sdk";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import RideCallButton from "../components/RideCallButton";
 import { useCurrency } from "../hooks/useCurrency";
 import {
   getRideDetails, triggerPanic, activateListeningDevice, rateRide, getFlightStatus,
   tipRide, getWallet, initializePayment, verifyPayment, getWalletMinimum, payRideOverage,
   scanRideQr, isNetworkError, getRideShareLink, getRideFleetCompanions,
-  addRideShareParticipant, removeRideShareParticipant,
+  addRideShareParticipant, removeRideShareParticipant, createRideShareLink, stopSharingRide,
 } from "../services/api";
 import { startRideRecording, stopRideRecording, startOnPanic, onRecordingChange, isRecordingRide, getRecordingEnabled } from "../services/rideAudioRecorder";
 import { RECORDING_CONSENT } from "../utils/safetyCopy";
+import { useTranslation } from "react-i18next";
+import { PickupPinCard, ReportDriverCard } from "../components/SafetyCards";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
 // Wording lives in utils/safetyCopy.js (draft until counsel approves it).
@@ -59,11 +60,11 @@ function initials(name) {
 export default function TrackingScreen({ route, navigation }) {
   const { rideId, offlinePending, offlineDriverInfo, offlineRideSummary } = route?.params || {};
   const { user, token } = useAuth();
+  const { t } = useTranslation();
   const { formatFare } = useCurrency(token);
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready — guarded against
   // below rather than assumed always-present.
-  const streamVideoClient = useStreamVideoClient();
   // Offline scan fallback (see ScanScreen.js): when a scan couldn't reach
   // the server, we still know — from the QR code itself, plus whatever ride
   // was last cached while online — enough to show "this is your ride, this
@@ -327,6 +328,19 @@ export default function TrackingScreen({ route, navigation }) {
     return () => clearInterval(flightPollRef.current);
   }, [ride?.flight_number, ride?.ride_status, fetchFlightStatus]);
 
+  const [shareUntil, setShareUntil] = useState(null);
+  const [shareStopMsg, setShareStopMsg] = useState(null);
+  const stopSharing = async () => {
+    setShareStopMsg(null);
+    try {
+      await stopSharingRide(token, ride.id);
+      setShareUntil(null);
+      setShareStopMsg(t("safety.share.stopped"));
+    } catch (e) {
+      setShareStopMsg(t("safety.share.failed"));
+    }
+  };
+
   const shareRide = async () => {
     try {
       const driverPart = ride?.driver_name ? ` with ${ride.driver_name}` : "";
@@ -338,8 +352,11 @@ export default function TrackingScreen({ route, navigation }) {
       // if the link fetch fails, still share the descriptive text alone
       // rather than blocking the whole share sheet on it.
       try {
-        const shareResult = await getRideShareLink(token, ride.id);
+        // An expiring link: it stops working a few hours after pickup or soon
+        // after the trip ends, and "Stop sharing" kills it at any time.
+        const shareResult = await createRideShareLink(token, ride.id).catch(() => getRideShareLink(token, ride.id));
         if (shareResult?.shareUrl) linkPart = ` Track live: ${shareResult.shareUrl}`;
+        if (shareResult?.expiresAt) setShareUntil(new Date(shareResult.expiresAt));
       } catch (e) {
         // ignore — share the text-only message below instead
       }
@@ -349,52 +366,6 @@ export default function TrackingScreen({ route, navigation }) {
     } catch (e) {
       Alert.alert("Couldn't open share sheet", String(e?.message || e));
     }
-  };
-
-  // In-app call (the primary "Call driver" action) — a real internet voice
-  // OR video call routed through Stream, ringing on the driver's phone (even
-  // locked/backgrounded — see arrivo-driver-app's own CallKit/push setup)
-  // with no phone numbers exchanged. "Include caller in members" and "use a
-  // unique call id per call" are both Stream's own documented best practices
-  // here. video: true just enables the call to carry a video track — the
-  // prebuilt CallContent UI (components/CallOverlay.js) already surfaces a
-  // camera toggle, so either side can still keep their camera off and use
-  // it as a voice-only call if they prefer.
-  const callDriverInApp = async () => {
-    if (!ride?.driver_user_id) {
-      Alert.alert("Not available yet", "You'll be able to call your driver once they've accepted your ride.");
-      return;
-    }
-    if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
-      return;
-    }
-    try {
-      const call = streamVideoClient.call("default", Crypto.randomUUID());
-      await call.getOrCreate({
-        ring: true,
-        video: true,
-        data: {
-          members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.driver_user_id) }],
-        },
-      });
-    } catch (e) {
-      Alert.alert("Couldn't start the call", e.message || "Please try again, or dial their number below instead.");
-    }
-  };
-
-  // Fallback — a real cellular call to the driver's phone number, kept
-  // around for when in-app calling isn't set up yet or either side has no
-  // data connection. No longer the primary action (see callDriverInApp
-  // above and the "Call driver" button below).
-  const dialDriverPhone = () => {
-    if (!ride?.driver_phone) {
-      Alert.alert("Not available yet", "Your driver's number will appear here once they've accepted your ride.");
-      return;
-    }
-    Linking.openURL(`tel:${ride.driver_phone}`).catch(() =>
-      Alert.alert("Couldn't open dialer", "Please dial the number manually: " + ride.driver_phone)
-    );
   };
 
   const confirmPanic = () => {
@@ -609,7 +580,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setOverageStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: overageNaira, purpose: "overage", refId: rideId });
       pendingOverageRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
@@ -647,7 +618,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setTipStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: tipAmount, purpose: "tip", refId: rideId });
       pendingTipRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
@@ -1099,27 +1070,20 @@ export default function TrackingScreen({ route, navigation }) {
           </Card>
         ) : null}
 
-        <View style={styles.grid2}>
-          <Button label="📍 Share ride" variant="teal" onPress={shareRide} style={{ flex: 1 }} />
-          <Button label="☎ Call driver" variant="ghost" tone="dark" onPress={callDriverInApp} style={{ flex: 1 }} />
-        </View>
+        {ride?.driver_user_id ? <PickupPinCard rideId={rideId} rideStatus={ride?.ride_status} /> : null}
+
         {ride?.driver_user_id ? (
-          <View style={{ marginTop: spacing.xs }}>
-            <Button
-              label="💬 Message driver"
-              variant="ghost"
-              tone="dark"
-              onPress={() => navigation.navigate("Chat", { rideId })}
+          <View style={{ marginBottom: spacing.sm }}>
+            <RideCallButton
+              rideId={rideId}
+              role="rider"
+              counterpart="your driver"
+              navigation={navigation}
+              enabled={["accepted", "in_progress", "completed"].includes(ride?.ride_status)}
             />
           </View>
         ) : null}
-        {ride?.driver_phone ? (
-          <Pressable onPress={dialDriverPhone} style={{ alignSelf: "center", marginTop: 6, marginBottom: spacing.sm }}>
-            <Text style={{ color: colors.dark.textMuted, fontSize: 12, textDecorationLine: "underline" }}>
-              Or dial their number directly
-            </Text>
-          </Pressable>
-        ) : null}
+        <Button label="📍 Share ride" variant="teal" onPress={shareRide} />
 
         {ride?.ride_status === "accepted" ? (
           <Button
@@ -1129,6 +1093,16 @@ export default function TrackingScreen({ route, navigation }) {
             trailingIcon
           />
         ) : null}
+
+        <Card tone="dark" style={{ marginTop: spacing.md }}>
+          <Text style={styles.shareNote}>{t("safety.share.note")}</Text>
+          {shareUntil ? <Text style={[styles.shareNote, { marginTop: 4 }]}>{t("safety.share.until", { time: shareUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}</Text> : null}
+          {shareStopMsg ? <Text style={[styles.shareNote, { marginTop: 4 }]}>{shareStopMsg}</Text> : null}
+          <View style={{ height: spacing.sm }} />
+          <Button label={t("safety.share.stop")} variant="ghost" tone="dark" onPress={stopSharing} />
+        </Card>
+
+        {ride?.driver_user_id ? <ReportDriverCard rideId={rideId} /> : null}
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>

@@ -22,6 +22,7 @@ const { originLock } = require("./middleware/originLock");
 const { createHealthRouter } = require("./routes/health");
 
 const authRouter = require("./routes/auth");
+const { maskCounterpartyPhones } = require("./services/contactPrivacy");
 const ridesRouter = require("./routes/rides");
 const flightsRouter = require("./routes/flights");
 const paymentsRouter = require("./routes/payments");
@@ -33,10 +34,17 @@ const adminRouter = require("./routes/admin");
 const adminExportsRouter = require("./routes/adminExports");
 const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const audioRecordingsRouter = require("./routes/audioRecordings");
+const adminExpressRouter = require("./routes/adminExpress");
+const adminCashoutsRouter = require("./routes/adminCashouts");
+const safetyRouter = require("./routes/safety");
+const adminSafetyRouter = require("./routes/adminSafety");
+const driverCashoutRouter = require("./routes/driverCashout");
 const waitlistRouter = require("./routes/waitlist");
 const placesRouter = require("./routes/places");
 const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
+const staffRidesRouter = require("./routes/staffRides");
+const { startRideTeamSweep } = require("./services/rideTeam");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
 const instantRidesRouter = require("./routes/instantRides");
@@ -144,7 +152,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
-app.use("/api/rides", ridesRouter);
+app.use("/api/rides", maskCounterpartyPhones, ridesRouter);
 app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
@@ -152,6 +160,10 @@ app.use("/api/admin/exports", adminExportsRouter);
 // Before the general admin router: staff listening is admin-only and Bearer-only.
 app.use("/api/admin/recordings", audioRecordingsRouter.adminRouter);
 app.use("/api/recordings", audioRecordingsRouter);
+app.use("/api/admin/express", adminExpressRouter);
+app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/safety", adminSafetyRouter);
+app.use("/api/safety", safetyRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
 // Before the general admin router, for the same reason as the exports above.
 app.use("/api/admin/payment-exceptions", paymentExceptionsRouter);
@@ -160,14 +172,17 @@ app.use("/api/waitlist", waitlistRouter);
 app.use("/api/flights", flightsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/wallet", walletRouter);
+app.use("/api/cashout", driverCashoutRouter);
 app.use("/api/memberships", membershipsRouter);
 app.use("/api/owners", ownersRouter);
 app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
+app.use("/api/staff/people", require("./routes/staffPeople"));
+app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
-app.use("/api/instant-rides", instantRidesRouter);
+app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/live-map", liveMapRouter);
@@ -199,4 +214,7 @@ ready.then(() => {
   // services/scheduler.js. Started once, after the schema is ready, same
   // as the HTTP listener above.
   startScheduler();
+  // Keeps every open ride staffed: fills gaps and moves rides off anyone who
+  // has gone off duty. See services/rideTeam.js.
+  startRideTeamSweep();
 });
