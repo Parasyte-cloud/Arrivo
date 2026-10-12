@@ -1745,3 +1745,241 @@ CREATE TABLE IF NOT EXISTS safety_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_safety_events_recent ON safety_events(created_at DESC);
+
+
+-- ── In-app calls between a rider and their driver ──
+--
+-- One row per call attempt. Nobody ever sees the other person's phone number:
+-- the server creates the call (routes/calls.js), the apps join it by id, and
+-- this table records what happened so support can help when it goes wrong.
+--
+-- status: ringing | connected | ended | missed | declined | cancelled | failed
+CREATE TABLE IF NOT EXISTS call_sessions (
+  id TEXT PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  caller_user_id INTEGER NOT NULL REFERENCES users(id),
+  callee_user_id INTEGER NOT NULL REFERENCES users(id),
+  stream_call_type TEXT NOT NULL DEFAULT 'default',
+  stream_call_id TEXT NOT NULL UNIQUE,
+  media TEXT NOT NULL DEFAULT 'audio',
+  status TEXT NOT NULL DEFAULT 'ringing',
+  failure_reason TEXT,
+  support_ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  answered_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  duration_seconds INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_ride ON call_sessions(ride_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_caller ON call_sessions(caller_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_live ON call_sessions(status) WHERE status IN ('ringing', 'connected');
+
+
+-- ── Ride teams: a support agent and an operations person on every ride ──
+--
+-- Every booked ride is handed, automatically, to the on-duty support agent and
+-- the on-duty operations person with the fewest open rides. The driver is
+-- attached by rides.driver_id as soon as one accepts. Together they are the
+-- "ride team" the rider and driver deal with, by name.
+--
+-- The assignment runs inside Postgres (assign_ride_team below), fired by a
+-- trigger on rides, so every way a ride can be created gets a team without
+-- anyone remembering to call it. A periodic sweep (rebalance_ride_teams) fills
+-- gaps when nobody was on duty, and moves rides off anyone who has gone off
+-- duty or whose account has gone.
+CREATE TABLE IF NOT EXISTS staff_duty (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  team TEXT NOT NULL CHECK (team IN ('support', 'operations')),
+  on_duty BOOLEAN NOT NULL DEFAULT false,
+  max_open INTEGER NOT NULL DEFAULT 25 CHECK (max_open >= 1), -- soft cap: past it, others are preferred
+  last_assigned_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ride_team (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id) ON DELETE CASCADE,
+  support_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  operations_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_team_support ON ride_team(support_user_id);
+CREATE INDEX IF NOT EXISTS idx_ride_team_operations ON ride_team(operations_user_id);
+
+CREATE TABLE IF NOT EXISTS ride_team_events (
+  id BIGSERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  team TEXT NOT NULL,
+  kind TEXT NOT NULL, -- 'assigned' | 'reassigned' | 'unassigned'
+  from_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_team_events_ride ON ride_team_events(ride_id, created_at);
+
+-- Every time staff look at, or reach for, a rider's or driver's phone number.
+-- Riders and drivers are promised their numbers stay private; this is how that
+-- promise stays checkable.
+CREATE TABLE IF NOT EXISTS staff_contact_access (
+  id BIGSERIAL PRIMARY KEY,
+  staff_user_id INTEGER NOT NULL REFERENCES users(id),
+  ride_id INTEGER REFERENCES rides(id) ON DELETE SET NULL,
+  subject_user_id INTEGER NOT NULL REFERENCES users(id),
+  subject_role TEXT NOT NULL, -- 'rider' | 'driver'
+  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_contact_access_subject ON staff_contact_access(subject_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_staff_contact_access_staff ON staff_contact_access(staff_user_id, created_at DESC);
+
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_support_tickets_assigned ON support_tickets(assigned_to, status);
+
+-- Calls placed by staff are recorded in call_sessions too, with the staff
+-- member as the caller. Marked so reports can tell them from rider/driver calls.
+ALTER TABLE call_sessions ADD COLUMN IF NOT EXISTS placed_by_staff BOOLEAN NOT NULL DEFAULT false;
+
+-- How many open rides this person is carrying for the team they work in.
+CREATE OR REPLACE FUNCTION staff_open_load(p_user INTEGER, p_team TEXT) RETURNS INTEGER AS $$
+  SELECT count(*)::int
+  FROM ride_team rt
+  JOIN rides r ON r.id = rt.ride_id
+  WHERE r.ride_status NOT IN ('completed', 'cancelled')
+    AND ((p_team = 'support' AND rt.support_user_id = p_user)
+      OR (p_team = 'operations' AND rt.operations_user_id = p_user));
+$$ LANGUAGE sql STABLE;
+
+-- Fewest open rides wins. Anyone past their soft cap is only picked when
+-- everyone is. Ties go to whoever has waited longest for a ride.
+CREATE OR REPLACE FUNCTION pick_staff(p_team TEXT) RETURNS INTEGER AS $$
+  SELECT sd.user_id
+  FROM staff_duty sd
+  JOIN users u ON u.id = sd.user_id
+  WHERE sd.team = p_team AND sd.on_duty
+    AND u.deleted_at IS NULL
+    AND u.role IN ('admin', 'support', 'operations')
+  ORDER BY
+    (CASE WHEN staff_open_load(sd.user_id, p_team) >= sd.max_open THEN 1 ELSE 0 END),
+    staff_open_load(sd.user_id, p_team),
+    sd.last_assigned_at NULLS FIRST,
+    sd.user_id
+  LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION staff_is_available(p_user INTEGER, p_team TEXT) RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM staff_duty sd JOIN users u ON u.id = sd.user_id
+    WHERE sd.user_id = p_user AND sd.team = p_team AND sd.on_duty
+      AND u.deleted_at IS NULL AND u.role IN ('admin', 'support', 'operations')
+  );
+$$ LANGUAGE sql STABLE;
+
+-- Gives one ride its support and operations people, replacing anyone who is no
+-- longer available. Safe to call again and again.
+DROP FUNCTION IF EXISTS assign_ride_team(INTEGER, TEXT);
+CREATE OR REPLACE FUNCTION assign_ride_team(p_ride INTEGER, p_reason TEXT DEFAULT 'booked') RETURNS BOOLEAN AS $$
+DECLARE
+  changed BOOLEAN := false;
+  cur ride_team%ROWTYPE;
+  picked INTEGER;
+  t TEXT;
+  current_user_id INTEGER;
+BEGIN
+  -- One assignment at a time, so two rides booked in the same instant cannot
+  -- both be handed to the same "least loaded" person. Held until commit.
+  PERFORM pg_advisory_xact_lock(7002, 0);
+
+  INSERT INTO ride_team (ride_id) VALUES (p_ride) ON CONFLICT (ride_id) DO NOTHING;
+  SELECT * INTO cur FROM ride_team WHERE ride_id = p_ride FOR UPDATE;
+
+  FOREACH t IN ARRAY ARRAY['support', 'operations'] LOOP
+    current_user_id := CASE WHEN t = 'support' THEN cur.support_user_id ELSE cur.operations_user_id END;
+    IF current_user_id IS NOT NULL AND staff_is_available(current_user_id, t) THEN
+      CONTINUE;
+    END IF;
+
+    picked := pick_staff(t);
+    IF picked IS NULL THEN
+      -- Nobody on duty. Leave it queued; the sweep fills it when someone is.
+      IF current_user_id IS NOT NULL THEN
+        IF t = 'support' THEN UPDATE ride_team SET support_user_id = NULL, updated_at = now() WHERE ride_id = p_ride;
+        ELSE UPDATE ride_team SET operations_user_id = NULL, updated_at = now() WHERE ride_id = p_ride; END IF;
+        INSERT INTO ride_team_events (ride_id, team, kind, from_user_id, to_user_id, reason)
+          VALUES (p_ride, t, 'unassigned', current_user_id, NULL, p_reason);
+        changed := true;
+      END IF;
+      CONTINUE;
+    END IF;
+
+    IF t = 'support' THEN UPDATE ride_team SET support_user_id = picked, updated_at = now() WHERE ride_id = p_ride;
+    ELSE UPDATE ride_team SET operations_user_id = picked, updated_at = now() WHERE ride_id = p_ride; END IF;
+    UPDATE staff_duty SET last_assigned_at = now() WHERE user_id = picked;
+    INSERT INTO ride_team_events (ride_id, team, kind, from_user_id, to_user_id, reason)
+      VALUES (p_ride, t, CASE WHEN current_user_id IS NULL THEN 'assigned' ELSE 'reassigned' END, current_user_id, picked, p_reason);
+    changed := true;
+  END LOOP;
+  RETURN changed;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Goes through every open ride that is missing a team member, or whose team
+-- member is off duty or gone, oldest first. Returns how many rides it touched.
+CREATE OR REPLACE FUNCTION rebalance_ride_teams(p_reason TEXT DEFAULT 'rebalance') RETURNS INTEGER AS $$
+DECLARE
+  r RECORD;
+  n INTEGER := 0;
+BEGIN
+  FOR r IN
+    SELECT rides.id
+    FROM rides
+    LEFT JOIN ride_team rt ON rt.ride_id = rides.id
+    WHERE rides.ride_status NOT IN ('completed', 'cancelled')
+      AND (
+        rt.ride_id IS NULL
+        OR rt.support_user_id IS NULL OR NOT staff_is_available(rt.support_user_id, 'support')
+        OR rt.operations_user_id IS NULL OR NOT staff_is_available(rt.operations_user_id, 'operations')
+      )
+    ORDER BY rides.created_at, rides.id
+  LOOP
+    IF assign_ride_team(r.id, p_reason) THEN n := n + 1; END IF;
+  END LOOP;
+  RETURN n;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION rides_assign_team_trg() RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM assign_ride_team(NEW.id, 'booked');
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'rides_assign_team' AND tgrelid = 'rides'::regclass) THEN
+    CREATE TRIGGER rides_assign_team AFTER INSERT ON rides FOR EACH ROW EXECUTE FUNCTION rides_assign_team_trg();
+  END IF;
+END $$;
+
+-- The head of support. Still a 'support' user, but sees every ride and every
+-- agent's workload, can move rides between support agents, put agents on or off
+-- duty, and read the number-access log. Set by an admin only.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS support_lead BOOLEAN NOT NULL DEFAULT false;
+
+-- Owner and staff management. The owner (set only from the command line, see
+-- scripts/set-owner.js) can promote and remove anyone and can delegate that to
+-- named admins with can_manage_staff. Every change is written to staff_role_events.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_staff BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS staff_role_events (
+  id BIGSERIAL PRIMARY KEY,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  from_role TEXT,
+  to_role TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_role_events_created ON staff_role_events(created_at DESC);

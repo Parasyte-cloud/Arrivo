@@ -11,6 +11,7 @@ import {
   CallContent,
 } from "@stream-io/video-react-native-sdk";
 import { useCreateStreamVideoClient } from "../hooks/useCreateStreamVideoClient";
+import { useCallReporter } from "../hooks/useCallReporter";
 
 // Renders whatever call is currently ringing or active over the ENTIRE
 // app, regardless of which screen is on top — this is deliberate (see
@@ -42,6 +43,12 @@ function CallUI() {
   return null;
 }
 
+// Tells the server what happened on a ride call (answered, ended, dropped).
+function CallReporter({ call }) {
+  useCallReporter(call);
+  return null;
+}
+
 function ActiveCalls() {
   const calls = useCalls();
   const call = calls[0];
@@ -49,6 +56,7 @@ function ActiveCalls() {
 
   return (
     <StreamCall call={call}>
+      <CallReporter call={call} />
       <CallUI />
     </StreamCall>
   );

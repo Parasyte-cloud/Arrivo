@@ -243,3 +243,31 @@ export const requireDriverRecheck = (token, driverId) =>
 export const overridePickupPin = (token, rideId, note) =>
   request(`${SF}/rides/${rideId}/pin-override`, token, { method: "POST", body: JSON.stringify({ note }) });
 export const getSafetyEvents = (token) => request(`${SF}/events`, token);
+
+// ── Ride Desk: every ride with its team (support, operations, driver) ──
+// See arrivo-backend/routes/staffRides.js. Numbers only come with the detail view.
+export const getDesk = (token, { scope = "mine", state = "open", q = "" } = {}) =>
+  request(`/api/staff/rides?scope=${scope}&state=${state}${q ? `&q=${encodeURIComponent(q)}` : ""}`, token);
+export const getDeskRide = (token, id) => request(`/api/staff/rides/${id}`, token);
+export const getMyDuty = (token) => request("/api/staff/duty", token);
+export const setDuty = (token, body) => request("/api/staff/duty", token, { method: "PUT", body: JSON.stringify(body) });
+export const getDeskTeam = (token) => request("/api/staff/team", token);
+export const getAccessLog = (token) => request("/api/staff/access-log", token);
+export const reassignRide = (token, id, team, userId) =>
+  request(`/api/staff/rides/${id}/reassign`, token, { method: "POST", body: JSON.stringify({ team, userId }) });
+export const logPhoneCall = (token, rideId, subject) =>
+  request(`/api/staff/rides/${rideId}/contact-log`, token, { method: "POST", body: JSON.stringify({ subject, action: "call_from_phone" }) });
+export const startStaffCall = (token, rideId, target, media = "audio") =>
+  request(`/api/calls/staff/ride/${rideId}/start`, token, { method: "POST", body: JSON.stringify({ target, media }) });
+export const reportCall = (token, sessionId, event, reason) =>
+  request(`/api/calls/${encodeURIComponent(sessionId)}/events`, token, { method: "POST", body: JSON.stringify({ event, reason }) });
+export const setSupportLead = (token, userId, isLead) =>
+  request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
+export const getPeople = (token) => request("/api/staff/people", token);
+export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
+export const promotePerson = (token, email, role, note) =>
+  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const changePersonRole = (token, id, role, note) =>
+  request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
+export const setCanManageStaff = (token, id, allowed) =>
+  request(`/api/staff/people/${id}/manage`, token, { method: "PUT", body: JSON.stringify({ allowed }) });

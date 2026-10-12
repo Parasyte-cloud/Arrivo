@@ -2,13 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator, RefreshControl, Pressable, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import * as Crypto from "expo-crypto";
-import { useStreamVideoClient } from "@stream-io/video-react-native-sdk";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import RideCallButton from "../components/RideCallButton";
 import {
   setOnlineStatus, getAvailableRides, acceptRide, updateRideStatus, getMyDriverRides,
   triggerPanic, activateListeningDevice, getDriverProfile,
@@ -585,7 +584,6 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
   const [showReport, setShowReport] = useState(false);
   // undefined until components/CallOverlay.js's <StreamVideo> provider (set
   // up in App.js right after login) has a client ready.
-  const streamVideoClient = useStreamVideoClient();
   const isAccepted = ride.ride_status === "accepted";
   const isInProgress = ride.ride_status === "in_progress";
   // "Reserve now, pay at pickup" was removed as a product decision — every
@@ -706,39 +704,6 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
 
   useEffect(() => () => clearInterval(countdownRef.current), []);
 
-  // In-app call (the primary action) — a real internet voice OR video call
-  // routed through Stream, ringing on the rider's phone (even locked/
-  // backgrounded — see arrivo-app's own CallKit/push setup) with no phone
-  // numbers exchanged. rides.rider_id is already the rider's own users.id
-  // (riders don't have a separate profile table the way drivers do), so no
-  // lookup is needed here unlike the rider-side "call driver" button.
-  // video: true just enables the call to carry a video track — the
-  // prebuilt CallContent UI (components/CallOverlay.js) already surfaces a
-  // camera toggle, so either side can still keep their camera off and use
-  // it as a voice-only call if they prefer.
-  const callRiderInApp = async () => {
-    if (!ride?.rider_id) {
-      Alert.alert("Not available yet", "You'll be able to call your rider once this trip is active.");
-      return;
-    }
-    if (!streamVideoClient) {
-      Alert.alert("Calling isn't ready yet", "Give it a moment after opening the app, then try again, or dial their number below instead.");
-      return;
-    }
-    try {
-      const call = streamVideoClient.call("default", Crypto.randomUUID());
-      await call.getOrCreate({
-        ring: true,
-        video: true,
-        data: {
-          members: [{ user_id: streamVideoClient.user.id }, { user_id: String(ride.rider_id) }],
-        },
-      });
-    } catch (e) {
-      Alert.alert("Couldn't start the call", e.message || "Please try again, or dial their number below instead.");
-    }
-  };
-
   return (
     <View>
       <LiveMap
@@ -767,24 +732,18 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         {ride.is_arrivo_share && ride.shareParticipants?.length ? (
           <Text style={styles.meta}>Also riding: {ride.shareParticipants.map((p) => p.name).join(", ")}</Text>
         ) : null}
-        <Pressable onPress={callRiderInApp}>
-          <Text style={styles.meta}>Rider: {ride.rider_name} · ☎ Call in app</Text>
-        </Pressable>
-        <Pressable onPress={() => navigation?.navigate("Chat", { rideId: ride.id })}>
-          <Text style={[styles.meta, { textDecorationLine: "underline" }]}>💬 Message rider</Text>
-        </Pressable>
-        {ride.rider_phone ? (
-          <Pressable
-            onPress={() =>
-              Linking.openURL(`tel:${ride.rider_phone}`).catch(() =>
-                Alert.alert("Couldn't open dialer", "Please dial the number manually: " + ride.rider_phone)
-              )
-            }
-          >
-            <Text style={[styles.meta, { textDecorationLine: "underline" }]}>Or dial their number directly</Text>
-          </Pressable>
-        ) : null}
+        <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
       </Card>
+
+      <View style={{ height: spacing.md }} />
+      <RideCallButton
+        rideId={ride.id}
+        role="driver"
+        counterpart="your rider"
+        navigation={navigation}
+        supportRoute={null}
+        enabled={["accepted", "in_progress"].includes(ride.ride_status)}
+      />
 
       <View style={{ height: spacing.md }} />
 

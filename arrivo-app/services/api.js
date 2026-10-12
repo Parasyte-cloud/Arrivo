@@ -33,6 +33,8 @@ async function request(path, options = {}) {
     notifyUnauthorized(res.status, options.headers);
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.code = data.code;
+    err.support = data.support; // company support details, never a rider's or driver's number
+    err.sessionId = data.sessionId;
     err.status = res.status;
     throw err;
   }
@@ -597,5 +599,33 @@ export function fileRideComplaint(token, { rideId, category, description }) {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ rideId, category, description }),
+  });
+}
+
+// ── Ride calls (server-controlled; no phone numbers anywhere) ──
+// See arrivo-backend/routes/calls.js. The server decides who may call whom,
+// creates and rings the call, and records every attempt.
+export function getCallAvailability(token, rideId) {
+  return request(`/api/calls/ride/${rideId}/availability`, { headers: { Authorization: `Bearer ${token}` } });
+}
+export function startRideCall(token, rideId, media = "audio") {
+  return request(`/api/calls/ride/${rideId}/start`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ media }),
+  });
+}
+export function reportCallEvent(token, sessionId, event, reason) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ event, reason }),
+  });
+}
+export function requestCallSupport(token, sessionId, note) {
+  return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ note }),
   });
 }
