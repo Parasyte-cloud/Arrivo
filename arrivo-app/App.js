@@ -1,6 +1,6 @@
 import "./i18n"; // side-effect: initializes i18next before anything renders
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator, Image } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -13,6 +13,9 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { usePushNotifications } from "./hooks/usePushNotifications";
+import useUpdateRequired from "./hooks/useUpdateRequired";
+import UpdateRequiredScreen from "./components/UpdateRequiredScreen";
+import { loadBookingConfig } from "./services/bookingConfig";
 import LaunchIntro from "./components/LaunchIntro";
 import { CallOverlayProvider } from "./components/CallOverlay";
 
@@ -166,6 +169,16 @@ function RootNavigator() {
   // shows up on a slow session restore. Falls through to the exact same
   // initializing/auth logic as before once it finishes.
   const [introDone, setIntroDone] = useState(false);
+  // Set once any request is told this build is below the backend's minimum.
+  const updateRequired = useUpdateRequired();
+
+  // Booking rules and support contacts come from the backend so Ops can change
+  // them without an app release. Silent on failure: the bundled values apply.
+  useEffect(() => {
+    loadBookingConfig();
+  }, []);
+
+  if (updateRequired) return <UpdateRequiredScreen info={updateRequired} />;
 
   if (!introDone) {
     return <LaunchIntro onFinish={() => setIntroDone(true)} />;

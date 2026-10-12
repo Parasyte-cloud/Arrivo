@@ -1,4 +1,7 @@
 import { API_BASE_URL } from "./config";
+import { clientHeaders } from "./clientInfo";
+import { noteResponse } from "../utils/updateRequired";
+import { buildPaymentInit, paymentInitHeaders } from "../utils/paymentIntent";
 
 // One place that hears about a rejected sign-in. Any call that carried an
 // Authorization header and got a 401 means the saved session is dead (expired,
@@ -26,16 +29,19 @@ async function request(path, options = {}) {
   // Express's body parser never parses the JSON body at all.
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
+  // A 426 means this build is below the backend's minimum. Record it so the
+  // app can swap to the update screen.
+  noteResponse(res.status, data);
   if (!res.ok) {
     notifyUnauthorized(res.status, options.headers);
     const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
     err.code = data.code;
     err.support = data.support; // company support details, never a rider's or driver's number
     err.sessionId = data.sessionId;
-    err.status = res.status;
     throw err;
   }
   return data;
@@ -69,14 +75,19 @@ export function forgotPassword(email) {
   return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 }
 
-// The token is sent so the backend can require a signed-in rider on these two
-// routes (PAYMENT_ROUTES_REQUIRE_AUTH). Builds that predate this change send
-// none, which is why the backend keeps that switch off until they have aged out.
-export function initializePayment(email, amountNaira, token) {
+// Booking rules, support contacts and the minimum app version. Public.
+export function getBookingConfig() {
+  return request("/api/config/booking");
+}
+
+// Phase 1: sends the login token and a purpose. The backend does not require
+// either yet (see docs/PAYMENT-TOKEN-ROLLOUT.md), so a missing token must never
+// stop a payment from starting.
+export function initializePayment(token, { email, amountNaira, purpose, refId }) {
   return request("/api/payments/initialize", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: JSON.stringify({ email, amountNaira }),
+    headers: paymentInitHeaders(token),
+    body: JSON.stringify(buildPaymentInit({ email, amountNaira, purpose, refId })),
   });
 }
 
