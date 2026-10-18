@@ -192,7 +192,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const payWithCard = async () => {
     setStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amountNaira, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira, purpose: "ride" });
       pendingPaymentRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Verification now happens automatically via the AppState listener

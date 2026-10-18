@@ -33,6 +33,7 @@ const { router: driversRouter } = require("./routes/drivers");
 const adminRouter = require("./routes/admin");
 const adminExportsRouter = require("./routes/adminExports");
 const paymentExceptionsRouter = require("./routes/paymentExceptions");
+const audioRecordingsRouter = require("./routes/audioRecordings");
 const adminExpressRouter = require("./routes/adminExpress");
 const adminCashoutsRouter = require("./routes/adminCashouts");
 const safetyRouter = require("./routes/safety");
@@ -156,6 +157,9 @@ app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
+// Before the general admin router: staff listening is admin-only and Bearer-only.
+app.use("/api/admin/recordings", audioRecordingsRouter.adminRouter);
+app.use("/api/recordings", audioRecordingsRouter);
 app.use("/api/admin/express", adminExpressRouter);
 app.use("/api/admin/cashouts", adminCashoutsRouter);
 app.use("/api/admin/safety", adminSafetyRouter);

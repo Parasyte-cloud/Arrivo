@@ -32,6 +32,7 @@ const { lookupFlightStatus } = require("../routes/flights");
 const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
 const { getConfigBool } = require("./systemConfig");
 const { recordPaymentException } = require("./paymentOrders");
+const { purgeExpiredRecordings } = require("./audioRetention");
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -412,6 +413,7 @@ async function runSweep() {
   await sweepPreferredDriverExpiry().catch((err) => console.error("[scheduler] sweepPreferredDriverExpiry crashed:", err.message));
   await sweepLuckyRideDraw().catch((err) => console.error("[scheduler] sweepLuckyRideDraw crashed:", err.message));
   await sweepUnmatchedPayments().catch((err) => console.error("[scheduler] sweepUnmatchedPayments crashed:", err.message));
+  await purgeExpiredRecordings().catch((err) => console.error("[scheduler] purgeExpiredRecordings crashed:", err.message));
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.
   await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
   await require("./driverCashout").sweepCashouts().catch((err) => console.error("[scheduler] cash-out sweep crashed:", err.message));

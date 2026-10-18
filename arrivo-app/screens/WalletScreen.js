@@ -108,7 +108,7 @@ export default function WalletScreen({ navigation }) {
 
     setTopUpStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amount, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: amount, purpose: "topup" });
       pendingTopUpRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Verification now happens automatically via the AppState listener above.
