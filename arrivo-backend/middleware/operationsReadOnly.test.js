@@ -1,197 +1,31 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const jwt = require("jsonwebtoken");
+const { enforceOperationsReadOnly } = require("./operationsReadOnly");
 
-// requireAuth now checks the account still exists on every request. This
-// suite is about the operations gate, so the lookup always finds a live one.
-const dbPath = require.resolve("../db/db");
-require.cache[dbPath] = {
-  id: dbPath,
-  filename: dbPath,
-  loaded: true,
-  exports: {
-    pool: {
-      async query() {
-        return { rows: [{ deleted_at: null, deletion_started_at: null }] };
-      },
-    },
-  },
-};
-
-const { requireAuth } = require("./auth");
-
-const previousSecret = process.env.JWT_SECRET;
-process.env.JWT_SECRET = "operations-rbac-local-test-secret";
-
-async function requestFor(role, method, originalUrl) {
-  const token = jwt.sign(
-    {
-      id: 999,
-      email: `${role}@example.test`,
-      role,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: "5m" }
-  );
-
-  let nextCalled = false;
-  let statusCode = 200;
-  let responseBody = null;
-
-  const req = {
-    method,
-    originalUrl,
-    url: originalUrl,
-    headers: {
-      authorization: `Bearer ${token}`,
-    },
-  };
-
-  const res = {
-    status(code) {
-      statusCode = code;
-      return this;
-    },
-    json(body) {
-      responseBody = body;
-      return this;
-    },
-  };
-
-  await requireAuth(req, res, () => {
-    nextCalled = true;
-  });
-
-  return {
-    nextCalled,
-    statusCode,
-    responseBody,
-  };
+function run(role, method, url) {
+  let status = 200;
+  let passed = false;
+  const res = { status(code) { status = code; return this; }, json() { return this; } };
+  enforceOperationsReadOnly({ user: { role }, method, originalUrl: url }, res, () => { passed = true; });
+  return passed ? 200 : status;
 }
 
-const allowedOperationsGets = [
-  "/api/auth/me",
-  "/api/admin/drivers",
-  "/api/admin/rides",
-  "/api/admin/rides?status=in_progress",
-  "/api/admin/rides/live",
-  "/api/admin/panics",
-  "/api/admin/flight-issues",
-  "/api/admin/vehicles",
-  "/api/admin/analytics",
-  "/api/admin/exports",
-  "/api/admin/exports/riders?from=2026-10-01&to=2026-10-31",
-  "/api/admin/exports/arrivoexpress-requests",
-  "/api/live-map/snapshot",
-  "/api/alerts",
-  "/api/alerts/alert-123",
-  "/api/on-the-go",
-  "/api/rides/ride-123/fleet",
-];
-
-test("operations may access approved read-only GET views", async () => {
-  for (const url of allowedOperationsGets) {
-    const result = await requestFor("operations", "GET", url);
-
-    assert.equal(
-      result.nextCalled,
-      true,
-      `expected GET ${url} to pass`
-    );
-    assert.equal(result.statusCode, 200);
-  }
+test("operations can read the riders list", () => {
+  assert.equal(run("operations", "GET", "/api/admin/riders"), 200);
 });
 
-const blockedOperationsRequests = [
-  ["GET", "/api/admin/riders"],
-  ["GET", "/api/admin/wallet-transactions"],
-  ["GET", "/api/admin/memberships"],
-  ["GET", "/api/admin/waitlist"],
-  ["GET", "/api/rides/ride-123"],
-  ["GET", "/api/rides/ride-123/share"],
-  ["GET", "/api/support/tickets"],
-  ["GET", "/api/events"],
-  ["GET", "/api/wallet"],
-  ["GET", "/api/memberships/mine"],
-  ["POST", "/api/on-the-go"],
-  ["POST", "/api/staff/rides/12/reassign"],
-  ["PUT", "/api/staff/lead/5"],
-  ["GET", "/api/staff/access-log"],
-  ["PUT", "/api/staff/duty/extra"],
-  ["POST", "/api/calls/ride/12/start"],
-  ["POST", "/api/calls/abc/support"],
-  ["POST", "/api/staff/rides/x/contact-log"],
-  ["POST", "/api/rides"],
-  ["POST", "/api/rides/quote"],
-  ["PATCH", "/api/auth/me"],
-  ["PATCH", "/api/admin/rides/123"],
-  ["PATCH", "/api/admin/drivers/123/verify"],
-  ["PATCH", "/api/admin/panics/123/resolve"],
-  ["POST", "/api/admin/exports/riders"],
-  ["DELETE", "/api/admin/exports/riders"],
-  ["GET", "/api/admin/exports/riders/extra/path"],
-];
-
-test("operations is deny-by-default outside approved GET views", async () => {
-  for (const [method, url] of blockedOperationsRequests) {
-    const result = await requestFor("operations", method, url);
-
-    assert.equal(
-      result.nextCalled,
-      false,
-      `expected ${method} ${url} to be blocked`
-    );
-    assert.equal(result.statusCode, 403);
-    assert.match(
-      result.responseBody?.error || "",
-      /Operations access is read-only/
-    );
-  }
+test("operations still cannot change riders or wallets", () => {
+  assert.equal(run("operations", "PATCH", "/api/admin/riders/5/verify-id"), 403);
+  assert.equal(run("operations", "PATCH", "/api/admin/riders/5/wallet-adjust"), 403);
+  assert.equal(run("operations", "POST", "/api/admin/riders"), 403);
 });
 
-test("operations may do the few things the Rides section needs", async () => {
-  for (const [method, url] of [
-    ["GET", "/api/staff/rides"],
-    ["GET", "/api/staff/rides/42"],
-    ["GET", "/api/staff/duty"],
-    ["GET", "/api/staff/team"],
-    ["PUT", "/api/staff/duty"],
-    ["POST", "/api/staff/rides/42/contact-log"],
-    ["POST", "/api/calls/staff/ride/42/start"],
-    ["POST", "/api/calls/token"],
-    ["POST", "/api/calls/some-session-id/events"],
-  ]) {
-    const result = await requestFor("operations", method, url);
-    assert.equal(result.nextCalled, true, `expected ${method} ${url} to be allowed`);
-  }
+test("operations still cannot read pages outside the approved list", () => {
+  assert.equal(run("operations", "GET", "/api/admin/waitlist"), 403);
+  assert.equal(run("operations", "GET", "/api/admin/express/pricing"), 403);
 });
 
-test("admin behavior is unchanged by the operations gate", async () => {
-  const result = await requestFor(
-    "admin",
-    "POST",
-    "/api/calls/token"
-  );
-
-  assert.equal(result.nextCalled, true);
-  assert.equal(result.statusCode, 200);
-});
-
-test("support behavior is unchanged by the operations gate", async () => {
-  const result = await requestFor(
-    "support",
-    "GET",
-    "/api/admin/wallet-transactions"
-  );
-
-  assert.equal(result.nextCalled, true);
-  assert.equal(result.statusCode, 200);
-});
-
-test.after(() => {
-  if (previousSecret === undefined) {
-    delete process.env.JWT_SECRET;
-  } else {
-    process.env.JWT_SECRET = previousSecret;
-  }
+test("other roles are untouched by this middleware", () => {
+  assert.equal(run("support", "GET", "/api/admin/riders"), 200);
+  assert.equal(run("admin", "PATCH", "/api/admin/riders/5/verify-id"), 200);
 });

@@ -25,6 +25,7 @@ const NAV_ITEMS = [
 const OPERATIONS_NAV_IDS = new Set([
   "ride-desk",
   "panics",
+  "riders",
   "drivers",
   "rides",
   "flight-issues",

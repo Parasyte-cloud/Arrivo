@@ -43,6 +43,7 @@ const PAGES = [
 const OPERATIONS_PAGES = [
   "ride-desk",
   "panics",
+  "riders",
   "drivers",
   "rides",
   "flight-issues",
