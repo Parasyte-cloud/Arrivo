@@ -1,53 +1,141 @@
-// Creates a read-only support account directly in the database.
-// Like create-admin.js, this is intentionally NOT an API endpoint — support
-// accounts should never be creatable over the network by anyone who can
-// reach your API. A support account can log in to the same admin
-// dashboard as a real admin, but every mutating action there (verifying a
-// driver, resolving a panic, editing a ride) is rejected server-side by
-// requireRole("admin") in routes/admin.js — the frontend hiding those
-// buttons is just UX, this script's role field is what actually enforces it.
+// Creates an ArrivoOps Support account directly in PostgreSQL.
+//
+// This is intentionally NOT an API endpoint. Support accounts must never
+// be publicly self-provisioned.
+//
+// The role is hard-coded to "support". This script cannot create an admin
+// or operations account. Support is read only in the console and the backend:
+// every change is refused server-side by requireRole("admin").
+//
+// Password input comes from SUPPORT_PASSWORD rather than a command-line
+// argument so the password does not need to appear in shell history.
 //
 // Usage:
-//   node scripts/create-support.js "Full Name" "email@example.com" "a-strong-password"
+//   SUPPORT_PASSWORD="..." node scripts/create-support.js \
+//     "Full Name" "support@ridearrivo.com"
 
 require("dotenv").config();
+
 const bcrypt = require("bcryptjs");
-const { pool, ready } = require("../db/db");
+const { Pool } = require("pg");
 
-const [, , name, email, password] = process.argv;
+const [, , rawName, rawEmail] = process.argv;
 
-if (!name || !email || !password) {
-  console.error("Usage: node scripts/create-support.js \"Full Name\" \"email@example.com\" \"password\"");
+const name = String(rawName || "").trim();
+const email = String(rawEmail || "").trim().toLowerCase();
+const password = process.env.SUPPORT_PASSWORD || "";
+
+if (!name || !email) {
+  console.error(
+    'Usage: SUPPORT_PASSWORD="..." node scripts/create-support.js "Full Name" "email@example.com"'
+  );
   process.exit(1);
 }
-if (password.length < 6) {
-  console.error("Password must be at least 6 characters.");
+
+if (
+  !email.includes("@")
+  || email.startsWith("@")
+  || email.endsWith("@")
+  || /\s/.test(email)
+) {
+  console.error("Invalid email address.");
   process.exit(1);
 }
+
+if (password.length < 16) {
+  console.error(
+    "SUPPORT_PASSWORD must be at least 16 characters."
+  );
+  process.exit(1);
+}
+
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is not configured.");
+  process.exit(1);
+}
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL.includes("localhost")
+    ? false
+    : { rejectUnauthorized: false },
+});
 
 async function main() {
-  await ready;
-
-  const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
-  if (existing.rows[0]) {
-    console.error(`A user with email ${email} already exists (id ${existing.rows[0].id}).`);
-    console.error("If you meant to give them read-only access, update their role manually in the database instead.");
-    process.exit(1);
-  }
-
-  const passwordHash = bcrypt.hashSync(password, 10);
-  const result = await pool.query(
-    `INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, 'support') RETURNING id`,
-    [name, email.toLowerCase(), passwordHash]
+  const existing = await pool.query(
+    `
+      SELECT id, name, email, role
+      FROM users
+      WHERE lower(email) = lower($1)
+      LIMIT 1
+    `,
+    [email]
   );
 
-  console.log(`✅ Support account created: ${name} <${email}> (user id ${result.rows[0].id})`);
-  console.log("They can log in to the admin dashboard with this email and password.");
-  console.log("They'll see everything but won't be able to verify drivers, resolve panics, or edit rides.");
-  await pool.end();
+  if (existing.rows[0]) {
+    const user = existing.rows[0];
+
+    console.error("SUPPORT_ACCOUNT_CREATED=NO");
+    console.error("REASON=EMAIL_ALREADY_EXISTS");
+    console.error(`USER_ID=${user.id}`);
+    console.error(`EMAIL=${user.email}`);
+    console.error(`EXISTING_ROLE=${user.role}`);
+
+    process.exitCode = 2;
+    return;
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 12);
+
+  const result = await pool.query(
+    `
+      INSERT INTO users (
+        name,
+        email,
+        password_hash,
+        role
+      )
+      VALUES ($1, $2, $3, 'support')
+      RETURNING id, name, email, role
+    `,
+    [name, email, passwordHash]
+  );
+
+  const user = result.rows[0];
+
+  if (!user) {
+    throw new Error("Insert returned no user.");
+  }
+
+  if (user.role !== "support") {
+    throw new Error(
+      `Unexpected role returned after insert: ${user.role}`
+    );
+  }
+
+  if (user.email !== email) {
+    throw new Error(
+      "Created email does not match requested email."
+    );
+  }
+
+  console.log("SUPPORT_ACCOUNT_CREATED=YES");
+  console.log(`USER_ID=${user.id}`);
+  console.log(`NAME=${user.name}`);
+  console.log(`EMAIL=${user.email}`);
+  console.log(`ROLE=${user.role}`);
+  console.log("ACCESS=READ_ONLY");
+  console.log("PASSWORD_HASH_PRINTED=NO");
 }
 
-main().catch((err) => {
-  console.error("Failed to create support account:", err.message);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error(
+      "SUPPORT_ACCOUNT_CREATION_FAILED:",
+      err.message
+    );
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await pool.end();
+  });
