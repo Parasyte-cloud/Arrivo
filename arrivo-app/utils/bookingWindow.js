@@ -1,17 +1,19 @@
 // The booking window rules from the corrections brief.
 //
 //   48h or more   standard booking, everything works as normal
-//   12h to 48h    still open. The brief marks this "gap to resolve" and Ops
-//                 hasn't ruled on it yet, so it's deliberately one constant
-//                 below rather than logic scattered across two screens.
-//   under 12h     standard booking is blocked and the rider goes to On the Go
+//   3h to 48h     still open.
+//   under 3h      standard booking is blocked and the rider goes to On the Go
 //                 or WhatsApp, never a bare error.
+//
+// Was 12h. Lowered to 3h in Oct 2026 because riders booking for later the
+// same day were being turned away. Keep equal to the backend's copy in
+// arrivo-backend/services/bookingWindow.js.
 //
 // If Ops decides the 12 to 48 band should also be blocked, change
 // ON_THE_GO_ONLY_HOURS to 48 and everything follows.
 
 export const STANDARD_MIN_HOURS = 48;
-export const ON_THE_GO_ONLY_HOURS = 12;
+export const ON_THE_GO_ONLY_HOURS = 3;
 
 export function hoursUntil(when, now = Date.now()) {
   // Check for nothing BEFORE building a Date. new Date(null) is epoch 0, which

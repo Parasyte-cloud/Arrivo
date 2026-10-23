@@ -3,16 +3,18 @@
 // button out before anyone gets that far.
 //
 //   48h or more   standard booking, normal
-//   12h to 48h    still open. The brief marks this "gap to resolve" and Ops
-//                 hasn't ruled on it, so it's one constant to change.
-//   under 12h     standard booking rejected, rider goes to On the Go
+//   3h to 48h     still open.
+//   under 3h      standard booking rejected, rider goes to On the Go
+//
+// Was 12h. Lowered to 3h in Oct 2026 because riders booking for later the
+// same day were being turned away.
 //
 // Change ON_THE_GO_ONLY_HOURS here and in the app together if Ops closes the
 // gap, otherwise the two disagree and the app lets someone submit something
 // the API then refuses.
 
 const STANDARD_MIN_HOURS = 48;
-const ON_THE_GO_ONLY_HOURS = 12;
+const ON_THE_GO_ONLY_HOURS = 3;
 
 function hoursUntil(when, now = Date.now()) {
   // Check for nothing BEFORE building a Date. new Date(null) is epoch 0, which
