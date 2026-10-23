@@ -1,6 +1,8 @@
 const OPERATIONS_GET_RULES = [
   /^\/api\/auth\/me\/?$/,
   /^\/api\/admin\/drivers\/?$/,
+  // Riders list, read only. verify-id and wallet-adjust stay admin-only writes.
+  /^\/api\/admin\/riders\/?$/,
   /^\/api\/admin\/rides\/?$/,
   /^\/api\/admin\/rides\/live\/?$/,
   /^\/api\/admin\/panics\/?$/,
