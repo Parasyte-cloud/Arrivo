@@ -314,7 +314,7 @@ router.get("/waitlist", async (req, res) => {
 // with no page to see it.
 router.get("/riders", async (req, res) => {
   const result = await pool.query(
-    `SELECT users.id, users.name, users.email, users.phone, users.preferred_language, users.created_at,
+    `SELECT users.id, users.name, users.email, users.phone, users.whatsapp_number, users.preferred_language, users.created_at,
             users.id_document_url, users.id_verification_status, users.id_verification_submitted_at,
             users.id_verification_reviewed_at, users.id_verification_rejection_reason,
             users.wallet_balance_naira,
