@@ -6,6 +6,8 @@ const http = require("http");
 const jwt = require("jsonwebtoken");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+// These tests are about something else; the daily subscription gate has its own suite.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 process.env.SHARE_LINK_GRACE_MINUTES = "15";
 delete process.env.SAFETY_ALERT_EMAIL;
 

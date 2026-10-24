@@ -16,6 +16,8 @@ const OPERATIONS_GET_RULES = [
   /^\/api\/alerts\/[^/]+\/?$/,
   /^\/api\/rides\/[^/]+\/fleet\/?$/,
   /^\/api\/on-the-go\/?$/,
+  // ArrivoAir / ArrivoBoat / ArrivoRemovals requests waiting on confirmation.
+  /^\/api\/service-requests\/staff\/queue\/?$/,
 ];
 
 // The few writes operations may make: go on or off duty, say they phoned

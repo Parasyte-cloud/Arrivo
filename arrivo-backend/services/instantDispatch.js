@@ -147,6 +147,11 @@ async function findEligibleDrivers(
      WHERE d.is_verified = true
        AND d.is_online = true
        AND d.accepts_instant = true
+       AND ($9::boolean = false OR EXISTS (
+         SELECT 1 FROM driver_subscription_days sub
+          WHERE sub.driver_id = d.id
+            AND sub.day = (now() AT TIME ZONE 'Africa/Lagos')::date
+       ))
        AND d.current_lat IS NOT NULL
        AND d.current_lng IS NOT NULL
        AND d.location_updated_at IS NOT NULL
@@ -191,6 +196,7 @@ async function findEligibleDrivers(
       radiusKm,
       batchSize,
       Number.isInteger(minSeats) && minSeats > 0 ? minSeats : 1,
+      require("./driverSubscriptionDb").isEnforced(),
     ]
   );
 

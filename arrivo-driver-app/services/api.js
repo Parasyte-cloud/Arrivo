@@ -217,3 +217,27 @@ export function reportCallEvent(token, sessionId, event, reason) {
 export function requestCallSupport(token, sessionId, note) {
   return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }
+
+// Dashboard: profile, today's trips and earnings, subscription and inspection.
+export function getDriverDashboard(token) {
+  return request("/api/driver-subscription/dashboard", authed(token));
+}
+// Paystack: the server prices nothing here. The amount is checked again when the
+// payment is verified, and only exactly the daily price activates a day.
+export function initializeSubscriptionPayment(token, email, amountNaira) {
+  return request("/api/payments/initialize", authed(token, {
+    method: "POST",
+    body: JSON.stringify({ email, amountNaira, purpose: "driver_subscription" }),
+  }));
+}
+export function verifySubscriptionPayment(token, reference) {
+  return request("/api/driver-subscription/verify", authed(token, { method: "POST", body: JSON.stringify({ reference }) }));
+}
+
+// ArrivoAir, ArrivoBoat and ArrivoRemovals jobs our team assigned to this driver.
+export function getServiceJobs(token) {
+  return request("/api/service-requests/driver/jobs", authed(token));
+}
+export function updateServiceJobStatus(token, id, status) {
+  return request(`/api/service-requests/${id}/status`, authed(token, { method: "PATCH", body: JSON.stringify({ status }) }));
+}

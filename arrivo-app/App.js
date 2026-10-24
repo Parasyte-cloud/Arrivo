@@ -40,6 +40,8 @@ import EmergencyContactsScreen from "./screens/EmergencyContactsScreen";
 import RidePreferencesScreen from "./screens/RidePreferencesScreen";
 import SupportScreen from "./screens/SupportScreen";
 import ChatScreen from "./screens/ChatScreen";
+import RequestFormScreen from "./screens/RequestFormScreen";
+import RequestStatusScreen from "./screens/RequestStatusScreen";
 
 import { colors } from "./theme/tokens";
 
@@ -95,7 +97,7 @@ function HomeStack() {
       <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Message driver" }} />
-      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
+      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "ArrivoChauffer" }} />
       <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: "On the Go" }} />
       <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
@@ -103,6 +105,9 @@ function HomeStack() {
       <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: "Family Plan" }} />
       <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: "Reserved Pickups" }} />
       <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />
+      {/* ArrivoAir, ArrivoBoat and ArrivoRemovals share these two screens. */}
+      <Stack.Screen name="RequestForm" component={RequestFormScreen} options={{ title: "Request" }} />
+      <Stack.Screen name="RequestStatus" component={RequestStatusScreen} options={{ title: "Your request" }} />
     </Stack.Navigator>
   );
 }

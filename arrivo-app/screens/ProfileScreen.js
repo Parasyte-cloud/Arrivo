@@ -89,6 +89,21 @@ export default function ProfileScreen({ navigation }) {
     hasAnyContactInfo &&
     (whatsappResult.full || "") === savedWhatsapp &&
     country === (user?.country_of_residence || "");
+  // My details: name, phone and home address. The email is the login, so it is
+  // shown but not editable here.
+  const savedPhone = user?.phone || "";
+  const [name, setName] = useState(user?.name || "");
+  const [phoneDial, setPhoneDial] = useState(() => splitPhone(savedPhone).dial);
+  const [phoneNational, setPhoneNational] = useState(() => splitPhone(savedPhone).national);
+  const [homeAddress, setHomeAddress] = useState(user?.home_address || "");
+  const [detailsSaving, setDetailsSaving] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
+  const phoneResult = validatePhone(phoneDial, phoneNational);
+  const detailsSaved =
+    !detailsSaving &&
+    name.trim() === (user?.name || "") &&
+    (phoneNational.trim() ? (phoneResult.full || "") : "") === savedPhone &&
+    homeAddress.trim() === (user?.home_address || "");
   const [avatarUri, setAvatarUri] = useState(user?.avatar_url || null);
   const [avatarError, setAvatarError] = useState(null);
   const [trips, setTrips] = useState(null); // null = loading
@@ -128,6 +143,29 @@ export default function ProfileScreen({ navigation }) {
       setSaveError(e.message || "Couldn't save your details. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveMyDetails = async () => {
+    setDetailsError(null);
+    if (!name.trim()) {
+      setDetailsError("Please enter your name.");
+      return;
+    }
+    const hasPhone = phoneNational.trim().length > 0;
+    if (hasPhone && !phoneResult.valid) {
+      setDetailsError(phoneResult.message);
+      return;
+    }
+    setDetailsSaving(true);
+    try {
+      const updates = { name: name.trim(), homeAddress: homeAddress.trim() };
+      if (hasPhone) updates.phone = phoneResult.full;
+      await updateProfile(updates);
+    } catch (e) {
+      setDetailsError(e.message || "Couldn't save your details. Please try again.");
+    } finally {
+      setDetailsSaving(false);
     }
   };
 
@@ -215,6 +253,47 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </Card>
         {avatarError ? <Text style={styles.errorText}>{avatarError}</Text> : null}
+
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <Text style={styles.cardLabel}>My details</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Full name"
+            placeholderTextColor={colors.dark.textMuted}
+            value={name}
+            onChangeText={setName}
+            maxLength={100}
+            autoCapitalize="words"
+            accessibilityLabel="Full name"
+          />
+          <PhoneInput
+            tone="dark"
+            dial={phoneDial}
+            national={phoneNational}
+            onChangeDial={setPhoneDial}
+            onChangeNational={setPhoneNational}
+            placeholder="Phone number"
+          />
+          <View style={styles.readOnlyField} accessibilityLabel={`Email ${user?.email || ""}`}>
+            <Text style={styles.readOnlyLabel}>Email</Text>
+            <Text style={styles.readOnlyValue} numberOfLines={1}>{user?.email}</Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Home address"
+            placeholderTextColor={colors.dark.textMuted}
+            value={homeAddress}
+            onChangeText={setHomeAddress}
+            maxLength={300}
+            accessibilityLabel="Home address"
+          />
+          {detailsSaving ? (
+            <ActivityIndicator color={colors.amber} />
+          ) : (
+            <Button label={detailsSaved ? "Saved ✓" : "Save details"} variant="ghost" tone="dark" onPress={saveMyDetails} />
+          )}
+          {detailsError ? <Text style={styles.errorText}>{detailsError}</Text> : null}
+        </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <Text style={styles.cardLabel}>Contact details</Text>
@@ -401,6 +480,9 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",
   },
   avatarImage: { width: "100%", height: "100%" },
+  readOnlyField: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, paddingHorizontal: 4, marginBottom: 8 },
+  readOnlyLabel: { color: colors.dark.textMuted, fontSize: 13 },
+  readOnlyValue: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600", flexShrink: 1, marginLeft: 12 },
   avatarInitial: { fontSize: 22, fontWeight: "700", color: colors.dark.textMuted },
   avatarEditBadge: {
     position: "absolute", bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,

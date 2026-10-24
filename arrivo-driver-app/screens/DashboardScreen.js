@@ -17,6 +17,12 @@ import {
 import { useLocationReporting } from "../hooks/useLocationReporting";
 import { useT } from "../context/LanguageContext";
 import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
+import ParasyteSignature from "../components/ParasyteSignature";
+import { InspectionBanner, ProfileStatsCard, ServiceJobCard, SubscriptionCard } from "../components/DashboardPanels";
+import { useSubscription } from "../hooks/useSubscription";
+import { useServiceJobs } from "../hooks/useServiceJobs";
+import { canReceiveOrders } from "../tiers/dashboard";
+import { busyOnServiceJob, rideBadge } from "../tiers/jobs";
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
@@ -51,6 +57,16 @@ export default function DashboardScreen({ navigation }) {
   const [instantError, setInstantError] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const instantPollRef = useRef(null);
+
+  // Daily subscription, inspection reminder and today's numbers. The server is
+  // the authority on who may receive orders; this only decides what to show and
+  // saves polling for orders that would not come.
+  const { data: dash, error: dashError, paying, now: subNow, reload: reloadDash, subscribe } = useSubscription(token, user?.email);
+  const subscribed = dash ? canReceiveOrders(dash.subscription, subNow) : true;
+  // ArrivoAir, ArrivoBoat and ArrivoRemovals jobs our team assigned.
+  const { jobs: serviceJobs, busyId: jobBusyId, error: jobError, advance: advanceJob } = useServiceJobs(token, true);
+  // Someone mid-flight or mid-move is not offered airport pickups.
+  const onServiceJob = busyOnServiceJob(serviceJobs);
 
   // While online (whether waiting for a request or mid-trip), periodically
   // report this phone's GPS position to the backend. This is what makes
@@ -92,13 +108,14 @@ export default function DashboardScreen({ navigation }) {
 
   const refreshAvailable = useCallback(async () => {
     try {
-      const { rides, areaLockedToVenue: lockedVenue } = await getAvailableRides(token);
+      const { rides, areaLockedToVenue: lockedVenue, subscriptionRequired } = await getAvailableRides(token);
+      if (subscriptionRequired) reloadDash();
       setAvailable(rides);
       setAreaLockedToVenue(lockedVenue || null);
     } catch (e) {
       setError(e.message);
     }
-  }, [token]);
+  }, [token, reloadDash]);
 
   // isOnline used to always start false on every mount (app cold start, or
   // even just this screen remounting), regardless of whatever the backend's
@@ -144,7 +161,7 @@ export default function DashboardScreen({ navigation }) {
 
   // Poll for new ride requests while online and not already on a trip.
   useEffect(() => {
-    if (isOnline && !activeRide) {
+    if (isOnline && !activeRide && subscribed && !onServiceJob) {
       refreshAvailable();
       pollRef.current = setInterval(refreshAvailable, POLL_INTERVAL_MS);
     } else {
@@ -152,7 +169,7 @@ export default function DashboardScreen({ navigation }) {
       setAvailable([]);
     }
     return () => clearInterval(pollRef.current);
-  }, [isOnline, activeRide, refreshAvailable]);
+  }, [isOnline, activeRide, subscribed, onServiceJob, refreshAvailable]);
 
   // Keep the active-trip card's data fresh while on a trip — status changes,
   // fare adjustments, or a listening-device activation from another path
@@ -172,7 +189,10 @@ export default function DashboardScreen({ navigation }) {
       await setOnlineStatus(token, value);
     } catch (e) {
       setIsOnline(!value); // revert on failure
-      if (e.code === "SELFIE_REQUIRED") {
+      if (e.code === "SUBSCRIPTION_REQUIRED") {
+        // Not an error to show: the red subscribe card already says what to do.
+        reloadDash();
+      } else if (e.code === "SELFIE_REQUIRED") {
         // Not an error to show: send the driver to the selfie check.
         navigation.navigate("Selfie");
       } else {
@@ -204,7 +224,7 @@ export default function DashboardScreen({ navigation }) {
   // Poll ArrivoExpress offers only while genuinely eligible to receive them:
   // online, opted in, verified, and not already mid-trip.
   useEffect(() => {
-    if (isOnline && acceptsInstant && instantVerified && !activeRide) {
+    if (isOnline && acceptsInstant && instantVerified && !activeRide && subscribed && !onServiceJob) {
       refreshInstantOffers();
       instantPollRef.current = setInterval(refreshInstantOffers, INSTANT_POLL_INTERVAL_MS);
     } else {
@@ -212,7 +232,7 @@ export default function DashboardScreen({ navigation }) {
       setInstantOffers([]);
     }
     return () => clearInterval(instantPollRef.current);
-  }, [isOnline, acceptsInstant, instantVerified, activeRide, refreshInstantOffers]);
+  }, [isOnline, acceptsInstant, instantVerified, activeRide, subscribed, onServiceJob, refreshInstantOffers]);
 
   // Drives the live per-offer countdown text -- only ticks while there's
   // actually something to count down, so this never runs for drivers who
@@ -265,6 +285,7 @@ export default function DashboardScreen({ navigation }) {
       setActiveRide(ride);
       setAvailable([]);
     } catch (e) {
+      if (e.code === "SUBSCRIPTION_REQUIRED") reloadDash();
       setError(e.message); // e.g. "already accepted by another driver" — refresh the list either way
       refreshAvailable();
     } finally {
@@ -282,6 +303,7 @@ export default function DashboardScreen({ navigation }) {
       const { ride } = await updateRideStatus(token, activeRide.id, nextStatus);
       if (nextStatus === "completed" || nextStatus === "cancelled") {
         setActiveRide(null);
+        reloadDash(); // today's trips and earnings
       } else {
         setActiveRide(ride);
       }
@@ -333,7 +355,7 @@ export default function DashboardScreen({ navigation }) {
             onRefresh={async () => {
               setRefreshing(true);
               try {
-                await (activeRide ? checkForActiveRide() : refreshAvailable());
+                await Promise.all([reloadDash(), activeRide ? checkForActiveRide() : refreshAvailable()]);
               } finally {
                 setRefreshing(false);
               }
@@ -355,6 +377,10 @@ export default function DashboardScreen({ navigation }) {
             thumbColor="#fff"
           />
         </View>
+
+        <ProfileStatsCard profile={dash?.profile} today={dash?.today} />
+        <InspectionBanner inspection={dash?.inspection} />
+        <SubscriptionCard subscription={dash?.subscription} now={subNow} paying={paying} onSubscribe={subscribe} />
 
         {instantEnabled ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
@@ -379,10 +405,35 @@ export default function DashboardScreen({ navigation }) {
         ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {dashError && !dash ? <Text style={styles.error}>{dashError}</Text> : null}
+        {jobError ? <Text style={styles.error}>{jobError}</Text> : null}
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
+
+        {serviceJobs.length ? (
+          <>
+            <Text style={styles.sectionLabel}>Your jobs</Text>
+            {serviceJobs.map((job) => (
+              <ServiceJobCard
+                key={job.id}
+                job={job}
+                busy={jobBusyId === job.id}
+                disabled={jobBusyId !== null && jobBusyId !== job.id}
+                onAdvance={advanceJob}
+              />
+            ))}
+          </>
+        ) : null}
 
         {activeRide ? (
           <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
+        ) : isOnline && !subscribed ? (
+          <Card tone="dark">
+            <Text style={styles.offlineText}>Subscribe for today to start receiving orders.</Text>
+          </Card>
+        ) : isOnline && onServiceJob ? (
+          <Card tone="dark">
+            <Text style={styles.offlineText}>New ride requests are paused while your job is under way.</Text>
+          </Card>
         ) : isOnline ? (
           <>
             {acceptsInstant ? (
@@ -443,6 +494,8 @@ export default function DashboardScreen({ navigation }) {
             <Text style={styles.offlineText}>Go online to start receiving ride requests.</Text>
           </Card>
         )}
+
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -453,12 +506,6 @@ export default function DashboardScreen({ navigation }) {
 // the airport) — surfaced here so a driver can immediately tell which
 // direction a request runs, since the pickup_address/stops alone don't
 // make that obvious at a glance.
-function tripTypeLabel(bookingType) {
-  if (bookingType === "dropoff") return "Airport Drop-off";
-  if (bookingType === "one_way") return "Airport Pickup";
-  return "Chauffeur";
-}
-
 // A "dropoff" ride has no flight-landing event to anchor timing on (unlike
 // an arrival pickup), so the rider scheduled an explicit pickup date/time
 // instead — shown here so a driver doesn't mistake a next-week booking for
@@ -487,7 +534,7 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
   return (
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
-        <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+        <Tag label={rideBadge(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         {/* A fleet-companion row is always fare_naira = 0 — the rider
             already paid for the whole convoy as one line item on their
             primary ride (see FLEET_PRICE_NAIRA in services/fare.js and
@@ -720,7 +767,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
         <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
-          <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+          <Tag label={rideBadge(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         </View>
         {scheduledLabel(ride) ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduledLabel(ride)}</Text> : null}
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
