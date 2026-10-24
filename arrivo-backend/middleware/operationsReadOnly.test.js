@@ -189,6 +189,16 @@ test("operations can read their own console permissions", async () => {
   }
 });
 
+test("operations can read the Trip Tracker but not change anything", async () => {
+  for (const url of ["/api/admin/trips/active", "/api/admin/trips/42"]) {
+    const result = await requestFor("operations", "GET", url);
+    assert.equal(result.nextCalled, true, `expected GET ${url} to pass`);
+  }
+  const write = await requestFor("operations", "POST", "/api/admin/trips/42");
+  assert.equal(write.nextCalled, false);
+  assert.equal(write.statusCode, 403);
+});
+
 test("support doesn't see the wallet unless it's granted", async () => {
   const result = await requestFor("support", "GET", "/api/admin/wallet-transactions");
   assert.equal(result.nextCalled, false);

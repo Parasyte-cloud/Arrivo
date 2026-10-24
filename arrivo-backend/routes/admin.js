@@ -4,6 +4,7 @@ const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlightStatus } = require("./flights");
+const { phoneHint } = require("../services/rideTeam");
 
 const router = express.Router();
 
@@ -266,6 +267,37 @@ function shapeTrip(r) {
   };
 }
 
+// Since #74 a list shows the last three digits of a number and nothing more.
+// Full numbers come with one ride's detail, and that view is logged (below).
+function hideTripNumbers(trip) {
+  const { rider_email, rider_phone, driver_phone, emergency_contact_phone, ...rest } = trip;
+  return {
+    ...rest,
+    rider_phone: null,
+    driver_phone: null,
+    emergency_contact_phone: null,
+    rider_phone_hint: phoneHint(rider_phone),
+    driver_phone_hint: phoneHint(driver_phone),
+    emergency_contact_phone_hint: phoneHint(emergency_contact_phone),
+    numbers_hidden: true,
+  };
+}
+
+// Same record as GET /api/staff/rides/:id: one row per person, ride and kind of
+// access in 10 minutes, so a refresh does not bury the log (staff_contact_access).
+async function logNumberView(staffId, rideId, subjectUserId, subjectRole) {
+  if (!subjectUserId) return;
+  await pool.query(
+    `INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action)
+     SELECT $1, $2, $3, $4, 'view_number'
+     WHERE NOT EXISTS (
+       SELECT 1 FROM staff_contact_access
+       WHERE staff_user_id = $1 AND ride_id = $2 AND subject_user_id = $3 AND action = 'view_number'
+         AND created_at > now() - interval '10 minutes')`,
+    [staffId, rideId, subjectUserId, subjectRole]
+  );
+}
+
 // GET /api/admin/trips/active
 router.get("/trips/active", async (req, res) => {
   const result = await pool.query(
@@ -278,7 +310,7 @@ router.get("/trips/active", async (req, res) => {
               COALESCE(rides.scheduled_pickup_at, rides.created_at) ASC
      LIMIT 200`
   );
-  res.json({ trips: result.rows.map(shapeTrip), generatedAt: new Date().toISOString() });
+  res.json({ trips: result.rows.map((r) => hideTripNumbers(shapeTrip(r))), generatedAt: new Date().toISOString() });
 });
 
 // Flight lookups are paid and quota-limited, so one flight is looked up at most
@@ -312,6 +344,9 @@ router.get("/trips/:id", async (req, res) => {
   const result = await pool.query(`${TRIP_SELECT} WHERE rides.id = $1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: "Ride not found" });
   const trip = shapeTrip(result.rows[0]);
+  // This view returns full numbers, so it leaves the same trace as the Ride Desk.
+  if (trip.rider_phone || trip.rider_email || trip.emergency_contact_phone) await logNumberView(req.user.id, trip.id, trip.rider_id, "rider");
+  if (trip.driver_phone) await logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver");
   const flight = trip.flight_number ? await cachedFlight(trip.flight_number) : null;
   res.json({ trip, flight });
 });
