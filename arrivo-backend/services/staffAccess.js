@@ -83,6 +83,9 @@ const PRESETS = {
     panics: "view",
     riders: "view",
     rides: "view",
+    // The exports router already gives support only the operational ones,
+    // never the money exports or the history.
+    exports: "view",
   },
   operations: {
     ...all("none"),

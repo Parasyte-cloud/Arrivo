@@ -48,7 +48,7 @@ test("support starts narrow", () => {
   assert.ok(!a.check(support, "PATCH", "/api/support/tickets/3").ok, "closing tickets is granted per person, like before");
   assert.ok(!a.check(support, "PATCH", "/api/admin/panics/7/resolve").ok, "panics are view only");
   assert.ok(!a.check(support, "GET", "/api/admin/wallet-transactions").ok);
-  assert.ok(!a.check(support, "GET", "/api/admin/exports").ok);
+  assert.ok(a.check(support, "GET", "/api/admin/exports").ok, "support keeps the operational exports they were designed to have");
 });
 
 test("the narrow path wins over the broad one", () => {
