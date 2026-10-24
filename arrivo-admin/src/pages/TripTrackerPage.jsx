@@ -165,7 +165,7 @@ export function TripTrackerPage({ focus = null }) {
       if (filter === "flight" && !t.flight_number) return false;
       if (filter === "alert" && !(t.has_active_panic || ["lost", "delayed"].includes(gps(t).key) && t.ride_status !== "requested")) return false;
       if (!q) return true;
-      return [String(t.id), t.rider_name, t.rider_email, t.rider_phone, t.flight_number, t.driver_name, t.plate_number, t.pickup_address]
+      return [String(t.id), t.rider_name, t.flight_number, t.driver_name, t.plate_number, t.pickup_address]
         .some((v) => String(v || "").toLowerCase().includes(q.replace(/^#/, "")));
     });
   }, [trips, filter, q]);
@@ -206,7 +206,7 @@ export function TripTrackerPage({ focus = null }) {
     const g = gps(trip);
     const lines = [
       `RideArrivo ride #${trip.id}: ${STATUS_LABEL[trip.ride_status] || trip.ride_status}`,
-      `Rider: ${trip.rider_name}${trip.rider_phone ? ` (${trip.rider_phone})` : ""}`,
+      `Rider: ${trip.rider_name}`,
       `From: ${trip.pickup_address}`,
       destinationText(trip) ? `To: ${destinationText(trip)}` : null,
       trip.flight_number ? `Flight: ${trip.flight_number}${flightInfo?.flight?.status ? ` (${flightInfo.flight.status})` : ""}` : null,
@@ -220,6 +220,14 @@ export function TripTrackerPage({ focus = null }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch { /* clipboard blocked: nothing to do */ }
+  };
+
+  // A full number appears only once the detail has loaded (and been logged). A tap on it is logged too.
+  const logTap = (subject) => { api.logPhoneCall(token, trip.id, subject).catch(() => {}); };
+  const phoneLink = (full, hint, onTap) => {
+    if (full) return <a className="btn ghost" href={`tel:${full}`} onClick={onTap}>{full}</a>;
+    if (hint) return <span className="tt-tag">{hint}</span>;
+    return <span className="tt-tag warn">No phone</span>;
   };
 
   const flight = flightInfo?.flight || null;
@@ -251,7 +259,7 @@ export function TripTrackerPage({ focus = null }) {
           <input
             type="search"
             className="field"
-            placeholder="Ride #, flight, name, phone, plate…"
+            placeholder="Ride #, flight, name, plate…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search trips"
@@ -396,9 +404,9 @@ export function TripTrackerPage({ focus = null }) {
             <div className="tt-block">
               <h3>People</h3>
               <div className="tt-person">
-                <div><strong>{trip.rider_name}</strong><span>Rider{trip.rider_email ? ` · ${trip.rider_email}` : ""}</span></div>
+                <div><strong>{trip.rider_name}</strong><span>Rider</span></div>
                 <div className="tt-acts">
-                  {trip.rider_phone ? <a className="btn ghost" href={`tel:${trip.rider_phone}`}>{trip.rider_phone}</a> : <span className="tt-tag warn">No phone</span>}
+                  {phoneLink(trip.rider_phone, trip.rider_phone_hint, () => logTap("rider"))}
                   <CallButton calleeUserId={trip.rider_id} calleeName={trip.rider_name} />
                 </div>
               </div>
@@ -406,15 +414,15 @@ export function TripTrackerPage({ focus = null }) {
                 <div className="tt-person">
                   <div><strong>{trip.driver_name}</strong><span>Driver{trip.plate_number ? ` · ${trip.make_model || "Car"} ${trip.plate_number}` : ""}</span></div>
                   <div className="tt-acts">
-                    {trip.driver_phone ? <a className="btn ghost" href={`tel:${trip.driver_phone}`}>{trip.driver_phone}</a> : null}
+                    {trip.driver_phone || trip.driver_phone_hint ? phoneLink(trip.driver_phone, trip.driver_phone_hint, () => logTap("driver")) : null}
                     {trip.driver_user_id ? <CallButton calleeUserId={trip.driver_user_id} calleeName={trip.driver_name} /> : null}
                   </div>
                 </div>
               ) : null}
-              {trip.emergency_contact_phone ? (
+              {trip.emergency_contact_phone || trip.emergency_contact_phone_hint ? (
                 <div className="tt-person">
                   <div><strong>{trip.emergency_contact_name || "Emergency contact"}</strong><span>Emergency contact</span></div>
-                  <div className="tt-acts"><a className="btn ghost" href={`tel:${trip.emergency_contact_phone}`}>{trip.emergency_contact_phone}</a></div>
+                  <div className="tt-acts">{phoneLink(trip.emergency_contact_phone, trip.emergency_contact_phone_hint, () => logTap("rider"))}</div>
                 </div>
               ) : null}
             </div>
