@@ -72,7 +72,9 @@ async function requireAuth(req, res, next) {
   // Staff: the console area this request belongs to decides, per person
   // (services/staffAccess.js). Paths outside every area keep the old checks.
   if (staffAccess.STAFF_ROLES.includes(req.user.role)) {
-    const path = String(req.originalUrl || req.url || "").split("?")[0];
+    // Lowercased because Express matches routes case-insensitively: without
+    // this, /API/Admin/Wallet-Transactions reaches the route but skips the check.
+    const path = String(req.originalUrl || req.url || "").split("?")[0].toLowerCase();
     const verdict = staffAccess.check({ ...live.rows[0], role: req.user.role }, req.method, path);
     if (verdict) {
       if (!verdict.ok) {
