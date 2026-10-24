@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { messageWithCode } from "../utils/errorRef";
+import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -104,6 +105,9 @@ export default function ChauffeurScreen({ navigation }) {
   const [quote, setQuote] = useState(null); // { fareNaira } | null
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [quoteError, setQuoteError] = useState(null);
+  // Server said there's no phone on file. Asked inline, then the quote runs again.
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [quoteRetry, setQuoteRetry] = useState(0);
   const debounceRef = useRef(null);
   // Guards against an older in-flight request resolving after a newer one
   // and overwriting a fresh quote/error with a stale result — see the
@@ -194,13 +198,14 @@ export default function ChauffeurScreen({ navigation }) {
         setQuote(result);
       } catch (e) {
         if (requestIdRef.current !== requestId) return;
+        if (e.code === "PHONE_REQUIRED") { setPhoneNeeded(true); return; }
         setQuoteError(messageWithCode(e, "Couldn't calculate a price for this booking. Please try again."));
       } finally {
         if (requestIdRef.current === requestId) setQuoteLoading(false);
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(debounceRef.current);
-  }, [choice, duration, luxury, fullDayCount, token]);
+  }, [choice, duration, luxury, fullDayCount, token, quoteRetry]);
 
   const confirm = () => {
     if (!canConfirm) return;
@@ -512,7 +517,9 @@ export default function ChauffeurScreen({ navigation }) {
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
-          quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
+          phoneNeeded ? (
+            <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setQuoteRetry((n) => n + 1); }} />
+          ) : quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
         ) : !canConfirm ? (
           <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>
         ) : null}

@@ -17,6 +17,7 @@ const {
 const { getNgnPerUsd } = require("../services/fx");
 const { lookupFlightStatus } = require("./flights");
 const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
+const { ensureRiderPhone, allowedWithoutPhone } = require("../services/riderPhone");
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { creditMembershipCashback } = require("../services/membershipCashback");
@@ -250,6 +251,11 @@ async function createRideHandler(req, res) {
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
     familyMemberUserId, partnerVenueId,
   } = req.body;
+  // No phone, no booking, unless it's already been paid for (services/riderPhone.js).
+  if (!allowedWithoutPhone(req.body)) {
+    const phoneCheck = await ensureRiderPhone(pool, req.user, req.body.riderPhone);
+    if (!phoneCheck.ok) return res.status(phoneCheck.status).json(phoneCheck.body);
+  }
   // Arrivo Express Phase 3 (the Partner Venues program) -- a partner-venue
   // reserved ride overrides whatever pickup the client sent with the
   // venue's own verified address/coordinates (see the validation block
@@ -870,6 +876,9 @@ router.post("/quote", requireAuth, async (req, res) => {
     pickupLat, pickupLng, destinationLat, destinationLng,
     adults = 1, children = 0, scheduledPickupAt,
   } = req.body;
+  // Asked here, before payment, so nobody pays and then gets refused.
+  const phoneCheck = await ensureRiderPhone(pool, req.user, req.body.riderPhone);
+  if (!phoneCheck.ok) return res.status(phoneCheck.status).json(phoneCheck.body);
 
   // Same scheduled-time rules POST / enforces. The quote used to skip these
   // entirely, so a drop-off 6 hours out priced fine here, the rider paid,

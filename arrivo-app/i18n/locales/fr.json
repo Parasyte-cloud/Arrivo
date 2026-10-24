@@ -218,5 +218,13 @@
         "body": "Réessayez ou envoyez un message. Le support est là si besoin."
       }
     }
+  },
+  "phoneRequired": {
+    "title": "Ajoutez votre numéro pour réserver",
+    "body": "Votre chauffeur et notre équipe doivent pouvoir vous joindre pour ce trajet. Nous l'enregistrons dans votre profil, nous ne vous le demanderons qu'une fois.",
+    "placeholder": "Numéro de téléphone",
+    "save": "Enregistrer et continuer",
+    "saving": "Enregistrement...",
+    "failed": "Impossible d'enregistrer votre numéro. Veuillez réessayer."
   }
 }

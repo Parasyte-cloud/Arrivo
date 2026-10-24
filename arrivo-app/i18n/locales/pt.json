@@ -218,5 +218,13 @@
         "body": "Tente de novo ou envie uma mensagem. O suporte está aqui se precisar."
       }
     }
+  },
+  "phoneRequired": {
+    "title": "Adicione seu telefone para reservar",
+    "body": "Seu motorista e nossa equipe precisam conseguir falar com você sobre esta viagem. Vamos salvar no seu perfil, então só pedimos uma vez.",
+    "placeholder": "Número de telefone",
+    "save": "Salvar e continuar",
+    "saving": "Salvando...",
+    "failed": "Não foi possível salvar seu número. Tente novamente."
   }
 }
