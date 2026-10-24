@@ -119,6 +119,9 @@ function randomKey() {
 }
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 
 console.log("idempotencyKey is required for money-moving payment methods:");
