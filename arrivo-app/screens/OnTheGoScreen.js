@@ -24,7 +24,7 @@ import { formatLagos } from "../utils/lagosTime";
 
 const SUPPORT_PHONE_DIAL = "+2348162706078";
 
-// The short path for someone flying in within about 12 hours who hasn't got
+// The short path for someone flying in within about 3 hours who hasn't got
 // time for the full Plan Route flow. Essentials only: where from, where to,
 // flight if they have one, how many of them, and a number we can ring.
 // No vehicle picker, no escort or fleet options, and no payment step. Ops

@@ -48,12 +48,12 @@ test("24h out is in the gap band", () => {
   assert.strictEqual(bookingWindow(at(24), NOW), "gap");
 });
 
-test("exactly 12h out is still allowed", () => {
+test("exactly 3h out is still allowed", () => {
   assert.strictEqual(bookingWindow(at(ON_THE_GO_ONLY_HOURS), NOW), "gap");
 });
 
-test("a minute under 12h is On the Go only", () => {
-  assert.strictEqual(bookingWindow(at(12 - 1 / 60), NOW), "on_the_go_only");
+test("a minute under 3h is On the Go only", () => {
+  assert.strictEqual(bookingWindow(at(3 - 1 / 60), NOW), "on_the_go_only");
 });
 
 test("2h out is On the Go only", () => {
@@ -108,12 +108,12 @@ test("hoursUntil measures in hours", () => {
 
 console.log("\nisStandardBookingBlocked only blocks the bottom band:");
 
-test("blocks under 12h and nothing above it", () => {
+test("blocks under 3h and nothing above it", () => {
   assert.strictEqual(isStandardBookingBlocked(at(72), NOW), false);
   assert.strictEqual(isStandardBookingBlocked(at(48), NOW), false);
   assert.strictEqual(isStandardBookingBlocked(at(24), NOW), false);
-  assert.strictEqual(isStandardBookingBlocked(at(12), NOW), false);
-  assert.strictEqual(isStandardBookingBlocked(at(11), NOW), true);
+  assert.strictEqual(isStandardBookingBlocked(at(3), NOW), false);
+  assert.strictEqual(isStandardBookingBlocked(at(2), NOW), true);
   assert.strictEqual(isStandardBookingBlocked(at(-1), NOW), true);
 });
 

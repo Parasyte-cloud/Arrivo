@@ -552,7 +552,7 @@ async function createRideHandler(req, res) {
   // Paystack popup and charges exactly the fareNaira returned here. Before
   // this existed, the site charged the card first and only then called
   // POST / for real -- so any rule the review-step quote didn't also check
-  // (the 12-hour booking window on drop-offs, a launch promo keyed to the
+  // (the 3-hour booking window on drop-offs, a launch promo keyed to the
   // scheduled pickup time rather than "now") took the rider's money and
   // then refused the ride. Same code path as a real booking, so the two can
   // never disagree.
@@ -873,7 +873,7 @@ router.post("/quote", requireAuth, async (req, res) => {
 
   // Same scheduled-time rules POST / enforces. The quote used to skip these
   // entirely, so a drop-off 6 hours out priced fine here, the rider paid,
-  // and POST / then refused it for being inside the 12-hour window. Only
+  // and POST / then refused it for being inside the 3-hour window. Only
   // checked when the client sends it, so older clients that never did are
   // unaffected (POST / still has the final say).
   let parsedScheduledPickupAt = null;
