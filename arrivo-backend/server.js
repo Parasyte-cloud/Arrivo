@@ -75,6 +75,10 @@ app.set("trust proxy", 1);
 //  4. Origin lock, off unless ORIGIN_LOCK_MODE is set (middleware/originLock.js).
 app.disable("x-powered-by");
 app.use(secureHeaders());
+// Ref and error code on every failed request, logged and kept for 30 days
+// (middleware/errorTrail.js). Early so it sees every response.
+const { errorTrail, pgStore } = require("./middleware/errorTrail");
+app.use(errorTrail({ store: pgStore(pool) }));
 app.use(createHealthRouter({ query: (sql) => pool.query(sql) }));
 app.use(originLock());
 
@@ -186,6 +190,7 @@ app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
 app.use("/api/public", publicBookingRequestsRouter);
+app.use("/api", require("./routes/errorLog"));
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.
@@ -194,7 +199,9 @@ app.use("/api/public", publicBookingRequestsRouter);
 // instead of the JSON error shape every client in this codebase expects.
 app.use((err, req, res, next) => {
   if (!res.headersSent && respondIfCorsRejection(err, res)) return;
-  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl} [${req.requestId}]:`, err.message);
+  // Saved with the ref so we can see what really broke. Never sent to the client.
+  res.locals.errorDetail = err.stack ? String(err.stack).split("\n").slice(0, 4).join(" | ") : err.message;
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
 });

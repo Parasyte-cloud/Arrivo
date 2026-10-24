@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { messageWithCode } from "../utils/errorRef";
 import {
   View,
   Text,
@@ -85,7 +86,7 @@ export default function OnTheGoScreen({ navigation, route }) {
       });
       setSent(data.request);
     } catch (e) {
-      setError(e.message || "Couldn't send that. Please try again, or reach us on WhatsApp.");
+      setError(messageWithCode(e, "Couldn't send that. Please try again, or reach us on WhatsApp."));
     } finally {
       setSending(false);
     }

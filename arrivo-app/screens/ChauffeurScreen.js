@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { messageWithCode } from "../utils/errorRef";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -193,7 +194,7 @@ export default function ChauffeurScreen({ navigation }) {
         setQuote(result);
       } catch (e) {
         if (requestIdRef.current !== requestId) return;
-        setQuoteError(e.message || "Couldn't calculate a price for this booking. Please try again.");
+        setQuoteError(messageWithCode(e, "Couldn't calculate a price for this booking. Please try again."));
       } finally {
         if (requestIdRef.current === requestId) setQuoteLoading(false);
       }
