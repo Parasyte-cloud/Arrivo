@@ -16,10 +16,10 @@ old builds keep working.
 
 | Rule | App | Backend |
 | --- | --- | --- |
-| Standard booking blocked under 12 hours | `arrivo-app/utils/bookingWindow.js` `ON_THE_GO_ONLY_HOURS` | `arrivo-backend/services/bookingWindow.js` `ON_THE_GO_ONLY_HOURS` (parity test in `bookingWindow.test.js`) |
+| Standard booking blocked under 3 hours | `arrivo-app/utils/bookingWindow.js` `ON_THE_GO_ONLY_HOURS` | `arrivo-backend/services/bookingWindow.js` `ON_THE_GO_ONLY_HOURS` (parity test in `bookingWindow.test.js`) |
 
 The Forms apps (Removals, Boat, Air) and the website `late-request.js` carry the
-same 12 hour value in their own repos.
+same 3 hour value in their own repos.
 
 ## Deploy order
 

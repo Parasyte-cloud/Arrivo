@@ -473,7 +473,7 @@ export function addMembershipProfileUser(token, profileUserEmail) {
   });
 }
 
-// On-the-Go: the quick form for riders who need a car within about 12 hours.
+// On-the-Go: the quick form for riders who need a car within about 3 hours.
 // No fare quote and no payment, ops rings the contact number to confirm a
 // driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
 // requestedPickupAt (ISO), details and service are optional and carry what the

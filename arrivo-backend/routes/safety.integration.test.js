@@ -72,6 +72,9 @@ const sw = (key, on) => systemConfig.setConfig(key, on ? "true" : "false", null)
 const png = "data:image/png;base64," + Buffer.from("fakeimagebytes").toString("base64");
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
   await ready;
   await new Promise((r) => server.listen(0, r));
   await pool.query("DELETE FROM system_config WHERE key IN ('safety_pickup_pin_required','safety_selfie_required')");
