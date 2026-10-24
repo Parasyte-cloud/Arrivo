@@ -3,6 +3,7 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
+import { openInWindow } from "../lib/openWindow";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -248,6 +249,11 @@ export function RidesPage() {
                     <tr>
                       <td colSpan={8} style={{ background: "rgba(255,255,255,0.03)" }}>
                         <div style={{ padding: "8px 4px" }}>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                            <button className="btn ghost" onClick={() => openInWindow(`ride/${r.id}`, `Ride #${r.id}`)}>⤢ Ride in window</button>
+                            <button className="btn ghost" onClick={() => openInWindow(`track/${r.id}`, `Track #${r.id}`)}>⤢ Live tracking</button>
+                            {r.rider_id ? <button className="btn ghost" onClick={() => openInWindow(`rider/${r.rider_id}`, r.rider_name)}>⤢ Rider in window</button> : null}
+                          </div>
                           {r.emergency_contact_name || r.emergency_contact_phone ? (
                             <div style={{ marginBottom: 14, fontSize: 12.5 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase" }}>

@@ -43,6 +43,7 @@ const AREAS = [
     { path: /^\/api\/admin\/rides\/live\/?$/ },
     { path: /^\/api\/live-map(\/|$)/ },
   ] },
+  { id: "trip-tracker", label: "Trip Tracker", rules: [{ path: /^\/api\/admin\/trips(\/|$)/ }] },
   { id: "rides", label: "Rides", rules: [
     { path: /^\/api\/admin\/(rides|ride-cancellations)(\/|$)/ },
     { path: /^\/api\/rides\/\d+\/fleet\/?$/ },
@@ -66,7 +67,7 @@ const AREA_IDS = AREAS.map((a) => a.id);
 // How the Team page lists them: the same order as the console sidebar.
 const DISPLAY_ORDER = [
   "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues", "vehicles",
-  "memberships", "wallet", "arrivo-express", "express-pricing", "safety", "live-map", "analytics", "exports",
+  "memberships", "wallet", "arrivo-express", "express-pricing", "safety", "trip-tracker", "live-map", "analytics", "exports",
 ];
 
 const all = (level) => Object.fromEntries(AREA_IDS.map((id) => [id, level]));
@@ -95,6 +96,7 @@ const PRESETS = {
     rides: "view",
     "flight-issues": "view",
     vehicles: "view",
+    "trip-tracker": "view",
     "live-map": "view",
     analytics: "view",
     exports: "view",

@@ -3,6 +3,7 @@ const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { listConfig, setConfig } = require("../services/systemConfig");
+const { lookupFlightStatus } = require("./flights");
 
 const router = express.Router();
 
@@ -128,8 +129,10 @@ router.get("/rides", async (req, res) => {
     const idx = params.length;
     conditions.push(
       `(LOWER(riders.name) LIKE $${idx} OR LOWER(riders.email) LIKE $${idx} OR LOWER(COALESCE(riders.phone, '')) LIKE $${idx}
-        OR LOWER(COALESCE(driver_users.name, '')) LIKE $${idx} OR LOWER(rides.pickup_address) LIKE $${idx})`
+        OR LOWER(COALESCE(driver_users.name, '')) LIKE $${idx} OR LOWER(rides.pickup_address) LIKE $${idx}
+        OR LOWER(COALESCE(rides.flight_number, '')) LIKE $${idx} OR rides.id::text = $${idx + 1})`
     );
+    params.push(String(search).trim().replace(/^#/, ""));
   }
   if (from) {
     params.push(from);
@@ -217,6 +220,100 @@ router.get("/rides/live", async (req, res) => {
   res.json({
     rides: result.rows.map((r) => ({ ...r, stops: JSON.parse(r.stops || "[]") })),
   });
+});
+
+// ── Trip tracker ─────────────────────────────────────────────────────────
+//
+// The Ops Console "Trip Tracker" page: every ride that is waiting for a driver,
+// has a driver on the way, or is on the road, plus anything that finished in the
+// last two hours so the team can see the end of a trip. The driver's position comes
+// from drivers.current_lat/current_lng, the same source as the Live Map above.
+
+const TRIP_SELECT = `
+  SELECT rides.id, rides.ride_status, rides.payment_status, rides.pickup_address, rides.stops,
+         rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
+         rides.flight_number, rides.vehicle_type, rides.fare_naira, rides.distance_km, rides.duration_min,
+         rides.scheduled_pickup_at, rides.tracking_started_at, rides.completed_at, rides.created_at,
+         rides.emergency_contact_name, rides.emergency_contact_phone, rides.admin_notes,
+         riders.id as rider_id, riders.name as rider_name, riders.phone as rider_phone, riders.email as rider_email,
+         driver_users.id as driver_user_id, driver_users.name as driver_name, driver_users.phone as driver_phone,
+         vehicles.make_model, vehicles.plate_number,
+         drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+         (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) as has_active_panic
+  FROM rides
+  JOIN users riders ON riders.id = rides.rider_id
+  LEFT JOIN drivers ON drivers.id = rides.driver_id
+  LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+  LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+`;
+
+const numOrNull = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+
+function shapeTrip(r) {
+  let stops = [];
+  try { stops = JSON.parse(r.stops || "[]"); } catch { stops = []; }
+  return {
+    ...r,
+    stops,
+    pickup_lat: numOrNull(r.pickup_lat),
+    pickup_lng: numOrNull(r.pickup_lng),
+    destination_lat: numOrNull(r.destination_lat),
+    destination_lng: numOrNull(r.destination_lng),
+    current_lat: numOrNull(r.current_lat),
+    current_lng: numOrNull(r.current_lng),
+    distance_km: numOrNull(r.distance_km),
+    duration_min: numOrNull(r.duration_min),
+  };
+}
+
+// GET /api/admin/trips/active
+router.get("/trips/active", async (req, res) => {
+  const result = await pool.query(
+    `${TRIP_SELECT}
+     WHERE rides.created_at > now() - interval '30 days'
+       AND (rides.ride_status IN ('requested', 'accepted', 'in_progress')
+            OR (rides.ride_status = 'completed' AND rides.completed_at > now() - interval '2 hours'))
+     ORDER BY (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) DESC,
+              CASE rides.ride_status WHEN 'in_progress' THEN 0 WHEN 'accepted' THEN 1 WHEN 'requested' THEN 2 ELSE 3 END,
+              COALESCE(rides.scheduled_pickup_at, rides.created_at) ASC
+     LIMIT 200`
+  );
+  res.json({ trips: result.rows.map(shapeTrip), generatedAt: new Date().toISOString() });
+});
+
+// Flight lookups are paid and quota-limited, so one flight is looked up at most
+// once every five minutes no matter how many people have the page open.
+const FLIGHT_CACHE_MS = 5 * 60 * 1000;
+const flightCache = new Map();
+
+async function cachedFlight(flightNumber) {
+  const key = String(flightNumber).trim().toUpperCase();
+  const hit = flightCache.get(key);
+  if (hit && Date.now() - hit.at < FLIGHT_CACHE_MS) return hit.value;
+  const configured = Boolean(process.env.AVIATIONSTACK_KEY) && process.env.AVIATIONSTACK_KEY !== "replace_me";
+  let value;
+  if (!configured) {
+    value = { configured: false, flight: null, error: null, checkedAt: new Date().toISOString() };
+  } else {
+    try {
+      const flight = await lookupFlightStatus(key, "LOS");
+      value = { configured: true, flight, error: null, checkedAt: new Date().toISOString() };
+    } catch (err) {
+      value = { configured: true, flight: null, error: "Flight lookup is temporarily unavailable.", checkedAt: new Date().toISOString() };
+    }
+  }
+  flightCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+// GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
+router.get("/trips/:id", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const result = await pool.query(`${TRIP_SELECT} WHERE rides.id = $1`, [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: "Ride not found" });
+  const trip = shapeTrip(result.rows[0]);
+  const flight = trip.flight_number ? await cachedFlight(trip.flight_number) : null;
+  res.json({ trip, flight });
 });
 
 // ── Panic alerts ─────────────────────────────────────────────────────────

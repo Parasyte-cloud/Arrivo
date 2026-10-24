@@ -277,3 +277,8 @@ export const getMyAccess = (token) => request("/api/staff/access/me", token);
 export const getAccessCatalog = (token) => request("/api/staff/access/catalog", token);
 export const setPersonPermissions = (token, id, permissions) =>
   request(`/api/staff/people/${id}/permissions`, token, { method: "PUT", body: JSON.stringify({ permissions }) });
+
+// Trip Tracker: every ride that is waiting, en route or on the road (plus anything finished in
+// the last two hours), and one ride with its live flight status.
+export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
+export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);

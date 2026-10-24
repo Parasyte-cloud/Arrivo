@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { CallButton } from "../components/CallButton";
+import { openInWindow } from "../lib/openWindow";
 import "../riders.css";
 
 const PAGE_SIZE = 50;
@@ -360,7 +361,7 @@ function Fact({ label, children }) {
   );
 }
 
-function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose, onChanged }) {
+export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose, onChanged, variant = "drawer" }) {
   const [rides, setRides] = useState(null);
   const [txns, setTxns] = useState(null);
   const [detailError, setDetailError] = useState(null);
@@ -441,17 +442,21 @@ function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose, onCha
   const wa = whatsappHref(rider.whatsapp_number || rider.phone);
   const average = rider.ride_count > 0 ? Math.round(rider.total_spent_naira / rider.ride_count) : null;
 
+  const isPage = variant === "page";
   return (
-    <div className="rd-drawer-wrap">
-      <div className="rd-backdrop" onClick={onClose} />
-      <aside className="rd-drawer" role="dialog" aria-label={`${rider.name} details`}>
+    <div className={isPage ? "rd-page-wrap" : "rd-drawer-wrap"}>
+      {isPage ? null : <div className="rd-backdrop" onClick={onClose} />}
+      <aside className={`rd-drawer${isPage ? " page" : ""}`} role={isPage ? "main" : "dialog"} aria-label={`${rider.name} details`}>
         <header className="rd-d-head">
           <Avatar rider={rider} size={52} />
           <div className="rd-d-title">
             <h2>{rider.name}</h2>
             <span>Joined {formatDateTime(rider.created_at)}</span>
           </div>
-          <button className="btn ghost rd-close" onClick={onClose} aria-label="Close">✕</button>
+          {isPage ? null : (
+            <button className="btn ghost rd-close" onClick={() => openInWindow(`rider/${rider.id}`, rider.name)} title="Open in its own window">⤢ Window</button>
+          )}
+          {isPage ? null : <button className="btn ghost rd-close" onClick={onClose} aria-label="Close">✕</button>}
         </header>
 
         <div className="rd-d-actions">

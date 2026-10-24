@@ -17,8 +17,10 @@ import wordmarkLight from "./assets/wordmark-light.png";
 const PanicsPage = lazy(() => import("./pages/PanicsPage").then((m) => ({ default: m.PanicsPage })));
 const RidersPage = lazy(() => import("./pages/RidersPage").then((m) => ({ default: m.RidersPage })));
 const DriversPage = lazy(() => import("./pages/DriversPage").then((m) => ({ default: m.DriversPage })));
+const RiderViewPage = lazy(() => import("./pages/RiderViewPage").then((m) => ({ default: m.RiderViewPage })));
 const RidesPage = lazy(() => import("./pages/RidesPage").then((m) => ({ default: m.RidesPage })));
 const LiveMapPage = lazy(() => import("./pages/LiveMapPage").then((m) => ({ default: m.LiveMapPage })));
+const TripTrackerPage = lazy(() => import("./pages/TripTrackerPage").then((m) => ({ default: m.TripTrackerPage })));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const MembershipsPage = lazy(() => import("./pages/MembershipsPage").then((m) => ({ default: m.MembershipsPage })));
 const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })));
@@ -38,16 +40,27 @@ const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m
 // for what "a valid page" means.
 const PAGES = [
   "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
+  "vehicles", "memberships", "wallet", "trip-tracker", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
 
 
 function pageFromHash(allowedPages = PAGES) {
-  const hash = window.location.hash.replace(/^#\/?/, "");
+  const hash = window.location.hash.replace(/^#\/?/, "").split("/")[0];
   if (allowedPages.includes(hash)) return hash;
   // Panic Alerts first when they can see it, otherwise the first page they have.
   return allowedPages.includes("panics") ? "panics" : allowedPages[0] || "panics";
+}
+
+// Big single-item views: #/rider/<id>, #/ride/<id>, #/track/<ride id or flight number>.
+// They render without the sidebar so each fits cleanly in its own RA-workspace window.
+const FOCUS_KINDS = { rider: "riders", ride: "rides", track: "trip-tracker" };
+
+function focusFromHash(allowedPages = PAGES) {
+  const [kind, ...rest] = window.location.hash.replace(/^#\/?/, "").split("/");
+  const ref = decodeURIComponent(rest.join("/") || "").trim();
+  if (!FOCUS_KINDS[kind] || !ref || !allowedPages.includes(FOCUS_KINDS[kind])) return null;
+  return { kind, ref };
 }
 
 function Dashboard() {
@@ -73,11 +86,15 @@ function DashboardFor({ access }) {
   // teammate all land on the actual page intended, not always the
   // default — and the hash sync below keeps the two in sync from here on.
   const [page, setPageState] = useState(() => pageFromHash(allowedPages));
-  useEffect(() => { setCurrentPage(page === "team" ? null : page); }, [page, setCurrentPage]);
   // Losing access to the page on screen (changed on the Team page) moves them off it.
   useEffect(() => {
     if (allowedPages.length && !allowedPages.includes(page)) setPageState(pageFromHash(allowedPages));
   }, [allowedPages, page]);
+  const [focus, setFocus] = useState(() => focusFromHash(allowedPages));
+  // View-only buttons follow the area of the page on screen, including big single views.
+  useEffect(() => {
+    setCurrentPage(focus ? FOCUS_KINDS[focus.kind] : page === "team" ? null : page);
+  }, [focus, page, setCurrentPage]);
 
   const setPage = useCallback((next) => {
     if (!allowedPages.includes(next)) return;
@@ -100,6 +117,10 @@ function DashboardFor({ access }) {
     const onHashChange = () => {
       const raw =
         window.location.hash.replace(/^#\/?/, "");
+
+      const nextFocus = focusFromHash(allowedPages);
+      setFocus(nextFocus);
+      if (nextFocus) return;
 
       const next =
         pageFromHash(allowedPages);
@@ -133,6 +154,7 @@ function DashboardFor({ access }) {
     const raw =
       window.location.hash.replace(/^#\/?/, "");
 
+    if (focusFromHash(allowedPages)) return;
     if (
       !raw
       || !allowedPages.includes(raw)
@@ -145,6 +167,19 @@ function DashboardFor({ access }) {
   // see the .sidebar / .mobile-topbar rules in styles.css for the
   // breakpoint (860px) that switches between the two layouts.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (focus) {
+    return (
+      <div className="focus-shell">
+        <ErrorBoundary resetKey={`${focus.kind}/${focus.ref}`}>
+          <Suspense fallback={<div className="empty-state">Loading…</div>}>
+            {focus.kind === "rider" && <RiderViewPage riderId={focus.ref} />}
+            {focus.kind !== "rider" && <TripTrackerPage focus={focus} />}
+          </Suspense>
+        </ErrorBoundary>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -165,6 +200,7 @@ function DashboardFor({ access }) {
             {page === "vehicles" && <VehiclesPage />}
             {page === "memberships" && <MembershipsPage />}
             {page === "wallet" && <WalletPage />}
+            {page === "trip-tracker" && <TripTrackerPage />}
             {page === "live-map" && <LiveMapPage />}
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
