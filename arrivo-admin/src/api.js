@@ -271,3 +271,9 @@ export const changePersonRole = (token, id, role, note) =>
   request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
 export const setCanManageStaff = (token, id, allowed) =>
   request(`/api/staff/people/${id}/manage`, token, { method: "PUT", body: JSON.stringify({ allowed }) });
+
+// Console permissions (arrivo-backend/services/staffAccess.js).
+export const getMyAccess = (token) => request("/api/staff/access/me", token);
+export const getAccessCatalog = (token) => request("/api/staff/access/catalog", token);
+export const setPersonPermissions = (token, id, permissions) =>
+  request(`/api/staff/people/${id}/permissions`, token, { method: "PUT", body: JSON.stringify({ permissions }) });

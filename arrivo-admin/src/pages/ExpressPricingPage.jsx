@@ -732,12 +732,11 @@ function AutomationTab({ token }) {
 }
 
 export function ExpressPricingPage() {
-  const { token, user } = useAuth();
+  const { token, can } = useAuth();
   const [tab, setTab] = useState("prices");
-  // The API refuses everyone but admins; say so plainly instead of showing
-  // five tabs of errors.
-  if (user && user.role !== "admin") {
-    return <div className="empty-state">ArrivoExpress pricing, quests and automation are for administrators only.</div>;
+  // Access comes from the person's console permissions (Team & Access).
+  if (!can("express-pricing", "view")) {
+    return <div className="empty-state">You don't have access to ArrivoExpress pricing, quests and payouts. Ask the owner or an admin.</div>;
   }
   return (
     <div>

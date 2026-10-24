@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as api from "./api";
+import { canDo, legacyAccess } from "./access";
 
 const ARRIVOOPS_SURFACE = new URLSearchParams(
   window.location.search
@@ -33,6 +34,10 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  // What this person can see and change, per page (see access.js).
+  const [access, setAccess] = useState(null);
+  // The page on screen, so isReadOnly answers for that page.
+  const [currentPage, setCurrentPage] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -111,11 +116,38 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [token]);
 
+  // Loaded after sign-in and refreshed every minute, so a change made on the
+  // Team page reaches this screen without a reload. The API enforces it either
+  // way. An older backend without the endpoint gets the old role rules.
+  const loadAccess = useCallback(async () => {
+    if (!token || !user) return;
+    try {
+      setAccess(await api.getMyAccess(token));
+    } catch (e) {
+      // 401 signs them out elsewhere. Anything else (an older backend, a
+      // network blip) falls back to the old role rules rather than leaving
+      // the console on "Loading". The API still enforces either way.
+      if (!e || e.status !== 401) setAccess((current) => current || legacyAccess(user.role));
+    }
+  }, [token, user]);
+  useEffect(() => {
+    if (!token || !user) { setAccess(null); return undefined; }
+    loadAccess();
+    const timer = setInterval(loadAccess, 60000);
+    return () => clearInterval(timer);
+  }, [token, user, loadAccess]);
+
+  const can = useCallback((area, level = "view") => canDo(access, area, level), [access]);
   const isOperations = user?.role === "operations";
-  const isReadOnly = user?.role === "support" || isOperations;
+  const isReadOnly = currentPage
+    ? !can(currentPage, "manage")
+    : user?.role === "support" || isOperations;
 
   return (
-    <AuthContext.Provider value={{ token, user, initializing, login, logout, isAuthenticated: !!token, isReadOnly, isOperations }}>
+    <AuthContext.Provider value={{
+      token, user, initializing, login, logout, isAuthenticated: !!token, isReadOnly, isOperations,
+      access, can, reloadAccess: loadAccess, currentPage, setCurrentPage,
+    }}>
       {children}
     </AuthContext.Provider>
   );

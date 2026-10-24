@@ -137,7 +137,7 @@ function ContactChips({ rider, stop }) {
 }
 
 export function RidersPage() {
-  const { token, isReadOnly } = useAuth();
+  const { token, isReadOnly, can } = useAuth();
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -342,6 +342,7 @@ export function RidersPage() {
           rider={selected}
           token={token}
           isReadOnly={isReadOnly}
+          canAdjustWallet={can("wallet", "manage")}
           onClose={() => setSelectedId(null)}
           onChanged={load}
         />
@@ -359,7 +360,7 @@ function Fact({ label, children }) {
   );
 }
 
-function RiderDrawer({ rider, token, isReadOnly, onClose, onChanged }) {
+function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose, onChanged }) {
   const [rides, setRides] = useState(null);
   const [txns, setTxns] = useState(null);
   const [detailError, setDetailError] = useState(null);
@@ -531,7 +532,8 @@ function RiderDrawer({ rider, token, isReadOnly, onClose, onChanged }) {
               ))}
             </ul>
           )}
-          {!isReadOnly ? (
+          {/* Moving money is the Wallet permission, not Riders. */}
+          {canAdjustWallet ? (
             adjusting ? (
               <div className="rd-form">
                 <input

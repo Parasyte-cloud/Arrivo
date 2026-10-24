@@ -258,10 +258,11 @@ function EventsTab({ token }) {
 }
 
 export function SafetyPage() {
-  const { token, user } = useAuth();
+  const { token, can } = useAuth();
   const [tab, setTab] = useState("complaints");
-  if (user && user.role !== "admin") {
-    return <div className="empty-state">Trip safety is for administrators only.</div>;
+  // Access comes from the person's console permissions (Team & Access).
+  if (!can("safety", "view")) {
+    return <div className="empty-state">You don't have access to Trip Safety. Ask the owner or an admin.</div>;
   }
   return (
     <div>

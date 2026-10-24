@@ -328,6 +328,8 @@ router.post("/login", loginNetworkLimiter, loginLimiter, async (req, res) => {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
+  // Shown on the console's Team page. Never blocks a sign-in.
+  pool.query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch(() => {});
   const token = signToken(user);
   setSessionCookie(res, token);
   res.json({ token, user: publicUser(user) });
