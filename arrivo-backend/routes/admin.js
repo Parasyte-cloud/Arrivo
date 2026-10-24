@@ -4,6 +4,8 @@ const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlightStatus } = require("./flights");
+const { phoneHint } = require("../services/rideTeam");
+const { logAccess, logCall } = require("../services/contactAccessLog");
 
 const router = express.Router();
 
@@ -249,11 +251,18 @@ const TRIP_SELECT = `
 
 const numOrNull = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
+// Full numbers and the email stay out of the list and the trip panel. Like Ride
+// Desk, staff see the last three digits, and "Show numbers" goes through
+// GET /trips/:id/contacts, which logs the look (staff_contact_access).
 function shapeTrip(r) {
   let stops = [];
   try { stops = JSON.parse(r.stops || "[]"); } catch { stops = []; }
+  const { rider_phone, driver_phone, rider_email, emergency_contact_phone, ...rest } = r;
   return {
-    ...r,
+    ...rest,
+    rider_phone_hint: phoneHint(rider_phone),
+    driver_phone_hint: phoneHint(driver_phone),
+    has_emergency_contact: !!emergency_contact_phone,
     stops,
     pickup_lat: numOrNull(r.pickup_lat),
     pickup_lng: numOrNull(r.pickup_lng),
@@ -305,6 +314,41 @@ async function cachedFlight(flightNumber) {
   flightCache.set(key, { at: Date.now(), value });
   return value;
 }
+
+// GET /api/admin/trips/:id/contacts  the full numbers for one ride, logged.
+router.get("/trips/:id/contacts", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const result = await pool.query(`${TRIP_SELECT} WHERE rides.id = $1`, [req.params.id]);
+  const r = result.rows[0];
+  if (!r) return res.status(404).json({ error: "Ride not found" });
+  const rideId = Number(req.params.id);
+  await logAccess(req.user.id, rideId, r.rider_id, "rider", "view_number");
+  if (r.driver_user_id) await logAccess(req.user.id, rideId, r.driver_user_id, "driver", "view_number");
+  res.json({
+    rider: { phone: r.rider_phone, email: r.rider_email },
+    driver: r.driver_user_id ? { phone: r.driver_phone } : null,
+    emergencyContact: r.emergency_contact_phone ? { name: r.emergency_contact_name, phone: r.emergency_contact_phone } : null,
+  });
+});
+
+// POST /api/admin/trips/:id/contact-log  { subject: "rider" | "driver" | "emergency" }
+// Sent just before the console opens tel:, so a call from a staff member's own
+// phone leaves a trace. The emergency contact isn't a user, so it's logged
+// against the rider.
+router.post("/trips/:id/contact-log", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const subject = req.body && req.body.subject;
+  if (!["rider", "driver", "emergency"].includes(subject)) return res.status(400).json({ error: "subject must be rider, driver or emergency" });
+  const r = (await pool.query(
+    `SELECT rides.rider_id, driver_users.id AS driver_user_id FROM rides
+     LEFT JOIN drivers ON drivers.id = rides.driver_id LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+     WHERE rides.id = $1`, [req.params.id])).rows[0];
+  if (!r) return res.status(404).json({ error: "Ride not found" });
+  const who = subject === "driver" ? r.driver_user_id : r.rider_id;
+  if (!who) return res.status(409).json({ error: "This ride has no driver yet." });
+  await logCall(req.user.id, Number(req.params.id), who, subject === "emergency" ? "emergency_contact" : subject);
+  res.status(201).json({ ok: true });
+});
 
 // GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
 router.get("/trips/:id", async (req, res) => {

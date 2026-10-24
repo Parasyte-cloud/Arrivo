@@ -142,10 +142,24 @@ export function TripTrackerPage({ focus = null }) {
     return () => { ok = false; };
   }, [focus, selectedId, trips, loading, token]);
 
+  // Full numbers only after "Show numbers", which the server logs. Reset per ride.
+  const [contacts, setContacts] = useState(null);
+  const [contactsErr, setContactsErr] = useState(null);
+  const showNumbers = useCallback(() => {
+    setContactsErr(null);
+    api.getTripContacts(token, selectedId).then(setContacts).catch((e) => setContactsErr(e.message));
+  }, [token, selectedId]);
+  const dial = useCallback((subject) => {
+    // Never hold up the call over the log.
+    api.logTripCall(token, selectedId, subject).catch(() => {});
+  }, [token, selectedId]);
+
   // The selected ride's full record and flight status (flight lookups are cached for 5 minutes server side).
   useEffect(() => {
     setDetail(null);
     setRoute(null);
+    setContacts(null);
+    setContactsErr(null);
     if (!selectedId) return undefined;
     let live = true;
     const fetchDetail = () =>
@@ -165,7 +179,7 @@ export function TripTrackerPage({ focus = null }) {
       if (filter === "flight" && !t.flight_number) return false;
       if (filter === "alert" && !(t.has_active_panic || ["lost", "delayed"].includes(gps(t).key) && t.ride_status !== "requested")) return false;
       if (!q) return true;
-      return [String(t.id), t.rider_name, t.rider_email, t.rider_phone, t.flight_number, t.driver_name, t.plate_number, t.pickup_address]
+      return [String(t.id), t.rider_name, t.flight_number, t.driver_name, t.plate_number, t.pickup_address]
         .some((v) => String(v || "").toLowerCase().includes(q.replace(/^#/, "")));
     });
   }, [trips, filter, q]);
@@ -206,7 +220,8 @@ export function TripTrackerPage({ focus = null }) {
     const g = gps(trip);
     const lines = [
       `RideArrivo ride #${trip.id}: ${STATUS_LABEL[trip.ride_status] || trip.ride_status}`,
-      `Rider: ${trip.rider_name}${trip.rider_phone ? ` (${trip.rider_phone})` : ""}`,
+      // No phone number: this text gets pasted into chats.
+      `Rider: ${trip.rider_name}`,
       `From: ${trip.pickup_address}`,
       destinationText(trip) ? `To: ${destinationText(trip)}` : null,
       trip.flight_number ? `Flight: ${trip.flight_number}${flightInfo?.flight?.status ? ` (${flightInfo.flight.status})` : ""}` : null,
@@ -396,9 +411,11 @@ export function TripTrackerPage({ focus = null }) {
             <div className="tt-block">
               <h3>People</h3>
               <div className="tt-person">
-                <div><strong>{trip.rider_name}</strong><span>Rider{trip.rider_email ? ` · ${trip.rider_email}` : ""}</span></div>
+                <div><strong>{trip.rider_name}</strong><span>Rider{contacts?.rider?.email ? ` · ${contacts.rider.email}` : ""}</span></div>
                 <div className="tt-acts">
-                  {trip.rider_phone ? <a className="btn ghost" href={`tel:${trip.rider_phone}`}>{trip.rider_phone}</a> : <span className="tt-tag warn">No phone</span>}
+                  {contacts?.rider?.phone
+                    ? <a className="btn ghost" href={`tel:${contacts.rider.phone}`} onClick={() => dial("rider")}>{contacts.rider.phone}</a>
+                    : trip.rider_phone_hint ? <span className="tt-tag">{trip.rider_phone_hint}</span> : <span className="tt-tag warn">No phone</span>}
                   <CallButton calleeUserId={trip.rider_id} calleeName={trip.rider_name} />
                 </div>
               </div>
@@ -406,17 +423,30 @@ export function TripTrackerPage({ focus = null }) {
                 <div className="tt-person">
                   <div><strong>{trip.driver_name}</strong><span>Driver{trip.plate_number ? ` · ${trip.make_model || "Car"} ${trip.plate_number}` : ""}</span></div>
                   <div className="tt-acts">
-                    {trip.driver_phone ? <a className="btn ghost" href={`tel:${trip.driver_phone}`}>{trip.driver_phone}</a> : null}
+                    {contacts?.driver?.phone
+                      ? <a className="btn ghost" href={`tel:${contacts.driver.phone}`} onClick={() => dial("driver")}>{contacts.driver.phone}</a>
+                      : trip.driver_phone_hint ? <span className="tt-tag">{trip.driver_phone_hint}</span> : null}
                     {trip.driver_user_id ? <CallButton calleeUserId={trip.driver_user_id} calleeName={trip.driver_name} /> : null}
                   </div>
                 </div>
               ) : null}
-              {trip.emergency_contact_phone ? (
+              {trip.has_emergency_contact ? (
                 <div className="tt-person">
                   <div><strong>{trip.emergency_contact_name || "Emergency contact"}</strong><span>Emergency contact</span></div>
-                  <div className="tt-acts"><a className="btn ghost" href={`tel:${trip.emergency_contact_phone}`}>{trip.emergency_contact_phone}</a></div>
+                  <div className="tt-acts">
+                    {contacts?.emergencyContact?.phone
+                      ? <a className="btn ghost" href={`tel:${contacts.emergencyContact.phone}`} onClick={() => dial("emergency")}>{contacts.emergencyContact.phone}</a>
+                      : <span className="tt-tag">On file</span>}
+                  </div>
                 </div>
               ) : null}
+              {!contacts ? (
+                <div className="tt-acts" style={{ marginTop: 8 }}>
+                  <button className="btn ghost" onClick={showNumbers}>Show numbers</button>
+                  <span className="tt-note">Opening numbers is logged.</span>
+                </div>
+              ) : null}
+              {contactsErr ? <div className="error-text">{contactsErr}</div> : null}
             </div>
 
             <div className="tt-block">

@@ -43,7 +43,11 @@ const AREAS = [
     { path: /^\/api\/admin\/rides\/live\/?$/ },
     { path: /^\/api\/live-map(\/|$)/ },
   ] },
-  { id: "trip-tracker", label: "Trip Tracker", rules: [{ path: /^\/api\/admin\/trips(\/|$)/ }] },
+  { id: "trip-tracker", label: "Trip Tracker", rules: [
+    // Logging a call from your own phone is part of the job, so view is enough.
+    { path: /^\/api\/admin\/trips\/\d+\/contact-log\/?$/, work: true },
+    { path: /^\/api\/admin\/trips(\/|$)/ },
+  ] },
   { id: "rides", label: "Rides", rules: [
     { path: /^\/api\/admin\/(rides|ride-cancellations)(\/|$)/ },
     { path: /^\/api\/rides\/\d+\/fleet\/?$/ },

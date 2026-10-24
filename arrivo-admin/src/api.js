@@ -282,3 +282,7 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+// Full numbers for one trip (logged), and a trace when staff dial from their own phone.
+export const getTripContacts = (token, id) => request(`/api/admin/trips/${id}/contacts`, token);
+export const logTripCall = (token, id, subject) =>
+  request(`/api/admin/trips/${id}/contact-log`, token, { method: "POST", body: JSON.stringify({ subject }) });
