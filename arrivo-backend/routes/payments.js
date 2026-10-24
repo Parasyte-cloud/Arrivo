@@ -63,7 +63,9 @@ async function createRideFromAssistedBooking(dbClient, booking, reference, paidA
       null, null, null, null, req.scheduledPickupAt || null,
       null, null, null, null,
       Number(req.adults) || 1, Number(req.children) || 0, vehicleCount, null,
-      Number(booking.quoted_usd_amount), Number(booking.quoted_ngn_per_usd), null, null, null,
+      // promo_discount_naira is NOT NULL (default 0). Passing null here made every
+      // paid assisted booking fail to become a ride.
+      Number(booking.quoted_usd_amount), Number(booking.quoted_ngn_per_usd), null, 0, null,
     ]
   );
   return inserted.rows[0];
@@ -659,3 +661,4 @@ router.post(
 module.exports = router;
 module.exports.verifyPaystackTransaction = verifyPaystackTransaction;
 module.exports.initializePaystackTransaction = initializePaystackTransaction;
+module.exports.createRideFromAssistedBooking = createRideFromAssistedBooking;
