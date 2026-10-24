@@ -196,6 +196,13 @@ test("support doesn't see the wallet unless it's granted", async () => {
   assert.equal(result.responseBody?.code, "NO_ACCESS");
 });
 
+test("an upper-case path doesn't skip the console permission check", async () => {
+  const result = await requestFor("support", "GET", "/API/Admin/Wallet-Transactions");
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.responseBody?.code, "NO_ACCESS");
+});
+
 test("support sees the wallet once it's granted", async () => {
   staffPermissions = { wallet: "view" };
   try {
