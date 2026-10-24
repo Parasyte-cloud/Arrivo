@@ -18,6 +18,7 @@ import UpdateRequiredScreen from "./components/UpdateRequiredScreen";
 import { loadBookingConfig } from "./services/bookingConfig";
 import LaunchIntro from "./components/LaunchIntro";
 import { CallOverlayProvider } from "./components/CallOverlay";
+import { installCrashReporter } from "./services/api";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -44,6 +45,9 @@ import SupportScreen from "./screens/SupportScreen";
 import ChatScreen from "./screens/ChatScreen";
 
 import { colors } from "./theme/tokens";
+
+// JS crashes get a ref and are sent to the server (services/api.js).
+installCrashReporter();
 
 const Stack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator();

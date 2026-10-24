@@ -1,7 +1,93 @@
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "./config";
-import { clientHeaders } from "./clientInfo";
+import { clientHeaders, appVersion } from "./clientInfo";
 import { noteResponse } from "../utils/updateRequired";
 import { buildPaymentInit, paymentInitHeaders } from "../utils/paymentIntent";
+import { newRef, pushReport, shortStack } from "../utils/errorRef";
+
+
+// Sent on every call so a failure on the server can be matched to this phone
+// and app version. X-App-Build also tells the server we show the ref ourselves.
+// clientHeaders() (clientInfo.js) adds the app name, platform and version the
+// minimum-version check reads; these add the request ref the error log keys on.
+const APP_VERSION = appVersion() || "unknown";
+const PLATFORM = `${Platform.OS} ${Platform.Version}`;
+function traceHeaders(ref) {
+  return { ...clientHeaders(), "X-Request-Id": ref, "X-App-Build": APP_VERSION, "X-Platform": PLATFORM };
+}
+
+// Errors the server never saw (no signal, a crash) are queued here and sent to
+// POST /api/client-errors. Kept in storage so a crash report survives the
+// app closing and goes out on the next launch.
+const REPORTS_KEY = "arrivo_pending_error_reports";
+let flushing = false;
+// True at launch so a report saved before a crash is checked once.
+let maybePending = true;
+
+export async function reportClientError(report) {
+  const entry = {
+    ref: report.ref || newRef(),
+    code: report.code || "CLIENT_ERROR",
+    message: report.message ? String(report.message).slice(0, 500) : null,
+    detail: report.detail || null,
+    screen: report.screen || null,
+    method: report.method || null,
+    path: report.path || null,
+    status: Number.isInteger(report.status) ? report.status : null,
+    context: report.context || null,
+    platform: PLATFORM,
+    appVersion: APP_VERSION,
+    appBuild: APP_VERSION,
+    at: new Date().toISOString(),
+  };
+  try {
+    const queue = JSON.parse((await AsyncStorage.getItem(REPORTS_KEY)) || "[]");
+    await AsyncStorage.setItem(REPORTS_KEY, JSON.stringify(pushReport(queue, entry)));
+  } catch { /* reporting must never break the app */ }
+  maybePending = true;
+  flushErrorReports();
+  return entry.ref;
+}
+
+export async function flushErrorReports() {
+  if (flushing || !maybePending) return;
+  flushing = true;
+  try {
+    let queue = JSON.parse((await AsyncStorage.getItem(REPORTS_KEY)) || "[]");
+    while (queue.length) {
+      const r = queue[0];
+      const res = await fetch(`${API_BASE_URL}/api/client-errors`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...traceHeaders(newRef()) },
+        body: JSON.stringify({ ...r, context: { ...(r.context || {}), happenedAt: r.at } }),
+      });
+      // 4xx means the report itself is bad, so drop it rather than retry forever.
+      if (!res.ok && res.status >= 500) break;
+      queue = queue.slice(1);
+      await AsyncStorage.setItem(REPORTS_KEY, JSON.stringify(queue));
+    }
+    if (!queue.length) maybePending = false;
+  } catch { /* still offline, try again after the next call that works */ }
+  finally { flushing = false; }
+}
+
+// Catches JS errors that would otherwise just close the app, saves them with a
+// ref, then lets React Native carry on as normal. Call once at startup.
+let crashReporterInstalled = false;
+export function installCrashReporter() {
+  const EU = global.ErrorUtils;
+  if (crashReporterInstalled || !EU || !EU.getGlobalHandler) return;
+  crashReporterInstalled = true;
+  const previous = EU.getGlobalHandler();
+  EU.setGlobalHandler((error, isFatal) => {
+    try {
+      reportClientError({ code: isFatal ? "JS_CRASH" : "JS_ERROR", message: error && error.message, detail: shortStack(error) });
+    } catch { /* never get in the way of the real handler */ }
+    if (previous) previous(error, isFatal);
+  });
+  flushErrorReports();
+}
 
 // One place that hears about a rejected sign-in. Any call that carried an
 // Authorization header and got a 401 means the saved session is dead (expired,
@@ -27,10 +113,21 @@ async function request(path, options = {}) {
   // this whole object and drop Content-Type entirely, since object spread
   // only merges top-level keys. Without Content-Type: application/json,
   // Express's body parser never parses the JSON body at all.
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
-  });
+  const ref = newRef();
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...traceHeaders(ref), ...options.headers },
+    });
+  } catch (e) {
+    // Never reached the server, so it has no record of this. Report it once
+    // there's signal again, and keep the ref on the error for the screen.
+    e.ref = ref;
+    e.errorCode = "NETWORK";
+    reportClientError({ ref, code: "NETWORK", message: e.message, method: options.method || "GET", path: path.split("?")[0] });
+    throw e;
+  }
   const data = await res.json().catch(() => ({}));
   // A 426 means this build is below the backend's minimum. Record it so the
   // app can swap to the update screen.
@@ -42,8 +139,12 @@ async function request(path, options = {}) {
     err.code = data.code;
     err.support = data.support; // company support details, never a rider's or driver's number
     err.sessionId = data.sessionId;
+    // The server logged this under the same ref (or its own, if it had to make one).
+    err.ref = data.requestId || res.headers.get("X-Request-Id") || ref;
+    err.errorCode = data.errorCode || `HTTP_${res.status}`;
     throw err;
   }
+  flushErrorReports();
   return data;
 }
 
@@ -385,7 +486,7 @@ export function addMembershipProfileUser(token, profileUserEmail) {
   });
 }
 
-// On-the-Go: the quick form for riders who need a car within about 12 hours.
+// On-the-Go: the quick form for riders who need a car within about 3 hours.
 // No fare quote and no payment, ops rings the contact number to confirm a
 // driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
 // requestedPickupAt (ISO), details and service are optional and carry what the

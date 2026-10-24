@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { messageWithCode } from "../utils/errorRef";
 import {
   View,
   Text,
@@ -23,7 +24,7 @@ import { createOnTheGoRequest } from "../services/api";
 import { formatLagos } from "../utils/lagosTime";
 import { whatsappUrl } from "../utils/supportContacts";
 
-// The short path for someone flying in within about 12 hours who hasn't got
+// The short path for someone flying in within about 3 hours who hasn't got
 // time for the full Plan Route flow. Essentials only: where from, where to,
 // flight if they have one, how many of them, and a number we can ring.
 // No vehicle picker, no escort or fleet options, and no payment step. Ops
@@ -84,7 +85,7 @@ export default function OnTheGoScreen({ navigation, route }) {
       });
       setSent(data.request);
     } catch (e) {
-      setError(e.message || "Couldn't send that. Please try again, or reach us on WhatsApp.");
+      setError(messageWithCode(e, "Couldn't send that. Please try again, or reach us on WhatsApp."));
     } finally {
       setSending(false);
     }

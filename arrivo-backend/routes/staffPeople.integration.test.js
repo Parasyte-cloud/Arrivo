@@ -41,6 +41,9 @@ async function mk(role, { owner = false, manage = false, lead = false } = {}) {
 const roleOf = async (id) => (await pool.query("SELECT role, token_version, support_lead, can_manage_staff FROM users WHERE id=$1", [id])).rows[0];
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
 await ready;
 await pool.query("UPDATE staff_duty SET on_duty=false");
 await new Promise((r) => server.listen(0, "127.0.0.1", r));

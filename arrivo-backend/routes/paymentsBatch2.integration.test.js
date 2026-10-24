@@ -126,6 +126,9 @@ const balanceOf = async (id) => Number((await pool.query("SELECT wallet_balance_
 const ridesFor = async (ref) => (await pool.query("SELECT * FROM rides WHERE payment_reference = $1", [ref])).rows;
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
 
   console.log("Initialize remembers the order:");

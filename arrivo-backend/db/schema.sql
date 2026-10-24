@@ -1983,3 +1983,31 @@ CREATE TABLE IF NOT EXISTS staff_role_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_role_events_created ON staff_role_events(created_at DESC);
+
+-- Failed requests and app-side errors, looked up by the ref a rider reads out
+-- (RA-XXXXXX). Written by middleware/errorTrail.js and POST /api/client-errors.
+-- No request bodies, no passwords or card data. Rows older than 30 days are
+-- deleted by the same middleware.
+CREATE TABLE IF NOT EXISTS api_error_log (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ref TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('server', 'client')),
+  status INTEGER,
+  method TEXT,
+  path TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  role TEXT,
+  error_code TEXT,
+  message TEXT,
+  detail TEXT,
+  platform TEXT,
+  app_version TEXT,
+  app_build TEXT,
+  user_agent TEXT,
+  screen TEXT,
+  context JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_ref ON api_error_log(ref);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_created ON api_error_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_code ON api_error_log(error_code, created_at DESC);

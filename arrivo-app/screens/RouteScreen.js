@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { messageWithCode } from "../utils/errorRef";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -464,7 +465,7 @@ export default function RouteScreen({ navigation, route }) {
         setQuote(result);
       } catch (e) {
         if (quoteRequestIdRef.current !== requestId) return;
-        setQuoteError(e.message || "Couldn't calculate a fare for this trip. Please try again.");
+        setQuoteError(messageWithCode(e, "Couldn't calculate a fare for this trip. Please try again."));
       } finally {
         if (quoteRequestIdRef.current === requestId) setQuoteLoading(false);
       }

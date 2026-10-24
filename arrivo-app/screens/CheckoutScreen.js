@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { messageWithCode, errorCodeLine } from "../utils/errorRef";
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -138,7 +139,8 @@ export default function CheckoutScreen({ route, navigation }) {
           setStatus("error");
           setMessage(
             `Your payment went through, but we couldn't finish booking your ride (${createErr.message || "please try again"}). ` +
-              `You were charged. Contact support with reference ${reference} and we'll sort it out.`
+              `You were charged. Contact support with reference ${reference} and we'll sort it out.` +
+              (errorCodeLine(createErr) ? `\n\n${errorCodeLine(createErr)}` : "")
           );
         }
       } else {
@@ -147,7 +149,7 @@ export default function CheckoutScreen({ route, navigation }) {
       }
     } catch (e) {
       setStatus("error");
-      setMessage(e.message || "Something went wrong confirming your payment.");
+      setMessage(messageWithCode(e, "Something went wrong confirming your payment."));
     }
   };
 
@@ -199,7 +201,7 @@ export default function CheckoutScreen({ route, navigation }) {
       // above once the user switches back to this app from the browser.
     } catch (e) {
       setStatus("error");
-      setMessage(e.message || "Something went wrong starting the payment.");
+      setMessage(messageWithCode(e, "Something went wrong starting the payment."));
     }
   };
 
@@ -229,7 +231,7 @@ export default function CheckoutScreen({ route, navigation }) {
       onRideCreated(ride);
     } catch (e) {
       setStatus("error");
-      setMessage(e.message || "Something went wrong confirming your ride.");
+      setMessage(messageWithCode(e, "Something went wrong confirming your ride."));
       submittingRef.current = false;
     }
   };
