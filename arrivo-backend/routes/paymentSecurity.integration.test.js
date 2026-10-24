@@ -74,10 +74,11 @@ const stamp = Date.now();
 const made = [];
 async function makeUser(tag, { role = "rider", wallet = 0, emailVerified = true } = {}) {
   const email = `paysec-${tag}-${stamp}-${Math.random().toString(36).slice(2)}@example.com`;
+  // Riders need a phone on file to book (services/riderPhone.js).
   const row = (
     await pool.query(
-      `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira)
-       VALUES ($1, $2, 'x', $3, true, $4, $5) RETURNING id, token_version`,
+      `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira, phone)
+       VALUES ($1, $2, 'x', $3, true, $4, $5, '+2348012345678') RETURNING id, token_version`,
       [`PaySec ${tag}`, email, role, emailVerified, wallet]
     )
   ).rows[0];

@@ -66,8 +66,9 @@ const madeUsers = [];
 async function makeRider(tag, { walletBalance = 0 } = {}) {
   const email = `idem-${tag}-${stamp}-${Math.random().toString(36).slice(2)}@example.com`;
   const inserted = await pool.query(
-    `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira)
-     VALUES ($1, $2, 'test-hash', 'rider', true, true, $3) RETURNING id`,
+    // Riders need a phone on file to book (services/riderPhone.js).
+    `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira, phone)
+     VALUES ($1, $2, 'test-hash', 'rider', true, true, $3, '+2348012345678') RETURNING id`,
     [`Idem ${tag}`, email, walletBalance]
   );
   const id = inserted.rows[0].id;

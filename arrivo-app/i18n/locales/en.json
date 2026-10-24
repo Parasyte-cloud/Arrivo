@@ -218,5 +218,13 @@
         "body": "Try again, or message them. Support is here if you need us."
       }
     }
+  },
+  "phoneRequired": {
+    "title": "Add your phone number to book",
+    "body": "Your driver and our team need a way to reach you about this trip. We'll save it to your profile, so we only ask once.",
+    "placeholder": "Phone number",
+    "save": "Save and continue",
+    "saving": "Saving...",
+    "failed": "Couldn't save your number. Please try again."
   }
 }

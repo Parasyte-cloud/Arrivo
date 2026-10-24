@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { messageWithCode } from "../utils/errorRef";
+import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -254,6 +255,9 @@ export default function RouteScreen({ navigation, route }) {
   const [quote, setQuote] = useState(null); // { fareNaira, distanceKm, durationMin } | null
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState(null);
+  // Server said there's no phone on file. Asked inline, then the quote runs again.
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [quoteRetry, setQuoteRetry] = useState(0);
   const quoteDebounceRef = useRef(null);
   // See the quote-fetch effect below for what this guards against.
   const quoteRequestIdRef = useRef(0);
@@ -465,6 +469,7 @@ export default function RouteScreen({ navigation, route }) {
         setQuote(result);
       } catch (e) {
         if (quoteRequestIdRef.current !== requestId) return;
+        if (e.code === "PHONE_REQUIRED") { setPhoneNeeded(true); return; }
         setQuoteError(messageWithCode(e, "Couldn't calculate a fare for this trip. Please try again."));
       } finally {
         if (quoteRequestIdRef.current === requestId) setQuoteLoading(false);
@@ -472,7 +477,7 @@ export default function RouteScreen({ navigation, route }) {
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(quoteDebounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, groupTooLarge, adults, children]);
+  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, groupTooLarge, adults, children, quoteRetry]);
 
   // Flight number is required for one-way airport pickups — it's the only
   // way to actually track the rider's flight and get a real ETA (see
@@ -954,6 +959,8 @@ export default function RouteScreen({ navigation, route }) {
           <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
         ) : !emergencyPhoneResult.valid ? (
           <Text style={styles.warningText}>{emergencyPhoneResult.message}</Text>
+        ) : phoneNeeded ? (
+          <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setQuoteRetry((n) => n + 1); }} />
         ) : quoteError ? (
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}

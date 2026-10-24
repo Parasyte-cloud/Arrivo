@@ -1,3 +1,4 @@
+const { isValidPhone } = require("../services/phone");
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireAuth } = require("../middleware/auth");
@@ -68,6 +69,14 @@ async function createRideFromAssistedBooking(dbClient, booking, reference, paidA
       Number(booking.quoted_usd_amount), Number(booking.quoted_ngn_per_usd), null, 0, null,
     ]
   );
+  // Riders need a phone on file (services/riderPhone.js). The booking was made
+  // with one, so give it to an account that has none. Never overwrites.
+  if (isValidPhone(req.contactPhone)) {
+    await dbClient.query(
+      "UPDATE users SET phone = $2 WHERE id = $1 AND (phone IS NULL OR phone = '')",
+      [booking.rider_id, String(req.contactPhone).trim()]
+    );
+  }
   return inserted.rows[0];
 }
 

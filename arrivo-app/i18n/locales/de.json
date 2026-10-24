@@ -218,5 +218,13 @@
         "body": "Versuchen Sie es erneut oder schreiben Sie eine Nachricht. Der Support ist für Sie da."
       }
     }
+  },
+  "phoneRequired": {
+    "title": "Telefonnummer hinzufügen, um zu buchen",
+    "body": "Ihr Fahrer und unser Team müssen Sie zu dieser Fahrt erreichen können. Wir speichern die Nummer in Ihrem Profil, Sie werden also nur einmal gefragt.",
+    "placeholder": "Telefonnummer",
+    "save": "Speichern und weiter",
+    "saving": "Wird gespeichert...",
+    "failed": "Ihre Nummer konnte nicht gespeichert werden. Bitte versuchen Sie es erneut."
   }
 }
