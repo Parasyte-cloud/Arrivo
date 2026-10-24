@@ -1,6 +1,7 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
+const { ensureRiderPhone } = require("../services/riderPhone");
 const {
   requireAuth,
   requireRole,
@@ -334,6 +335,10 @@ router.post(
         code: "PAYMENT_METHOD_NOT_ENABLED",
       });
     }
+
+    // Same rule as POST /api/rides, checked before the wallet is touched.
+    const phoneCheck = await ensureRiderPhone(pool, req.user, req.body.riderPhone);
+    if (!phoneCheck.ok) return res.status(phoneCheck.status).json(phoneCheck.body);
 
     try {
       const quote = await quoteInstantRide(req.body);

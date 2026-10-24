@@ -229,7 +229,9 @@ router.post("/booking-requests", requireAuth, requireRole("rider"), submitLimite
         rider.id,
         idempotencyKey,
         requestFingerprint,
-        JSON.stringify(normalizedRequest),
+        // contactPhone is kept with the booking but out of the fingerprint, so
+        // createRideFromAssistedBooking can put it on the rider's account.
+        JSON.stringify({ ...normalizedRequest, contactPhone: phone }),
         fareNaira,
         ngnPerUsd,
         quotedUsdAmount,

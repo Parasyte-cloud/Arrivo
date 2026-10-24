@@ -17,9 +17,13 @@ const PHONE_REQUIRED = {
   code: "PHONE_REQUIRED",
 };
 
-// Card bookings arrive here after Paystack has taken the money.
+// Card bookings arrive here after Paystack has taken the money, so those are let
+// through. Only card: a wallet or pay-at-pickup booking carrying a reference
+// hasn't paid anyone yet, so it gets checked like any other. Card is the
+// default when no method is sent, same as POST /api/rides.
 function allowedWithoutPhone(body) {
-  return !!(body && body.paymentReference);
+  if (!body || !body.paymentReference) return false;
+  return (body.paymentMethod || "card") === "card" && !body.payAtPickup;
 }
 
 // { ok: true } or { status, body } to send back.

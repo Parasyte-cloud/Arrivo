@@ -100,8 +100,9 @@ async function makeUser(tag, { role = "rider", wallet = 0 } = {}) {
   const email = `b2-${tag}-${stamp}-${Math.random().toString(36).slice(2)}@example.com`;
   const row = (
     await pool.query(
-      `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira)
-       VALUES ($1, $2, 'x', $3, true, true, $4) RETURNING id, token_version`,
+      // Riders need a phone on file to book (services/riderPhone.js).
+      `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira, phone)
+       VALUES ($1, $2, 'x', $3, true, true, $4, '+2348012345678') RETURNING id, token_version`,
       [`B2 ${tag}`, email, role, wallet]
     )
   ).rows[0];

@@ -58,6 +58,12 @@ const rider = { id: 5, role: "rider" };
   });
   await test("a paid booking is never held back over the phone", () => {
     assert.strictEqual(allowedWithoutPhone({ paymentReference: "T123" }), true);
+    assert.strictEqual(allowedWithoutPhone({ paymentReference: "T123", paymentMethod: "card" }), true);
+  });
+  await test("a reference on a wallet or pay-at-pickup booking doesn't get it through", () => {
+    assert.strictEqual(allowedWithoutPhone({ paymentReference: "T123", paymentMethod: "wallet" }), false);
+    assert.strictEqual(allowedWithoutPhone({ paymentReference: "T123", paymentMethod: "membership" }), false);
+    assert.strictEqual(allowedWithoutPhone({ paymentReference: "T123", payAtPickup: true }), false);
     assert.strictEqual(allowedWithoutPhone({}), false);
     assert.strictEqual(allowedWithoutPhone(null), false);
   });

@@ -1,3 +1,4 @@
+const { isValidPhone } = require("../services/phone");
 const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
@@ -594,9 +595,14 @@ router.post(
             requestFingerprint,
             source,
             payment_status,
-            JSON.stringify(
-              normalizedRequest
-            ),
+            // contactPhone kept out of the fingerprint, see payments.js
+            // createRideFromAssistedBooking.
+            JSON.stringify({
+              ...normalizedRequest,
+              contactPhone: isValidPhone(String((req.body && req.body.phone) || "").trim())
+                ? String(req.body.phone).trim()
+                : null,
+            }),
             fareNaira,
             ngnPerUsd,
             quotedUsdAmount,
