@@ -142,6 +142,7 @@ const PUBLIC_USER_FIELDS = [
   "email_verified",
   "preferred_language",
   "avatar_url",
+  "home_address",
   "created_at",
   "date_of_birth",
   "id_document_url",
@@ -548,7 +549,7 @@ router.get("/me", requireAuth, async (req, res) => {
 router.patch("/me", requireAuth, async (req, res) => {
   const {
     name, phone, preferredLanguage, whatsappNumber, countryOfResidence, passportNumber, avatarDataUrl,
-    audioRecordingEnabled,
+    audioRecordingEnabled, homeAddress,
     // Ride-sharing preferences — standing defaults set once on Profile (see
     // db/schema.sql's "Ride-sharing preferences" block). Not yet read by
     // any booking screen to auto-apply, just stored/shown back for now.
@@ -563,6 +564,23 @@ router.patch("/me", requireAuth, async (req, res) => {
   }
   if (whatsappNumber && !isValidPhone(whatsappNumber)) {
     return res.status(400).json({ error: phoneErrorMessage("WhatsApp number") });
+  }
+
+  if (name !== undefined) {
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 100) {
+      return res.status(400).json({ error: "Please enter your name (up to 100 characters)." });
+    }
+  }
+  // Home address: free text, up to 300 characters. Empty or null clears it.
+  let nextHomeAddress = current.home_address;
+  if (homeAddress !== undefined) {
+    if (homeAddress === null || (typeof homeAddress === "string" && !homeAddress.trim())) {
+      nextHomeAddress = null;
+    } else if (typeof homeAddress !== "string" || homeAddress.trim().length > 300) {
+      return res.status(400).json({ error: "Home address must be 300 characters or fewer." });
+    } else {
+      nextHomeAddress = homeAddress.trim();
+    }
   }
 
   if (avatarDataUrl !== undefined) {
@@ -584,10 +602,11 @@ router.patch("/me", requireAuth, async (req, res) => {
                        whatsapp_number = $4, country_of_residence = $5, passport_number = $6,
                        avatar_url = $7, audio_recording_enabled = $8,
                        preferred_vehicle_type = $9, quiet_ride = $10, temperature_preference = $11,
-                       child_seat_required = $12, traveling_with_pet = $13
-     WHERE id = $14 RETURNING *`,
+                       child_seat_required = $12, traveling_with_pet = $13,
+                       home_address = $14
+     WHERE id = $15 RETURNING *`,
     [
-      name ?? current.name,
+      name !== undefined ? name.trim() : current.name,
       phone ?? current.phone,
       preferredLanguage ?? current.preferred_language,
       whatsappNumber ?? current.whatsapp_number,
@@ -600,6 +619,7 @@ router.patch("/me", requireAuth, async (req, res) => {
       temperaturePreference !== undefined ? temperaturePreference : current.temperature_preference,
       childSeatRequired ?? current.child_seat_required,
       travelingWithPet ?? current.traveling_with_pet,
+      nextHomeAddress,
       req.user.id,
     ]
   );

@@ -6,7 +6,10 @@ import { Card } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideHistory, getSharedWithMeRides } from "../services/api";
+import { getRideHistory, getSharedWithMeRides, getServiceRequests } from "../services/api";
+import ParasyteSignature from "../components/ParasyteSignature";
+import { REQUEST_TIERS, statusInfo } from "../tiers/requestTiers";
+import { formatLagos } from "../utils/lagosTime";
 import { useCurrency } from "../hooks/useCurrency";
 
 export default function ActivityScreen({ navigation }) {
@@ -19,6 +22,10 @@ export default function ActivityScreen({ navigation }) {
   // POST /:id/share-participants) -- shown separately since you can track
   // these but didn't book or pay for them.
   const [sharedRides, setSharedRides] = useState([]);
+  // ArrivoAir, ArrivoBoat and ArrivoRemovals requests. Kept separate from rides
+  // because they are confirmed by our team first. A failure to load them never
+  // hides the rides list.
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -28,6 +35,12 @@ export default function ActivityScreen({ navigation }) {
       setRides(data.rides || []);
       setSharedRides(sharedData.rides || []);
       setError(null);
+      try {
+        const reqData = await getServiceRequests(token);
+        setRequests(reqData.requests || []);
+      } catch (_) {
+        // Requests are secondary here, leave whatever was already shown.
+      }
     } catch (e) {
       setError(e.message || "Couldn't load your ride history.");
     } finally {
@@ -53,8 +66,31 @@ export default function ActivityScreen({ navigation }) {
 
         {loading && rides.length === 0 ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {!loading && !error && rides.length === 0 ? (
+        {!loading && !error && rides.length === 0 && requests.length === 0 ? (
           <Text style={styles.empty}>No rides yet. Book your first airport pickup from Home.</Text>
+        ) : null}
+
+        {requests.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Requests</Text>
+            {requests.map((r) => (
+              <Pressable
+                key={`req-${r.id}`}
+                onPress={() => navigation.navigate("Home", { screen: "RequestStatus", params: { requestId: r.id } })}
+                accessibilityRole="button"
+              >
+                <Card tone="dark" style={{ marginBottom: spacing.sm }}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tripTitle}>{REQUEST_TIERS[r.tier] ? REQUEST_TIERS[r.tier].label : "Request"}: {r.pickupAddress}</Text>
+                      <Text style={styles.tripDate}>{formatLagos(r.requestedAt)} {"\u00B7"} {statusInfo(r.status).label}</Text>
+                    </View>
+                  </View>
+                </Card>
+              </Pressable>
+            ))}
+            {rides.length > 0 ? <Text style={styles.sectionTitle}>Rides</Text> : null}
+          </>
         ) : null}
 
         {rides.map((ride) => (
@@ -102,6 +138,8 @@ export default function ActivityScreen({ navigation }) {
             ))}
           </>
         ) : null}
+
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

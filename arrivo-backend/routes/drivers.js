@@ -173,6 +173,13 @@ router.patch("/status", requireAuth, requireRole("driver"), async (req, res) => 
   }
 
   if (req.body.isOnline) {
+    const subs = require("../services/driverSubscriptionDb");
+    if (!(await subs.hasActiveSubscription(pool, driver.id))) {
+      return res.status(402).json({ error: subs.SUBSCRIPTION_REQUIRED.error, code: subs.SUBSCRIPTION_REQUIRED.code });
+    }
+  }
+
+  if (req.body.isOnline) {
     const selfie = await require("../services/driverSelfie").checkGoOnline(driver.id);
     if (!selfie.allowed) {
       return res.status(403).json({

@@ -1,4 +1,5 @@
 const express = require("express");
+const subscriptions = require("../services/driverSubscriptionDb");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
@@ -1079,6 +1080,11 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
     return res.json({ rides: [], areaLockedToVenue: null, pendingVerification: true });
   }
 
+  // No subscription for today (Lagos): no orders, and a plain reason why.
+  if (!(await subscriptions.hasActiveSubscription(pool, driver.id))) {
+    return res.json({ rides: [], areaLockedToVenue: null, subscriptionRequired: true, code: subscriptions.SUBSCRIPTION_REQUIRED.code });
+  }
+
   // Arrivo Express Phase 3 -- the Partner Venues program area lock. "The driver
   // will only get orders around the area for as long as they are online
   // and have accepted the ride [from a partner venue]" -- while this
@@ -1162,6 +1168,10 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
   // driver had actually been approved by an admin.
   if (!driver.is_verified) {
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can accept rides." });
+  }
+
+  if (!(await subscriptions.hasActiveSubscription(pool, driver.id))) {
+    return res.status(402).json({ error: subscriptions.SUBSCRIPTION_REQUIRED.error, code: subscriptions.SUBSCRIPTION_REQUIRED.code });
   }
 
   // Defense in depth — GET /available already hides a preferred-driver ride

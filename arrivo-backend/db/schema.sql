@@ -2011,3 +2011,63 @@ CREATE TABLE IF NOT EXISTS api_error_log (
 CREATE INDEX IF NOT EXISTS idx_api_error_log_ref ON api_error_log(ref);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_created ON api_error_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_code ON api_error_log(error_code, created_at DESC);
+
+
+-- ============================================================
+-- SERVICE_REQUESTS_V1
+-- ArrivoAir, ArrivoBoat and ArrivoRemovals. The rider sends one short request,
+-- operations confirms a price and names the driver, then it runs as a job for
+-- that driver. Additive only: nothing here changes an existing table, so old
+-- app builds are unaffected. See services/serviceRequests.js for the rules.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS service_requests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  tier TEXT NOT NULL CHECK (tier IN ('air', 'boat', 'removals')),
+  pickup_address TEXT NOT NULL,
+  destination_address TEXT NOT NULL,
+  requested_at TIMESTAMPTZ NOT NULL,
+  passenger_count INTEGER NOT NULL DEFAULT 1,
+  option TEXT,
+  crew_size INTEGER,
+  details TEXT,
+  contact_phone TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'confirmed', 'in_progress', 'completed', 'cancelled')),
+  quoted_fare_naira INTEGER,
+  driver_id INTEGER REFERENCES drivers(id),
+  confirmed_by INTEGER REFERENCES users(id),
+  idempotency_key TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+-- Ops works the pending list oldest first.
+CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_service_requests_user ON service_requests(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_service_requests_driver ON service_requests(driver_id, status);
+-- A double tap or a retry after a dropped connection must not make two requests.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_service_requests_idem
+  ON service_requests(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+-- END SERVICE_REQUESTS_V1
+
+-- Rider profile: the home address shown on the profile and offered as a quick pickup.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS home_address TEXT;
+
+-- DRIVER_SUBSCRIPTION_V1
+-- One row per driver per Lagos calendar day paid for. The day ends at 00:00
+-- Lagos. A driver with no row for today receives no orders. The unique
+-- (driver_id, day) makes a double tap or a replayed reference harmless.
+CREATE TABLE IF NOT EXISTS driver_subscription_days (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  day DATE NOT NULL,
+  amount_naira INTEGER NOT NULL,
+  paystack_reference TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, day)
+);
+-- Quarterly inspection: the day of the last pass. Due three months later.
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_inspection_on DATE;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_inspection_by INTEGER REFERENCES users(id);
+-- END DRIVER_SUBSCRIPTION_V1

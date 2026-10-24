@@ -37,6 +37,26 @@ router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {
   res.json({ id: Number(req.params.id), isVerified: !!req.body.isVerified });
 });
 
+// PATCH /api/admin/drivers/:id/inspection: record that a driver passed the
+// quarterly inspection. body: { inspectedOn?: "YYYY-MM-DD" } (default today,
+// Lagos). The next one is due three months later; the driver app starts a red
+// reminder 7 days before. Admin only (the operations role is read-only).
+router.patch("/drivers/:id/inspection", requireRole("admin"), async (req, res) => {
+  const { isDayString, lagosDay } = require("../services/driverSubscription");
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647) return res.status(400).json({ error: "Invalid driver id" });
+  const day = req.body && req.body.inspectedOn !== undefined ? req.body.inspectedOn : lagosDay();
+  if (!isDayString(day)) return res.status(400).json({ error: "inspectedOn must be a date like 2026-10-24" });
+  if (day > lagosDay()) return res.status(400).json({ error: "An inspection cannot be dated in the future" });
+  const r = await pool.query(
+    "UPDATE drivers SET last_inspection_on = $1, last_inspection_by = $2 WHERE id = $3 RETURNING to_char(last_inspection_on, 'YYYY-MM-DD') AS d",
+    [day, req.user.id, id]
+  );
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  const { inspectionStatus } = require("../services/driverSubscription");
+  res.json({ id, lastInspectionOn: r.rows[0].d, inspection: inspectionStatus(r.rows[0].d) });
+});
+
 // GET /api/admin/drivers/:id/qr — a printable QR code (PNG) for this driver's
 // placard. Scanning it takes the rider to /scan.html, which confirms their
 // currently-accepted ride and flips it to "in progress", starting tracking.

@@ -728,3 +728,30 @@ export function requestCallSupport(token, sessionId, note) {
     body: JSON.stringify({ note }),
   });
 }
+
+// ArrivoAir, ArrivoBoat and ArrivoRemovals. One short request, our team
+// confirms the price and the driver, then it runs like any other trip.
+// See arrivo-backend/routes/serviceRequests.js. idempotencyKey makes a double
+// tap or a retry after a dropped connection return the same request.
+export function createServiceRequest(token, payload) {
+  return request("/api/service-requests", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getServiceRequests(token) {
+  return request("/api/service-requests", { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function getServiceRequest(token, id) {
+  return request(`/api/service-requests/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function cancelServiceRequest(token, id) {
+  return request(`/api/service-requests/${id}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
