@@ -50,4 +50,17 @@ function checkGrant(actor, target) {
   return ok();
 }
 
-module.exports = { STAFF_ROLES, LOWER_STAFF, canManagePeople, checkRoleChange, checkGrant };
+// Change what someone can see and do in the console (services/staffAccess.js).
+// Same lines as a role change: not yourself, never the owner, and only the
+// owner touches an admin's access.
+function checkPermissionChange(actor, target) {
+  if (!canManagePeople(actor)) return fail(403, "not_allowed", "You do not have permission to manage staff.");
+  if (!target) return fail(404, "not_found", "That person was not found.");
+  if (!STAFF_ROLES.includes(target.role)) return fail(409, "not_staff", "Only staff accounts have console permissions.");
+  if (Number(target.id) === Number(actor.id)) return fail(403, "self", "You cannot change your own access. Ask the owner.");
+  if (target.is_owner) return fail(403, "owner_protected", "The owner always has full access.");
+  if (!actor.is_owner && target.role === "admin") return fail(403, "admin_protected", "Only the owner can change an admin's access.");
+  return ok();
+}
+
+module.exports = { STAFF_ROLES, LOWER_STAFF, canManagePeople, checkRoleChange, checkGrant, checkPermissionChange };

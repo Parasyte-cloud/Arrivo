@@ -2,6 +2,7 @@ const { pool } = require("../db/db");
 const jwt = require("jsonwebtoken");
 const { enforceOperationsReadOnly } = require("./operationsReadOnly");
 const { readCookie } = require("./sessionCookie");
+const staffAccess = require("../services/staffAccess");
 
 async function requireAuth(req, res, next) {
   const header = req.headers.authorization; // expected: "Bearer <token>"
@@ -37,7 +38,7 @@ async function requireAuth(req, res, next) {
   // to the login screen and hide the real fault.
   let live;
   try {
-    live = await pool.query("SELECT deleted_at, deletion_started_at, role, token_version FROM users WHERE id = $1", [payload.id]);
+    live = await pool.query("SELECT deleted_at, deletion_started_at, role, token_version, is_owner, staff_permissions FROM users WHERE id = $1", [payload.id]);
   } catch (err) {
     console.error("Could not check account status for user %s:", payload.id, err.message);
     return res.status(503).json({ error: "We're having trouble right now. Please try again." });
@@ -68,6 +69,30 @@ async function requireAuth(req, res, next) {
     }
   }
 
+  // Staff: the console area this request belongs to decides, per person
+  // (services/staffAccess.js). Paths outside every area keep the old checks.
+  if (staffAccess.STAFF_ROLES.includes(req.user.role)) {
+    const path = String(req.originalUrl || req.url || "").split("?")[0];
+    const verdict = staffAccess.check({ ...live.rows[0], role: req.user.role }, req.method, path);
+    if (verdict) {
+      if (!verdict.ok) {
+        return res.status(403).json({
+          // Operations keep the wording their screens already know.
+          error: req.user.role === "operations"
+            ? "Operations access is read-only and limited to approved operational views"
+            : verdict.has === "none"
+              ? "You don't have access to this part of the console. Ask the owner or an admin."
+              : "You can view this but not change it. Ask the owner or an admin for manage access.",
+          code: "NO_ACCESS",
+          area: verdict.area,
+          need: verdict.need,
+        });
+      }
+      req.staffAccess = verdict;
+      return next();
+    }
+  }
+
   return enforceOperationsReadOnly(req, res, next);
 }
 
@@ -75,6 +100,9 @@ async function requireAuth(req, res, next) {
 // already loads, so this needs no lookup of its own.
 function requireRole(role) {
   return (req, res, next) => {
+    // A console permission granted to this person for this area stands in for
+    // the role (services/staffAccess.js, checked in requireAuth above).
+    if (req.staffAccess?.ok) return next();
     if (req.user?.role !== role) {
       return res.status(403).json({ error: `This action requires the '${role}' role` });
     }
@@ -88,6 +116,7 @@ function requireRole(role) {
 // requireRole("admin") on the specific mutating routes underneath it.
 function requireAnyRole(roles) {
   return (req, res, next) => {
+    if (req.staffAccess?.ok) return next();
     if (!roles.includes(req.user?.role)) {
       return res.status(403).json({ error: `This action requires one of: ${roles.join(", ")}` });
     }

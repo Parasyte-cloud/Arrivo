@@ -179,6 +179,7 @@ app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/staff/people", require("./routes/staffPeople"));
+app.use("/api/staff/access", require("./routes/staffAccessRoutes"));
 app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);

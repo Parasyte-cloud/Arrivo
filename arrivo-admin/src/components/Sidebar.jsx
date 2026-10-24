@@ -22,43 +22,39 @@ const NAV_ITEMS = [
   { id: "exports", label: "Exports", icon: "⬇️" },
 ];
 
-const OPERATIONS_NAV_IDS = new Set([
-  "ride-desk",
-  "panics",
-  "drivers",
-  "rides",
-  "flight-issues",
-  "vehicles",
-  "live-map",
-  "analytics",
-  "exports",
-]);
 
 
 export function Sidebar({ page, setPage, open, onClose }) {
-  const { user, token, logout, isReadOnly, isOperations } = useAuth();
+  const { user, token, logout, access, can } = useAuth();
   const [panicCount, setPanicCount] = useState(0);
   const [flightIssueCount, setFlightIssueCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    // Only the counts this person is allowed to see, so nobody polls into a 403.
     function poll() {
-      api.getPanics(token)
-        .then(({ panics }) => { if (!cancelled) setPanicCount(panics.length); })
-        .catch(() => {});
-      api.getFlightIssues(token)
-        .then(({ flightIssues }) => { if (!cancelled) setFlightIssueCount(flightIssues.length); })
-        .catch(() => {});
+      if (can("panics")) {
+        api.getPanics(token)
+          .then(({ panics }) => { if (!cancelled) setPanicCount(panics.length); })
+          .catch(() => {});
+      }
+      if (can("flight-issues")) {
+        api.getFlightIssues(token)
+          .then(({ flightIssues }) => { if (!cancelled) setFlightIssueCount(flightIssues.length); })
+          .catch(() => {});
+      }
     }
     poll();
     const interval = setInterval(poll, 10000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [token]);
+  }, [token, can]);
 
   const badgeCounts = { panics: panicCount, "flight-issues": flightIssueCount };
-  const visibleNavItems = isOperations
-    ? NAV_ITEMS.filter((item) => OPERATIONS_NAV_IDS.has(item.id))
-    : NAV_ITEMS;
+  const visibleNavItems = [
+    ...NAV_ITEMS.filter((item) => can(item.id)),
+    ...(access?.canSeeTeam ? [{ id: "team", label: "Team & Access", icon: "🔐" }] : []),
+  ];
+  const roleLabel = access?.isOwner ? "OWNER" : (user?.role || "").toUpperCase();
 
   return (
     <>
@@ -66,13 +62,13 @@ export function Sidebar({ page, setPage, open, onClose }) {
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
       <img src={wordmarkLight} alt="RideArrivo" className="brand-logo" />
       <div className="brand-sub">OPS CONSOLE</div>
-      {isReadOnly ? (
+      {roleLabel ? (
         <div style={{
           margin: "0 0 16px", padding: "4px 10px", background: "var(--glass-strong)",
           borderRadius: 999, fontSize: 10.5, fontWeight: 700, color: "var(--amber)",
           textAlign: "center", letterSpacing: "0.04em",
         }}>
-          {isOperations ? "OPERATIONS" : "SUPPORT"} · VIEW AND RIDES
+          {roleLabel}
         </div>
       ) : null}
 

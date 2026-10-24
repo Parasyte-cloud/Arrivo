@@ -27,6 +27,7 @@ const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ de
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
 const ExpressPricingPage = lazy(() => import("./pages/ExpressPricingPage").then((m) => ({ default: m.ExpressPricingPage })));
+const TeamPage = lazy(() => import("./pages/TeamPage").then((m) => ({ default: m.TeamPage })));
 const SafetyPage = lazy(() => import("./pages/SafetyPage").then((m) => ({ default: m.SafetyPage })));
 const RideDeskPage = lazy(() => import("./pages/RideDeskPage").then((m) => ({ default: m.RideDeskPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
@@ -40,29 +41,29 @@ const PAGES = [
   "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
-const OPERATIONS_PAGES = [
-  "ride-desk",
-  "panics",
-  "drivers",
-  "rides",
-  "flight-issues",
-  "vehicles",
-  "live-map",
-  "analytics",
-  "exports",
-];
 
 
 function pageFromHash(allowedPages = PAGES) {
   const hash = window.location.hash.replace(/^#\/?/, "");
-  return allowedPages.includes(hash) ? hash : "panics";
+  if (allowedPages.includes(hash)) return hash;
+  // Panic Alerts first when they can see it, otherwise the first page they have.
+  return allowedPages.includes("panics") ? "panics" : allowedPages[0] || "panics";
 }
 
 function Dashboard() {
-  const { isOperations } = useAuth();
+  const { access } = useAuth();
+  // Wait for this person's permissions before drawing any page.
+  if (!access) return <div className="empty-state">Loading…</div>;
+  return <DashboardFor access={access} />;
+}
+
+function DashboardFor({ access }) {
+  const { can, setCurrentPage } = useAuth();
+  // Pages come from the person's permissions (access.js), plus Team & Access
+  // for the owner, admins and the head of support.
   const allowedPages = useMemo(
-    () => (isOperations ? OPERATIONS_PAGES : PAGES),
-    [isOperations]
+    () => [...PAGES.filter((p) => can(p, "view")), ...(access.canSeeTeam ? ["team"] : [])],
+    [access, can]
   );
 
   // Default to Panic Alerts on login — the safety-critical view should be
@@ -72,6 +73,11 @@ function Dashboard() {
   // teammate all land on the actual page intended, not always the
   // default — and the hash sync below keeps the two in sync from here on.
   const [page, setPageState] = useState(() => pageFromHash(allowedPages));
+  useEffect(() => { setCurrentPage(page === "team" ? null : page); }, [page, setCurrentPage]);
+  // Losing access to the page on screen (changed on the Team page) moves them off it.
+  useEffect(() => {
+    if (allowedPages.length && !allowedPages.includes(page)) setPageState(pageFromHash(allowedPages));
+  }, [allowedPages, page]);
 
   const setPage = useCallback((next) => {
     if (!allowedPages.includes(next)) return;
@@ -166,6 +172,7 @@ function Dashboard() {
             {page === "express-pricing" && <ExpressPricingPage />}
             {page === "safety" && <SafetyPage />}
             {page === "exports" && <ExportsPage />}
+            {page === "team" && <TeamPage />}
           </Suspense>
         </ErrorBoundary>
       </main>

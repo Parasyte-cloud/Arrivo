@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 
 // requireAuth now checks the account still exists on every request. This
 // suite is about the operations gate, so the lookup always finds a live one.
+// staffPermissions lets a test give the account per-area console permissions
+// (services/staffAccess.js).
+let staffPermissions = null;
 const dbPath = require.resolve("../db/db");
 require.cache[dbPath] = {
   id: dbPath,
@@ -12,7 +15,7 @@ require.cache[dbPath] = {
   exports: {
     pool: {
       async query() {
-        return { rows: [{ deleted_at: null, deletion_started_at: null }] };
+        return { rows: [{ deleted_at: null, deletion_started_at: null, staff_permissions: staffPermissions }] };
       },
     },
   },
@@ -177,15 +180,31 @@ test("admin behavior is unchanged by the operations gate", async () => {
   assert.equal(result.statusCode, 200);
 });
 
-test("support behavior is unchanged by the operations gate", async () => {
-  const result = await requestFor(
-    "support",
-    "GET",
-    "/api/admin/wallet-transactions"
-  );
+// Support used to see every page. They now start with what the job needs and
+// the owner grants the rest per person (services/staffAccess.js).
+test("operations can read their own console permissions", async () => {
+  for (const url of ["/api/staff/access/me", "/api/staff/access/catalog"]) {
+    const result = await requestFor("operations", "GET", url);
+    assert.equal(result.nextCalled, true, `expected GET ${url} to pass`);
+  }
+});
 
-  assert.equal(result.nextCalled, true);
-  assert.equal(result.statusCode, 200);
+test("support doesn't see the wallet unless it's granted", async () => {
+  const result = await requestFor("support", "GET", "/api/admin/wallet-transactions");
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.responseBody?.code, "NO_ACCESS");
+});
+
+test("support sees the wallet once it's granted", async () => {
+  staffPermissions = { wallet: "view" };
+  try {
+    const result = await requestFor("support", "GET", "/api/admin/wallet-transactions");
+    assert.equal(result.nextCalled, true);
+    assert.equal(result.statusCode, 200);
+  } finally {
+    staffPermissions = null;
+  }
 });
 
 test.after(() => {

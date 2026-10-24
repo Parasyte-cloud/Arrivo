@@ -2011,3 +2011,11 @@ CREATE TABLE IF NOT EXISTS api_error_log (
 CREATE INDEX IF NOT EXISTS idx_api_error_log_ref ON api_error_log(ref);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_created ON api_error_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_code ON api_error_log(error_code, created_at DESC);
+
+-- Console permissions per staff member (services/staffAccess.js). Only the
+-- areas that differ from the person's role preset are stored, e.g.
+-- {"wallet": "manage", "exports": "none"}. NULL means the preset as is.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_permissions JSONB;
+-- When someone last signed in with a password, so the Team page can show
+-- accounts nobody is using any more.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
