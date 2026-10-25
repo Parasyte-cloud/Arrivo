@@ -1,6 +1,6 @@
 // Loads the Google Maps JavaScript API once, on demand. The key is a browser key
 // (VITE_GOOGLE_MAPS_API_KEY) restricted by HTTP referrer to the Ops Console domains,
-// with the Maps JavaScript API and Directions API enabled. Without a key the
+// with the Maps JavaScript API and Routes API enabled. Without a key the
 // Trip Tracker falls back to a basic OpenStreetMap map, so nothing breaks.
 export const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 

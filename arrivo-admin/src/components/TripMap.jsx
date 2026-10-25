@@ -218,41 +218,74 @@ function GoogleTripMap({ trips, selectedId, onSelect, onRoute, onFail }) {
     routeState.current = { key, at: Date.now(), from: origin };
 
     const target = phase === "pickup" && !dest ? pickup : dest;
-    const request = {
-      origin,
-      destination: target,
-      travelMode: maps.TravelMode.DRIVING,
-      drivingOptions: { departureTime: new Date(), trafficModel: "bestguess" },
-      ...(phase === "pickup" && pickup && dest ? { waypoints: [{ location: pickup, stopover: true }] } : {}),
+    const stops = phase === "pickup" && pickup && dest ? [pickup] : [];
+    const ticket = routeState.current.at;
+    const fmtTime = (ms) => {
+      const m = Math.max(1, Math.round(ms / 60000));
+      return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
     };
-    new maps.DirectionsService().route(request, (result, status) => {
-      if (status === "OK" && result) {
-        if (x.fallback) { x.fallback.setMap(null); x.fallback = null; }
-        if (!x.renderer) {
+    const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+    const clearLines = () => {
+      (x.lines || []).forEach((l) => l.setMap(null));
+      x.lines = [];
+      if (x.renderer) { x.renderer.setMap(null); x.renderer = null; }
+      if (x.fallback) { x.fallback.setMap(null); x.fallback = null; }
+    };
+    const drawFallback = (why) => {
+      clearLines();
+      const path = [driver, pickup, dest].filter(Boolean);
+      x.fallback = new maps.Polyline({
+        map, path, strokeOpacity: 0,
+        icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3, strokeColor: "#f4a300" }, offset: "0", repeat: "14px" }],
+      });
+      onRoute({ phase, error: why });
+    };
+    const report = (legs) => {
+      const leg = (l) => l && { text: fmtTime(l.seconds * 1000), seconds: l.seconds, distance: fmtDist(l.meters) };
+      onRoute({
+        phase,
+        toPickup: phase === "pickup" ? leg(legs[0]) : null,
+        toDestination: phase === "pickup" ? leg(legs[1]) : leg(legs[0]),
+      });
+    };
+
+    // Routes API first (what new Google projects have), the older Directions service as a fallback.
+    (async () => {
+      try {
+        const { Route } = await maps.importLibrary("routes");
+        const { routes } = await Route.computeRoutes({
+          origin, destination: target, intermediates: stops,
+          travelMode: "DRIVING", routingPreference: "TRAFFIC_AWARE", departureTime: new Date(),
+          fields: ["path", "legs", "durationMillis", "distanceMeters"],
+        });
+        if (routeState.current.at !== ticket || !routes?.[0]) return;
+        clearLines();
+        x.lines = routes[0].createPolylines({ polylineOptions: { map, strokeColor: "#f4a300", strokeWeight: 5, strokeOpacity: 0.9 } });
+        report(routes[0].legs.map((l) => ({ seconds: (l.durationMillis || 0) / 1000, meters: l.distanceMeters || 0 })));
+        return;
+      } catch (e) {
+        if (routeState.current.at !== ticket) return;
+        if (!maps.DirectionsService) { drawFallback("Route lines need the Routes API enabled on the Google project."); return; }
+      }
+      new maps.DirectionsService().route({
+        origin, destination: target, travelMode: maps.TravelMode.DRIVING,
+        drivingOptions: { departureTime: new Date(), trafficModel: "bestguess" },
+        ...(stops.length ? { waypoints: stops.map((location) => ({ location, stopover: true })) } : {}),
+      }, (result, status) => {
+        if (routeState.current.at !== ticket) return;
+        if (status === "OK" && result) {
+          clearLines();
           x.renderer = new maps.DirectionsRenderer({
             map, suppressMarkers: true, preserveViewport: true,
             polylineOptions: { strokeColor: "#f4a300", strokeWeight: 5, strokeOpacity: 0.9 },
           });
+          x.renderer.setDirections(result);
+          report(result.routes[0].legs.map((l) => ({ seconds: (l.duration_in_traffic || l.duration).value, meters: l.distance.value })));
+        } else {
+          drawFallback("Route lines need the Routes API enabled on the Google project.");
         }
-        x.renderer.setDirections(result);
-        const legs = result.routes[0].legs;
-        const leg = (l) => l && { text: (l.duration_in_traffic || l.duration).text, seconds: (l.duration_in_traffic || l.duration).value, distance: l.distance.text };
-        onRoute({
-          phase,
-          toPickup: phase === "pickup" ? leg(legs[0]) : null,
-          toDestination: phase === "pickup" ? leg(legs[1]) : leg(legs[0]),
-        });
-      } else {
-        if (x.renderer) { x.renderer.setMap(null); x.renderer = null; }
-        if (x.fallback) x.fallback.setMap(null);
-        const path = [driver, pickup, dest].filter(Boolean);
-        x.fallback = new maps.Polyline({
-          map, path, strokeOpacity: 0,
-          icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3, strokeColor: "#f4a300" }, offset: "0", repeat: "14px" }],
-        });
-        onRoute({ phase, error: status === "REQUEST_DENIED" ? "Route line needs the Directions API enabled on the Google key." : "Could not draw a driving route." });
-      }
-    });
+      });
+    })();
   }, [ready, trips, selectedId, onRoute]);
 
   return <div ref={box} className="tt-map-canvas" />;
