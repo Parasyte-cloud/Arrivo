@@ -5,6 +5,7 @@ const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
 const { sendBookingConfirmationEmail, sendDriverAssignedEmail } = require("../services/email");
+const notifyPlatform = require("../services/notifyPlatform");
 const { sendPushNotification } = require("../services/pushNotifications");
 const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
@@ -835,7 +836,7 @@ async function createRideHandler(req, res) {
 
     // The website used to send this from PATCH /:id/payment. A ride that is
     // paid at creation returns early there, so it is sent here instead.
-    if (cardPaymentRequired) {
+    if (cardPaymentRequired && !notifyPlatform.platformOwnsBookingEmail()) {
       pool.query("SELECT email FROM users WHERE id = $1", [req.user.id])
         .then((rider) => rider.rows[0] && sendBookingConfirmationEmail(rider.rows[0].email, cardRide))
         .catch((e) => console.error("Booking confirmation email failed:", e.message));
@@ -1673,7 +1674,8 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
   }
 
   const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
-  if (rider.rows[0]) {
+  // The Notification Platform sends booking emails once NOTIFY_PLATFORM_BOOKING_EMAIL=true.
+  if (rider.rows[0] && !notifyPlatform.platformOwnsBookingEmail()) {
     sendBookingConfirmationEmail(rider.rows[0].email, newRide).catch((e) =>
       console.error("Booking confirmation email failed:", e.message)
     );
