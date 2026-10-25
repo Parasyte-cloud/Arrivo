@@ -11,7 +11,7 @@ process.env.ARRIVO_NOW_ENABLED = "true";
 
 const express = require("express");
 require("express-async-errors");
-const { pool } = require("../db/db");
+const { pool, ready } = require("../db/db");
 
 let passed = 0;
 async function test(name, fn) {
@@ -67,6 +67,8 @@ const TRIP = {
 };
 
 (async () => {
+  // Startup applies schema.sql; writing before it finishes can deadlock.
+  await ready;
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   try {
     await test("quote: a rider with no number is asked for one", async () => {

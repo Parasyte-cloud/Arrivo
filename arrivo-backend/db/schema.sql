@@ -2019,3 +2019,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_permissions JSONB;
 -- When someone last signed in with a password, so the Team page can show
 -- accounts nobody is using any more.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Every step of getting a driver onto a ride (services/dispatch.js): drivers
+-- alerted when it was booked, reminders, and assignments or changes made from
+-- the ops console, with who made them.
+CREATE TABLE IF NOT EXISTS ride_dispatch_events (
+  id BIGSERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('alerted', 'preferred_released', 'reminder', 'accepted', 'assigned', 'reassigned')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  from_driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  drivers_alerted INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_dispatch_events_ride ON ride_dispatch_events(ride_id, id DESC);

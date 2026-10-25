@@ -27,6 +27,17 @@ import ProfileScreen from "./screens/ProfileScreen";
 import ChatScreen from "./screens/ChatScreen";
 
 import { colors } from "./theme/tokens";
+import * as Notifications from "expo-notifications";
+
+// Show ride alerts ("New ride available", "Ride assigned to you") even while
+// the app is open, same as the rider app.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const AuthStack = createNativeStackNavigator();
 const DashboardStack = createNativeStackNavigator();
