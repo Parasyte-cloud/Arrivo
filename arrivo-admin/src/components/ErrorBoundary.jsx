@@ -31,7 +31,7 @@ export class ErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div className="empty-state" style={{ color: "var(--coral)" }}>
-          Something went wrong on this page — try switching tabs and back.
+          Something went wrong on this page - try switching tabs and back.
         </div>
       );
     }

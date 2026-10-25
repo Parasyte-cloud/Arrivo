@@ -15,7 +15,7 @@ Point it at your backend by setting the API base URL (check `src/api.js`).
 
 ## What's here
 
-- `src/pages/` — one page per section: Panic Alerts (default landing page), Drivers, Rides, Riders, Analytics, Live Map
+- `src/pages/` — one page per section: Command Center (default landing page), Panic Alerts, Drivers, Rides, Riders, Analytics, Live Map
 - `src/components/` — shared UI (StatCard, StatusPill, Sidebar, PhoneLink)
 - `src/AuthContext.jsx` — login/session handling against the backend's admin auth
 
