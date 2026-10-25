@@ -16,6 +16,9 @@ export function tripColor(trip) {
   }
 }
 
+// Material "flight" glyph, nose pointing up, so rotation = compass heading.
+const PLANE_PATH = "M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z";
+
 const hasPos = (lat, lng) => typeof lat === "number" && typeof lng === "number";
 
 function distanceM(a, b) {
@@ -67,7 +70,7 @@ function animateTo(marker, to, ms = 900) {
   requestAnimationFrame(step);
 }
 
-function GoogleTripMap({ trips, selectedId, onSelect, onRoute, onFail }) {
+function GoogleTripMap({ trips, selectedId, onSelect, onRoute, onFail, plane }) {
   const box = useRef(null);
   const mapRef = useRef(null);
   const mapsRef = useRef(null);
@@ -75,6 +78,7 @@ function GoogleTripMap({ trips, selectedId, onSelect, onRoute, onFail }) {
   const extras = useRef({ pickup: null, dest: null, renderer: null, fallback: null });
   const routeState = useRef({ key: "", at: 0, from: null });
   const fittedFor = useRef(null);
+  const planeMarker = useRef(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -288,6 +292,27 @@ function GoogleTripMap({ trips, selectedId, onSelect, onRoute, onFail }) {
     })();
   }, [ready, trips, selectedId, onRoute]);
 
+  // The flight, when the provider gives a live position (FlightAware).
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!ready || !maps || !map) return;
+    if (!plane || typeof plane.lat !== "number" || typeof plane.lng !== "number") {
+      if (planeMarker.current) { planeMarker.current.setMap(null); planeMarker.current = null; }
+      return;
+    }
+    const icon = {
+      path: PLANE_PATH, fillColor: "#ffffff", fillOpacity: 1, strokeColor: "#0d0d2e", strokeWeight: 1,
+      scale: 1.6, rotation: plane.heading || 0, anchor: new maps.Point(12, 12),
+    };
+    if (!planeMarker.current) {
+      planeMarker.current = new maps.Marker({ map, position: plane, icon, zIndex: 900, title: "Flight" });
+    } else {
+      planeMarker.current.setPosition(plane);
+      planeMarker.current.setIcon(icon);
+    }
+  }, [ready, plane]);
+
   return <div ref={box} className="tt-map-canvas" />;
 }
 
@@ -310,7 +335,7 @@ function FitTo({ points, token }) {
   return null;
 }
 
-function LeafletTripMap({ trips, selectedId, onSelect, onRoute }) {
+function LeafletTripMap({ trips, selectedId, onSelect, onRoute, plane }) {
   useEffect(() => { onRoute(null); }, [selectedId, onRoute]);
   const selected = trips.find((t) => t.id === selectedId);
   const sel = selected ? pointsOf(selected) : null;
@@ -332,6 +357,13 @@ function LeafletTripMap({ trips, selectedId, onSelect, onRoute }) {
             eventHandlers={{ click: () => onSelect(t.id) }} />
         );
       })}
+      {plane && typeof plane.lat === "number" ? (
+        <Marker position={[plane.lat, plane.lng]} icon={L.divIcon({
+          className: "tt-dot",
+          html: `<span style="display:block;font-size:24px;line-height:24px;color:#fff;text-shadow:0 0 3px #0d0d2e;transform:rotate(${(plane.heading || 0) - 90}deg)">✈</span>`,
+          iconSize: [26, 26], iconAnchor: [13, 13],
+        })} />
+      ) : null}
       {sel?.pickup ? <Marker position={[sel.pickup.lat, sel.pickup.lng]} icon={dotIcon("#4fd9c7", 18)} /> : null}
       {sel?.dest ? <Marker position={[sel.dest.lat, sel.dest.lng]} icon={dotIcon("#f4a300", 18)} /> : null}
       {line.length > 1 ? <Polyline positions={line} pathOptions={{ color: "#f4a300", weight: 4, dashArray: "8 8" }} /> : null}
@@ -339,7 +371,7 @@ function LeafletTripMap({ trips, selectedId, onSelect, onRoute }) {
   );
 }
 
-export function TripMap({ trips, selectedId, onSelect, onRoute, onMode }) {
+export function TripMap({ trips, selectedId, onSelect, onRoute, onMode, plane = null }) {
   const [failed, setFailed] = useState(!googleMapsKey);
   const [reason, setReason] = useState(googleMapsKey ? "" : "No Google Maps key is set, so this is the basic map.");
 
@@ -351,13 +383,14 @@ export function TripMap({ trips, selectedId, onSelect, onRoute, onMode }) {
 
   useEffect(() => { onMode(failed ? { mode: "basic", reason } : { mode: "google", reason: "" }); }, [failed, reason, onMode]);
 
-  if (failed) return <LeafletTripMap trips={trips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} />;
+  if (failed) return <LeafletTripMap trips={trips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} plane={plane} />;
   return (
     <GoogleTripMap
       trips={trips}
       selectedId={selectedId}
       onSelect={onSelect}
       onRoute={onRoute}
+      plane={plane}
       onFail={(msg) => { setFailed(true); setReason(msg); }}
     />
   );

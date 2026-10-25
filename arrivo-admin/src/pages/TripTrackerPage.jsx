@@ -320,7 +320,7 @@ export function TripTrackerPage({ focus = null }) {
         </section>}
 
         <section className="tt-map-col">
-          <TripMap trips={mapTrips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} onMode={onMode} />
+          <TripMap trips={mapTrips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} onMode={onMode} plane={flightInfo?.flight?.position || null} />
           <div className="tt-legend">
             <span><i style={{ background: "#4fd9c7" }} /> On trip</span>
             <span><i style={{ background: "#f4a300" }} /> En route</span>
@@ -379,7 +379,7 @@ export function TripTrackerPage({ focus = null }) {
               <div className="tt-block">
                 <h3>Flight {trip.flight_number}</h3>
                 {!flightInfo ? <p className="tt-note">Checking the flight…</p> : null}
-                {flightInfo && !flightInfo.configured ? <p className="tt-note">Live flight status is not switched on. Set <code>AVIATIONSTACK_KEY</code> on the backend to turn it on.</p> : null}
+                {flightInfo && !flightInfo.configured ? <p className="tt-note">Live flight status is not switched on. Set <code>FLIGHTAWARE_API_KEY</code> (or <code>AVIATIONSTACK_KEY</code>) on the backend to turn it on.</p> : null}
                 {flightInfo?.error ? <p className="tt-note">{flightInfo.error}</p> : null}
                 {flightInfo?.configured && !flight && !flightInfo.error ? <p className="tt-note">No live data yet. This is normal until the flight is close to boarding. Checked {agoText(flightInfo.checkedAt)}.</p> : null}
                 {flight ? (
@@ -393,9 +393,10 @@ export function TripTrackerPage({ focus = null }) {
                       <span>From</span><strong>{flight.departure?.airport || "n/a"}</strong>
                       <span>Scheduled arrival</span><strong>{flight.arrival?.scheduled ? clock(flight.arrival.scheduled) : "n/a"}</strong>
                       <span>Expected arrival</span><strong>{flight.arrival?.estimated ? clock(flight.arrival.estimated) : "n/a"}</strong>
+                      {flight.position ? <><span>In the air</span><strong>{[flight.position.altitudeFt ? `${flight.position.altitudeFt.toLocaleString()} ft` : null, flight.position.speedKmh ? `${flight.position.speedKmh} km/h` : null].filter(Boolean).join(" · ") || "tracking"}</strong></> : null}
                       <span>Terminal / gate</span><strong>{[flight.arrival?.terminal, flight.arrival?.gate].filter(Boolean).join(" / ") || "n/a"}</strong>
                     </div>
-                    <p className="tt-note">Checked {agoText(flightInfo.checkedAt)}. Refreshed at most every 5 minutes.</p>
+                    <p className="tt-note">Checked {agoText(flightInfo.checkedAt)}. Refreshed every 1 to 5 minutes.</p>
                   </>
                 ) : null}
               </div>

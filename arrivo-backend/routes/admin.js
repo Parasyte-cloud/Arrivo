@@ -5,6 +5,7 @@ const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth
 const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlightStatus } = require("./flights");
 const { phoneHint } = require("../services/rideTeam");
+const flightAware = require("../services/flightAware");
 
 const router = express.Router();
 
@@ -316,25 +317,35 @@ router.get("/trips/active", async (req, res) => {
 // Flight lookups are paid and quota-limited, so one flight is looked up at most
 // once every five minutes no matter how many people have the page open.
 const FLIGHT_CACHE_MS = 5 * 60 * 1000;
+// A plane in the air moves, so its entry is kept for less time. FlightAware is billed per query.
+const FLIGHT_LIVE_CACHE_MS = 90 * 1000;
 const flightCache = new Map();
 
 async function cachedFlight(flightNumber) {
   const key = String(flightNumber).trim().toUpperCase();
   const hit = flightCache.get(key);
-  if (hit && Date.now() - hit.at < FLIGHT_CACHE_MS) return hit.value;
-  const configured = Boolean(process.env.AVIATIONSTACK_KEY) && process.env.AVIATIONSTACK_KEY !== "replace_me";
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
+  const aviationstack = Boolean(process.env.AVIATIONSTACK_KEY) && process.env.AVIATIONSTACK_KEY !== "replace_me";
+  const configured = aviationstack || flightAware.isConfigured();
   let value;
   if (!configured) {
     value = { configured: false, flight: null, error: null, checkedAt: new Date().toISOString() };
   } else {
-    try {
-      const flight = await lookupFlightStatus(key, "LOS");
-      value = { configured: true, flight, error: null, checkedAt: new Date().toISOString() };
-    } catch (err) {
-      value = { configured: true, flight: null, error: "Flight lookup is temporarily unavailable.", checkedAt: new Date().toISOString() };
+    let flight = null;
+    let error = null;
+    // FlightAware first (it also gives the plane's position), AviationStack as the backup.
+    if (flightAware.isConfigured()) {
+      try { flight = await flightAware.lookupFlightAware(key, "LOS"); }
+      catch (err) { console.error("FlightAware lookup failed:", err.response?.data || err.message); error = "Flight lookup is temporarily unavailable."; }
     }
+    if (!flight && aviationstack) {
+      try { flight = await lookupFlightStatus(key, "LOS"); error = null; }
+      catch (err) { error = "Flight lookup is temporarily unavailable."; }
+    }
+    value = { configured: true, flight, error: flight ? null : error, checkedAt: new Date().toISOString() };
   }
-  flightCache.set(key, { at: Date.now(), value });
+  const ttl = value.flight?.position ? FLIGHT_LIVE_CACHE_MS : FLIGHT_CACHE_MS;
+  flightCache.set(key, { at: Date.now(), ttl, value });
   return value;
 }
 
