@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { CallButton } from "../components/CallButton";
 import { TripMap, tripColor } from "../components/TripMap";
+import { FlightMap } from "../components/FlightMap";
 import { openInWindow } from "../lib/openWindow";
 import { formatDateTime } from "../utils";
 import "../tracker.css";
@@ -99,6 +100,7 @@ export function TripTrackerPage({ focus = null }) {
   const [query, setQuery] = useState("");
   const [past, setPast] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [mapView, setMapView] = useState(null); // null = automatic
   const [, tick] = useState(0);
   const alive = useRef(true);
 
@@ -146,6 +148,7 @@ export function TripTrackerPage({ focus = null }) {
   useEffect(() => {
     setDetail(null);
     setRoute(null);
+    setMapView(null);
     if (!selectedId) return undefined;
     let live = true;
     const fetchDetail = () =>
@@ -229,6 +232,11 @@ export function TripTrackerPage({ focus = null }) {
     if (hint) return <span className="tt-tag">{hint}</span>;
     return <span className="tt-tag warn">No phone</span>;
   };
+
+  // The flight view needs a live aircraft position. It opens by itself while the plane is still in the
+  // air and the ride has not started, then the person can switch either way.
+  const canShowFlight = Boolean(flightInfo?.flight?.position);
+  const showFlight = canShowFlight && (mapView ? mapView === "flight" : trip?.ride_status !== "in_progress");
 
   const flight = flightInfo?.flight || null;
   const delay = delayMinutes(flight?.arrival);
@@ -320,7 +328,17 @@ export function TripTrackerPage({ focus = null }) {
         </section>}
 
         <section className="tt-map-col">
-          <TripMap trips={mapTrips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} onMode={onMode} plane={flightInfo?.flight?.position || null} />
+          {showFlight ? (
+            <FlightMap flight={flightInfo.flight} />
+          ) : (
+            <TripMap trips={mapTrips} selectedId={selectedId} onSelect={onSelect} onRoute={onRoute} onMode={onMode} plane={flightInfo?.flight?.position || null} />
+          )}
+          {canShowFlight ? (
+            <div className="tt-viewtoggle" role="group" aria-label="Map view">
+              <button type="button" className={showFlight ? "" : "on"} onClick={() => setMapView("ground")}>Ground</button>
+              <button type="button" className={showFlight ? "on" : ""} onClick={() => setMapView("flight")}>Flight</button>
+            </div>
+          ) : null}
           <div className="tt-legend">
             <span><i style={{ background: "#4fd9c7" }} /> On trip</span>
             <span><i style={{ background: "#f4a300" }} /> En route</span>

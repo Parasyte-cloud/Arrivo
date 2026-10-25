@@ -116,3 +116,13 @@
 }
 
 .focus-shell { padding: 14px; min-height: 100vh; }
+
+/* Flight map */
+.fm-tag { position: absolute; display: grid; gap: 1px; white-space: nowrap; padding: 4px 8px; border-radius: 6px; font-size: 11.5px; line-height: 1.25; color: #fff; background: rgba(13,13,46,.72); border: 1px solid rgba(255,255,255,.25); pointer-events: none; }
+.fm-tag b { font-size: 12px; letter-spacing: .02em; }
+.fm-tag span { opacity: .85; }
+.fm-tag.static { position: relative; }
+.tt-viewtoggle { position: absolute; z-index: 5; top: 10px; left: 56px; display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(13,13,46,.82); border: 1px solid var(--glass-border); }
+.tt-viewtoggle button { border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.tt-viewtoggle button.on { background: var(--amber); color: var(--ink); }
+.tt-map-col { position: relative; }
