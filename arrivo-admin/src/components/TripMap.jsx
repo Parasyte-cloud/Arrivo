@@ -17,7 +17,7 @@ export function tripColor(trip) {
 }
 
 // Material "flight" glyph, nose pointing up, so rotation = compass heading.
-const PLANE_PATH = "M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z";
+export const PLANE_PATH = "M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z";
 
 const hasPos = (lat, lng) => typeof lat === "number" && typeof lng === "number";
 
@@ -46,7 +46,7 @@ function pointsOf(trip) {
 }
 
 // Google's "night" look so the map sits with the dark Console theme.
-const DARK_STYLE = [
+export const DARK_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#1d2040" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#9aa0c8" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#12123b" }] },
