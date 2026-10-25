@@ -213,6 +213,16 @@ test("an upper-case path doesn't skip the console permission check", async () =>
   assert.equal(result.responseBody?.code, "NO_ACCESS");
 });
 
+// Express routes /api/admin//wallet-transactions to the wallet route, so the
+// permission check has to see it as the same path.
+test("a doubled slash doesn't get past the permission check", async () => {
+  for (const url of ["/api/admin//wallet-transactions", "/api/admin///wallet-transactions/", "/API/Admin//Wallet-Transactions"]) {
+    const result = await requestFor("support", "GET", url);
+    assert.equal(result.nextCalled, false, `expected ${url} to be refused`);
+    assert.equal(result.responseBody?.code, "NO_ACCESS", url);
+  }
+});
+
 test("support sees the wallet once it's granted", async () => {
   staffPermissions = { wallet: "view" };
   try {
