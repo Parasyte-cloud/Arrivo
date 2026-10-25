@@ -217,3 +217,13 @@ export function reportCallEvent(token, sessionId, event, reason) {
 export function requestCallSupport(token, sessionId, note) {
   return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }
+
+// Lets the backend push "New ride" and "Ride assigned to you" to this phone
+// (arrivo-backend/services/dispatch.js). Same endpoint the rider app uses.
+export function registerPushToken(token, pushToken) {
+  return request("/api/auth/push-token", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ pushToken }),
+  });
+}

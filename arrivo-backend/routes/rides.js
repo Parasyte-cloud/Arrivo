@@ -4,9 +4,8 @@ const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
-const { sendBookingConfirmationEmail, sendDriverAssignedEmail } = require("../services/email");
+const { sendBookingConfirmationEmail } = require("../services/email");
 const { sendPushNotification } = require("../services/pushNotifications");
-const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
 const {
@@ -24,6 +23,7 @@ const { creditMembershipCashback } = require("../services/membershipCashback");
 const { recordQuestProgress } = require("../services/driverQuests");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { sendPanicAlert } = require("../services/panicAlert");
+const dispatch = require("../services/dispatch");
 const { getActivePlanForUser } = require("../services/familyPlan");
 const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
 const { isWithinRadiusKm } = require("../services/routeDeviation");
@@ -200,6 +200,8 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
     await completeIdempotentRide(client, idem.recordId, { rideId: ride.id, responseStatus: 201, responseBody });
     await client.query("COMMIT");
     res.status(201).json(responseBody);
+    // Tell the drivers who can take it (services/dispatch.js). Never throws.
+    dispatch.alertDrivers(ride.id);
 
     if (onFreshSuccess) {
       try {
@@ -841,6 +843,7 @@ async function createRideHandler(req, res) {
         .catch((e) => console.error("Booking confirmation email failed:", e.message));
     }
     res.status(201).json({ ride: withParsedStops(cardRide) });
+    dispatch.alertDrivers(cardRide.id);
   } catch (err) {
     await cardClient.query("ROLLBACK");
     console.error("Card ride creation failed:", err.message);
@@ -1197,33 +1200,14 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     )
   ).rows[0];
 
-  const driverUser = await pool.query("SELECT name FROM users WHERE id = $1", [req.user.id]);
-  const driverName = driverUser.rows[0]?.name || "Your driver";
-  sendPushNotification(
-    ride.rider_push_token,
-    "Driver on the way",
-    `${driverName} accepted your ride and is heading your way.`,
-    { rideId: ride.id, type: "ride_accepted" }
+  // Push, WhatsApp and email to the rider, the same whether the driver accepted
+  // or ops assigned it (services/dispatch.js). Fire and forget: a slow send
+  // never holds up the response the driver app is waiting on.
+  dispatch.tellRiderDriverAssigned(ride.id, driver.id).catch((e) => console.error("Driver-assigned notice failed:", e.message));
+  pool.query(
+    "INSERT INTO ride_dispatch_events (ride_id, kind, actor_id, driver_id) VALUES ($1, 'accepted', $2, $3)",
+    [ride.id, req.user.id, driver.id]
   ).catch(() => {});
-
-  // "It should have those [driver/vehicle] information and also it should
-  // be sent to their WhatsApp number and email" — sent in parallel with the
-  // push above, fire-and-forget same as every other notification in this
-  // file (a slow/failed WhatsApp or email send should never hold up the
-  // accept response the driver app is waiting on).
-  const vehicleInfo = await pool.query(
-    `SELECT vehicles.make_model, vehicles.plate_number FROM vehicles WHERE vehicles.id = (SELECT vehicle_id FROM drivers WHERE id = $1)`,
-    [driver.id]
-  );
-  const vehicleLabel = vehicleInfo.rows[0]?.make_model
-    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
-    : null;
-  if (ride.rider_whatsapp_number) {
-    sendWhatsAppMessage(ride.rider_whatsapp_number, driverAssignedMessage(ride, driverName, vehicleLabel)).catch(() => {});
-  }
-  if (ride.rider_email) {
-    sendDriverAssignedEmail(ride.rider_email, ride, driverName, vehicleLabel).catch(() => {});
-  }
 
   res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
 });

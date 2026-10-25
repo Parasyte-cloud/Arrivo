@@ -1,5 +1,8 @@
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
+import { registerPushToken } from "../services/api";
 
 // This app never had any notification-permission flow before — ride
 // requests are handled by polling, not push (see DashboardScreen.js). But
@@ -16,6 +19,10 @@ import * as Notifications from "expo-notifications";
 // Android notification channel settings are locked in on first creation,
 // so a second, differently-configured creation call here could freeze in
 // the wrong settings if it happened to run first.
+//
+// It also registers this phone's push token with the backend. Without one the
+// backend had no way to tell a driver a ride was booked or assigned to them,
+// so rides only got picked up by drivers who happened to have the app open.
 export function useNotificationPermission(token) {
   useEffect(() => {
     if (!token) return;
@@ -23,11 +30,27 @@ export function useNotificationPermission(token) {
     (async () => {
       try {
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
         if (existingStatus !== "granted") {
-          await Notifications.requestPermissionsAsync();
+          finalStatus = (await Notifications.requestPermissionsAsync()).status;
         }
+        if (finalStatus !== "granted") return;
+
+        // Ride alerts go on the "default" channel, set to high so they pop up
+        // over other apps. Not the call channel, which Stream owns.
+        if (Platform.OS === "android") {
+          await Notifications.setNotificationChannelAsync("default", {
+            name: "Rides",
+            importance: Notifications.AndroidImportance.HIGH,
+          });
+        }
+
+        // Real phones only; emulators throw here and the catch swallows it.
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+        const { data: pushToken } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+        await registerPushToken(token, pushToken);
       } catch (e) {
-        // Non-critical — see comment above.
+        // Non-critical — see comment above. Polling still finds rides while the app is open.
       }
     })();
   }, [token]);

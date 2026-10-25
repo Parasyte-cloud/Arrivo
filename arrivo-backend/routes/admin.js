@@ -349,6 +349,50 @@ async function cachedFlight(flightNumber) {
   return value;
 }
 
+// ── Dispatch (services/dispatch.js) ────────────────────────────────────────
+// GET  /trips/:id/drivers        approved drivers to pick from, best first
+// GET  /trips/:id/dispatch       who was alerted, who took it, who changed it
+// POST /trips/:id/assign-driver  { driverId, note? }  put a driver on the ride, or swap one
+// POST /trips/:id/alert-drivers  push "New ride" to online drivers again
+const dispatch = require("../services/dispatch");
+const rideIdOf = (req) => (/^\d+$/.test(req.params.id) ? Number(req.params.id) : null);
+
+router.get("/trips/:id/drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const drivers = await dispatch.driverOptions(id);
+  if (!drivers) return res.status(404).json({ error: "Ride not found" });
+  res.json({ drivers });
+});
+
+router.get("/trips/:id/dispatch", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  res.json({ events: await dispatch.dispatchHistory(id) });
+});
+
+router.post("/trips/:id/assign-driver", async (req, res) => {
+  const id = rideIdOf(req);
+  const driverId = Number(req.body && req.body.driverId);
+  if (!id || !Number.isInteger(driverId) || driverId < 1) return res.status(400).json({ error: "Need a ride and a driver." });
+  try {
+    const out = await dispatch.assignDriver({ rideId: id, driverId, actorId: req.user.id, note: req.body.note });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    if (e instanceof dispatch.DispatchError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
+});
+
+router.post("/trips/:id/alert-drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const ride = (await pool.query("SELECT ride_status, driver_id FROM rides WHERE id = $1", [id])).rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status !== "requested" || ride.driver_id) return res.status(409).json({ error: "This ride already has a driver." });
+  res.json(await dispatch.alertDrivers(id, "alerted"));
+});
+
 // GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
 router.get("/trips/:id", async (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
