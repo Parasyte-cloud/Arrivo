@@ -7,12 +7,16 @@
 // A role change signs the person out everywhere, takes them off duty and hands
 // their open rides to others straight away.
 const express = require("express");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { pool } = require("../db/db");
 const { requireAuth, requireAnyRole } = require("../middleware/auth");
 const rules = require("../services/staffAdmin");
 const team = require("../services/rideTeam");
 const access = require("../services/staffAccess");
+const { sendPasswordResetEmail } = require("../services/email");
 
+const SALT_ROUNDS = 10;
 const router = express.Router();
 router.use(requireAuth, requireAnyRole(["admin", "support"]));
 
@@ -114,12 +118,218 @@ async function runChange(req, res, targetId, newRole) {
 }
 
 router.post("/promote", requireViewer, requireManager, async (req, res) => {
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const role = req.body?.role;
-  if (!email || !rules.STAFF_ROLES.includes(role)) return res.status(400).json({ error: "Need an email and a role (admin, support or operations)." });
-  const u = await pool.query("SELECT id FROM users WHERE lower(email) = $1 AND deleted_at IS NULL", [email]);
-  if (!u.rows[0]) return res.status(404).json({ error: "No account with that email. They need to sign up first." });
-  return runChange(req, res, u.rows[0].id, role);
+const email =
+String(req.body?.email || "")
+.trim()
+.toLowerCase();
+
+const role = req.body?.role;
+
+if (
+!email ||
+!rules.STAFF_ROLES.includes(role)
+) {
+return res.status(400).json({
+error:
+"Need an email and a role (admin, support or operations).",
+});
+}
+
+/*
+ * Existing Arrivo account:
+ * preserve the current governed role-change path.
+ */
+const existing = await pool.query(
+`SELECT id
+FROM users
+WHERE lower(email) = $1
+AND deleted_at IS NULL`,
+[email]
+);
+
+if (existing.rows[0]) {
+return runChange(
+req,
+res,
+existing.rows[0].id,
+role
+);
+}
+
+/*
+ * Never auto-provision an external identity.
+ * New staff provisioning is restricted to RideArrivo company mail.
+ */
+if (!email.endsWith("@ridearrivo.com")) {
+return res.status(404).json({
+error:
+"No RideArrivo account exists with that email.",
+});
+}
+
+const requestedName =
+String(req.body?.name || "")
+.trim();
+
+const inferredName =
+email
+.split("@")[0]
+.replace(/[._-]+/g, " ")
+.replace(
+/\b\w/g,
+(char) => char.toUpperCase()
+)
+.trim() ||
+"RideArrivo staff";
+
+const displayName =
+(requestedName || inferredName)
+.slice(0, 120);
+
+const randomPassword =
+crypto
+.randomBytes(32)
+.toString("hex");
+
+const passwordHash =
+bcrypt.hashSync(
+randomPassword,
+SALT_ROUNDS
+);
+
+const resetToken =
+crypto
+.randomBytes(32)
+.toString("hex");
+
+const resetExpires =
+new Date(
+Date.now() +
+60 * 60 * 1000
+);
+
+const client =
+await pool.connect();
+
+let createdId = null;
+let roleChange = null;
+
+try {
+await client.query("BEGIN");
+
+/*
+ * Start as rider only so the normal staff-governance function remains
+ * authoritative for the actual promotion.
+ */
+const inserted =
+await client.query(
+`INSERT INTO users (
+name,
+email,
+password_hash,
+role,
+reset_token,
+reset_token_expires
+)
+VALUES (
+$1,
+$2,
+$3,
+'rider',
+$4,
+$5
+)
+RETURNING id`,
+[
+displayName,
+email,
+passwordHash,
+resetToken,
+resetExpires,
+]
+);
+
+createdId =
+inserted.rows[0].id;
+
+roleChange =
+await applyRoleChange(
+client,
+req.actor,
+createdId,
+role,
+"Provisioned from Team & Access"
+);
+
+if (!roleChange.ok) {
+await client.query("ROLLBACK");
+
+return res
+.status(roleChange.status)
+.json({
+error: roleChange.error,
+code: roleChange.code,
+});
+}
+
+await client.query("COMMIT");
+} catch (error) {
+await client
+.query("ROLLBACK")
+.catch(() => {});
+
+if (error?.code === "23505") {
+return res.status(409).json({
+error:
+"That staff account was created at the same time. Refresh Team & Access and try again.",
+});
+}
+
+throw error;
+} finally {
+client.release();
+}
+
+const moved =
+await team.rebalance(
+"role_changed"
+);
+
+const resetUrl =
+`${process.env.PASSWORD_RESET_BASE_URL ||
+"https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
+
+/*
+ * Account creation should not fail just because the mail provider is
+ * temporarily unavailable. The reset token remains valid for one hour.
+ */
+sendPasswordResetEmail(
+email,
+resetUrl
+)
+.then((result) => {
+if (!result?.ok && !result?.skipped) {
+console.error(
+"New staff password setup email failed:",
+email
+);
+}
+})
+.catch((error) => {
+console.error(
+"New staff password setup email failed:",
+error?.message || error
+);
+});
+
+return res.json({
+ok: true,
+created: true,
+from: roleChange.from,
+to: role,
+ridesMoved: moved,
+setupRequired: true,
+});
 });
 
 router.put("/:id/role", requireViewer, requireManager, async (req, res) => {

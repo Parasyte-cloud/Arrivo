@@ -98,7 +98,9 @@ export function TeamPage() {
   const [err, setErr] = useState(null);
   const [msg, setMsg] = useState(null);
   const [email, setEmail] = useState("");
+  const [staffName, setStaffName] = useState("");
   const [role, setRole] = useState("support");
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
 
@@ -136,70 +138,354 @@ export function TeamPage() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <div className="eyebrow">Team & Access</div>
-          <h1>Who can see and do what</h1>
+    <div className="team2-page">
+      <div className="page-header team2Hero">
+        <div className="team2HeroCopy">
+          <div className="eyebrow">
+            Administration / Identity & Access
+          </div>
+          <h1>Team & Access</h1>
+          <p>
+            Govern ArrivoOps staff identities, operational roles and console
+            permissions from one secure workspace.
+          </p>
+        </div>
+
+        <div className="team2SecurityMark" aria-label="Access control status">
+          <span>ACCESS CONTROL</span>
+          <strong>Governed</strong>
+          <small>Role and permission changes are audited</small>
         </div>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat-card"><div className="stat-num">{all.length}</div><div className="stat-label">Staff accounts</div></div>
-        <div className="stat-card"><div className="stat-num">{all.filter((p) => p.role === "admin").length}</div><div className="stat-label">Admins</div></div>
-        <div className="stat-card"><div className="stat-num">{all.filter((p) => p.on_duty).length}</div><div className="stat-label">On duty now</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: stale.length ? "var(--amber)" : undefined }}>{stale.length}</div><div className="stat-label">No sign-in for 30 days</div></div>
+      <div className="stat-grid team2Stats">
+        <div className="stat-card team2StatCard">
+          <div className="stat-num">{all.length}</div>
+          <div className="stat-label">ArrivoOps staff</div>
+        </div>
+
+        <div className="stat-card team2StatCard">
+          <div className="stat-num">
+            {all.filter((p) => p.role === "support").length}
+          </div>
+          <div className="stat-label">Support</div>
+        </div>
+
+        <div className="stat-card team2StatCard">
+          <div className="stat-num">
+            {all.filter((p) => p.role === "operations").length}
+          </div>
+          <div className="stat-label">Operations</div>
+        </div>
+
+        <div className="stat-card team2StatCard">
+          <div className="stat-num">
+            {all.filter((p) => p.role === "admin").length}
+          </div>
+          <div className="stat-label">Admins</div>
+        </div>
+
+        <div className="stat-card team2StatCard">
+          <div className="stat-num">
+            {all.filter((p) => p.on_duty).length}
+          </div>
+          <div className="stat-label">On duty</div>
+        </div>
+
+        <div className="stat-card team2StatCard">
+          <div
+            className="stat-num"
+            style={{ color: stale.length ? "var(--amber)" : undefined }}
+          >
+            {stale.length}
+          </div>
+          <div className="stat-label">Needs sign-in review</div>
+        </div>
       </div>
 
       {msg ? <div className="desk-waiting">{msg}</div> : null}
       {err ? <div className="error-text">{err}</div> : null}
 
       {me.canManage ? (
-        <form className="desk-promote" onSubmit={(e) => { e.preventDefault(); act(() => api.promotePerson(token, email.trim(), role), "Added. They start from that role's preset and must sign in again."); setEmail(""); }}>
-          <input className="field" type="email" required placeholder="Email of an existing account" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
-          <select className="field" style={{ maxWidth: 160 }} value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role">
-            <option value="support">Support</option>
-            <option value="operations">Operations</option>
-            {me.isOwner ? <option value="admin">Admin</option> : null}
-          </select>
-          <button className="btn" type="submit">Add to staff</button>
+        <form
+          className="desk-promote team2InviteCard"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (inviteBusy) return;
+
+            setInviteBusy(true);
+            setErr(null);
+            setMsg(null);
+
+            try {
+              const result = await api.promotePerson(
+                token,
+                email.trim(),
+                role,
+                "Managed through Team & Access",
+                staffName.trim()
+              );
+
+              setMsg(
+                result?.created
+                  ? "Staff account provisioned. A secure password setup link has been requested for that RideArrivo email."
+                  : "Existing account updated. The new staff role and access preset are active."
+              );
+
+              setEmail("");
+              setStaffName("");
+              await load();
+              reloadAccess();
+            } catch (e) {
+              setErr(e.message);
+            } finally {
+              setInviteBusy(false);
+            }
+          }}
+        >
+          <div className="team2InviteIntro">
+            <div className="team2InviteIcon" aria-hidden="true">+</div>
+
+            <div>
+              <div className="eyebrow">Add or invite staff</div>
+              <h3>Grant ArrivoOps access</h3>
+              <p>
+                Existing Arrivo accounts are promoted immediately. If a
+                @ridearrivo.com address does not yet exist in ArrivoOps, it can
+                be provisioned securely here.
+              </p>
+            </div>
+          </div>
+
+          <div className="team2InviteFields">
+            <label>
+              <span>Name <em>optional</em></span>
+              <input
+                className="field"
+                type="text"
+                maxLength={120}
+                autoComplete="name"
+                placeholder="e.g. Wuraola Awotungase"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+              />
+            </label>
+
+            <label>
+              <span>Company email</span>
+              <input
+                className="field"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="support@ridearrivo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+
+            <label>
+              <span>Role</span>
+              <select
+                className="field"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                aria-label="Role"
+              >
+                <option value="support">Support</option>
+                <option value="operations">Operations</option>
+                {me.isOwner ? <option value="admin">Admin</option> : null}
+              </select>
+            </label>
+
+            <button
+              className="btn primary team2InviteButton"
+              type="submit"
+              disabled={inviteBusy}
+            >
+              {inviteBusy ? "Adding…" : "Add / invite staff"}
+            </button>
+          </div>
+
+          <div className="team2InviteFoot">
+            <span>Company-managed identity</span>
+            <span>Secure password setup</span>
+            <span>Audited role assignment</span>
+          </div>
         </form>
       ) : (
-        <div className="desk-waiting">You can see everyone on staff. Only the owner, or an admin the owner allows, can change it.</div>
+        <div className="desk-waiting">
+          You can view the staff directory. Only the owner, or an authorised
+          admin, can change staff access.
+        </div>
       )}
 
-      <input className="field" style={{ maxWidth: 320, margin: "12px 0" }} placeholder="Search name, email or role" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search staff" />
+      <div className="team2DirectoryToolbar">
+        <div>
+          <strong>Staff directory</strong>
+          <small>{people.length} of {all.length} staff shown</small>
+        </div>
 
-      <div className="table-wrap">
+        <div className="team2Search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            className="field"
+            placeholder="Search name, email or role"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search staff"
+          />
+        </div>
+      </div>
+
+      <div className="table-wrap team2DirectoryTable">
         <table>
-          <thead><tr><th>Name</th><th>Role</th><th>Access</th><th>Last sign-in</th><th>On duty</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email address</th>
+              <th>Role</th>
+              <th>Access</th>
+              <th>Last sign-in</th>
+              <th>Duty</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
             {people.map((p) => {
               const opts = roleOptions(me, p, user.id);
               const editable = canEdit(me, p, user.id);
               return (
                 <tr key={p.id}>
-                  <td>{p.name}<div className="desk-sub">{p.email}</div></td>
-                  <td>
-                    {p.is_owner ? "Owner" : p.role}
-                    {p.support_lead ? <span className="desk-lead"> Head of support</span> : null}
-                    {p.can_manage_staff ? <span className="desk-lead"> Manages staff</span> : null}
+                  <td data-label="Name">
+                    <div className="team2Person">
+                      <div className="team2Avatar" aria-hidden="true">
+                        {(p.name || p.email || "?").trim().charAt(0).toUpperCase()}
+                      </div>
+
+                      <div>
+                        <strong>{p.name || "Unnamed staff"}</strong>
+                        {p.is_owner ? <small>Workspace owner</small> : null}
+                      </div>
+                    </div>
                   </td>
-                  <td>
+
+                  <td data-label="Email address">
+                    {p.email ? (
+                      <a className="team2Email" href={`mailto:${p.email}`}>
+                        {p.email}
+                      </a>
+                    ) : (
+                      <span className="team2MissingEmail">
+                        Email unavailable
+                      </span>
+                    )}
+                  </td>
+
+                  <td data-label="Role">
+                    <span
+                      className={`team2Role team2Role-${
+                        p.is_owner ? "owner" : p.role
+                      }`}
+                    >
+                      {p.is_owner ? "Owner" : p.role}
+                    </span>
+
+                    <div className="team2RoleMeta">
+                      {p.support_lead ? <span>Head of support</span> : null}
+                      {p.can_manage_staff ? <span>Manages staff</span> : null}
+                    </div>
+                  </td>
+
+                  <td data-label="Access">
                     {p.is_owner ? "Everything" : accessSummary(p.permissions)}
-                    {p.customised && p.customised.length ? <span className="desk-lead"> Custom</span> : null}
-                  </td>
-                  <td>{p.last_login_at ? formatDateTime(p.last_login_at) : <span style={{ color: "var(--text-muted)" }}>Never</span>}</td>
-                  <td>{p.on_duty ? <StatusPill label="On duty" tone="teal" /> : <StatusPill label="Off duty" tone="muted" />}</td>
-                  <td className="desk-actions">
-                    {editable ? <button className="btn" onClick={() => setEditing(p)}>Edit access</button> : null}
-                    {opts.map((r) => <button key={r} className="btn ghost" onClick={() => changeRole(p, r)}>Make {r}</button>)}
-                    {opts.length ? <button className="btn ghost" onClick={() => changeRole(p, "rider")}>Remove</button> : null}
-                    {me.isOwner && p.role === "admin" && !p.is_owner ? (
-                      <button className="btn ghost" onClick={() => act(() => api.setCanManageStaff(token, p.id, !p.can_manage_staff), "Saved.")}>
-                        {p.can_manage_staff ? "Take away staff management" : "Let manage staff"}
-                      </button>
+                    {p.customised && p.customised.length ? (
+                      <span className="desk-lead"> Custom</span>
                     ) : null}
+                  </td>
+
+                  <td data-label="Last sign-in">
+                    {p.last_login_at ? (
+                      formatDateTime(p.last_login_at)
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>
+                        Never
+                      </span>
+                    )}
+                  </td>
+
+                  <td data-label="Duty">
+                    {p.on_duty ? (
+                      <StatusPill label="On duty" tone="teal" />
+                    ) : (
+                      <StatusPill label="Off duty" tone="muted" />
+                    )}
+                  </td>
+
+                  <td className="desk-actions" data-label="Actions">
+                    {editable ||
+                    opts.length ||
+                    (me.isOwner && p.role === "admin" && !p.is_owner) ? (
+                      <details className="team2ActionMenu">
+                        <summary>Manage</summary>
+
+                        <div className="team2ActionPopover">
+                          {editable ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditing(p)}
+                            >
+                              Edit access
+                            </button>
+                          ) : null}
+
+                          {opts.map((r) => (
+                            <button
+                              type="button"
+                              key={r}
+                              onClick={() => changeRole(p, r)}
+                            >
+                              Make {r}
+                            </button>
+                          ))}
+
+                          {me.isOwner &&
+                          p.role === "admin" &&
+                          !p.is_owner ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                act(
+                                  () =>
+                                    api.setCanManageStaff(
+                                      token,
+                                      p.id,
+                                      !p.can_manage_staff
+                                    ),
+                                  "Saved."
+                                )
+                              }
+                            >
+                              {p.can_manage_staff
+                                ? "Remove staff management"
+                                : "Allow staff management"}
+                            </button>
+                          ) : null}
+
+                          {opts.length ? (
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => changeRole(p, "rider")}
+                            >
+                              Remove from staff
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
+                    ) : (
+                      <span className="team2Locked">Protected</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -209,7 +495,13 @@ export function TeamPage() {
         {!people.length ? <div className="empty-state">Nobody matches that.</div> : null}
       </div>
 
-      <h3 className="desk-h3">Recent changes</h3>
+      <div className="team2SectionHeading">
+        <div>
+          <div className="eyebrow">Audit trail</div>
+          <h3 className="desk-h3">Recent access changes</h3>
+        </div>
+        <small>{events.length} recent events</small>
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>

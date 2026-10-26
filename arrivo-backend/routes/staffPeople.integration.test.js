@@ -85,6 +85,69 @@ await test("promoting an unknown email is a clear 404; a driver is refused", asy
   assert.strictEqual((await api("/api/staff/people/promote", { method: "POST", as: owner, body: { email: driver.email, role: "support" } })).status, 409);
   assert.strictEqual((await api("/api/staff/people/promote", { method: "POST", as: owner, body: { email: rider.email, role: "root" } })).status, 400);
 });
+
+await test(
+"owner provisions a new RideArrivo company email directly as support",
+async () => {
+  const email = `new-support-${stamp}@ridearrivo.com`;
+
+  const r = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: owner,
+      body: {
+        email,
+        role: "support",
+        name: "New Support Agent",
+      },
+    }
+  );
+
+  assert.strictEqual(r.status, 200, r.text);
+  assert.strictEqual(r.body.created, true);
+  assert.strictEqual(r.body.to, "support");
+  assert.strictEqual(r.body.setupRequired, true);
+
+  const created = (
+    await pool.query(
+      `SELECT
+         id,
+         name,
+         email,
+         role,
+         reset_token,
+         reset_token_expires
+       FROM users
+       WHERE email = $1`,
+      [email]
+    )
+  ).rows[0];
+
+  assert.ok(created);
+  assert.strictEqual(created.name, "New Support Agent");
+  assert.strictEqual(created.email, email);
+  assert.strictEqual(created.role, "support");
+  assert.ok(created.reset_token);
+  assert.ok(created.reset_token_expires);
+
+  const duty = (
+    await pool.query(
+      `SELECT team, on_duty
+       FROM staff_duty
+       WHERE user_id = $1`,
+      [created.id]
+    )
+  ).rows[0];
+
+  assert.deepStrictEqual(duty, {
+    team: "support",
+    on_duty: false,
+  });
+
+  made.push(created.id);
+}
+);
 await test("changing role signs the person out everywhere (old token stops working)", async () => {
   const p = await mk("support");
   const before = await roleOf(p.id);

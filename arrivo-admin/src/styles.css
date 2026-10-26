@@ -1057,3 +1057,571 @@ body { padding-bottom: 36px; }
 @media (prefers-reduced-motion: reduce) {
   .parasyte-signature { animation: none; }
 }
+
+/* Team & Access — Identity & Access Management */
+
+.team2Hero{
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:24px;
+  min-height:150px;
+  margin-bottom:18px;
+  padding:26px;
+  border:1px solid rgba(244,163,0,.16);
+  border-radius:22px;
+  background:
+    radial-gradient(620px circle at 100% -25%,rgba(244,163,0,.16),transparent 58%),
+    radial-gradient(420px circle at 0 100%,rgba(48,111,164,.10),transparent 65%),
+    rgba(9,21,40,.72);
+  box-shadow:
+    0 24px 65px rgba(0,0,0,.20),
+    inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(24px) saturate(145%);
+  -webkit-backdrop-filter:blur(24px) saturate(145%);
+}
+
+.team2Hero::after{
+  content:"";
+  position:absolute;
+  right:-70px;
+  bottom:-105px;
+  width:180px;
+  height:180px;
+  border:1px solid rgba(244,163,0,.14);
+  border-radius:50%;
+  box-shadow:
+    0 0 0 24px rgba(244,163,0,.025),
+    0 0 0 52px rgba(244,163,0,.018);
+  pointer-events:none;
+}
+
+.team2HeroCopy{
+  position:relative;
+  z-index:1;
+  max-width:760px;
+}
+
+.team2HeroCopy h1{
+  margin:6px 0 8px;
+  font-size:clamp(30px,4vw,46px);
+  line-height:1;
+  letter-spacing:-.045em;
+}
+
+.team2HeroCopy p{
+  max-width:700px;
+  margin:0;
+  color:var(--text-muted);
+  font-size:13px;
+  line-height:1.6;
+}
+
+.team2SecurityMark{
+  position:relative;
+  z-index:1;
+  min-width:180px;
+  display:grid;
+  gap:3px;
+  padding:14px 16px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.045);
+}
+
+.team2SecurityMark span{
+  color:var(--amber);
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.14em;
+}
+
+.team2SecurityMark small{
+  color:var(--text-muted);
+}
+
+.team2Stats{
+  grid-template-columns:repeat(6,minmax(105px,1fr));
+  gap:10px;
+  margin-bottom:18px;
+}
+
+.team2StatCard{
+  min-height:98px;
+  border-radius:16px;
+  background:
+    linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    0 14px 35px rgba(0,0,0,.10);
+}
+
+.team2InviteCard{
+  display:block;
+  margin:7px 0 18px;
+  padding:0;
+  overflow:hidden;
+  border:1px solid rgba(244,163,0,.17);
+  border-radius:20px;
+  background:
+    radial-gradient(500px circle at 0 0,rgba(244,163,0,.10),transparent 56%),
+    rgba(255,255,255,.027);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    0 20px 48px rgba(0,0,0,.12);
+}
+
+.team2InviteIntro{
+  display:flex;
+  align-items:flex-start;
+  gap:14px;
+  padding:20px 20px 15px;
+}
+
+.team2InviteIcon{
+  flex:0 0 42px;
+  width:42px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(244,163,0,.30);
+  border-radius:13px;
+  background:rgba(244,163,0,.10);
+  color:var(--amber);
+  font-size:25px;
+}
+
+.team2InviteIntro h3{
+  margin:3px 0 5px;
+  font-size:17px;
+}
+
+.team2InviteIntro p{
+  max-width:760px;
+  margin:0;
+  color:var(--text-muted);
+  font-size:12px;
+  line-height:1.55;
+}
+
+.team2InviteFields{
+  display:grid;
+  grid-template-columns:minmax(160px,.8fr) minmax(240px,1.3fr) minmax(130px,.55fr) auto;
+  align-items:end;
+  gap:10px;
+  padding:0 20px 18px;
+}
+
+.team2InviteFields label{
+  min-width:0;
+  display:grid;
+  gap:6px;
+}
+
+.team2InviteFields label>span{
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.team2InviteFields label em{
+  opacity:.6;
+  font-style:normal;
+  text-transform:none;
+}
+
+.team2InviteFields .field{
+  width:100%;
+  min-width:0;
+  min-height:42px;
+  margin:0;
+}
+
+.team2InviteButton{
+  min-height:42px;
+  padding-inline:18px;
+  white-space:nowrap;
+}
+
+.team2InviteFoot{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 18px;
+  padding:10px 20px;
+  border-top:1px solid rgba(255,255,255,.055);
+  background:rgba(0,0,0,.07);
+  color:var(--text-muted);
+  font-size:10px;
+}
+
+.team2InviteFoot span::before{
+  content:"✓";
+  margin-right:6px;
+  color:var(--amber);
+  font-weight:900;
+}
+
+.team2DirectoryToolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:4px 2px 11px;
+}
+
+.team2DirectoryToolbar>div:first-child{
+  display:grid;
+  gap:2px;
+}
+
+.team2DirectoryToolbar small{
+  color:var(--text-muted);
+}
+
+.team2Search{
+  position:relative;
+  width:min(380px,100%);
+}
+
+.team2Search>span{
+  position:absolute;
+  left:13px;
+  top:50%;
+  z-index:2;
+  transform:translateY(-50%);
+  color:var(--text-muted);
+  pointer-events:none;
+}
+
+.team2Search .field{
+  width:100%;
+  margin:0;
+  padding-left:34px;
+}
+
+.team2Person{
+  min-width:160px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.team2Avatar{
+  flex:0 0 34px;
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(244,163,0,.18);
+  border-radius:11px;
+  background:
+    linear-gradient(145deg,rgba(244,163,0,.16),rgba(255,255,255,.035));
+  color:var(--amber);
+  font-weight:900;
+}
+
+.team2Person>div:last-child{
+  min-width:0;
+  display:grid;
+  gap:2px;
+}
+
+.team2Person small{
+  color:var(--amber);
+  font-size:9px;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.team2Email{
+  color:rgba(244,247,251,.86);
+  font-size:12px;
+  text-decoration:none;
+  overflow-wrap:anywhere;
+}
+
+.team2Email:hover{
+  color:var(--amber);
+  text-decoration:underline;
+}
+
+.team2MissingEmail{
+  color:#ff9b8f;
+  font-size:11px;
+  font-weight:700;
+}
+
+.team2Role{
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:4px 8px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:999px;
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.team2Role-owner,
+.team2Role-admin{
+  color:#ffc85a;
+  border-color:rgba(244,163,0,.28);
+  background:rgba(244,163,0,.10);
+}
+
+.team2Role-support{
+  color:#b9d9ff;
+  border-color:rgba(91,160,232,.25);
+  background:rgba(91,160,232,.09);
+}
+
+.team2Role-operations{
+  color:#a9ece5;
+  border-color:rgba(71,190,176,.24);
+  background:rgba(71,190,176,.09);
+}
+
+.team2RoleMeta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 7px;
+  margin-top:5px;
+}
+
+.team2RoleMeta span{
+  color:var(--text-muted);
+  font-size:9px;
+}
+
+.team2ActionMenu summary{
+  min-height:32px;
+  display:inline-flex;
+  align-items:center;
+  padding:6px 11px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:9px;
+  list-style:none;
+  background:rgba(255,255,255,.035);
+  cursor:pointer;
+  font-size:11px;
+  font-weight:800;
+}
+
+.team2ActionMenu summary::-webkit-details-marker{
+  display:none;
+}
+
+.team2ActionMenu summary::after{
+  content:"⋯";
+  margin-left:7px;
+  color:var(--text-muted);
+}
+
+.team2ActionMenu[open] summary,
+.team2ActionMenu summary:hover{
+  border-color:rgba(244,163,0,.28);
+  background:rgba(244,163,0,.075);
+}
+
+.team2ActionPopover{
+  width:205px;
+  display:grid;
+  gap:2px;
+  margin-top:6px;
+  padding:6px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:11px;
+  background:rgba(7,18,34,.88);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+
+.team2ActionPopover button{
+  width:100%;
+  padding:9px 10px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:inherit;
+  cursor:pointer;
+  font:inherit;
+  font-size:11px;
+  text-align:left;
+}
+
+.team2ActionPopover button:hover{
+  background:rgba(255,255,255,.055);
+}
+
+.team2ActionPopover button.danger{
+  color:#ffaaa0;
+}
+
+.team2Locked{
+  color:var(--text-muted);
+  font-size:10px;
+}
+
+.team2SectionHeading{
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  gap:16px;
+  margin:25px 2px 10px;
+}
+
+.team2SectionHeading .desk-h3{
+  margin:2px 0 0;
+}
+
+.team2SectionHeading small{
+  color:var(--text-muted);
+}
+
+@media(max-width:1280px){
+  .team2Stats{
+    grid-template-columns:repeat(3,minmax(120px,1fr));
+  }
+
+  .team2InviteFields{
+    grid-template-columns:1fr 1.35fr;
+  }
+}
+
+@media(max-width:900px){
+  .team2Hero{
+    flex-direction:column;
+  }
+
+  .team2SecurityMark{
+    width:100%;
+  }
+
+  .team2Stats{
+    grid-template-columns:repeat(2,minmax(110px,1fr));
+  }
+
+  .team2InviteFields{
+    grid-template-columns:1fr;
+  }
+
+  .team2InviteButton{
+    width:100%;
+  }
+
+  .team2DirectoryToolbar{
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .team2Search{
+    width:100%;
+  }
+
+  .team2DirectoryTable{
+    overflow:visible;
+    border:0;
+    background:transparent;
+  }
+
+  .team2DirectoryTable table,
+  .team2DirectoryTable tbody,
+  .team2DirectoryTable tr,
+  .team2DirectoryTable td{
+    display:block;
+    width:100%;
+  }
+
+  .team2DirectoryTable thead{
+    position:absolute;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+    clip:rect(0 0 0 0);
+  }
+
+  .team2DirectoryTable tbody{
+    display:grid;
+    gap:10px;
+  }
+
+  .team2DirectoryTable tbody tr{
+    display:grid;
+    padding:14px;
+    border:1px solid rgba(255,255,255,.075);
+    border-radius:16px;
+    background:rgba(255,255,255,.028);
+  }
+
+  .team2DirectoryTable tbody td{
+    display:grid;
+    grid-template-columns:105px minmax(0,1fr);
+    gap:12px;
+    align-items:center;
+    padding:8px 0;
+    border:0;
+  }
+
+  .team2DirectoryTable tbody td::before{
+    content:attr(data-label);
+    color:var(--text-muted);
+    font-size:9px;
+    font-weight:900;
+    text-transform:uppercase;
+  }
+
+  .team2DirectoryTable tbody td[data-label="Name"]{
+    display:block;
+    padding-bottom:12px;
+    border-bottom:1px solid rgba(255,255,255,.06);
+  }
+
+  .team2DirectoryTable tbody td[data-label="Name"]::before{
+    display:none;
+  }
+
+  .team2ActionPopover{
+    width:100%;
+  }
+}
+
+@media(max-width:560px){
+  .team2Hero{
+    min-height:0;
+    padding:20px 17px;
+    border-radius:17px;
+  }
+
+  .team2HeroCopy h1{
+    font-size:30px;
+  }
+
+  .team2Stats{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .team2InviteIntro,
+  .team2InviteFields,
+  .team2InviteFoot{
+    padding-left:15px;
+    padding-right:15px;
+  }
+
+  .team2DirectoryTable tbody td{
+    grid-template-columns:92px minmax(0,1fr);
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .team2ActionMenu summary,
+  .team2ActionPopover button,
+  .team2Email{
+    transition:none !important;
+  }
+}
