@@ -3,13 +3,14 @@
 // didn't: the insert passed null into promo_discount_naira, which is NOT NULL,
 // so the rider was charged and no ride was made.
 const assert = require("assert");
-const { pool } = require("../db/db");
+const { pool, ready } = require("../db/db");
 const { createRideFromAssistedBooking } = require("./payments");
 
 const stamp = Date.now();
 (async () => {
   let userId = null;
   try {
+await ready;
     userId = (await pool.query(
       `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified)
        VALUES ('Assisted ride', $1, 'x', 'rider', true, true) RETURNING id`,
