@@ -323,11 +323,19 @@ router.get("/trips/:id/contacts", async (req, res) => {
   if (!r) return res.status(404).json({ error: "Ride not found" });
   const rideId = Number(req.params.id);
   await logAccess(req.user.id, rideId, r.rider_id, "rider", "view_number");
-  if (r.driver_user_id) await logAccess(req.user.id, rideId, r.driver_user_id, "driver", "view_number");
+  if (r.driver_user_id) {
+    await logAccess(req.user.id, rideId, r.driver_user_id, "driver", "view_number");
+  }
+  if (r.emergency_contact_phone) {
+    await logAccess(req.user.id, rideId, r.rider_id, "emergency_contact", "view_number");
+  }
+
   res.json({
-    rider: { phone: r.rider_phone, email: r.rider_email },
+    rider: { phone: r.rider_phone },
     driver: r.driver_user_id ? { phone: r.driver_phone } : null,
-    emergencyContact: r.emergency_contact_phone ? { name: r.emergency_contact_name, phone: r.emergency_contact_phone } : null,
+    emergencyContact: r.emergency_contact_phone
+      ? { name: r.emergency_contact_name, phone: r.emergency_contact_phone }
+      : null,
   });
 });
 

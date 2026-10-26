@@ -113,7 +113,12 @@ router.get("/rides/:id", async (req, res) => {
   if (!row) return res.status(404).json({ error: "Ride not found" });
 
   await logAccess(req.user.id, id, row.rider_id, "rider", "view_number");
-  if (row.driver_user_id) await logAccess(req.user.id, id, row.driver_user_id, "driver", "view_number");
+  if (row.driver_user_id) {
+    await logAccess(req.user.id, id, row.driver_user_id, "driver", "view_number");
+  }
+  if (row.emergency_contact_phone) {
+    await logAccess(req.user.id, id, row.rider_id, "emergency_contact", "view_number");
+  }
 
   const [calls, tickets, history, riderStats] = await Promise.all([
     pool.query(

@@ -273,18 +273,76 @@ await test("lists: mine by default, all and unassigned on request, numbers hidde
   const closed = await api("/api/staff/rides?scope=all&state=closed", { as: other });
   assert.ok(!closed.body.rides.some((x) => x.id === rideA.id));
 });
-await test("detail: full profiles with numbers, team, history, and the sighting is logged once per 10 minutes", async () => {
+await test("detail: every disclosed rider, driver and emergency number is independently audited", async () => {
+  await pool.query(
+    "UPDATE rides SET emergency_contact_name=$1, emergency_contact_phone=$2 WHERE id=$3",
+    ["Mum", "+2348099990000", rideA.id]
+  );
+
+  await pool.query(
+    "DELETE FROM staff_contact_access WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'",
+    [agentA.id, rideA.id]
+  );
+
   const d = await api(`/api/staff/rides/${rideA.id}`, { as: agentA });
   assert.strictEqual(d.status, 200);
-  assert.strictEqual(d.body.rider.phone, "+2348077700456"); assert.strictEqual(d.body.driver.phone, "+2348055500123");
-  assert.strictEqual(d.body.rider.firstName, "Ada"); assert.strictEqual(d.body.team.support.firstName, "Tola");
+
+  assert.strictEqual(d.body.rider.phone, "+2348077700456");
+  assert.strictEqual(d.body.driver.phone, "+2348055500123");
+  assert.strictEqual(d.body.ride.emergencyContact.phone, "+2348099990000");
+
+  assert.strictEqual(d.body.rider.firstName, "Ada");
+  assert.strictEqual(d.body.team.support.firstName, "Tola");
   assert.ok(Array.isArray(d.body.history) && d.body.history.length >= 2);
+
+  let rows = (await pool.query(
+    `SELECT subject_role, action
+       FROM staff_contact_access
+      WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'
+      ORDER BY id`,
+    [agentA.id, rideA.id]
+  )).rows;
+
+  assert.deepStrictEqual(rows, [
+    { subject_role: "rider", action: "view_number" },
+    { subject_role: "driver", action: "view_number" },
+    { subject_role: "emergency_contact", action: "view_number" },
+  ]);
+
   await api(`/api/staff/rides/${rideA.id}`, { as: agentA });
-  const logged = await pool.query("SELECT count(*)::int n FROM staff_contact_access WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'", [agentA.id, rideA.id]);
-  assert.strictEqual(logged.rows[0].n, 2, "one row for rider and one for driver, not four");
-  await pool.query("UPDATE staff_contact_access SET created_at = now() - interval '11 minutes' WHERE staff_user_id=$1", [agentA.id]);
+
+  rows = (await pool.query(
+    `SELECT subject_role, action
+       FROM staff_contact_access
+      WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'
+      ORDER BY id`,
+    [agentA.id, rideA.id]
+  )).rows;
+
+  assert.deepStrictEqual(rows, [
+    { subject_role: "rider", action: "view_number" },
+    { subject_role: "driver", action: "view_number" },
+    { subject_role: "emergency_contact", action: "view_number" },
+    { subject_role: "rider", action: "view_number" },
+    { subject_role: "driver", action: "view_number" },
+    { subject_role: "emergency_contact", action: "view_number" },
+  ]);
+
   await api(`/api/staff/rides/${rideA.id}`, { as: agentA });
-  assert.strictEqual((await pool.query("SELECT count(*)::int n FROM staff_contact_access WHERE staff_user_id=$1", [agentA.id])).rows[0].n, 4);
+
+  const count = await pool.query(
+    `SELECT count(*)::int n
+       FROM staff_contact_access
+      WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'`,
+    [agentA.id, rideA.id]
+  );
+
+  assert.strictEqual(
+    count.rows[0].n,
+    9,
+    "three contact disclosures must produce three audit rows on every reveal"
+  );
+
   assert.strictEqual((await api("/api/staff/rides/0", { as: agentA })).status, 400);
   assert.strictEqual((await api("/api/staff/rides/99999999", { as: agentA })).status, 404);
   assert.strictEqual((await api("/api/staff/rides/abc", { as: agentA })).status, 400);

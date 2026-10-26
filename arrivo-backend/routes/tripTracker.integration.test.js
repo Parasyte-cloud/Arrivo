@@ -9,7 +9,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 
 const express = require("express");
 require("express-async-errors");
-const { pool } = require("../db/db");
+const { pool, ready } = require("../db/db");
 
 let passed = 0;
 async function test(name, fn) {
@@ -46,6 +46,7 @@ const accessRows = async (staffId) => (await pool.query(
   "SELECT subject_role, action FROM staff_contact_access WHERE staff_user_id = $1 ORDER BY id", [staffId])).rows;
 
 (async () => {
+  await ready;
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   let rideId = null;
   try {
@@ -83,20 +84,29 @@ const accessRows = async (staffId) => (await pool.query(
       const r = await call(`/api/admin/trips/${rideId}/contacts`, ops.token);
       assert.strictEqual(r.status, 200);
       assert.strictEqual(r.body.rider.phone, "+2348012345678");
+      assert.ok(!("email" in r.body.rider), "contacts endpoint must not disclose rider email");
       assert.strictEqual(r.body.emergencyContact.phone, "+2348099990000");
-      assert.deepStrictEqual(await accessRows(ops.id), [{ subject_role: "rider", action: "view_number" }]);
+      assert.deepStrictEqual(await accessRows(ops.id), [
+        { subject_role: "rider", action: "view_number" },
+        { subject_role: "emergency_contact", action: "view_number" },
+      ]);
     });
 
-    await test("refreshing straight away doesn't bury the log", async () => {
+    await test("every repeated reveal is independently audited", async () => {
       await call(`/api/admin/trips/${rideId}/contacts`, ops.token);
-      assert.strictEqual((await accessRows(ops.id)).length, 1);
+      assert.deepStrictEqual(await accessRows(ops.id), [
+        { subject_role: "rider", action: "view_number" },
+        { subject_role: "emergency_contact", action: "view_number" },
+        { subject_role: "rider", action: "view_number" },
+        { subject_role: "emergency_contact", action: "view_number" },
+      ]);
     });
 
     await test("dialling from your own phone is logged, emergency contact against the rider", async () => {
       assert.strictEqual((await call(`/api/admin/trips/${rideId}/contact-log`, ops.token, { method: "POST", body: { subject: "rider" } })).status, 201);
       assert.strictEqual((await call(`/api/admin/trips/${rideId}/contact-log`, ops.token, { method: "POST", body: { subject: "emergency" } })).status, 201);
       const rows = await accessRows(ops.id);
-      assert.deepStrictEqual(rows.slice(1), [
+      assert.deepStrictEqual(rows.slice(4), [
         { subject_role: "rider", action: "call_from_phone" },
         { subject_role: "emergency_contact", action: "call_from_phone" },
       ]);
