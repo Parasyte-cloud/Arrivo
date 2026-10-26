@@ -1625,3 +1625,47 @@ body { padding-bottom: 36px; }
     transition:none !important;
   }
 }
+
+/* Team & Access staff setup lifecycle */
+.team2SetupState{
+  display:grid;
+  gap:5px;
+  min-width:110px;
+}
+
+.team2SetupState small{
+  color:var(--text-muted);
+  font-size:9px;
+}
+
+.team2Setup{
+  width:max-content;
+  display:inline-flex;
+  align-items:center;
+  min-height:23px;
+  padding:3px 8px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:999px;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.035em;
+  text-transform:uppercase;
+}
+
+.team2Setup-active{
+  color:#a9ece5;
+  border-color:rgba(71,190,176,.24);
+  background:rgba(71,190,176,.09);
+}
+
+.team2Setup-pending{
+  color:#ffc85a;
+  border-color:rgba(244,163,0,.28);
+  background:rgba(244,163,0,.10);
+}
+
+.team2Setup-expired{
+  color:#ffaaa0;
+  border-color:rgba(255,120,105,.25);
+  background:rgba(255,120,105,.08);
+}

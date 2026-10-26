@@ -4,6 +4,7 @@ const assert = require("assert");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+delete process.env.RESEND_API_KEY;
 const express = require("express");
 require("express-async-errors");
 const { pool, ready } = require("../db/db");
@@ -13,7 +14,19 @@ const staffRouter = require("./staffRides");
 let passed = 0;
 async function test(name, fn) {
   try { await fn(); console.log(`  ok  ${name}`); passed++; }
-  catch (e) { console.log(`FAIL  ${name}\n      ${e.stack.split("\n").slice(0, 3).join("\n      ")}`); process.exitCode = 1; }
+  catch (e) {
+    console.log(
+      `FAIL  ${name}\n` +
+      `      ${e.stack.split("\n").slice(0, 5).join("\n      ")}`
+    );
+
+    if ("actual" in e || "expected" in e) {
+      console.log("      ACTUAL:", e.actual);
+      console.log("      EXPECTED:", e.expected);
+    }
+
+    process.exitCode = 1;
+  }
 }
 const app = express(); app.use(express.json());
 app.use("/api/staff/people", people); app.use("/api/staff", staffRouter);
@@ -108,6 +121,8 @@ async () => {
   assert.strictEqual(r.body.created, true);
   assert.strictEqual(r.body.to, "support");
   assert.strictEqual(r.body.setupRequired, true);
+  assert.strictEqual(r.body.setupStatus, "pending");
+  assert.strictEqual(r.body.emailDelivery, "not_configured");
 
   const created = (
     await pool.query(
@@ -117,7 +132,12 @@ async () => {
          email,
          role,
          reset_token,
-         reset_token_expires
+         reset_token_expires,
+         staff_invited_at,
+         staff_invited_by,
+         staff_invite_expires_at,
+         staff_activated_at,
+         staff_invite_delivery_status
        FROM users
        WHERE email = $1`,
       [email]
@@ -130,6 +150,15 @@ async () => {
   assert.strictEqual(created.role, "support");
   assert.ok(created.reset_token);
   assert.ok(created.reset_token_expires);
+  assert.match(created.reset_token, /^[a-f0-9]{64}$/);
+  assert.ok(created.staff_invited_at);
+  assert.ok(created.staff_invited_by);
+  assert.ok(created.staff_invite_expires_at);
+  assert.strictEqual(created.staff_activated_at, null);
+  assert.strictEqual(
+    created.staff_invite_delivery_status,
+    "not_configured"
+  );
 
   const duty = (
     await pool.query(
@@ -148,6 +177,366 @@ async () => {
   made.push(created.id);
 }
 );
+await test("new staff provisioning enforces the complete manager authorization matrix", async () => {
+  const delegatedSupport =
+    `delegated-support-${stamp}@ridearrivo.com`;
+
+  const delegatedOps =
+    `delegated-ops-${stamp}@ridearrivo.com`;
+
+  const delegatedAdmin =
+    `delegated-admin-${stamp}@ridearrivo.com`;
+
+  const plainEmail =
+    `plain-new-${stamp}@ridearrivo.com`;
+
+  const leadEmail =
+    `lead-new-${stamp}@ridearrivo.com`;
+
+  const supportResult = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: dele,
+      body: {
+        email: delegatedSupport,
+        role: "support",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    supportResult.status,
+    200,
+    supportResult.text
+  );
+
+  const operationsResult = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: dele,
+      body: {
+        email: delegatedOps,
+        role: "operations",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    operationsResult.status,
+    200,
+    operationsResult.text
+  );
+
+  for (const email of [
+    delegatedSupport,
+    delegatedOps,
+  ]) {
+    const row = (
+      await pool.query(
+        "SELECT id FROM users WHERE email=$1",
+        [email]
+      )
+    ).rows[0];
+
+    assert.ok(row);
+    made.push(row.id);
+  }
+
+  const deniedAdmin = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: dele,
+      body: {
+        email: delegatedAdmin,
+        role: "admin",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    deniedAdmin.status,
+    403,
+    deniedAdmin.text
+  );
+
+  assert.strictEqual(
+    Number(
+      (
+        await pool.query(
+          "SELECT COUNT(*) AS n FROM users WHERE email=$1",
+          [delegatedAdmin]
+        )
+      ).rows[0].n
+    ),
+    0
+  );
+
+  assert.strictEqual(
+    (
+      await api(
+        "/api/staff/people/promote",
+        {
+          method: "POST",
+          as: plain,
+          body: {
+            email: plainEmail,
+            role: "support",
+          },
+        }
+      )
+    ).status,
+    403
+  );
+
+  assert.strictEqual(
+    (
+      await api(
+        "/api/staff/people/promote",
+        {
+          method: "POST",
+          as: lead,
+          body: {
+            email: leadEmail,
+            role: "support",
+          },
+        }
+      )
+    ).status,
+    403
+  );
+});
+
+await test("new staff provisioning normalizes company domains and rejects look-alikes", async () => {
+  const mixed =
+    `mixed-${stamp}@RIDEARRIVO.COM`;
+
+  const accepted = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: owner,
+      body: {
+        email: mixed,
+        role: "support",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    accepted.status,
+    200,
+    accepted.text
+  );
+
+  const normalized =
+    mixed.toLowerCase();
+
+  const row = (
+    await pool.query(
+      "SELECT id,email FROM users WHERE email=$1",
+      [normalized]
+    )
+  ).rows[0];
+
+  assert.ok(row);
+  assert.strictEqual(row.email, normalized);
+  made.push(row.id);
+
+  const lookalike =
+    `lookalike-${stamp}@ridearrivo.com.evil.example`;
+
+  const rejected = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: owner,
+      body: {
+        email: lookalike,
+        role: "support",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    rejected.status,
+    404,
+    rejected.text
+  );
+});
+
+await test("concurrent provisioning creates exactly one company identity", async () => {
+  const email =
+    `concurrent-new-${stamp}@ridearrivo.com`;
+
+  const results = await Promise.all([
+    api(
+      "/api/staff/people/promote",
+      {
+        method: "POST",
+        as: owner,
+        body: {
+          email,
+          role: "support",
+        },
+      }
+    ),
+    api(
+      "/api/staff/people/promote",
+      {
+        method: "POST",
+        as: owner,
+        body: {
+          email,
+          role: "support",
+        },
+      }
+    ),
+  ]);
+
+  assert.deepStrictEqual(
+    results
+      .map((r) => r.status)
+      .sort(),
+    [200, 409]
+  );
+
+  const rows = (
+    await pool.query(
+      "SELECT id FROM users WHERE email=$1",
+      [email]
+    )
+  ).rows;
+
+  assert.strictEqual(rows.length, 1);
+  made.push(rows[0].id);
+});
+
+await test("staff setup email can be regenerated and its delivery state is visible", async () => {
+  const email =
+    `resend-setup-${stamp}@ridearrivo.com`;
+
+  const provision = await api(
+    "/api/staff/people/promote",
+    {
+      method: "POST",
+      as: owner,
+      body: {
+        email,
+        role: "support",
+      },
+    }
+  );
+
+  assert.strictEqual(
+    provision.status,
+    200,
+    provision.text
+  );
+
+  assert.strictEqual(
+    provision.body.emailDelivery,
+    "not_configured"
+  );
+
+  const before = (
+    await pool.query(
+      `SELECT
+         id,
+         reset_token,
+         staff_invited_at,
+         staff_activated_at,
+         staff_invite_delivery_status
+       FROM users
+       WHERE email=$1`,
+      [email]
+    )
+  ).rows[0];
+
+  assert.ok(before);
+  assert.ok(before.staff_invited_at);
+  assert.strictEqual(
+    before.staff_activated_at,
+    null
+  );
+
+  assert.strictEqual(
+    before.staff_invite_delivery_status,
+    "not_configured"
+  );
+
+  const resend = await api(
+    `/api/staff/people/${before.id}/resend-setup`,
+    {
+      method: "POST",
+      as: owner,
+    }
+  );
+
+  assert.strictEqual(
+    resend.status,
+    200,
+    resend.text
+  );
+
+  assert.strictEqual(
+    resend.body.emailDelivery,
+    "not_configured"
+  );
+
+  const after = (
+    await pool.query(
+      "SELECT reset_token FROM users WHERE id=$1",
+      [before.id]
+    )
+  ).rows[0];
+
+  assert.notStrictEqual(
+    after.reset_token,
+    before.reset_token
+  );
+
+  const directory =
+    await api(
+      "/api/staff/people",
+      { as: owner }
+    );
+
+  const person =
+    directory.body.people.find(
+      (p) => p.id === before.id
+    );
+
+  assert.ok(person);
+
+  assert.strictEqual(
+    person.setup_status,
+    "pending"
+  );
+
+  assert.strictEqual(
+    person.invitation_delivery_status,
+    "not_configured"
+  );
+
+  assert.strictEqual(
+    (
+      await api(
+        `/api/staff/people/${before.id}/resend-setup`,
+        {
+          method: "POST",
+          as: plain,
+        }
+      )
+    ).status,
+    403
+  );
+
+  made.push(before.id);
+});
+
 await test("changing role signs the person out everywhere (old token stops working)", async () => {
   const p = await mk("support");
   const before = await roleOf(p.id);

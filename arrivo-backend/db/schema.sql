@@ -2019,3 +2019,25 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_permissions JSONB;
 -- When someone last signed in with a password, so the Team page can show
 -- accounts nobody is using any more.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Staff invitation lifecycle.
+-- Kept separately from reset_token because ordinary password resets and
+-- privileged staff invitations are different governance events.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_by INTEGER
+  REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_expires_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_activated_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_delivery_status TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;

@@ -14,6 +14,7 @@ const EVENT_TEXT = {
   promote: "brought onto staff", change: "changed role", remove: "removed from staff",
   grant_manage: "given staff management", revoke_manage: "staff management taken away",
   permissions: "access changed",
+  setup_email: "had their setup email resent",
 };
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -101,6 +102,7 @@ export function TeamPage() {
   const [staffName, setStaffName] = useState("");
   const [role, setRole] = useState("support");
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [setupBusyId, setSetupBusyId] = useState(null);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
 
@@ -130,6 +132,36 @@ export function TeamPage() {
     setErr(null); setMsg(null);
     try { await fn(); setMsg(ok); await load(); reloadAccess(); } catch (e) { setErr(e.message); }
   };
+  const resendSetup = async (p) => {
+    if (setupBusyId) return;
+
+    setSetupBusyId(p.id);
+    setErr(null);
+    setMsg(null);
+
+    try {
+      const result =
+        await api.resendPersonSetup(
+          token,
+          p.id
+        );
+
+      setMsg(
+        result.emailDelivery === "sent"
+          ? `A new password setup email was sent to ${p.email}.`
+          : result.emailDelivery === "not_configured"
+            ? `Setup email for ${p.email} was regenerated, but email delivery is not configured.`
+            : `A new setup link was generated for ${p.email}, but delivery failed.`
+      );
+
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSetupBusyId(null);
+    }
+  };
+
   const changeRole = (p, r) => {
     const word = r === "rider"
       ? `Remove ${firstName(p.name)} from staff? They're signed out everywhere at once and their open rides move to others.`
@@ -226,11 +258,20 @@ export function TeamPage() {
                 staffName.trim()
               );
 
-              setMsg(
-                result?.created
-                  ? "Staff account provisioned. A secure password setup link has been requested for that RideArrivo email."
-                  : "Existing account updated. The new staff role and access preset are active."
-              );
+              if (result?.created) {
+                const deliveryMessage =
+                  result.emailDelivery === "sent"
+                    ? "Staff account provisioned and the secure password setup email was sent."
+                    : result.emailDelivery === "not_configured"
+                      ? "Staff account provisioned, but setup email delivery is not configured. Use Resend setup email after mail is configured."
+                      : "Staff account provisioned, but the setup email could not be delivered. Use Resend setup email.";
+
+                setMsg(deliveryMessage);
+              } else {
+                setMsg(
+                  "Existing account updated. The new staff role and access preset are active."
+                );
+              }
 
               setEmail("");
               setStaffName("");
@@ -344,6 +385,7 @@ export function TeamPage() {
             <tr>
               <th>Name</th>
               <th>Email address</th>
+              <th>Setup</th>
               <th>Role</th>
               <th>Access</th>
               <th>Last sign-in</th>
@@ -380,6 +422,35 @@ export function TeamPage() {
                         Email unavailable
                       </span>
                     )}
+                  </td>
+
+                  <td data-label="Setup">
+                    <div className="team2SetupState">
+                      <span
+                        className={`team2Setup team2Setup-${
+                          p.setup_status || "active"
+                        }`}
+                      >
+                        {p.setup_status === "pending"
+                          ? "Setup pending"
+                          : p.setup_status === "expired"
+                            ? "Invite expired"
+                            : "Active"}
+                      </span>
+
+                      {p.setup_status !== "active" &&
+                      p.invitation_delivery_status ? (
+                        <small>
+                          Email: {
+                            p.invitation_delivery_status === "sent"
+                              ? "sent"
+                              : p.invitation_delivery_status === "not_configured"
+                                ? "not configured"
+                                : "failed"
+                          }
+                        </small>
+                      ) : null}
+                    </div>
                   </td>
 
                   <td data-label="Role">
@@ -436,6 +507,21 @@ export function TeamPage() {
                               onClick={() => setEditing(p)}
                             >
                               Edit access
+                            </button>
+                          ) : null}
+
+                          {editable &&
+                          p.setup_status !== "active" ? (
+                            <button
+                              type="button"
+                              disabled={setupBusyId === p.id}
+                              onClick={() => {
+                                void resendSetup(p);
+                              }}
+                            >
+                              {setupBusyId === p.id
+                                ? "Sending setup email…"
+                                : "Resend setup email"}
                             </button>
                           ) : null}
 

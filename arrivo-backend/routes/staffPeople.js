@@ -15,6 +15,7 @@ const rules = require("../services/staffAdmin");
 const team = require("../services/rideTeam");
 const access = require("../services/staffAccess");
 const { sendPasswordResetEmail } = require("../services/email");
+const { issueResetToken } = require("../services/passwordResetToken");
 
 const SALT_ROUNDS = 10;
 const router = express.Router();
@@ -47,6 +48,11 @@ router.get("/", requireViewer, async (req, res) => {
   const r = await pool.query(
     `SELECT u.id, u.name, u.email, u.role, u.is_owner, u.can_manage_staff, u.support_lead,
             u.staff_permissions, u.last_login_at, u.created_at,
+            u.staff_invited_at,
+            u.staff_invite_expires_at,
+            u.staff_activated_at,
+            u.staff_invite_delivery_status,
+            u.staff_invite_last_attempt_at,
             sd.on_duty, sd.team
        FROM users u LEFT JOIN staff_duty sd ON sd.user_id = u.id
       WHERE u.role IN ('admin','support','operations') AND u.deleted_at IS NULL
@@ -58,6 +64,15 @@ router.get("/", requireViewer, async (req, res) => {
       ...u,
       openRides: load ? await load : 0,
       // What they can actually see and change, and which areas differ from their role.
+      setup_status:
+        !u.staff_invited_at || u.staff_activated_at
+          ? "active"
+          : u.staff_invite_expires_at &&
+              new Date(u.staff_invite_expires_at).getTime() > Date.now()
+            ? "pending"
+            : "expired",
+      invitation_delivery_status:
+        u.staff_invite_delivery_status || null,
       permissions: access.effectivePermissions(u),
       customised: Object.keys(access.cleanOverrides(u.staff_permissions)),
     });
@@ -70,6 +85,34 @@ router.get("/", requireViewer, async (req, res) => {
 function sdLoad(u) {
   if (!u.team) return null;
   return pool.query("SELECT staff_open_load($1, $2) AS n", [u.id, u.team]).then((x) => x.rows[0].n);
+}
+
+function passwordSetupUrl(token) {
+  return `${
+    process.env.PASSWORD_RESET_BASE_URL ||
+    "https://ridearrivo.com/reset-password.html"
+  }?token=${token}`;
+}
+
+async function deliverStaffSetupEmail(email, token) {
+  try {
+    const result = await sendPasswordResetEmail(
+      email,
+      passwordSetupUrl(token)
+    );
+
+    if (result?.ok) return "sent";
+    if (result?.skipped) return "not_configured";
+
+    return "failed";
+  } catch (error) {
+    console.error(
+      "Staff password setup email failed:",
+      error?.message || error
+    );
+
+    return "failed";
+  }
 }
 
 async function applyRoleChange(client, actor, targetId, newRole, note) {
@@ -197,10 +240,10 @@ randomPassword,
 SALT_ROUNDS
 );
 
-const resetToken =
-crypto
-.randomBytes(32)
-.toString("hex");
+const {
+token: resetToken,
+storedToken,
+} = issueResetToken();
 
 const resetExpires =
 new Date(
@@ -229,7 +272,10 @@ email,
 password_hash,
 role,
 reset_token,
-reset_token_expires
+reset_token_expires,
+staff_invited_at,
+staff_invited_by,
+staff_invite_expires_at
 )
 VALUES (
 $1,
@@ -237,6 +283,9 @@ $2,
 $3,
 'rider',
 $4,
+$5,
+now(),
+$6,
 $5
 )
 RETURNING id`,
@@ -244,8 +293,9 @@ RETURNING id`,
 displayName,
 email,
 passwordHash,
-resetToken,
+storedToken,
 resetExpires,
+req.actor.id,
 ]
 );
 
@@ -295,32 +345,19 @@ await team.rebalance(
 "role_changed"
 );
 
-const resetUrl =
-`${process.env.PASSWORD_RESET_BASE_URL ||
-"https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
-
-/*
- * Account creation should not fail just because the mail provider is
- * temporarily unavailable. The reset token remains valid for one hour.
- */
-sendPasswordResetEmail(
+const emailDelivery =
+await deliverStaffSetupEmail(
 email,
-resetUrl
-)
-.then((result) => {
-if (!result?.ok && !result?.skipped) {
-console.error(
-"New staff password setup email failed:",
-email
+resetToken
 );
-}
-})
-.catch((error) => {
-console.error(
-"New staff password setup email failed:",
-error?.message || error
+
+await pool.query(
+`UPDATE users
+    SET staff_invite_delivery_status = $2,
+        staff_invite_last_attempt_at = now()
+  WHERE id = $1`,
+[createdId, emailDelivery]
 );
-});
 
 return res.json({
 ok: true,
@@ -329,8 +366,157 @@ from: roleChange.from,
 to: role,
 ridesMoved: moved,
 setupRequired: true,
+setupStatus: "pending",
+emailDelivery,
 });
 });
+
+router.post(
+"/:id/resend-setup",
+requireViewer,
+requireManager,
+async (req, res) => {
+  const id = parseId(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({
+      error: "Bad id.",
+    });
+  }
+
+  const target = (
+    await pool.query(
+      `SELECT
+         id,
+         email,
+         role,
+         is_owner,
+         staff_invited_at,
+         staff_activated_at
+       FROM users
+       WHERE id = $1
+         AND deleted_at IS NULL`,
+      [id]
+    )
+  ).rows[0];
+
+  if (!target) {
+    return res.status(404).json({
+      error: "Staff account not found.",
+    });
+  }
+
+  /*
+   * Delegated staff managers may manage Support/Operations,
+   * but only the owner may manage an Admin invitation.
+   */
+  if (
+    target.role === "admin" &&
+    !req.actor.is_owner
+  ) {
+    return res.status(403).json({
+      error:
+        "Only the owner can manage an administrator setup invitation.",
+    });
+  }
+
+  if (
+    !rules.STAFF_ROLES.includes(target.role) ||
+    !target.staff_invited_at ||
+    target.staff_activated_at
+  ) {
+    return res.status(409).json({
+      error:
+        "This account does not have a pending staff setup invitation.",
+    });
+  }
+
+  const email =
+    String(target.email || "")
+      .trim()
+      .toLowerCase();
+
+  if (!email.endsWith("@ridearrivo.com")) {
+    return res.status(409).json({
+      error:
+        "Staff setup invitations can only be sent to RideArrivo company email addresses.",
+    });
+  }
+
+  const {
+    token: resetToken,
+    storedToken,
+  } = issueResetToken();
+
+  const resetExpires =
+    new Date(
+      Date.now() +
+      60 * 60 * 1000
+    );
+
+  await pool.query(
+    `UPDATE users
+        SET reset_token = $2,
+            reset_token_expires = $3,
+            staff_invited_by = $4,
+            staff_invite_expires_at = $3,
+            staff_invite_delivery_status = NULL
+      WHERE id = $1`,
+    [
+      id,
+      storedToken,
+      resetExpires,
+      req.actor.id,
+    ]
+  );
+
+  const emailDelivery =
+    await deliverStaffSetupEmail(
+      email,
+      resetToken
+    );
+
+  await pool.query(
+    `UPDATE users
+        SET staff_invite_delivery_status = $2,
+            staff_invite_last_attempt_at = now()
+      WHERE id = $1`,
+    [id, emailDelivery]
+  );
+
+  await pool.query(
+    `INSERT INTO staff_role_events (
+       actor_id,
+       target_id,
+       action,
+       from_role,
+       to_role,
+       note
+     )
+     VALUES (
+       $1,
+       $2,
+       'setup_email',
+       $3,
+       $3,
+       $4
+     )`,
+    [
+      req.actor.id,
+      id,
+      target.role,
+      `delivery=${emailDelivery}`,
+    ]
+  );
+
+  return res.json({
+    ok: true,
+    setupRequired: true,
+    setupStatus: "pending",
+    emailDelivery,
+  });
+}
+);
 
 router.put("/:id/role", requireViewer, requireManager, async (req, res) => {
   const id = parseId(req.params.id);

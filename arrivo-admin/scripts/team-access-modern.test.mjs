@@ -40,3 +40,12 @@ assert.match(css, /backdrop-filter/);
 assert.match(css, /@media\(max-width:900px\)/);
 
 console.log("PASS Team & Access modern UI contract");
+
+assert.match(page, /Resend setup email/);
+assert.match(page, /setup_status/);
+assert.match(page, /invitation_delivery_status/);
+assert.match(page, /emailDelivery/);
+assert.match(page, /team2SetupState/);
+assert.match(api, /resendPersonSetup/);
+assert.match(css, /\.team2Setup-pending/);
+assert.match(css, /\.team2Setup-expired/);
