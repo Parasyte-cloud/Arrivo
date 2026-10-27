@@ -7,12 +7,17 @@
 // A role change signs the person out everywhere, takes them off duty and hands
 // their open rides to others straight away.
 const express = require("express");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { pool } = require("../db/db");
 const { requireAuth, requireAnyRole } = require("../middleware/auth");
 const rules = require("../services/staffAdmin");
 const team = require("../services/rideTeam");
 const access = require("../services/staffAccess");
+const { sendPasswordResetEmail } = require("../services/email");
+const { issueResetToken } = require("../services/passwordResetToken");
 
+const SALT_ROUNDS = 10;
 const router = express.Router();
 router.use(requireAuth, requireAnyRole(["admin", "support"]));
 
@@ -43,6 +48,11 @@ router.get("/", requireViewer, async (req, res) => {
   const r = await pool.query(
     `SELECT u.id, u.name, u.email, u.role, u.is_owner, u.can_manage_staff, u.support_lead,
             u.staff_permissions, u.last_login_at, u.created_at,
+            u.staff_invited_at,
+            u.staff_invite_expires_at,
+            u.staff_activated_at,
+            u.staff_invite_delivery_status,
+            u.staff_invite_last_attempt_at,
             sd.on_duty, sd.team
        FROM users u LEFT JOIN staff_duty sd ON sd.user_id = u.id
       WHERE u.role IN ('admin','support','operations') AND u.deleted_at IS NULL
@@ -54,6 +64,15 @@ router.get("/", requireViewer, async (req, res) => {
       ...u,
       openRides: load ? await load : 0,
       // What they can actually see and change, and which areas differ from their role.
+      setup_status:
+        !u.staff_invited_at || u.staff_activated_at
+          ? "active"
+          : u.staff_invite_expires_at &&
+              new Date(u.staff_invite_expires_at).getTime() > Date.now()
+            ? "pending"
+            : "expired",
+      invitation_delivery_status:
+        u.staff_invite_delivery_status || null,
       permissions: access.effectivePermissions(u),
       customised: Object.keys(access.cleanOverrides(u.staff_permissions)),
     });
@@ -66,6 +85,34 @@ router.get("/", requireViewer, async (req, res) => {
 function sdLoad(u) {
   if (!u.team) return null;
   return pool.query("SELECT staff_open_load($1, $2) AS n", [u.id, u.team]).then((x) => x.rows[0].n);
+}
+
+function passwordSetupUrl(token) {
+  return `${
+    process.env.PASSWORD_RESET_BASE_URL ||
+    "https://ridearrivo.com/reset-password.html"
+  }?token=${token}`;
+}
+
+async function deliverStaffSetupEmail(email, token) {
+  try {
+    const result = await sendPasswordResetEmail(
+      email,
+      passwordSetupUrl(token)
+    );
+
+    if (result?.ok) return "sent";
+    if (result?.skipped) return "not_configured";
+
+    return "failed";
+  } catch (error) {
+    console.error(
+      "Staff password setup email failed:",
+      error?.message || error
+    );
+
+    return "failed";
+  }
 }
 
 async function applyRoleChange(client, actor, targetId, newRole, note) {
@@ -114,13 +161,362 @@ async function runChange(req, res, targetId, newRole) {
 }
 
 router.post("/promote", requireViewer, requireManager, async (req, res) => {
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const role = req.body?.role;
-  if (!email || !rules.STAFF_ROLES.includes(role)) return res.status(400).json({ error: "Need an email and a role (admin, support or operations)." });
-  const u = await pool.query("SELECT id FROM users WHERE lower(email) = $1 AND deleted_at IS NULL", [email]);
-  if (!u.rows[0]) return res.status(404).json({ error: "No account with that email. They need to sign up first." });
-  return runChange(req, res, u.rows[0].id, role);
+const email =
+String(req.body?.email || "")
+.trim()
+.toLowerCase();
+
+const role = req.body?.role;
+
+if (
+!email ||
+!rules.STAFF_ROLES.includes(role)
+) {
+return res.status(400).json({
+error:
+"Need an email and a role (admin, support or operations).",
 });
+}
+
+/*
+ * Existing Arrivo account:
+ * preserve the current governed role-change path.
+ */
+const existing = await pool.query(
+`SELECT id
+FROM users
+WHERE lower(email) = $1
+AND deleted_at IS NULL`,
+[email]
+);
+
+if (existing.rows[0]) {
+return runChange(
+req,
+res,
+existing.rows[0].id,
+role
+);
+}
+
+/*
+ * Never auto-provision an external identity.
+ * New staff provisioning is restricted to RideArrivo company mail.
+ */
+if (!email.endsWith("@ridearrivo.com")) {
+return res.status(404).json({
+error:
+"No RideArrivo account exists with that email.",
+});
+}
+
+const requestedName =
+String(req.body?.name || "")
+.trim();
+
+const inferredName =
+email
+.split("@")[0]
+.replace(/[._-]+/g, " ")
+.replace(
+/\b\w/g,
+(char) => char.toUpperCase()
+)
+.trim() ||
+"RideArrivo staff";
+
+const displayName =
+(requestedName || inferredName)
+.slice(0, 120);
+
+const randomPassword =
+crypto
+.randomBytes(32)
+.toString("hex");
+
+const passwordHash =
+bcrypt.hashSync(
+randomPassword,
+SALT_ROUNDS
+);
+
+const {
+token: resetToken,
+storedToken,
+} = issueResetToken();
+
+const resetExpires =
+new Date(
+Date.now() +
+60 * 60 * 1000
+);
+
+const client =
+await pool.connect();
+
+let createdId = null;
+let roleChange = null;
+
+try {
+await client.query("BEGIN");
+
+/*
+ * Start as rider only so the normal staff-governance function remains
+ * authoritative for the actual promotion.
+ */
+const inserted =
+await client.query(
+`INSERT INTO users (
+name,
+email,
+password_hash,
+role,
+reset_token,
+reset_token_expires,
+staff_invited_at,
+staff_invited_by,
+staff_invite_expires_at
+)
+VALUES (
+$1,
+$2,
+$3,
+'rider',
+$4,
+$5,
+now(),
+$6,
+$5
+)
+RETURNING id`,
+[
+displayName,
+email,
+passwordHash,
+storedToken,
+resetExpires,
+req.actor.id,
+]
+);
+
+createdId =
+inserted.rows[0].id;
+
+roleChange =
+await applyRoleChange(
+client,
+req.actor,
+createdId,
+role,
+"Provisioned from Team & Access"
+);
+
+if (!roleChange.ok) {
+await client.query("ROLLBACK");
+
+return res
+.status(roleChange.status)
+.json({
+error: roleChange.error,
+code: roleChange.code,
+});
+}
+
+await client.query("COMMIT");
+} catch (error) {
+await client
+.query("ROLLBACK")
+.catch(() => {});
+
+if (error?.code === "23505") {
+return res.status(409).json({
+error:
+"That staff account was created at the same time. Refresh Team & Access and try again.",
+});
+}
+
+throw error;
+} finally {
+client.release();
+}
+
+const moved =
+await team.rebalance(
+"role_changed"
+);
+
+const emailDelivery =
+await deliverStaffSetupEmail(
+email,
+resetToken
+);
+
+await pool.query(
+`UPDATE users
+    SET staff_invite_delivery_status = $2,
+        staff_invite_last_attempt_at = now()
+  WHERE id = $1`,
+[createdId, emailDelivery]
+);
+
+return res.json({
+ok: true,
+created: true,
+from: roleChange.from,
+to: role,
+ridesMoved: moved,
+setupRequired: true,
+setupStatus: "pending",
+emailDelivery,
+});
+});
+
+router.post(
+"/:id/resend-setup",
+requireViewer,
+requireManager,
+async (req, res) => {
+  const id = parseId(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({
+      error: "Bad id.",
+    });
+  }
+
+  const target = (
+    await pool.query(
+      `SELECT
+         id,
+         email,
+         role,
+         is_owner,
+         staff_invited_at,
+         staff_activated_at
+       FROM users
+       WHERE id = $1
+         AND deleted_at IS NULL`,
+      [id]
+    )
+  ).rows[0];
+
+  if (!target) {
+    return res.status(404).json({
+      error: "Staff account not found.",
+    });
+  }
+
+  /*
+   * Delegated staff managers may manage Support/Operations,
+   * but only the owner may manage an Admin invitation.
+   */
+  if (
+    target.role === "admin" &&
+    !req.actor.is_owner
+  ) {
+    return res.status(403).json({
+      error:
+        "Only the owner can manage an administrator setup invitation.",
+    });
+  }
+
+  if (
+    !rules.STAFF_ROLES.includes(target.role) ||
+    !target.staff_invited_at ||
+    target.staff_activated_at
+  ) {
+    return res.status(409).json({
+      error:
+        "This account does not have a pending staff setup invitation.",
+    });
+  }
+
+  const email =
+    String(target.email || "")
+      .trim()
+      .toLowerCase();
+
+  if (!email.endsWith("@ridearrivo.com")) {
+    return res.status(409).json({
+      error:
+        "Staff setup invitations can only be sent to RideArrivo company email addresses.",
+    });
+  }
+
+  const {
+    token: resetToken,
+    storedToken,
+  } = issueResetToken();
+
+  const resetExpires =
+    new Date(
+      Date.now() +
+      60 * 60 * 1000
+    );
+
+  await pool.query(
+    `UPDATE users
+        SET reset_token = $2,
+            reset_token_expires = $3,
+            staff_invited_by = $4,
+            staff_invite_expires_at = $3,
+            staff_invite_delivery_status = NULL
+      WHERE id = $1`,
+    [
+      id,
+      storedToken,
+      resetExpires,
+      req.actor.id,
+    ]
+  );
+
+  const emailDelivery =
+    await deliverStaffSetupEmail(
+      email,
+      resetToken
+    );
+
+  await pool.query(
+    `UPDATE users
+        SET staff_invite_delivery_status = $2,
+            staff_invite_last_attempt_at = now()
+      WHERE id = $1`,
+    [id, emailDelivery]
+  );
+
+  await pool.query(
+    `INSERT INTO staff_role_events (
+       actor_id,
+       target_id,
+       action,
+       from_role,
+       to_role,
+       note
+     )
+     VALUES (
+       $1,
+       $2,
+       'setup_email',
+       $3,
+       $3,
+       $4
+     )`,
+    [
+      req.actor.id,
+      id,
+      target.role,
+      `delivery=${emailDelivery}`,
+    ]
+  );
+
+  return res.json({
+    ok: true,
+    setupRequired: true,
+    setupStatus: "pending",
+    emailDelivery,
+  });
+}
+);
 
 router.put("/:id/role", requireViewer, requireManager, async (req, res) => {
   const id = parseId(req.params.id);

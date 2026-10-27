@@ -8,6 +8,7 @@ const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
 const { setSessionCookie, clearSessionCookie } = require("../middleware/sessionCookie");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
+const { hashResetToken, issueResetToken } = require("../services/passwordResetToken");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
@@ -731,12 +732,23 @@ router.post("/forgot-password", passwordResetLimiter, async (req, res) => {
   const user = result.rows[0];
   if (!user) return res.json(genericResponse); // don't reveal whether the email exists
 
-  const resetToken = crypto.randomBytes(32).toString("hex");
+  const { token: resetToken, storedToken } = issueResetToken();
   const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  await pool.query("UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3", [
-    resetToken, expires, user.id,
-  ]);
+  await pool.query(
+    `UPDATE users
+        SET reset_token = $1,
+            reset_token_expires = $2,
+            staff_invite_expires_at =
+              CASE
+                WHEN staff_invited_at IS NOT NULL
+                 AND staff_activated_at IS NULL
+                THEN $2
+                ELSE staff_invite_expires_at
+              END
+      WHERE id = $3`,
+    [storedToken, expires, user.id]
+  );
 
   const resetUrl = `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
   sendPasswordResetEmail(user.email, resetUrl).catch((e) => console.error("Reset email failed:", e.message));
@@ -752,16 +764,38 @@ router.post("/reset-password", passwordResetLimiter, async (req, res) => {
   const newPasswordIssue = passwordProblem(newPassword);
   if (newPasswordIssue) return res.status(400).json({ error: newPasswordIssue });
 
+  const tokenHash = hashResetToken(token);
+
+  /*
+   * New reset links store only SHA-256(token).
+   * The raw-token fallback keeps already-issued links working during rollout.
+   * It can be removed after the maximum legacy reset-link lifetime has passed.
+   */
   const result = await pool.query(
-    "SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > now()",
-    [token]
+    `SELECT *
+       FROM users
+      WHERE reset_token IN ($1, $2)
+        AND reset_token_expires > now()`,
+    [tokenHash, token]
   );
   const user = result.rows[0];
   if (!user) return res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
 
   const passwordHash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
   await pool.query(
-    "UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1 WHERE id = $2",
+    `UPDATE users
+        SET password_hash = $1,
+            reset_token = NULL,
+            reset_token_expires = NULL,
+            token_version = token_version + 1,
+            staff_activated_at =
+              CASE
+                WHEN staff_invited_at IS NOT NULL
+                 AND staff_activated_at IS NULL
+                THEN now()
+                ELSE staff_activated_at
+              END
+      WHERE id = $2`,
     [passwordHash, user.id]
   );
 

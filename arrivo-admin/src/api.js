@@ -265,8 +265,23 @@ export const setSupportLead = (token, userId, isLead) =>
   request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
 export const getPeople = (token) => request("/api/staff/people", token);
 export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
-export const promotePerson = (token, email, role, note) =>
-  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const promotePerson = (
+  token,
+  email,
+  role,
+  note,
+  name = ""
+) =>
+request("/api/staff/people/promote", token, {
+  method: "POST",
+  body: JSON.stringify({
+    email,
+    role,
+    note,
+    ...(name.trim() ? { name: name.trim() } : {}),
+  }),
+});
+
 export const changePersonRole = (token, id, role, note) =>
   request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
 export const setCanManageStaff = (token, id, allowed) =>
@@ -282,3 +297,9 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+
+export const resendPersonSetup = (token, id) =>
+  request(`/api/staff/people/${id}/resend-setup`, {
+    method: "POST",
+    token,
+  });
