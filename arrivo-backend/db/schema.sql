@@ -1827,7 +1827,7 @@ CREATE TABLE IF NOT EXISTS staff_contact_access (
   ride_id INTEGER REFERENCES rides(id) ON DELETE SET NULL,
   subject_user_id INTEGER NOT NULL REFERENCES users(id),
   subject_role TEXT NOT NULL, -- 'rider' | 'driver'
-  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone'
+  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone' | 'view_pnr'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_contact_access_subject ON staff_contact_access(subject_user_id, created_at DESC);

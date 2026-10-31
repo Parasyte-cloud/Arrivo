@@ -137,7 +137,8 @@ async function sweepReminders() {
       const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null });
       await recordTracking(ride, looked);
       // Cancelled arrival: keep the fare as wallet credit (off unless FLIGHT_CANCEL_CREDIT=on).
-      if (flightCredit.decideCredit(ride, looked).action !== "none") {
+      const decision = flightCredit.decideCredit(ride, looked).action;
+      if (decision === "credit" || decision === "close") {
         await creditCancelledArrival(ride);
         continue;
       }

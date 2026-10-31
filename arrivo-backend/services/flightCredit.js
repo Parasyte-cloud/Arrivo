@@ -47,14 +47,37 @@ function nameMatches(query, candidate) {
   return q.every((w) => words.some((c) => c.startsWith(w)));
 }
 
+// Only these rails put the rider's own money in. A family wallet paid from the plan owner's balance
+// and a membership ride cost the rider nothing, so crediting the rider's wallet would hand them cash
+// they never paid. Those two are left for Ops to settle by hand.
+const CASH_RAILS = ["card", "wallet"];
+
+// A provider can be wrong once. Money only moves when the cancellation was seen on an earlier sweep
+// at least this long ago and is still what it says now.
+const CONFIRM_AFTER_MS = 8 * 60 * 1000;
+
+function seenCancelledEarlier(ride, now = Date.now()) {
+  return ride.flight_tracking_state === "cancelled" && !!ride.flight_checked_at &&
+    now - new Date(ride.flight_checked_at).getTime() >= CONFIRM_AFTER_MS;
+}
+
 // Pure. Says what should happen for a ride given what the flight lookup returned.
-function decideCredit(ride, looked, env = process.env) {
+// "ride" is the row as it was BEFORE this sweep recorded the new state, so flight_tracking_state is
+// what we saw last time.
+function decideCredit(ride, looked, env = process.env, now = Date.now()) {
   if (!ride || !looked) return { action: "none", why: "missing" };
   if (ride.booking_type !== "one_way") return { action: "none", why: "not_arrival" };
+  if (ride.is_fleet_companion) return { action: "none", why: "fleet_companion" };
   if (looked.state !== "cancelled") return { action: "none", why: "not_cancelled" };
   if (!STATUSES_THAT_CAN_BE_CREDITED.includes(ride.ride_status)) return { action: "none", why: "ride_not_open" };
   if (!creditEnabled(env)) return { action: "none", why: "switched_off" };
-  if (ride.payment_status === "paid") return { action: "credit", amount: Number(ride.fare_naira) };
+  // Never act automatically on a lookup that was not pinned to a date: it could be another day's flight.
+  if (!(ride.flight_date_str || ride.flight_date)) return { action: "none", why: "no_flight_date" };
+  if (!seenCancelledEarlier(ride, now)) return { action: "wait", why: "first_sighting" };
+  if (ride.payment_status === "paid") {
+    if (!CASH_RAILS.includes(ride.payment_method)) return { action: "none", why: "needs_ops_rail" };
+    return { action: "credit", amount: Number(ride.fare_naira) };
+  }
   // Pay-later rides have taken no money, so there is nothing to keep. The ride is closed so no
   // driver is sent for a flight that is not coming.
   return { action: "close", amount: 0 };
@@ -80,6 +103,11 @@ async function applyCredit(rideId, { actorId = null, source = "scheduler", env =
     if (!ride) { await client.query("ROLLBACK"); return { done: false, why: "not_found" }; }
     if (ride.booking_type !== "one_way") { await client.query("ROLLBACK"); return { done: false, why: "not_arrival" }; }
     if (!STATUSES_THAT_CAN_BE_CREDITED.includes(ride.ride_status)) { await client.query("ROLLBACK"); return { done: false, why: "ride_not_open" }; }
+
+    if (ride.payment_status === "paid" && Number(ride.fare_naira) > 0 && !CASH_RAILS.includes(ride.payment_method)) {
+      await client.query("ROLLBACK");
+      return { done: false, why: "needs_ops_rail" };
+    }
 
     let amount = 0;
     let creditId = null;
@@ -112,6 +140,12 @@ async function applyCredit(rideId, { actorId = null, source = "scheduler", env =
       `UPDATE rides SET ride_status = 'cancelled', flight_issue = 'cancelled', flight_issue_notified_at = now(),
               payment_status = $2, updated_at = now() WHERE id = $1`,
       [ride.id, amount > 0 ? "credited" : ride.payment_status]
+    );
+    // A convoy has one flight: the extra vehicles go with the main ride.
+    await client.query(
+      `UPDATE rides SET ride_status = 'cancelled', flight_issue = 'cancelled', updated_at = now()
+       WHERE fleet_group_id = $1 AND is_fleet_companion = true AND ride_status IN ('requested', 'accepted')`,
+      [ride.id]
     );
     await client.query("COMMIT");
     return { done: true, amount, creditId, ride };
@@ -191,4 +225,4 @@ async function moveCredit(creditId, toUserId, { actorId, note = "", db = null } 
   }
 }
 
-module.exports = { creditEnabled, nameKey, nameMatches, decideCredit, creditMessage, applyCredit, searchCredits, moveCredit };
+module.exports = { CASH_RAILS, seenCancelledEarlier, creditEnabled, nameKey, nameMatches, decideCredit, creditMessage, applyCredit, searchCredits, moveCredit };
