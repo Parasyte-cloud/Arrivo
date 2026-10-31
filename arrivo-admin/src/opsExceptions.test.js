@@ -102,4 +102,14 @@ test("tracked, delayed, landed and too-early flights are not exceptions", () => 
 });
 
 
+test("an arrival is ordered by the flight estimate, a drop-off by its pickup time", () => {
+  const out = upcomingAirport([
+    { id: 1, flight_number: "BA75", booking_type: "one_way", ride_status: "accepted", scheduled_pickup_at: at(30), flight_eta: at(200) },
+    { id: 2, flight_number: "ET905", booking_type: "one_way", ride_status: "accepted", scheduled_pickup_at: at(90), flight_eta: at(45) },
+    { id: 3, flight_number: "KQ", booking_type: "dropoff", ride_status: "accepted", scheduled_pickup_at: at(60), flight_eta: at(5) },
+  ], NOW);
+  assert.deepEqual(out.map((x) => x.trip.id).sort(), [2, 3].sort());
+  assert.equal(out[0].trip.id, 2);
+});
+
 console.log(`\n${passed} passed`);
