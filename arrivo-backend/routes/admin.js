@@ -5,6 +5,7 @@ const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth
 const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlight } = require("../services/flightLookup");
 const pnrVault = require("../services/pnrVault");
+const flightCredit = require("../services/flightCredit");
 const { phoneHint } = require("../services/rideTeam");
 
 const router = express.Router();
@@ -236,7 +237,7 @@ const TRIP_SELECT = `
          rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
          rides.flight_number, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date, rides.passenger_surname,
          rides.pnr_masked, (rides.pnr_enc IS NOT NULL) AS has_pnr,
-         rides.flight_tracking_state, rides.flight_tracking_reason, rides.flight_checked_at,
+         rides.flight_tracking_state, rides.flight_tracking_reason, rides.flight_checked_at, rides.flight_eta,
          rides.booking_type, rides.vehicle_type, rides.fare_naira, rides.distance_km, rides.duration_min,
          rides.scheduled_pickup_at, rides.tracking_started_at, rides.completed_at, rides.created_at,
          rides.emergency_contact_name, rides.emergency_contact_phone, rides.admin_notes,
@@ -857,6 +858,47 @@ router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
     ]
   );
   res.json({ venue: updated.rows[0] });
+});
+
+// ── Cancelled flight credits (services/flightCredit.js) ───────────────────
+// The fare of a cancelled arrival is kept as wallet credit. This is the Ops side: find a credit by
+// rider name, passenger surname, email, phone, flight number or ride number, apply one by hand when
+// the provider missed a cancellation, and move one to the account that should really have it.
+
+router.get("/flight-credits", async (req, res) => {
+  const rows = await flightCredit.searchCredits({ q: String(req.query.q || ""), status: req.query.status ? String(req.query.status) : null });
+  res.json({ enabled: flightCredit.creditEnabled(), credits: rows });
+});
+
+// Find the account a credit should go to: by name, email or phone.
+router.get("/flight-credits/find-accounts", async (req, res) => {
+  const words = flightCredit.nameKey(String(req.query.q || "")).split(" ").filter(Boolean).slice(0, 4);
+  if (!words.length) return res.json({ accounts: [] });
+  const params = [];
+  const where = words.map((w) => {
+    params.push(`%${w}%`);
+    return `(lower(name) LIKE $${params.length} OR lower(email) LIKE $${params.length} OR coalesce(phone,'') LIKE $${params.length})`;
+  });
+  const r = await pool.query(`SELECT id, name, email, phone FROM users WHERE ${where.join(" AND ")} ORDER BY name LIMIT 20`, params);
+  res.json({ accounts: r.rows });
+});
+
+router.post("/rides/:id/flight-credit", requireRole("admin"), async (req, res) => {
+  if (!flightCredit.creditEnabled()) return res.status(409).json({ error: "Flight credit is switched off (FLIGHT_CANCEL_CREDIT)." });
+  const result = await flightCredit.applyCredit(Number(req.params.id), { actorId: req.user.id, source: "ops" });
+  if (!result.done) return res.status(409).json({ error: `Not credited: ${result.why}.` });
+  res.json({ credited: true, amount: result.amount, creditId: result.creditId });
+});
+
+router.post("/flight-credits/:id/move", requireRole("admin"), async (req, res) => {
+  const toUserId = Number(req.body?.toUserId);
+  if (!Number.isInteger(toUserId) || toUserId <= 0) return res.status(400).json({ error: "toUserId is required." });
+  const result = await flightCredit.moveCredit(Number(req.params.id), toUserId, { actorId: req.user.id, note: req.body?.note || "" });
+  if (!result.done) {
+    const why = { already_spent: "The rider has already spent this credit.", not_held: "This credit was already moved.", same_account: "That is the same account.", target_not_found: "No such account.", not_found: "No such credit." }[result.why] || result.why;
+    return res.status(409).json({ error: why });
+  }
+  res.json({ moved: true, amount: result.amount });
 });
 
 module.exports = router;

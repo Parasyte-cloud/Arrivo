@@ -108,7 +108,9 @@ export function tripExceptions(trips, now = Date.now()) {
 export function upcomingAirport(trips, now = Date.now()) {
   return trips
     .filter((t) => t.flight_number && (t.ride_status === "requested" || t.ride_status === "accepted"))
-    .map((t) => ({ trip: t, until: minutesUntil(t.scheduled_pickup_at || t.created_at, now) }))
+    // An arrival is ordered by when the plane is expected to land, not by the time the rider typed, once the
+    // provider has given an estimate. Drop-offs keep their pickup time.
+    .map((t) => ({ trip: t, until: minutesUntil((t.booking_type !== "dropoff" && t.flight_eta) || t.scheduled_pickup_at || t.created_at, now) }))
     .filter((x) => x.until !== null && x.until <= AIRPORT_LOOKAHEAD_MIN)
     .sort((a, b) => a.until - b.until)
     .slice(0, 6);
