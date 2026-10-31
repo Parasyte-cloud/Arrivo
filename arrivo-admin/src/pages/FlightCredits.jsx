@@ -17,6 +17,7 @@ export function FlightCredits() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState([]);
   const [enabled, setEnabled] = useState(true);
+  const [reviewAfter, setReviewAfter] = useState(180);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [moving, setMoving] = useState(null); // credit being moved
@@ -32,6 +33,7 @@ export function FlightCredits() {
       const r = await api.getFlightCredits(token, query);
       setRows(r.credits);
       setEnabled(r.enabled);
+      setReviewAfter(typeof r.reviewAfterDays === "number" ? r.reviewAfterDays : 180);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -109,6 +111,9 @@ export function FlightCredits() {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <span className="badge">{c.status === "moved" ? "Moved" : "Held"}</span>
+                  {c.status === "held" && reviewAfter > 0 && daysOld(c.created_at) >= reviewAfter ? (
+                    <div style={{ marginTop: 6, fontSize: 12.5, fontWeight: 700 }}>Needs a call: unused for {reviewAfter}+ days</div>
+                  ) : null}
                   {c.status === "held" && canMove ? (
                     <div><button type="button" className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => startMove(c)}>Move to another account</button></div>
                   ) : null}

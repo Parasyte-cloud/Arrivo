@@ -867,7 +867,11 @@ router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
 
 router.get("/flight-credits", async (req, res) => {
   const rows = await flightCredit.searchCredits({ q: String(req.query.q || ""), status: req.query.status ? String(req.query.status) : null });
-  res.json({ enabled: flightCredit.creditEnabled(), credits: rows });
+  // No credit ever expires on its own (that needs counsel). Held credits older than this many
+  // days are flagged so a person contacts the rider. 0 turns the flag off.
+  const n = Number(process.env.FLIGHT_CREDIT_REVIEW_DAYS);
+  const reviewAfterDays = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 180;
+  res.json({ enabled: flightCredit.creditEnabled(), reviewAfterDays, credits: rows });
 });
 
 // Find the account a credit should go to: by name, email or phone.
