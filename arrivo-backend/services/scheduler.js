@@ -28,7 +28,19 @@ const { pool } = require("../db/db");
 const { sendPushNotification } = require("./pushNotifications");
 const { sendWhatsAppMessage, flightIssueMessage, driverChangedMessage } = require("./whatsapp");
 const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
-const { lookupFlightStatus } = require("../routes/flights");
+const { lookupFlight } = require("./flightLookup");
+
+// Keeps what Ops sees in step with what the provider says, without a write on every sweep:
+// only when the state or reason changes, or the last check is more than 15 minutes old.
+async function recordTracking(ride, looked) {
+  const same = ride.flight_tracking_state === looked.state && (ride.flight_tracking_reason || null) === (looked.reason || null);
+  const fresh = ride.flight_checked_at && Date.now() - new Date(ride.flight_checked_at).getTime() < 15 * 60 * 1000;
+  if (same && fresh) return;
+  await pool.query(
+    "UPDATE rides SET flight_tracking_state = $2, flight_tracking_reason = $3, flight_checked_at = now() WHERE id = $1",
+    [ride.id, looked.state, looked.reason || null]
+  ).catch((err) => console.error(`[scheduler] could not record flight state for ride #${ride.id}:`, err.message));
+}
 const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
 const { getConfigBool } = require("./systemConfig");
 const { recordPaymentException } = require("./paymentOrders");
@@ -105,7 +117,8 @@ async function sweepReminders() {
   }
 
   const oneWayRides = await pool.query(
-    `SELECT rides.*, users.push_token as rider_push_token, driver_users.push_token as driver_push_token
+    `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
+            users.push_token as rider_push_token, driver_users.push_token as driver_push_token
      FROM rides
      JOIN users ON users.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
@@ -118,9 +131,12 @@ async function sweepReminders() {
 
   for (const ride of oneWayRides.rows) {
     try {
-      const flightInfo = await lookupFlightStatus(ride.flight_number);
-      const anchor = flightInfo?.arrival?.estimated || flightInfo?.arrival?.scheduled;
-      if (!anchor) continue; // can't compute a reminder window without a real ETA
+      const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null });
+      await recordTracking(ride, looked);
+      // Too early to track, or no real ETA: no reminder can be timed, and Ops can see why from the
+      // recorded state. Nothing is guessed.
+      const anchor = looked.flight?.arrival?.estimated || looked.flight?.arrival?.scheduled;
+      if (!anchor) continue;
       const hoursUntil = (new Date(anchor).getTime() - Date.now()) / (60 * 60 * 1000);
       await maybeSendAndMark(ride, hoursUntil);
     } catch (err) {
@@ -147,7 +163,8 @@ const RESCHEDULE_DRIFT_MS = 60 * 60 * 1000; // 1 hour
 
 async function sweepFlightIssues() {
   const candidates = await pool.query(
-    `SELECT rides.*, users.push_token as rider_push_token, users.email as rider_email,
+    `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
+            users.push_token as rider_push_token, users.email as rider_email,
             users.whatsapp_number as rider_whatsapp_number
      FROM rides JOIN users ON users.id = rides.rider_id
      WHERE rides.booking_type = 'dropoff'
@@ -158,8 +175,12 @@ async function sweepFlightIssues() {
 
   for (const ride of candidates.rows) {
     try {
-      const flightInfo = await lookupFlightStatus(ride.flight_number);
-      if (!flightInfo) continue; // not configured / not found this pass — try again next sweep
+      // A drop-off flight leaves the airport, so it is looked up by departure airport. The old call
+      // filtered by arrival airport, which never matched a departing flight on AviationStack.
+      const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null, direction: "departure" });
+      await recordTracking(ride, looked);
+      const flightInfo = looked.flight;
+      if (!flightInfo) continue; // not configured / not found this pass, try again next sweep
 
       let issue = null;
       if (flightInfo.status === "cancelled") {

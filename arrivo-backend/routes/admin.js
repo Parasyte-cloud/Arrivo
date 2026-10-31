@@ -3,9 +3,9 @@ const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { listConfig, setConfig } = require("../services/systemConfig");
-const { lookupFlightStatus } = require("./flights");
+const { lookupFlight } = require("../services/flightLookup");
+const pnrVault = require("../services/pnrVault");
 const { phoneHint } = require("../services/rideTeam");
-const flightAware = require("../services/flightAware");
 
 const router = express.Router();
 
@@ -234,7 +234,10 @@ router.get("/rides/live", async (req, res) => {
 const TRIP_SELECT = `
   SELECT rides.id, rides.ride_status, rides.payment_status, rides.pickup_address, rides.stops,
          rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
-         rides.flight_number, rides.vehicle_type, rides.fare_naira, rides.distance_km, rides.duration_min,
+         rides.flight_number, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date, rides.passenger_surname,
+         rides.pnr_masked, (rides.pnr_enc IS NOT NULL) AS has_pnr,
+         rides.flight_tracking_state, rides.flight_tracking_reason, rides.flight_checked_at,
+         rides.booking_type, rides.vehicle_type, rides.fare_naira, rides.distance_km, rides.duration_min,
          rides.scheduled_pickup_at, rides.tracking_started_at, rides.completed_at, rides.created_at,
          rides.emergency_contact_name, rides.emergency_contact_phone, rides.admin_notes,
          riders.id as rider_id, riders.name as rider_name, riders.phone as rider_phone, riders.email as rider_email,
@@ -314,39 +317,21 @@ router.get("/trips/active", async (req, res) => {
   res.json({ trips: result.rows.map((r) => hideTripNumbers(shapeTrip(r))), generatedAt: new Date().toISOString() });
 });
 
-// Flight lookups are paid and quota-limited, so one flight is looked up at most
-// once every five minutes no matter how many people have the page open.
-const FLIGHT_CACHE_MS = 5 * 60 * 1000;
-// A plane in the air moves, so its entry is kept for less time. FlightAware is billed per query.
-const FLIGHT_LIVE_CACHE_MS = 90 * 1000;
-const flightCache = new Map();
-
-async function cachedFlight(flightNumber) {
-  const key = String(flightNumber).trim().toUpperCase();
-  const hit = flightCache.get(key);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
-  const aviationstack = Boolean(process.env.AVIATIONSTACK_KEY) && process.env.AVIATIONSTACK_KEY !== "replace_me";
-  const configured = aviationstack || flightAware.isConfigured();
-  let value;
-  if (!configured) {
-    value = { configured: false, flight: null, error: null, checkedAt: new Date().toISOString() };
-  } else {
-    let flight = null;
-    let error = null;
-    // FlightAware first (it also gives the plane's position), AviationStack as the backup.
-    if (flightAware.isConfigured()) {
-      try { flight = await flightAware.lookupFlightAware(key, "LOS"); }
-      catch (err) { console.error("FlightAware lookup failed:", err.response?.data || err.message); error = "Flight lookup is temporarily unavailable."; }
-    }
-    if (!flight && aviationstack) {
-      try { flight = await lookupFlightStatus(key, "LOS"); error = null; }
-      catch (err) { error = "Flight lookup is temporarily unavailable."; }
-    }
-    value = { configured: true, flight, error: flight ? null : error, checkedAt: new Date().toISOString() };
-  }
-  const ttl = value.flight?.position ? FLIGHT_LIVE_CACHE_MS : FLIGHT_CACHE_MS;
-  flightCache.set(key, { at: Date.now(), ttl, value });
-  return value;
+// Flight lookups are paid and quota-limited. services/flightLookup.js caches each flight and day
+// (five minutes, ninety seconds while the plane is in the air), so many people with the page open
+// still cost one query. It never throws, and "unknown" is a real answer shown to Ops.
+async function cachedFlight(trip) {
+  const looked = await lookupFlight({
+    flightNumber: trip.flight_number, date: trip.flight_date || null,
+    direction: trip.booking_type === "dropoff" ? "departure" : "arrival",
+  });
+  return {
+    configured: looked.reason !== "no_provider",
+    flight: looked.flight,
+    error: looked.reason === "provider_error" ? "Flight lookup is temporarily unavailable." : null,
+    tracking: { state: looked.state, label: looked.label, reason: looked.reason, delayMin: looked.delayMin ?? null },
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 // GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
@@ -358,8 +343,29 @@ router.get("/trips/:id", async (req, res) => {
   // This view returns full numbers, so it leaves the same trace as the Ride Desk.
   if (trip.rider_phone || trip.rider_email || trip.emergency_contact_phone) await logNumberView(req.user.id, trip.id, trip.rider_id, "rider");
   if (trip.driver_phone) await logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver");
-  const flight = trip.flight_number ? await cachedFlight(trip.flight_number) : null;
+  const flight = trip.flight_number ? await cachedFlight(trip) : null;
   res.json({ trip, flight });
+});
+
+// POST /api/admin/trips/:id/pnr: shows the booking code for one ride so support can confirm it with
+// the airline. The code is encrypted at rest and never in a list or the trip payload; every reveal
+// is recorded with who asked, the same trail as viewing a phone number.
+router.post("/trips/:id/pnr", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const row = (await pool.query("SELECT id, rider_id, pnr_enc FROM rides WHERE id = $1", [req.params.id])).rows[0];
+  if (!row) return res.status(404).json({ error: "Ride not found" });
+  if (!row.pnr_enc) return res.status(404).json({ error: "No booking code was given for this ride." });
+  let pnr;
+  try { pnr = pnrVault.open(row.pnr_enc, row.id); }
+  catch (err) {
+    console.error(`[flight] PNR for ride #${row.id} could not be opened:`, err.message);
+    return res.status(503).json({ error: "The booking code is unavailable right now." });
+  }
+  await pool.query(
+    "INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action) VALUES ($1, $2, $3, 'rider', 'view_pnr')",
+    [req.user.id, row.id, row.rider_id]
+  );
+  res.set("Cache-Control", "no-store").json({ pnr });
 });
 
 // ── Panic alerts ─────────────────────────────────────────────────────────

@@ -71,6 +71,43 @@ function flightTone(status) {
   }
 }
 
+const TRACK_WARN = new Set(["unknown", "pnr_only", "cancelled", "diverted", "delayed"]);
+const TRACK_TEXT = {
+  tracked: "Tracked", delayed: "Delayed", cancelled: "Cancelled", diverted: "Diverted", landed: "Landed",
+  unknown: "Not tracked", not_yet: "Too early to track", pnr_only: "Booking code only", no_flight: "No flight",
+};
+
+// Shows the booking code masked. Revealing it asks the server, which records who looked.
+function PnrRow({ trip, token }) {
+  const [shown, setShown] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setShown(null); setErr(null); }, [trip.id]);
+  useEffect(() => {
+    if (!shown) return undefined;
+    const t = setTimeout(() => setShown(null), 30000); // hides itself again
+    return () => clearTimeout(t);
+  }, [shown]);
+  if (!trip.has_pnr) return null;
+  const reveal = async () => {
+    setBusy(true); setErr(null);
+    try { setShown((await api.revealTripPnr(token, trip.id)).pnr); }
+    catch (e) { setErr(e.message || "Could not show the code."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <>
+      <span>Booking code</span>
+      <strong>
+        {shown || trip.pnr_masked || "on file"}{" "}
+        {shown ? <button type="button" className="tt-link" onClick={() => setShown(null)}>Hide</button>
+          : <button type="button" className="tt-link" disabled={busy} onClick={reveal}>{busy ? "Opening…" : "Show"}</button>}
+        {err ? <em className="error-text"> {err}</em> : null}
+      </strong>
+    </>
+  );
+}
+
 function delayMinutes(arrival) {
   if (!arrival?.scheduled || !arrival?.estimated) return null;
   return Math.round((new Date(arrival.estimated) - new Date(arrival.scheduled)) / 60000);
@@ -299,6 +336,7 @@ export function TripTrackerPage({ focus = null }) {
                     <div className="tt-item-meta">
                       <StatusPill label={STATUS_LABEL[t.ride_status] || t.ride_status} tone={rideStatusTone(t.ride_status)} />
                       {t.flight_number ? <span className="tt-tag">✈ {t.flight_number}</span> : null}
+                      {TRACK_WARN.has(t.flight_tracking_state) ? <span className="tt-tag warn">{TRACK_TEXT[t.flight_tracking_state]}</span> : null}
                       {t.ride_status !== "requested" && t.ride_status !== "completed" ? <span className={`tt-gps ${gp.key}`}>{gp.label}</span> : null}
                     </div>
                   </div>
@@ -393,10 +431,18 @@ export function TripTrackerPage({ focus = null }) {
               {trip.stops?.length > 1 ? <p className="tt-note">{trip.stops.length - 1} extra stop{trip.stops.length > 2 ? "s" : ""} on this trip.</p> : null}
             </div>
 
-            {trip.flight_number ? (
+            {trip.flight_number || trip.has_pnr ? (
               <div className="tt-block">
-                <h3>Flight {trip.flight_number}</h3>
-                {!flightInfo ? <p className="tt-note">Checking the flight…</p> : null}
+                <h3>{trip.flight_number ? `Flight ${trip.flight_number}` : "Flight details missing"}</h3>
+                <div className="tt-kv">
+                  <span>Flight date</span><strong>{trip.flight_date || "not given"}</strong>
+                  {trip.passenger_surname ? <><span>Passenger</span><strong>{trip.passenger_surname}</strong></> : null}
+                  <PnrRow trip={trip} token={token} />
+                  <span>Tracking</span><strong>{flightInfo?.tracking?.label || TRACK_TEXT[trip.flight_tracking_state] || "Checking"}</strong>
+                </div>
+                {trip.flight_tracking_state === "pnr_only" ? <p className="tt-note">The rider gave a booking code but no flight number, so this flight cannot be tracked. Call the rider for the flight number and date.</p> : null}
+                {flightInfo?.tracking?.reason === "pnr_suspected" ? <p className="tt-note">No flight matched this number. It may be a booking code typed into the flight box. Check with the rider.</p> : null}
+                {trip.flight_number && !flightInfo ? <p className="tt-note">Checking the flight…</p> : null}
                 {flightInfo && !flightInfo.configured ? <p className="tt-note">Live flight status is not switched on. Set <code>FLIGHTAWARE_API_KEY</code> (or <code>AVIATIONSTACK_KEY</code>) on the backend to turn it on.</p> : null}
                 {flightInfo?.error ? <p className="tt-note">{flightInfo.error}</p> : null}
                 {flightInfo?.configured && !flight && !flightInfo.error ? <p className="tt-note">No live data yet. This is normal until the flight is close to boarding. Checked {agoText(flightInfo.checkedAt)}.</p> : null}

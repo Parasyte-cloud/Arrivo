@@ -2041,3 +2041,23 @@ ALTER TABLE users
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+
+-- ============================================================
+-- AIRPORT_FLIGHT_TRACKING_V1
+--
+-- A flight is tracked by flight number and date. A PNR is an airline reservation record that no
+-- public status service can look up, so it is optional, stored encrypted (services/pnrVault.js,
+-- key FLIGHT_PNR_KEY) and used by support to confirm the booking with the airline.
+-- flight_tracking_state is what Ops sees: tracked | delayed | cancelled | diverted | landed |
+-- unknown | not_yet | pnr_only | no_flight. "unknown" is a real answer, never a guess.
+-- ============================================================
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_date DATE;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_surname TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_enc TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_masked TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_state TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_reason TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_checked_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_rides_flight_tracking ON rides(flight_tracking_state)
+  WHERE flight_tracking_state IS NOT NULL AND ride_status IN ('requested', 'accepted');

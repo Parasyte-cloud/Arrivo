@@ -15,7 +15,8 @@ const {
   hasRoomForAnotherShareParticipant,
 } = require("../services/fare");
 const { getNgnPerUsd } = require("../services/fx");
-const { lookupFlightStatus } = require("./flights");
+const { lookupFlight } = require("../services/flightLookup");
+const { parseFlightBooking, saveFlightDetails } = require("../services/flightBooking");
 const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
 const { ensureRiderPhone, allowedWithoutPhone } = require("../services/riderPhone");
 const { beginIdempotentRide, completeIdempotentRide } = require("../services/idempotency");
@@ -243,7 +244,7 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
 // show the rider) from POST /api/rides/quote first.
 async function createRideHandler(req, res) {
   const {
-    pickupAddress: pickupAddressInput, stops, flightNumber, vehicleType, paymentReference,
+    pickupAddress: pickupAddressInput, stops, flightNumber: flightNumberInput, vehicleType, paymentReference,
     bookingType = "one_way", durationDays = 1, agreedCancellationPolicy,
     distanceKm: clientDistanceKm, durationMin: clientDurationMin, securityEscort, fleetSize, paymentMethod = "card",
     emergencyContactName, emergencyContactPhone, dashCamConsent, luxury, payAtPickup,
@@ -344,9 +345,15 @@ async function createRideHandler(req, res) {
   // a real ETA (see GET /api/flights/status and TrackingScreen). A
   // drop-off (departing rider) has no landing event to track, so it's
   // optional there — useful for reference/delay-awareness, not required.
-  if (bookingType === "one_way" && !flightNumber) {
-    return res.status(400).json({ error: "flightNumber is required for one-way bookings" });
+  // The flight is cleaned and checked here (services/flightBooking.js): "ba 075" becomes BA75, the
+  // flight date and passenger surname are validated, and a booking code typed into the flight box
+  // is named as such. Older app builds that send only a flight number keep working.
+  const flightBooking = parseFlightBooking(req.body, { bookingType });
+  if (flightBooking.error) {
+    return res.status(400).json({ error: flightBooking.error.message, code: flightBooking.error.code });
   }
+  const flightDetails = flightBooking.details;
+  const flightNumber = flightDetails.flightNumber;
   // Drop-offs have no flight-landing event to anchor timing on, so the
   // rider must tell us exactly when they want picking up. Required only for
   // 'dropoff' — one-way pickups stay flight-number-driven, and charter
@@ -587,10 +594,14 @@ async function createRideHandler(req, res) {
   // isn't configured yet — same non-blocking pattern as the distance
   // lookup above.
   let originalFlightScheduledAt = null;
+  let flightTracking = null;
   if (flightNumber) {
     try {
-      const flightInfo = await lookupFlightStatus(flightNumber);
-      const anchor = bookingType === "dropoff" ? flightInfo?.departure?.scheduled : flightInfo?.arrival?.scheduled;
+      const looked = await lookupFlight({
+        flightNumber, date: flightDetails.flightDate, direction: bookingType === "dropoff" ? "departure" : "arrival",
+      });
+      flightTracking = { state: looked.state, reason: looked.reason };
+      const anchor = bookingType === "dropoff" ? looked.flight?.departure?.scheduled : looked.flight?.arrival?.scheduled;
       if (anchor) originalFlightScheduledAt = new Date(anchor);
     } catch (err) {
       console.error("Flight lookup failed during ride creation (informational only, not blocking):", err.message);
@@ -632,6 +643,7 @@ async function createRideHandler(req, res) {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, 'paid', 'membership', false, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING *`,
           [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
         );
+        await saveFlightDetails(client, inserted.rows[0].id, flightDetails, flightTracking);
         await createFleetCompanions(client, inserted.rows[0]);
         await recordLuckyRideEntry(client, inserted.rows[0], luckyRideEntryDate);
         return inserted.rows[0];
@@ -697,6 +709,7 @@ async function createRideHandler(req, res) {
           [riderUserId, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, callerPlan.id, req.user.id, promoCode, promoDiscountNaira, partnerVenueId || null]
         );
         const ride = rideResult.rows[0];
+        await saveFlightDetails(client, ride.id, flightDetails, flightTracking);
 
         const newBalanceResult = await client.query(
           "UPDATE family_plans SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
@@ -750,6 +763,7 @@ async function createRideHandler(req, res) {
           [req.user.id, pickupAddress, JSON.stringify(stops || []), flightNumber || null, vehicleType || null, fareNaira, null, bookingType, durationDays, distanceKm || null, durationMin || null, !!securityEscort, fleetSize || 0, emergencyContactName || null, emergencyContactPhone || null, !!dashCamConsent, pickupLat ?? null, pickupLng ?? null, destinationLat ?? null, destinationLng ?? null, parsedScheduledPickupAt, linkedRideId || null, preferredDriverId, preferredVehicleSnapshot, originalFlightScheduledAt, Number(adults) || 1, Number(children) || 0, vehicleCount, includedHoursPerDay, quotedUsdAmount, ngnPerUsd, promoCode, promoDiscountNaira, partnerVenueId || null]
         );
         const ride = rideResult.rows[0];
+        await saveFlightDetails(client, ride.id, flightDetails, flightTracking);
 
         const newBalanceResult = await client.query(
           "UPDATE users SET wallet_balance_naira = wallet_balance_naira - $1 WHERE id = $2 RETURNING wallet_balance_naira",
@@ -829,6 +843,7 @@ async function createRideHandler(req, res) {
         await cardClient.query("UPDATE rides SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *", [cardRide.id])
       ).rows[0];
     }
+    await saveFlightDetails(cardClient, cardRide.id, flightDetails, flightTracking);
     await createFleetCompanions(cardClient, cardRide);
     await recordLuckyRideEntry(cardClient, cardRide, luckyRideEntryDate);
     await cardClient.query("COMMIT");

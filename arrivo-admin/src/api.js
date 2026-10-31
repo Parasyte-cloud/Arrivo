@@ -297,6 +297,8 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+// The booking code (PNR) is encrypted at rest and never in a list. Each reveal is recorded against the staff member.
+export const revealTripPnr = (token, id) => request(`/api/admin/trips/${id}/pnr`, token, { method: "POST" });
 
 export const resendPersonSetup = (token, id) =>
   request(`/api/staff/people/${id}/resend-setup`, {

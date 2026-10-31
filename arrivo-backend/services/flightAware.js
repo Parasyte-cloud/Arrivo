@@ -55,15 +55,18 @@ function mapStatus(f) {
   return "scheduled";
 }
 
-async function lookupFlightAware(flightNumber, arrIata = "LOS") {
+async function lookupFlightAware(flightNumber, arrIata = "LOS", opts = {}) {
   if (!isConfigured() || !flightNumber) return null;
   const ident = String(flightNumber).trim().toUpperCase();
   if (!ident) return null;
   const headers = { "x-apikey": process.env.FLIGHTAWARE_API_KEY };
 
-  // A window around now: yesterday to two days ahead, so tonight's and tomorrow's arrivals are found.
-  const start = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const end = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+  // With a flight date (the rider's day of arrival, Lagos time) the window is that day, so a
+  // booking for tomorrow never picks up today's instance of the same flight number. Without
+  // one it is a window around now: yesterday to two days ahead, as before.
+  const win = opts.date ? require("./flightInput").flightWindow(opts.date) : null;
+  const start = win ? win.start : new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const end = win ? win.end : new Date(Date.now() + 48 * 3600 * 1000).toISOString();
   const { data } = await axios.get(`${BASE}/flights/${encodeURIComponent(ident)}`, {
     headers, timeout: 8000, params: { start, end, max_pages: 1 },
   });

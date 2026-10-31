@@ -24,6 +24,35 @@ export function span(min) {
   return `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
+// Today in Lagos (no daylight saving), as YYYY-MM-DD, to compare with a ride's flight_date.
+export function lagosDay(now = Date.now()) {
+  return new Date(now + 3600000).toISOString().slice(0, 10);
+}
+
+// What the flight tracker says about a ride, as an exception. "unknown" is only worth a person's
+// time once the flight is close (today or tomorrow); a booking code with no flight number needs a
+// call to the rider at any time; a cancelled or diverted flight is always urgent.
+function flightException(t, now) {
+  const state = t.flight_tracking_state;
+  if (!state || state === "tracked" || state === "landed" || state === "delayed" || state === "not_yet" || state === "no_flight") return null;
+  const label = `Ride #${t.id}`;
+  const who = t.rider_name || "Rider";
+  const flight = t.flight_number ? `flight ${t.flight_number}` : "no flight number";
+  const base = { key: `flight-${state}-${t.id}`, eyebrow: "Flight", action: "Track ride", track: t.id };
+  if (state === "cancelled" || state === "diverted") {
+    return { ...base, tone: "critical", rank: -1000, title: `${label}: ${flight} ${state}`, meta: `${who} · contact the rider before the driver leaves` };
+  }
+  if (state === "pnr_only") {
+    return { ...base, tone: "warning", rank: -500, title: `${label}: booking code but no flight number`, meta: `${who} · ask for the flight number and date so the pickup can be timed` };
+  }
+  const near = !t.flight_date || t.flight_date <= lagosDay(now + 24 * 3600000);
+  if (state === "unknown" && near) {
+    const why = { pnr_suspected: "the flight number may be a booking code", not_found: "not found", date_mismatch: "found on a different day", provider_error: "status service unavailable", no_provider: "flight tracking is off", no_eta: "no arrival time yet" }[t.flight_tracking_reason] || "cannot be tracked";
+    return { ...base, tone: "warning", rank: -400, title: `${label}: ${flight} is not being tracked`, meta: `${who} · ${why}` };
+  }
+  return null;
+}
+
 export function tripExceptions(trips, now = Date.now()) {
   const out = [];
   for (const t of trips) {
@@ -43,7 +72,9 @@ export function tripExceptions(trips, now = Date.now()) {
             action: "Track ride", track: t.id,
           });
         }
-      } else {
+      } else if (!(t.flight_number && t.booking_type === "one_way" && t.flight_date && t.flight_date > lagosDay(now))) {
+        // An airport pickup booked for a later day is not "waiting"; it is not due yet. Before this,
+        // every flight pickup raised a waiting alert five minutes after it was booked.
         const waited = minutesSince(t.created_at, now);
         if (waited !== null && waited >= ONDEMAND_WAIT_MIN) {
           out.push({
@@ -54,6 +85,9 @@ export function tripExceptions(trips, now = Date.now()) {
         }
       }
     }
+
+    const fx = flightException(t, now);
+    if (fx) out.push(fx);
 
     // Only a position that has been reported and then went quiet counts. A driver app that never
     // reports location would otherwise raise this on every trip.
