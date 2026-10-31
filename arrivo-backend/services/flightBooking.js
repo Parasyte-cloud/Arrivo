@@ -76,6 +76,14 @@ async function saveFlightDetails(db, rideId, details, tracking = null) {
      WHERE id = $1`,
     [rideId, details.flightDate, details.surname, sealed, pnrStored ? details.pnrMasked : null, state, reason]
   );
+  // The rider typed a booking code and it could not be kept (no vault key). Do not lose that quietly:
+  // tell Ops on the ride, without the code, so they ask the rider.
+  if (details.pnr && !pnrStored) {
+    await db.query(
+      `UPDATE rides SET admin_notes = CASE WHEN coalesce(admin_notes, '') = '' THEN $2 ELSE admin_notes || E'\n' || $2 END WHERE id = $1`,
+      [rideId, "The rider gave a booking code (PNR) but it could not be stored. Ask the rider for it."]
+    ).catch((err) => console.error(`[flight] could not leave the PNR note on ride #${rideId}:`, err.message));
+  }
 }
 
 module.exports = { parseFlightBooking, saveFlightDetails, MESSAGES };

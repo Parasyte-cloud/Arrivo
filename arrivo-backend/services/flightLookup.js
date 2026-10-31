@@ -31,6 +31,14 @@ async function lookupFlight({ flightNumber, date = null, airport = "LOS", direct
   if (!parsed.ok) {
     return { ...input.describeTracking({ ident: parsed.reason === "empty" ? null : "?", flight: null, couldBePnr: parsed.reason === "pnr_like", now }), ident: null, flight: null };
   }
+  // Providers only see about two days ahead. Do not spend a paid call, every sweep, on a flight that
+  // far out: the answer is already known, and it is "too early", not "not found".
+  if (date) {
+    const hoursAhead = (Date.parse(`${date}T00:00:00+01:00`) - now.getTime()) / 3600000;
+    if (hoursAhead > input.TRACKABLE_HOURS_AHEAD) {
+      return { ...input.describeTracking({ ident: parsed.ident, date, flight: null, direction, now }), ident: parsed.ident, flight: null };
+    }
+  }
   const list = _providers || providers();
   if (!list.length) return { state: "unknown", label: "Flight status unavailable", reason: "no_provider", ident: parsed.ident, flight: null };
 

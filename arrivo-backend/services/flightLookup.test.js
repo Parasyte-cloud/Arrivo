@@ -56,3 +56,10 @@ test("a departing flight is filtered by where it leaves, not where it lands", as
   assert.deepEqual(seen, ["BA75", null, { date: "2026-11-01", depIata: "LOS" }]);
   assert.equal(r.state, "tracked");
 });
+
+test("a flight more than two days out never calls a provider", async () => {
+  const boom = [["x", async () => { throw new Error("provider must not be called"); }]];
+  const now = new Date("2026-11-01T08:00:00Z");
+  const r = await lookupFlight({ flightNumber: "BA75", date: "2026-11-10", now, _providers: boom });
+  assert.deepEqual([r.state, r.reason], ["not_yet", "beyond_window"]);
+});

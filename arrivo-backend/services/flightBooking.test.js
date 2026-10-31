@@ -54,6 +54,10 @@ test("with no vault key the booking still saves, without a PNR and without a mas
   const db = fakeDb();
   await saveFlightDetails(db, 42, parse({ flightNumber: "BA75", pnr: "AB12CD" }).details);
   assert.deepEqual([db.calls[0][3], db.calls[0][4]], [null, null]);
+  // ...and Ops are told on the ride, without the code in the note
+  assert.equal(db.calls.length, 2);
+  assert.match(db.calls[1][1], /could not be stored/);
+  assert.ok(!JSON.stringify(db.calls).includes("AB12CD"));
 });
 
 test("a legacy booking-code-only ride is marked pnr_only for Ops", async () => {
