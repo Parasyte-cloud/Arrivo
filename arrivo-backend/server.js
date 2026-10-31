@@ -210,6 +210,9 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 
 ready.then(() => {
+  if (!require("./services/pnrVault").available()) {
+    console.warn("[flight] FLIGHT_PNR_KEY is not set: booking codes (PNR) cannot be stored. Riders who give one are flagged on the ride for Ops.");
+  }
   app.listen(PORT, () => {
     console.log(`Arrivo backend running on http://localhost:${PORT}`);
   });

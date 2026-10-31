@@ -1827,7 +1827,7 @@ CREATE TABLE IF NOT EXISTS staff_contact_access (
   ride_id INTEGER REFERENCES rides(id) ON DELETE SET NULL,
   subject_user_id INTEGER NOT NULL REFERENCES users(id),
   subject_role TEXT NOT NULL, -- 'rider' | 'driver'
-  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone'
+  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone' | 'view_pnr'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_contact_access_subject ON staff_contact_access(subject_user_id, created_at DESC);
@@ -2041,3 +2041,53 @@ ALTER TABLE users
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+
+-- ============================================================
+-- AIRPORT_FLIGHT_TRACKING_V1
+--
+-- A flight is tracked by flight number and date. A PNR is an airline reservation record that no
+-- public status service can look up, so it is optional, stored encrypted (services/pnrVault.js,
+-- key FLIGHT_PNR_KEY) and used by support to confirm the booking with the airline.
+-- flight_tracking_state is what Ops sees: tracked | delayed | cancelled | diverted | landed |
+-- unknown | not_yet | pnr_only | no_flight. "unknown" is a real answer, never a guess.
+-- ============================================================
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_date DATE;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_surname TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_enc TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_masked TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_state TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_reason TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_checked_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_rides_flight_tracking ON rides(flight_tracking_state)
+  WHERE flight_tracking_state IS NOT NULL AND ride_status IN ('requested', 'accepted');
+
+-- ── AIRPORT_FLIGHT_CREDIT_V1 ───────────────────────────────────────────────
+-- A cancelled arrival flight keeps the fare as wallet credit for a future booking
+-- (services/flightCredit.js). Written only when FLIGHT_CANCEL_CREDIT=on.
+CREATE TABLE IF NOT EXISTS flight_credits (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL UNIQUE REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_naira NUMERIC NOT NULL CHECK (amount_naira > 0),
+  status TEXT NOT NULL DEFAULT 'held', -- 'held' | 'moved'
+  flight_number TEXT,
+  flight_date DATE,
+  passenger_surname TEXT,
+  wallet_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  moved_to_user_id INTEGER REFERENCES users(id),
+  source TEXT NOT NULL DEFAULT 'scheduler', -- 'scheduler' | 'ops'
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_flight_credits_user ON flight_credits(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS flight_credit_events (
+  id SERIAL PRIMARY KEY,
+  credit_id INTEGER NOT NULL REFERENCES flight_credits(id),
+  actor_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  detail JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_eta TIMESTAMPTZ; -- latest estimated landing from the provider, for Ops ordering

@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const { requireAuth } = require("../middleware/auth");
+const { createLimiter } = require("../services/smallLimiter");
 const router = express.Router();
 
 // Common Nigerian airport IATA codes, so the app can send a friendly name
@@ -24,7 +25,7 @@ const NIGERIA_AIRPORTS = {
 // apart over time. Returns null (never throws for the "not configured" or
 // "not found" cases) so the scheduler can just skip a ride it can't check
 // this pass rather than needing its own try/catch around every call site.
-async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
+async function lookupFlightStatus(flightNumber, arrIata = "LOS", opts = {}) {
   if (!flightNumber) return null;
   if (!process.env.AVIATIONSTACK_KEY || process.env.AVIATIONSTACK_KEY === "replace_me") return null;
 
@@ -44,7 +45,10 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
     params: {
       access_key: process.env.AVIATIONSTACK_KEY,
       flight_iata: normalizedFlightNumber,
-      arr_iata: arrIata,
+      ...(opts.depIata ? { dep_iata: opts.depIata } : { arr_iata: arrIata }),
+      // flight_date is a paid-plan parameter on AviationStack; on the free plan sending it is an
+      // error, so it is only sent when AVIATIONSTACK_HISTORICAL=true says the plan allows it.
+      ...(opts.date && process.env.AVIATIONSTACK_HISTORICAL === "true" ? { flight_date: opts.date } : {}),
     },
   });
 
@@ -98,38 +102,54 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS") {
 // getFlightStatus); the scheduler's own background lookups call
 // lookupFlightStatus directly and never go through this HTTP route at all,
 // so they're unaffected.
+// Lookups spend a paid provider quota, so one account cannot ask without limit.
+const allowLookup = createLimiter({ max: 30, windowMs: 10 * 60 * 1000 });
+
 router.get("/status", requireAuth, async (req, res) => {
-  const { flightNumber, arrIata = "LOS" } = req.query;
+  if (!allowLookup(String(req.user.id))) {
+    return res.status(429).json({ error: "You have checked a lot of flights. Please wait a few minutes and try again." });
+  }
+  const { flightNumber, arrIata = "LOS", date } = req.query;
+  const input = require("../services/flightInput");
+  const { lookupFlight } = require("../services/flightLookup");
+  const { MESSAGES } = require("../services/flightBooking");
 
   if (!flightNumber) {
     return res.status(400).json({ error: "flightNumber is required" });
   }
-  if (!process.env.AVIATIONSTACK_KEY || process.env.AVIATIONSTACK_KEY === "replace_me") {
-    return res.status(500).json({ error: "AVIATIONSTACK_KEY is not configured on the server" });
+  // A booking code is not a flight number and no status service can look one up, so say so
+  // instead of reporting "not found" as if the rider had mistyped a real flight.
+  const parsed = input.normalizeFlightNumber(flightNumber);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: MESSAGES[parsed.reason] || MESSAGES.format, code: `flight_${parsed.reason}` });
+  }
+  let day = null;
+  if (date) {
+    const d = input.normalizeFlightDate(date);
+    if (!d.ok) return res.status(400).json({ error: "Enter the flight date as year-month-day, today or later.", code: `flight_date_${d.reason}` });
+    day = d.date;
   }
 
-  try {
-    const result = await lookupFlightStatus(flightNumber, arrIata);
-    if (!result) {
-      // aviationstack's free plan only carries REAL-TIME flights — a
-      // flight that hasn't started boarding yet (the common case: riders
-      // usually track a flight while booking a pickup days or hours
-      // ahead) genuinely won't be in its data yet, and that's the normal
-      // outcome here, not a sign the rider mistyped anything. The old copy
-      // ("No matching flight found... double-check the number") pointed
-      // the blame at the rider even when the number was perfectly correct
-      // — this doesn't block booking either way (see book.html/
-      // booking.js's flightContinue handler and RouteScreen.js, neither of
-      // which requires a successful Track before proceeding), so say so.
-      return res.status(404).json({
-        error: "We couldn't pull live status for that flight yet. If the number's right, this is normal for a flight that hasn't started boarding. We'll keep checking as your trip gets closer, and your booking isn't affected.",
-      });
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("Flight lookup failed:", err.aviationstack || err.response?.data || err.message);
-    res.status(502).json({ error: "Flight lookup is temporarily unavailable. Please try again shortly." });
+  const looked = await lookupFlight({ flightNumber, date: day, airport: String(arrIata).toUpperCase().slice(0, 3) });
+  if (looked.reason === "no_provider") {
+    return res.status(503).json({ error: "Flight tracking is not switched on yet.", tracking: { state: looked.state, reason: looked.reason } });
   }
+  if (looked.reason === "provider_error") {
+    return res.status(502).json({ error: "Flight lookup is temporarily unavailable. Please try again shortly.", tracking: { state: looked.state, reason: looked.reason } });
+  }
+  if (!looked.flight) {
+    // A flight that has not started boarding is often not in provider data yet, and one more than
+    // two days out cannot be tracked yet. That is a normal answer, not a sign of a typo, and it
+    // never blocks the booking.
+    return res.status(404).json({
+      error: looked.state === "not_yet"
+        ? "That flight is too far ahead to track yet. We will start checking about two days before it lands, and your booking is not affected."
+        : "We couldn't pull live status for that flight yet. If the number and date are right, this is normal for a flight that hasn't started boarding. We'll keep checking as your trip gets closer, and your booking isn't affected.",
+      tracking: { state: looked.state, label: looked.label, reason: looked.reason },
+    });
+  }
+  const { track, origin, ...forRider } = looked.flight;
+  res.json({ ...forRider, tracking: { state: looked.state, label: looked.label, reason: looked.reason, delayMin: looked.delayMin ?? null } });
 });
 
 module.exports = router;

@@ -118,6 +118,12 @@ export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
 export const getMemberships = (token) => request("/api/admin/memberships", token);
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+export const getFlightCredits = (token, q = "") => request(`/api/admin/flight-credits?q=${encodeURIComponent(q)}`, token);
+export const findCreditAccounts = (token, q) => request(`/api/admin/flight-credits/find-accounts?q=${encodeURIComponent(q)}`, token);
+export const moveFlightCredit = (token, id, toUserId, note) =>
+  request(`/api/admin/flight-credits/${id}/move`, token, { method: "POST", body: JSON.stringify({ toUserId, note }) });
+export const applyFlightCredit = (token, rideId) =>
+  request(`/api/admin/rides/${rideId}/flight-credit`, token, { method: "POST" });
 
 export const getVehicles = (token) => request("/api/admin/vehicles", token);
 
@@ -297,6 +303,8 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+// The booking code (PNR) is encrypted at rest and never in a list. Each reveal is recorded against the staff member.
+export const revealTripPnr = (token, id) => request(`/api/admin/trips/${id}/pnr`, token, { method: "POST" });
 
 export const resendPersonSetup = (token, id) =>
   request(`/api/staff/people/${id}/resend-setup`, {
