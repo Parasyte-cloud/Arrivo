@@ -118,6 +118,12 @@ export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
 export const getMemberships = (token) => request("/api/admin/memberships", token);
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+export const getFlightCredits = (token, q = "") => request(`/api/admin/flight-credits?q=${encodeURIComponent(q)}`, token);
+export const findCreditAccounts = (token, q) => request(`/api/admin/flight-credits/find-accounts?q=${encodeURIComponent(q)}`, token);
+export const moveFlightCredit = (token, id, toUserId, note) =>
+  request(`/api/admin/flight-credits/${id}/move`, token, { method: "POST", body: JSON.stringify({ toUserId, note }) });
+export const applyFlightCredit = (token, rideId) =>
+  request(`/api/admin/rides/${rideId}/flight-credit`, token, { method: "POST" });
 
 export const getVehicles = (token) => request("/api/admin/vehicles", token);
 
