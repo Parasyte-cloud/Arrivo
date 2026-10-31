@@ -29,6 +29,7 @@ const { sendPushNotification } = require("./pushNotifications");
 const { sendWhatsAppMessage, flightIssueMessage, driverChangedMessage } = require("./whatsapp");
 const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
 const { lookupFlight } = require("./flightLookup");
+const flightCredit = require("./flightCredit");
 
 // Keeps what Ops sees in step with what the provider says, without a write on every sweep:
 // only when the state or reason changes, or the last check is more than 15 minutes old.
@@ -36,9 +37,10 @@ async function recordTracking(ride, looked) {
   const same = ride.flight_tracking_state === looked.state && (ride.flight_tracking_reason || null) === (looked.reason || null);
   const fresh = ride.flight_checked_at && Date.now() - new Date(ride.flight_checked_at).getTime() < 15 * 60 * 1000;
   if (same && fresh) return;
+  const eta = looked.flight?.arrival?.estimated || looked.flight?.arrival?.scheduled || null;
   await pool.query(
-    "UPDATE rides SET flight_tracking_state = $2, flight_tracking_reason = $3, flight_checked_at = now() WHERE id = $1",
-    [ride.id, looked.state, looked.reason || null]
+    "UPDATE rides SET flight_tracking_state = $2, flight_tracking_reason = $3, flight_checked_at = now(), flight_eta = COALESCE($4::timestamptz, flight_eta) WHERE id = $1",
+    [ride.id, looked.state, looked.reason || null, eta]
   ).catch((err) => console.error(`[scheduler] could not record flight state for ride #${ride.id}:`, err.message));
 }
 const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
@@ -118,7 +120,8 @@ async function sweepReminders() {
 
   const oneWayRides = await pool.query(
     `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
-            users.push_token as rider_push_token, driver_users.push_token as driver_push_token
+            users.push_token as rider_push_token, driver_users.push_token as driver_push_token,
+            users.whatsapp_number as rider_whatsapp_number
      FROM rides
      JOIN users ON users.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
@@ -133,6 +136,11 @@ async function sweepReminders() {
     try {
       const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null });
       await recordTracking(ride, looked);
+      // Cancelled arrival: keep the fare as wallet credit (off unless FLIGHT_CANCEL_CREDIT=on).
+      if (flightCredit.decideCredit(ride, looked).action !== "none") {
+        await creditCancelledArrival(ride);
+        continue;
+      }
       // Too early to track, or no real ETA: no reminder can be timed, and Ops can see why from the
       // recorded state. Nothing is guessed.
       const anchor = looked.flight?.arrival?.estimated || looked.flight?.arrival?.scheduled;
@@ -143,6 +151,15 @@ async function sweepReminders() {
       console.error(`[scheduler] reminder check failed for one_way ride #${ride.id}:`, err.message);
     }
   }
+}
+
+async function creditCancelledArrival(ride) {
+  const result = await flightCredit.applyCredit(ride.id, { source: "scheduler" });
+  if (!result.done) return;
+  const text = flightCredit.creditMessage(ride, result.amount);
+  if (ride.rider_push_token) sendPushNotification(ride.rider_push_token, "Flight cancelled", text, { rideId: ride.id, type: "flight_credit" }).catch(() => {});
+  if (ride.driver_push_token) sendPushNotification(ride.driver_push_token, "Trip cancelled", `The flight for pickup #${ride.id} was cancelled. You do not need to go.`, { rideId: ride.id, type: "ride_cancelled" }).catch(() => {});
+  if (ride.rider_whatsapp_number) sendWhatsAppMessage(ride.rider_whatsapp_number, text).catch(() => {});
 }
 
 async function maybeSendAndMark(ride, hoursUntil) {
