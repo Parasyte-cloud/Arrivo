@@ -27,7 +27,7 @@
 const { pool } = require("../db/db");
 const { sendPushNotification } = require("./pushNotifications");
 const { sendWhatsAppMessage, flightIssueMessage, driverChangedMessage } = require("./whatsapp");
-const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
+const { sendFlightIssueEmail, sendDriverChangedEmail, sendEmail, escapeHtml } = require("./email");
 const { lookupFlight } = require("./flightLookup");
 const flightCredit = require("./flightCredit");
 
@@ -121,7 +121,7 @@ async function sweepReminders() {
   const oneWayRides = await pool.query(
     `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
             users.push_token as rider_push_token, driver_users.push_token as driver_push_token,
-            users.whatsapp_number as rider_whatsapp_number
+            users.whatsapp_number as rider_whatsapp_number, users.email as rider_email
      FROM rides
      JOIN users ON users.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
@@ -161,6 +161,13 @@ async function creditCancelledArrival(ride) {
   if (ride.rider_push_token) sendPushNotification(ride.rider_push_token, "Flight cancelled", text, { rideId: ride.id, type: "flight_credit" }).catch(() => {});
   if (ride.driver_push_token) sendPushNotification(ride.driver_push_token, "Trip cancelled", `The flight for pickup #${ride.id} was cancelled. You do not need to go.`, { rideId: ride.id, type: "ride_cancelled" }).catch(() => {});
   if (ride.rider_whatsapp_number) sendWhatsAppMessage(ride.rider_whatsapp_number, text).catch(() => {});
+  if (ride.rider_email) {
+    sendEmail({
+      to: ride.rider_email,
+      subject: `Your flight ${ride.flight_number} was cancelled`,
+      html: `<p>${escapeHtml(text)}</p><p>RideArrivo</p>`,
+    }).catch(() => {});
+  }
 }
 
 async function maybeSendAndMark(ride, hoursUntil) {
@@ -219,6 +226,7 @@ async function sweepFlightIssues() {
 }
 
 async function flagFlightIssue(ride, issue) {
+  const plan = flightCredit.dropoffIssuePlan(ride);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -229,7 +237,7 @@ async function flagFlightIssue(ride, issue) {
     // collected it (card/wallet/membership), rather than trying to reverse
     // a live Paystack charge here. See routes/rides.js PATCH /:id/status
     // for where the fare gets re-collected, from the wallet, at drop-off.
-    if (ride.payment_status === "paid") {
+    if (plan.refund) {
       const newBalanceResult = await client.query(
         "UPDATE users SET wallet_balance_naira = wallet_balance_naira + $1 WHERE id = $2 RETURNING wallet_balance_naira",
         [ride.fare_naira, ride.rider_id]
@@ -243,8 +251,8 @@ async function flagFlightIssue(ride, issue) {
     }
 
     await client.query(
-      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = 'pending_reconfirmation', updated_at = now() WHERE id = $2`,
-      [issue, ride.id]
+      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = $3, updated_at = now() WHERE id = $2`,
+      [issue, ride.id, plan.nextPaymentStatus]
     );
     await client.query("COMMIT");
   } catch (err) {
@@ -253,6 +261,14 @@ async function flagFlightIssue(ride, issue) {
     return;
   } finally {
     client.release();
+  }
+
+  if (plan.notify === "ops_will_contact") {
+    // No refund and no new charge for this ride, so the usual "refunded to your wallet" copy would be false.
+    const text = `Your flight ${ride.flight_number} was ${issue}. Nothing changes on what you paid. Our team will contact you about your trip.`;
+    if (ride.rider_push_token) sendPushNotification(ride.rider_push_token, "Flight change detected", text, { rideId: ride.id, type: "flight_issue" }).catch(() => {});
+    if (ride.rider_whatsapp_number) sendWhatsAppMessage(ride.rider_whatsapp_number, `\u2708\ufe0f *RideArrivo*: heads up about your flight\n\n${text}`).catch(() => {});
+    return;
   }
 
   if (ride.rider_push_token) {

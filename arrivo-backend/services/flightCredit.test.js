@@ -162,3 +162,14 @@ test("applyCredit cancels the convoy with the main ride", async () => {
   await fc.applyCredit(7, { env: ON, db });
   assert.ok(db.log.some((l) => l.startsWith("UPDATE rides SET ride_status = 'cancelled', flight_issue = 'cancelled', updated_at")));
 });
+
+test("drop-off flight change: cash rails are refunded, membership and family wallet are not", () => {
+  const base = { payment_status: "paid" };
+  assert.deepEqual(fc.dropoffIssuePlan({ ...base, payment_method: "card" }), { refund: true, nextPaymentStatus: "pending_reconfirmation", notify: "refunded_to_wallet" });
+  assert.equal(fc.dropoffIssuePlan({ ...base, payment_method: "wallet" }).refund, true);
+  for (const m of ["membership", "family_wallet"]) {
+    assert.deepEqual(fc.dropoffIssuePlan({ ...base, payment_method: m }), { refund: false, nextPaymentStatus: "paid", notify: "ops_will_contact" });
+  }
+  // a pay-later ride was never charged: nothing to refund, reconfirm as before
+  assert.deepEqual(fc.dropoffIssuePlan({ payment_status: "pending", payment_method: "card" }), { refund: false, nextPaymentStatus: "pending_reconfirmation", notify: "refunded_to_wallet" });
+});

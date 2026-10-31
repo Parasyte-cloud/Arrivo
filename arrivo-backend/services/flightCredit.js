@@ -83,6 +83,20 @@ function decideCredit(ride, looked, env = process.env, now = Date.now()) {
   return { action: "close", amount: 0 };
 }
 
+// Drop-off flight change (cancelled or rescheduled). Card and wallet rides get the fare back in the
+// wallet and are charged again at drop-off. A membership ride or a family wallet ride paid nothing
+// from the rider's own pocket, so there is no cash to hand back and nothing to charge again: the
+// ride stays paid, the issue is flagged, and Ops settle it with the member or the plan owner.
+function dropoffIssuePlan(ride) {
+  const cash = CASH_RAILS.includes(ride.payment_method);
+  const wasPaid = ride.payment_status === "paid";
+  return {
+    refund: wasPaid && cash,
+    nextPaymentStatus: wasPaid && !cash ? "paid" : "pending_reconfirmation",
+    notify: wasPaid && !cash ? "ops_will_contact" : "refunded_to_wallet",
+  };
+}
+
 function creditMessage(ride, amount) {
   const money = `₦${Math.round(amount).toLocaleString("en-NG")}`;
   return amount > 0
@@ -225,4 +239,4 @@ async function moveCredit(creditId, toUserId, { actorId, note = "", db = null } 
   }
 }
 
-module.exports = { CASH_RAILS, seenCancelledEarlier, creditEnabled, nameKey, nameMatches, decideCredit, creditMessage, applyCredit, searchCredits, moveCredit };
+module.exports = { dropoffIssuePlan, CASH_RAILS, seenCancelledEarlier, creditEnabled, nameKey, nameMatches, decideCredit, creditMessage, applyCredit, searchCredits, moveCredit };
