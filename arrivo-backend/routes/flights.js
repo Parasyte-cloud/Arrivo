@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const { requireAuth } = require("../middleware/auth");
+const { createLimiter } = require("../services/smallLimiter");
 const router = express.Router();
 
 // Common Nigerian airport IATA codes, so the app can send a friendly name
@@ -101,7 +102,13 @@ async function lookupFlightStatus(flightNumber, arrIata = "LOS", opts = {}) {
 // getFlightStatus); the scheduler's own background lookups call
 // lookupFlightStatus directly and never go through this HTTP route at all,
 // so they're unaffected.
+// Lookups spend a paid provider quota, so one account cannot ask without limit.
+const allowLookup = createLimiter({ max: 30, windowMs: 10 * 60 * 1000 });
+
 router.get("/status", requireAuth, async (req, res) => {
+  if (!allowLookup(String(req.user.id))) {
+    return res.status(429).json({ error: "You have checked a lot of flights. Please wait a few minutes and try again." });
+  }
   const { flightNumber, arrIata = "LOS", date } = req.query;
   const input = require("../services/flightInput");
   const { lookupFlight } = require("../services/flightLookup");
