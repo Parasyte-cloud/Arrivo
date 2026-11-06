@@ -95,6 +95,8 @@ ALTER TABLE drivers ADD COLUMN IF NOT EXISTS scan_token TEXT UNIQUE;
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS tier TEXT;
 DO $$
 BEGIN
+  -- Two instances can start at once during a deploy. The lock makes them take turns, so the archive runs exactly once.
+  PERFORM pg_advisory_xact_lock(7240611);
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
     ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
     UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false;
