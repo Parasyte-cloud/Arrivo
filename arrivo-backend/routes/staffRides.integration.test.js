@@ -429,6 +429,14 @@ await test("archive hides a driver, restore brings them back unverified, delete 
   await pool.query("DELETE FROM rides WHERE id=$1", [ride.id]);
   assert.strictEqual((await api(`/api/admin/drivers/${did}`, { method: "DELETE", as: adm })).status, 200);
 });
+await test("changes aimed at a new-engine driver are refused clearly, and the list says why engine drivers are missing", async () => {
+  const adm = await mkUser("admin");
+  const r = await api("/api/admin/drivers/engine:abc/archive", { method: "PATCH", as: adm, body: {} });
+  assert.strictEqual(r.status, 400); assert.match(r.body.error, /Driver Verification/);
+  delete process.env.ARRIVO_ENGINE_URL;
+  const list = await api("/api/admin/drivers", { as: adm });
+  assert.strictEqual(list.body.engineStatus, "not_configured");
+});
 await pool.query("DELETE FROM support_tickets WHERE user_id = ANY($1)", [made]);
 await pool.query("DELETE FROM rides WHERE rider_id = ANY($1)", [made]);
 await pool.query("DELETE FROM drivers WHERE user_id = ANY($1)", [made]);
