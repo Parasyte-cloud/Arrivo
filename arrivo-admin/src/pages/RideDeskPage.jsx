@@ -71,6 +71,13 @@ function Detail({ rideId, me, isLead, onChanged }) {
   const r = d.ride;
   const callsOpen = true;
 
+  const complete = async () => {
+    if (!window.confirm(`Mark ride #${rideId} completed? Only do this when the trip is finished and paid.`)) return;
+    setMoving(true);
+    try { await api.completeDeskRide(token, rideId); await load(); onChanged && onChanged(); }
+    catch (e) { setErr(e.message); } finally { setMoving(false); }
+  };
+
   const move = async (team, userId) => {
     if (!userId) return;
     setMoving(true);
@@ -109,6 +116,14 @@ function Detail({ rideId, me, isLead, onChanged }) {
               </select>
             </label>
           ))}
+        </div>
+      ) : null}
+
+      {r.paymentStatus === "paid" && !["completed", "cancelled"].includes(r.status) ? (
+        <div className="desk-card" data-testid="desk-complete">
+          <div className="desk-eyebrow">Ride status</div>
+          <p className="desk-muted">Paid and finished? Close it here. Cancelling and refunds stay with Admin.</p>
+          <button className="btn verify" disabled={moving} onClick={complete}>Mark completed</button>
         </div>
       ) : null}
 

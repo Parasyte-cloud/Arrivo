@@ -50,7 +50,13 @@ export const getSupportTickets = (token, status) =>
 export const setSupportTicketStatus = (token, id, status) =>
   request(`/api/support/tickets/${id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
 
-export const getDrivers = (token) => request("/api/admin/drivers", token);
+export const getDrivers = (token, archived = false) => request(`/api/admin/drivers${archived ? "?archived=1" : ""}`, token);
+export const archiveDriver = (token, id, archived) =>
+  request(`/api/admin/drivers/${id}/archive`, token, { method: "PATCH", body: JSON.stringify({ archived }) });
+export const deleteDriver = (token, id) => request(`/api/admin/drivers/${id}`, token, { method: "DELETE" });
+export const setDriverTier = (token, id, tier) =>
+  request(`/api/admin/drivers/${id}/tier`, token, { method: "PATCH", body: JSON.stringify({ tier }) });
+export const completeDeskRide = (token, id) => request(`/api/staff/rides/${id}/complete`, token, { method: "POST", body: JSON.stringify({}) });
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
 

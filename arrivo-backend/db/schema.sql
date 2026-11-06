@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS drivers (
 
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS scan_token TEXT UNIQUE;
 
+-- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
+-- The one-time block archives every driver that existed when the column was first added
+-- (all test or legacy accounts at launch). It runs once, because it only fires while the
+-- column is missing, so restoring a driver later is never undone by a restart.
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS tier TEXT;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
+    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
+    UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false;
+  END IF;
+END $$;
+
 -- Added for the comprehensive driver application flow: insurance, vehicle
 -- ownership (a driver may not own the car they drive — Arrivo's vehicle-owner
 -- program means someone else could), verification photos, and a driver-side
