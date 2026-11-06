@@ -88,21 +88,6 @@ CREATE TABLE IF NOT EXISTS drivers (
 
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS scan_token TEXT UNIQUE;
 
--- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
--- The one-time block archives every driver that existed when the column was first added
--- (all test or legacy accounts at launch). It runs once, because it only fires while the
--- column is missing, so restoring a driver later is never undone by a restart.
-ALTER TABLE drivers ADD COLUMN IF NOT EXISTS tier TEXT;
-DO $$
-BEGIN
-  -- Two instances can start at once during a deploy. The lock makes them take turns, so the archive runs exactly once.
-  PERFORM pg_advisory_xact_lock(7240611);
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
-    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
-    UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false;
-  END IF;
-END $$;
-
 -- Added for the comprehensive driver application flow: insurance, vehicle
 -- ownership (a driver may not own the car they drive — Arrivo's vehicle-owner
 -- program means someone else could), verification photos, and a driver-side
@@ -2056,3 +2041,21 @@ ALTER TABLE users
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+-- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
+-- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
+-- whole script ends, so touching drivers last keeps the lock order the same as the rest of
+-- the app and stops a start up from deadlocking with a request that is inserting rides.
+-- The one-time block archives every driver that existed when the column was first added
+-- (all test or legacy accounts at launch). It only fires while the column is missing, so
+-- restoring a driver later is never undone by a restart.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'tier') THEN
+    ALTER TABLE drivers ADD COLUMN tier TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
+    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
+    UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false;
+  END IF;
+END $$;
