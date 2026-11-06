@@ -6,7 +6,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
-import OAuthButtons from "../components/OAuthButtons";
+import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
 
 export default function LoginScreen({ navigation }) {
   const { t } = useTranslation();
@@ -173,21 +173,25 @@ export default function LoginScreen({ navigation }) {
               <Button label={t("auth.login")} onPress={submit} />
             )}
 
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
+            {SHOW_SOCIAL_SIGN_IN ? (
+              <>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-            <OAuthButtons
-              busy={oauthBusy}
-              onGoogleIdToken={handleGoogleIdToken}
-              onGoogleError={setError}
-              onAppleResult={handleAppleResult}
-            />
-            <Text style={styles.oauthNotice}>
-              By continuing with Google or Apple, you agree to RideArrivo's Data Protection & Privacy Policy.
-            </Text>
+              <OAuthButtons
+                busy={oauthBusy}
+                onGoogleIdToken={handleGoogleIdToken}
+                onGoogleError={setError}
+                onAppleResult={handleAppleResult}
+              />
+              <Text style={styles.oauthNotice}>
+                By continuing with Google, you agree to RideArrivo's Data Protection & Privacy Policy.
+              </Text>
+              </>
+            ) : null}
 
             <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
               <Text style={styles.link}>{t("auth.needAccount")}</Text>
