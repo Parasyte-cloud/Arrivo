@@ -17,3 +17,8 @@ google-play-service-account.json
 *.ipa
 *.apk
 *.aab
+
+# App Store Connect API key. Apple lets you download it once, and it is a
+# credential for the whole account, so it never goes in the repo.
+private/
+*.p8
