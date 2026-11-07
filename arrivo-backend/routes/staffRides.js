@@ -202,6 +202,30 @@ router.post("/rides/:id/contact-log", async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+// POST /api/staff/rides/:id/complete  (needs Ride Desk manage access) close a ride that is paid and finished.
+// Only a ride that is in progress can be closed here (the same point the driver's own completion happens),
+// so a requested or accepted ride can never be closed and counted toward a driver's earnings.
+// Cancelling and refunding stay admin-only. Anything that still owes money is refused,
+// the same way the admin route refuses it, so completing here can never skip a charge or payout.
+router.post("/rides/:id/complete", async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "ride id must be a whole number" });
+  const ex = await pool.query("SELECT * FROM rides WHERE id = $1", [id]);
+  const ride = ex.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status === "completed") return res.json({ ok: true, status: "completed", already: true });
+  if (ride.ride_status === "cancelled") return res.status(409).json({ error: "A cancelled ride cannot be completed." });
+  if (ride.ride_status !== "in_progress") return res.status(409).json({ error: "Only a ride that is in progress can be completed from here." });
+  if (ride.payment_status !== "paid") return res.status(409).json({ error: "Only a paid ride can be completed from here." });
+  if (ride.is_fleet_companion && ride.escort_payout_naira == null) return res.status(409).json({ error: "This fleet escort ride still needs its driver payout recorded first." });
+  const note = `Completed from Ride Desk by staff #${req.user.id} on ${new Date().toISOString()}`;
+  await pool.query(
+    "UPDATE rides SET ride_status = 'completed', completed_at = now(), admin_notes = CASE WHEN admin_notes IS NULL OR admin_notes = '' THEN $1 ELSE admin_notes || E'\n' || $1 END, updated_at = now() WHERE id = $2",
+    [note, id]
+  );
+  res.json({ ok: true, status: "completed" });
+});
+
 // ── duty ──
 router.get("/duty", async (req, res) => {
   res.json({ duty: await svc.getDuty(req.user.id), team: svc.defaultTeamFor(req.user.role), isLead: await svc.isLead(req.user.id) });
