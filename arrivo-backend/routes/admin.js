@@ -17,19 +17,69 @@ router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
+// Drivers who signed up through the new engine have ids like "engine:abc". They are managed in
+// Driver Verification, not here, so any change aimed at one is refused with a clear message.
+router.use("/drivers/:id", (req, res, next) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "This driver is managed in Driver Verification, not on this page." });
+  next();
+});
+
 router.get("/drivers", async (req, res) => {
   const result = await pool.query(
     `SELECT drivers.id, drivers.is_verified, drivers.is_online, drivers.rating,
             drivers.license_number, drivers.lasdri_number, drivers.spoken_languages, drivers.created_at,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            drivers.tier, drivers.archived_at,
             users.id as user_id, users.name, users.email, users.phone,
             vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
      FROM drivers
      JOIN users ON users.id = drivers.user_id
      LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+     WHERE ${req.query.archived === "1" ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
      ORDER BY drivers.is_verified ASC, drivers.created_at DESC`
   );
-  res.json({ drivers: result.rows });
+  const engine = req.query.archived === "1" ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
+  const merged = [...result.rows.map((r) => ({ ...r, source: "legacy" })), ...engine.drivers].sort(
+    (a, b) => Number(a.is_verified) - Number(b.is_verified) || new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+  res.json({ drivers: merged, engineStatus: engine.status });
+});
+
+const DRIVER_TIERS = ["ride", "express", "chauffeur", "air", "boat", "removals", "campus"];
+
+// Archive hides a driver and takes them off the road. It is reversible. Restoring leaves
+// them unverified so someone has to verify them again on purpose.
+router.patch("/drivers/:id/archive", requireRole("admin"), async (req, res) => {
+  const archived = req.body && req.body.archived !== false;
+  const r = archived
+    ? await pool.query("UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false WHERE id = $1 RETURNING id", [req.params.id])
+    : await pool.query("UPDATE drivers SET archived_at = NULL WHERE id = $1 RETURNING id", [req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, archived });
+});
+
+// Delete is for test accounts only: it refuses while the driver has any trip history.
+router.delete("/drivers/:id", requireRole("admin"), async (req, res) => {
+  const d = await pool.query("SELECT id, archived_at FROM drivers WHERE id = $1", [req.params.id]);
+  if (!d.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!d.rows[0].archived_at) return res.status(409).json({ error: "Archive the driver first, then delete." });
+  const trips = await pool.query("SELECT 1 FROM rides WHERE driver_id = $1 LIMIT 1", [req.params.id]);
+  if (trips.rows[0]) return res.status(409).json({ error: "This driver has trip history, so it stays archived instead of deleted." });
+  try {
+    await pool.query("DELETE FROM drivers WHERE id = $1", [req.params.id]);
+  } catch (e) {
+    if (e.code === "23503") return res.status(409).json({ error: "This driver is still linked to other records, so it stays archived instead of deleted." });
+    throw e;
+  }
+  res.json({ id: Number(req.params.id), deleted: true });
+});
+
+router.patch("/drivers/:id/tier", requireRole("admin"), async (req, res) => {
+  const tier = req.body && req.body.tier;
+  if (tier !== null && !DRIVER_TIERS.includes(tier)) return res.status(400).json({ error: `tier must be one of: ${DRIVER_TIERS.join(", ")}` });
+  const r = await pool.query("UPDATE drivers SET tier = $1 WHERE id = $2 RETURNING id", [tier, req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, tier });
 });
 
 router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {

@@ -2041,3 +2041,19 @@ ALTER TABLE users
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+-- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
+-- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
+-- whole script ends, so touching drivers last keeps the lock order the same as the rest of
+-- the app and stops a start up from deadlocking with a request that is inserting rides.
+-- Nothing is archived automatically: existing drivers stay exactly as they are. Test or
+-- legacy accounts are archived on purpose from ArrivoOps (Drivers page, Archive button).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'tier') THEN
+    ALTER TABLE drivers ADD COLUMN tier TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
+    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
+  END IF;
+END $$;
