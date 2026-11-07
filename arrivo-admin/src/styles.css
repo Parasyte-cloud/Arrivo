@@ -679,7 +679,17 @@ body::before {
 
 .workspace-shell {
   min-width: 0;
-  min-height: 100vh;
+  /* Capped (not just a min-height floor) so this column never grows past
+     one screen -- .main below is the thing that scrolls, not the page.
+     Matches the cap already put on .sidebar for the fixed signature bar
+     at the bottom (see "full-height shells stop above the bar" further
+     down) -- .workspace-shell was missing the same max, which is also
+     exactly why .main never had a definite height to size its
+     flex-basis:0 "flex: 1" against: with no scrollable ancestor, overflow
+     here was invisible and no scrollbar ever appeared, on every page that
+     shares this shell. */
+  height: calc(100vh - 36px);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -842,7 +852,9 @@ button.ops-command-trigger, button.ops-top-action { cursor: pointer; }
   width: 100%;
   max-width: none;
   min-width: 0;
+  min-height: 0;
   padding: 28px;
+  overflow-y: auto;
 }
 
 /* Existing pages inherit the new command-console material without requiring
