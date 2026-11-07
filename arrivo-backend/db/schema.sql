@@ -2046,9 +2046,8 @@ ALTER TABLE users
 -- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
 -- whole script ends, so touching drivers last keeps the lock order the same as the rest of
 -- the app and stops a start up from deadlocking with a request that is inserting rides.
--- The one-time block archives every driver that existed when the column was first added
--- (all test or legacy accounts at launch). It only fires while the column is missing, so
--- restoring a driver later is never undone by a restart.
+-- Nothing is archived automatically: existing drivers stay exactly as they are. Test or
+-- legacy accounts are archived on purpose from ArrivoOps (Drivers page, Archive button).
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'tier') THEN
@@ -2056,6 +2055,5 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
     ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
-    UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false;
   END IF;
 END $$;

@@ -400,13 +400,16 @@ await test("staff with Ride Desk manage access can complete a paid ride, not an 
   const ops = await mkUser("operations");
   const viewer = await mkUser("operations");
   await pool.query("UPDATE users SET staff_permissions = $1 WHERE id = $2", [{ "ride-desk": "manage" }, ops.id]);
-  const paid = await mkRide("requested");
-  assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: viewer, body: {} })).status, 403, "view-only staff cannot complete"); const unpaid = await mkRide("requested"); const dead = await mkRide("cancelled");
-  await pool.query("UPDATE rides SET payment_status='paid' WHERE id = ANY($1)", [[paid.id, dead.id]]);
+  const paid = await mkRide("in_progress");
+  assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: viewer, body: {} })).status, 403, "view-only staff cannot complete"); const unpaid = await mkRide("in_progress"); const dead = await mkRide("cancelled"); const early = await mkRide("requested"); const accepted = await mkRide("accepted");
+  await pool.query("UPDATE rides SET payment_status='paid' WHERE id = ANY($1)", [[paid.id, dead.id, early.id, accepted.id]]);
+  assert.strictEqual((await api(`/api/staff/rides/${early.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409, "requested ride cannot be closed");
+  assert.strictEqual((await api(`/api/staff/rides/${accepted.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409, "accepted ride cannot be closed");
   assert.strictEqual((await api(`/api/staff/rides/${unpaid.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409);
   assert.strictEqual((await api(`/api/staff/rides/${dead.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409);
   assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: ops, body: {} })).status, 200);
-  assert.strictEqual((await pool.query("SELECT ride_status FROM rides WHERE id=$1", [paid.id])).rows[0].ride_status, "completed");
+  const done = (await pool.query("SELECT ride_status, completed_at FROM rides WHERE id=$1", [paid.id])).rows[0];
+  assert.strictEqual(done.ride_status, "completed"); assert.ok(done.completed_at, "completed_at is set like the normal flow");
   assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: ops, body: {} })).body.already, true);
 });
 await test("archive hides a driver, restore brings them back unverified, delete only for archived drivers with no trips", async () => {

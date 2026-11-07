@@ -119,10 +119,10 @@ function Detail({ rideId, me, isLead, onChanged }) {
         </div>
       ) : null}
 
-      {r.paymentStatus === "paid" && !["completed", "cancelled"].includes(r.status) ? (
+      {r.paymentStatus === "paid" && r.status === "in_progress" ? (
         <div className="desk-card" data-testid="desk-complete">
           <div className="desk-eyebrow">Ride status</div>
-          <p className="desk-muted">Paid and finished? Close it here. Cancelling and refunds stay with Admin.</p>
+          <p className="desk-muted">Paid and finished? Close it here (only rides that are in progress). Cancelling and refunds stay with Admin.</p>
           <button className="btn verify" disabled={moving} onClick={complete}>Mark completed</button>
         </div>
       ) : null}
