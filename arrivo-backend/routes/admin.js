@@ -246,6 +246,62 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
 });
 
+// PATCH /rides/:id/driver — manual driver assignment, for when a ride needs a
+// driver put on it (or taken off it) by hand instead of waiting for a driver
+// to self-accept from the available-rides list (see routes/rides.js GET
+// /available and PATCH /:id/accept). This is deliberately a thin, separate
+// route rather than folded into the generic PATCH /rides/:id above: it only
+// ever touches driver_id/ride_status, never money, so it carries none of
+// that route's completion guardrails and doesn't need to.
+router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
+  const { driverId } = req.body;
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  if (["completed", "cancelled"].includes(ride.ride_status)) {
+    return res.status(400).json({ error: `This ride is already ${ride.ride_status} — its driver can't be changed from here.` });
+  }
+
+  // driverId: null un-assigns and sends the ride back to "requested" (waiting
+  // for a driver), same as a driver cancelling an accepted ride.
+  if (driverId === null || driverId === undefined) {
+    const updated = await pool.query(
+      `UPDATE rides SET driver_id = NULL,
+              ride_status = CASE WHEN ride_status IN ('accepted', 'in_progress') THEN 'requested' ELSE ride_status END,
+              updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+    return res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+  }
+
+  const driver = await pool.query(
+    `SELECT drivers.id, drivers.is_verified, users.name
+     FROM drivers JOIN users ON users.id = drivers.user_id
+     WHERE drivers.id = $1`,
+    [driverId]
+  );
+  if (!driver.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!driver.rows[0].is_verified) {
+    return res.status(400).json({ error: `${driver.rows[0].name} isn't verified yet — verify them on the Drivers page first.` });
+  }
+
+  // Putting a driver on a "requested" ride is the same as them accepting
+  // it: move it to "accepted". A ride already "accepted" or "in_progress"
+  // just gets handed to the new driver instead — its status doesn't change
+  // (this is meant for correcting a wrong assignment, not re-dispatching
+  // mid-trip; the admin should confirm with both drivers before doing that).
+  const updated = await pool.query(
+    `UPDATE rides SET driver_id = $1,
+            ride_status = CASE WHEN ride_status = 'requested' THEN 'accepted' ELSE ride_status END,
+            updated_at = now()
+     WHERE id = $2 RETURNING *`,
+    [driverId, ride.id]
+  );
+  res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+});
+
 // ── Live tracking ────────────────────────────────────────────────────────
 
 // GET /api/admin/rides/live — every ride currently in progress, with the

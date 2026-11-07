@@ -74,6 +74,8 @@ export const getRides = (token, { status, search, from, to } = {}) => {
 };
 export const updateRide = (token, id, payload) =>
   request(`/api/admin/rides/${id}`, token, { method: "PATCH", body: JSON.stringify(payload) });
+export const assignRideDriver = (token, id, driverId) =>
+  request(`/api/admin/rides/${id}/driver`, token, { method: "PATCH", body: JSON.stringify({ driverId }) });
 
 // GET /api/admin/rides/live — every in-progress ride with the driver's last
 // known position. This existed on the backend before any frontend used it
