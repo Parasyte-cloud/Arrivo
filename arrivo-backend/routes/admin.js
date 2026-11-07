@@ -17,6 +17,13 @@ router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
+// Drivers who signed up through the new engine have ids like "engine:abc". They are managed in
+// Driver Verification, not here, so any change aimed at one is refused with a clear message.
+router.use("/drivers/:id", (req, res, next) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "This driver is managed in Driver Verification, not on this page." });
+  next();
+});
+
 router.get("/drivers", async (req, res) => {
   const result = await pool.query(
     `SELECT drivers.id, drivers.is_verified, drivers.is_online, drivers.rating,
@@ -31,7 +38,11 @@ router.get("/drivers", async (req, res) => {
      WHERE ${req.query.archived === "1" ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
      ORDER BY drivers.is_verified ASC, drivers.created_at DESC`
   );
-  res.json({ drivers: result.rows });
+  const engine = req.query.archived === "1" ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
+  const merged = [...result.rows.map((r) => ({ ...r, source: "legacy" })), ...engine.drivers].sort(
+    (a, b) => Number(a.is_verified) - Number(b.is_verified) || new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+  res.json({ drivers: merged, engineStatus: engine.status });
 });
 
 const DRIVER_TIERS = ["ride", "express", "chauffeur", "air", "boat", "removals", "campus"];

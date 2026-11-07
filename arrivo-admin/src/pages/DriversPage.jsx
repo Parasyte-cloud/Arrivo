@@ -45,6 +45,7 @@ export function DriversPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [engineStatus, setEngineStatus] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [tierFilter, setTierFilter] = useState("all");
   const [qrModal, setQrModal] = useState(null); // { driverName, imageUrl } | null
@@ -52,8 +53,9 @@ export function DriversPage() {
 
   const load = useCallback(async () => {
     try {
-      const { drivers } = await api.getDrivers(token, showArchived);
+      const { drivers, engineStatus } = await api.getDrivers(token, showArchived);
       setDrivers(drivers);
+      setEngineStatus(engineStatus || null);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -138,6 +140,14 @@ export function DriversPage() {
         </div>
       </div>
 
+      {engineStatus && engineStatus !== "ok" && engineStatus !== "skipped" ? (
+        <div className="error-text" role="status">
+          {engineStatus === "not_configured" && "New ArrivoExpress drivers are not showing: set ARRIVO_ENGINE_URL and ARRIVO_ENGINE_OPS_TOKEN on this service."}
+          {engineStatus === "token_rejected" && "New ArrivoExpress drivers are not showing: the engine rejected the token. ARRIVO_ENGINE_OPS_TOKEN must equal ARRIVO_OPS_TOKEN on the engine."}
+          {engineStatus === "unreachable" && "New ArrivoExpress drivers are not showing: the engine could not be reached just now."}
+        </div>
+      ) : null}
+
       {error ? <div className="error-text">{error}</div> : null}
 
       <div className="table-wrap">
@@ -170,11 +180,11 @@ export function DriversPage() {
                           NOT usable as a Stream user id. d.user_id is the
                           driver's actual users.id, joined server-side (see
                           arrivo-backend/routes/admin.js GET /drivers). */}
-                      {!isOperations ? (<CallButton calleeUserId={d.user_id} calleeName={d.name} />) : null}
+                      {!isOperations && d.source !== "engine" ? (<CallButton calleeUserId={d.user_id} calleeName={d.name} />) : null}
                     </div>
                   </td>
                   <td>
-                    {isReadOnly ? (
+                    {isReadOnly || d.source === "engine" ? (
                       <StatusPill label={tierOf(d).label} tone={tierOf(d).tone} />
                     ) : (
                       <select className="field" value={d.tier || "ride"} disabled={busyId === d.id} onChange={(e) => changeTier(d, e.target.value)} aria-label={`Tier for ${d.name}`}>
@@ -200,13 +210,15 @@ export function DriversPage() {
                     {d.created_at ? formatDateTime(d.created_at) : "—"}
                   </td>
                   <td>
-                    <StatusPill label={d.is_verified ? "Verified" : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
+                    <StatusPill label={d.is_verified ? "Verified" : d.verification_stage ? String(d.verification_stage).replace(/_/g, " ") : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
                   </td>
                   <td>
                     <StatusPill label={d.is_online ? "Online" : "Offline"} tone={d.is_online ? "teal" : "muted"} />
                   </td>
                   <td>
-                    {isReadOnly ? (
+                    {d.source === "engine" ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Managed in Driver Verification</span>
+                    ) : isReadOnly ? (
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>View only</span>
                     ) : (
                       <button
@@ -217,7 +229,7 @@ export function DriversPage() {
                         {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
                       </button>
                     )}
-                    {!isReadOnly && (
+                    {!isReadOnly && d.source !== "engine" && (
                       showArchived ? (
                         <>
                           <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, false)}>Restore</button>
@@ -227,7 +239,7 @@ export function DriversPage() {
                         <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, true)}>Archive</button>
                       )
                     )}
-                    {d.is_verified && (
+                    {d.is_verified && d.source !== "engine" && (
                       <button
                         className="btn"
                         style={{ marginLeft: 8 }}
