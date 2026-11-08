@@ -342,7 +342,7 @@ export function RidesPage() {
                                   style={{ minWidth: 220 }}
                                 >
                                   <option value="">Unassigned</option>
-                                  {drivers.filter((d) => d.is_verified).map((d) => (
+                                  {drivers.filter((d) => d.is_verified && d.source !== "engine").map((d) => (
                                     <option key={d.id} value={d.id}>{d.name}{d.plate_number ? ` · ${d.plate_number}` : ""}</option>
                                   ))}
                                 </select>
