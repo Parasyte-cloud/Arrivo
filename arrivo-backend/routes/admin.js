@@ -6,6 +6,9 @@ const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlightStatus } = require("./flights");
 const { phoneHint } = require("../services/rideTeam");
 const flightAware = require("../services/flightAware");
+const { sendPushNotification } = require("../services/pushNotifications");
+const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
+const { sendDriverAssignedEmail } = require("../services/email");
 
 const router = express.Router();
 
@@ -244,6 +247,123 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
     [adminNotes ?? ride.admin_notes, rideStatus || ride.ride_status, ride.id]
   );
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+});
+
+// PATCH /rides/:id/driver — manual driver assignment, for when a ride needs a
+// driver put on it (or taken off it) by hand instead of waiting for a driver
+// to self-accept from the available-rides list (see routes/rides.js GET
+// /available and PATCH /:id/accept). This is deliberately a thin, separate
+// route rather than folded into the generic PATCH /rides/:id above: it only
+// ever touches driver_id/ride_status, never money, so it carries none of
+// that route's completion guardrails and doesn't need to.
+router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
+  const { driverId } = req.body;
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  if (["completed", "cancelled"].includes(ride.ride_status)) {
+    return res.status(400).json({ error: `This ride is already ${ride.ride_status} — its driver can't be changed from here.` });
+  }
+
+  // driverId: null un-assigns and sends the ride back to "requested" (waiting
+  // for a driver), same as a driver cancelling an accepted ride.
+  if (driverId === null || driverId === undefined) {
+    const updated = await pool.query(
+      `UPDATE rides SET driver_id = NULL,
+              ride_status = CASE WHEN ride_status IN ('accepted', 'in_progress') THEN 'requested' ELSE ride_status END,
+              updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+    return res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+  }
+
+  const driver = await pool.query(
+    `SELECT drivers.id, drivers.is_verified, drivers.vehicle_id, users.name, users.push_token as driver_push_token
+     FROM drivers JOIN users ON users.id = drivers.user_id
+     WHERE drivers.id = $1`,
+    [driverId]
+  );
+  if (!driver.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!driver.rows[0].is_verified) {
+    return res.status(400).json({ error: `${driver.rows[0].name} isn't verified yet — verify them on the Drivers page first.` });
+  }
+
+  // Putting a driver on a "requested" ride is the same as them accepting
+  // it: move it to "accepted". A ride already "accepted" or "in_progress"
+  // just gets handed to the new driver instead — its status doesn't change
+  // (this is meant for correcting a wrong assignment, not re-dispatching
+  // mid-trip; the admin should confirm with both drivers before doing that).
+  //
+  // The "requested" case gets the exact same atomic guard as a driver's own
+  // POST /api/rides/:id/accept (routes/rides.js): WHERE ride_status =
+  // 'requested' AND driver_id IS NULL. Without it, an admin assigning a
+  // driver at the same moment a different driver self-accepts could silently
+  // overwrite that driver's acceptance — the admin's write would land second
+  // and just stomp on it with no error either way. The "already accepted/
+  // in_progress" reassignment path below doesn't need this: by definition no
+  // driver's self-accept can race it, since self-accept itself requires
+  // ride_status = 'requested'.
+  const wasRequested = ride.ride_status === "requested";
+  const updated = await pool.query(
+    wasRequested
+      ? `UPDATE rides SET driver_id = $1, ride_status = 'accepted', updated_at = now()
+         WHERE id = $2 AND ride_status = 'requested' AND driver_id IS NULL RETURNING *`
+      : `UPDATE rides SET driver_id = $1, updated_at = now()
+         WHERE id = $2 RETURNING *`,
+    [driverId, ride.id]
+  );
+
+  if (wasRequested && updated.rowCount === 0) {
+    return res.status(409).json({ error: "This ride was just accepted by another driver. Refresh and try again." });
+  }
+
+  const finalRide = updated.rows[0];
+
+  // Manual assignment skips the normal accept flow entirely, so neither
+  // side hears about it from the app on its own — unlike a driver
+  // self-accepting (routes/rides.js POST /:id/accept), which already
+  // notifies the rider. Same three rider channels as that route, plus a
+  // push to the driver, who otherwise has no way to know ops put this on
+  // their queue.
+  const riderContact = await pool.query(
+    "SELECT push_token as rider_push_token, whatsapp_number as rider_whatsapp_number, email as rider_email FROM users WHERE id = $1",
+    [finalRide.rider_id]
+  );
+  const vehicleInfo = driver.rows[0].vehicle_id
+    ? await pool.query("SELECT make_model, plate_number FROM vehicles WHERE id = $1", [driver.rows[0].vehicle_id])
+    : { rows: [] };
+  const vehicleLabel = vehicleInfo.rows[0]?.make_model
+    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
+    : null;
+  const driverName = driver.rows[0].name;
+  const rider = riderContact.rows[0] || {};
+
+  if (rider.rider_push_token) {
+    sendPushNotification(
+      rider.rider_push_token,
+      "Driver assigned",
+      `${driverName} has been assigned to your ride.`,
+      { rideId: finalRide.id, type: "ride_accepted" }
+    ).catch(() => {});
+  }
+  if (rider.rider_whatsapp_number) {
+    sendWhatsAppMessage(rider.rider_whatsapp_number, driverAssignedMessage(finalRide, driverName, vehicleLabel)).catch(() => {});
+  }
+  if (rider.rider_email) {
+    sendDriverAssignedEmail(rider.rider_email, finalRide, driverName, vehicleLabel).catch(() => {});
+  }
+  if (driver.rows[0].driver_push_token) {
+    sendPushNotification(
+      driver.rows[0].driver_push_token,
+      "New ride assigned",
+      `Ops assigned you ride #${finalRide.id} — ${finalRide.pickup_address}. Check the app for details.`,
+      { rideId: finalRide.id, type: "ride_assigned_manual" }
+    ).catch(() => {});
+  }
+
+  res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") } });
 });
 
 // ── Live tracking ────────────────────────────────────────────────────────

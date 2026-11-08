@@ -14,6 +14,12 @@ const STATUS_FILTERS = [
   { id: "cancelled", label: "Cancelled" },
 ];
 
+// Manual override list for Change status below -- the backend (PATCH
+// /api/admin/rides/:id) accepts any of these; it only refuses "completed"
+// when the ride still owes money the normal completion flow would have
+// charged (flight-issue fare, fleet-escort payout).
+const EDITABLE_STATUSES = ["requested", "accepted", "in_progress", "completed", "cancelled"];
+
 // Debounces the search box so every keystroke doesn't fire its own request —
 // the date/status filters below are discrete clicks so they don't need this.
 function useDebounced(value, delayMs) {
@@ -69,6 +75,9 @@ export function RidesPage() {
   // request resolving first, flashing "No escort vehicles loaded yet." before
   // C's own response actually arrived.
   const [fleetLoadingIds, setFleetLoadingIds] = useState(() => new Set());
+  // Manual driver assignment + status override -- loaded once, not per row.
+  const [drivers, setDrivers] = useState([]);
+  const [rowBusy, setRowBusy] = useState(() => new Set());
 
   const debouncedSearch = useDebounced(search, 350);
 
@@ -91,6 +100,43 @@ export function RidesPage() {
   }, [token, filter, debouncedSearch, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.getDrivers(token).then((d) => setDrivers(d.drivers || [])).catch(() => {});
+  }, [token]);
+
+  const setBusy = (id, on) => setRowBusy((prev) => {
+    const next = new Set(prev);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
+
+  const assignDriver = async (ride, driverId) => {
+    const label = driverId ? drivers.find((d) => d.id === Number(driverId))?.name || "this driver" : "no driver (unassign)";
+    if (!window.confirm(`Set ${label} on ride #${ride.id}?`)) return;
+    setBusy(ride.id, true);
+    try {
+      await api.assignRideDriver(token, ride.id, driverId ? Number(driverId) : null);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(ride.id, false);
+    }
+  };
+
+  const changeStatus = async (ride, rideStatus) => {
+    if (rideStatus === ride.ride_status) return;
+    if (!window.confirm(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
+    setBusy(ride.id, true);
+    try {
+      await api.updateRide(token, ride.id, { rideStatus });
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(ride.id, false);
+    }
+  };
 
   const openRow = (ride) => {
     if (expandedId === ride.id) {
@@ -282,6 +328,39 @@ export function RidesPage() {
                                   </div>
                                 ))
                               )}
+                            </div>
+                          ) : null}
+                          {!isReadOnly ? (
+                            <div style={{ marginBottom: 14, display: "flex", gap: 20, flexWrap: "wrap" }}>
+                              <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Driver</span>
+                                <select
+                                  className="field"
+                                  value={r.driver_id || ""}
+                                  disabled={rowBusy.has(r.id) || r.ride_status === "completed" || r.ride_status === "cancelled"}
+                                  onChange={(e) => assignDriver(r, e.target.value || null)}
+                                  style={{ minWidth: 220 }}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {drivers.filter((d) => d.is_verified && d.source !== "engine").map((d) => (
+                                    <option key={d.id} value={d.id}>{d.name}{d.plate_number ? ` · ${d.plate_number}` : ""}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Trip status (manual)</span>
+                                <select
+                                  className="field"
+                                  value={r.ride_status}
+                                  disabled={rowBusy.has(r.id)}
+                                  onChange={(e) => changeStatus(r, e.target.value)}
+                                  style={{ minWidth: 180 }}
+                                >
+                                  {EDITABLE_STATUSES.map((st) => (
+                                    <option key={st} value={st}>{st.replace("_", " ")}</option>
+                                  ))}
+                                </select>
+                              </label>
                             </div>
                           ) : null}
                           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
