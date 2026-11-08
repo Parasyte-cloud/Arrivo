@@ -1681,3 +1681,13 @@ body { padding-bottom: 36px; }
   border-color:rgba(255,120,105,.25);
   background:rgba(255,120,105,.08);
 }
+
+/* Phone fit: the page itself never scrolls (only .main does) and an expanded ride row stays
+   inside the screen instead of running off the right edge of the horizontally scrolling table. */
+@media (max-width: 860px) {
+  .app-shell { min-height: 0; }
+  .workspace-shell { height: calc(100dvh - 92px); min-height: 0; }
+  .ride-expand { position: sticky; left: 0; width: min(100%, calc(100vw - 56px)); box-sizing: border-box; }
+  .ride-expand .notes { width: 100%; }
+  .ride-expand select.field { min-width: 0 !important; width: 100%; }
+}

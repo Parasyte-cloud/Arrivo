@@ -318,7 +318,7 @@ export function RidesPage() {
                   {expandedId === r.id ? (
                     <tr>
                       <td colSpan={8} style={{ background: "rgba(255,255,255,0.03)" }}>
-                        <div style={{ padding: "8px 4px" }}>
+                        <div className="ride-expand" style={{ padding: "8px 4px" }}>
                           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                             <button className="btn ghost" onClick={() => openInWindow(`ride/${r.id}`, `Ride #${r.id}`)}>⤢ Ride in window</button>
                             <button className="btn ghost" onClick={() => openInWindow(`track/${r.id}`, `Track #${r.id}`)}>⤢ Live tracking</button>
