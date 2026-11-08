@@ -8,6 +8,7 @@ import wordmarkLight from "./assets/wordmark-light.png";
 import { OpsIcon } from "./components/OpsIcon";
 import { CommandPalette } from "./components/CommandPalette";
 import { ParasyteSignature } from "./components/ParasyteSignature";
+import { ConfirmHost } from "./components/ConfirmDialog";
 import { openInWindow } from "./lib/openWindow";
 
 // Lazy-loaded per page instead of one ~1MB upfront bundle - Leaflet
@@ -306,6 +307,7 @@ export default function App() {
   return (
     <AuthProvider>
       <Root />
+      <ConfirmHost />
       <ParasyteSignature />
     </AuthProvider>
   );

@@ -5,6 +5,7 @@ import { StatusPill } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
 import { CallButton } from "../components/CallButton";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 export const TIERS = [
   { id: "ride", label: "RideArrivo", tone: "teal" },
@@ -79,7 +80,7 @@ export function DriversPage() {
   };
 
   const act = async (driver, fn, confirmText) => {
-    if (confirmText && !window.confirm(confirmText)) return;
+    if (confirmText && !await confirmAction(confirmText)) return;
     setBusyId(driver.id);
     try { await fn(); await load(); } catch (e) { setError(e.message); } finally { setBusyId(null); }
   };

@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { openInWindow } from "../lib/openWindow";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -125,7 +126,7 @@ export function RidesPage() {
 
   const assignDriver = async (ride, driverId) => {
     const label = driverId ? drivers.find((d) => d.id === Number(driverId))?.name || "this driver" : "no driver (unassign)";
-    if (!window.confirm(`Set ${label} on ride #${ride.id}?`)) return;
+    if (!await confirmAction(`Set ${label} on ride #${ride.id}?`)) return;
     setBusy(ride.id, true);
     try {
       const out = await api.assignRideDriver(token, ride.id, driverId ? Number(driverId) : null);
@@ -141,7 +142,7 @@ export function RidesPage() {
 
   const changeStatus = async (ride, rideStatus) => {
     if (rideStatus === ride.ride_status) return;
-    if (!window.confirm(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
+    if (!await confirmAction(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
     setBusy(ride.id, true);
     try {
       setError(null);
@@ -194,7 +195,7 @@ export function RidesPage() {
   const forceCancel = async (ride) => {
     // Force-cancel had no confirmation step -- a misclick immediately
     // cancelled a real, possibly in-progress ride with no undo.
-    if (!window.confirm(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
+    if (!await confirmAction(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
       return;
     }
     setSaving(true);
