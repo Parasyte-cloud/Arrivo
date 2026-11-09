@@ -19,7 +19,7 @@ async function request(path, token, options = {}) {
       },
     });
   } catch (e) {
-    if (e && e.name === "AbortError") throw Object.assign(new Error("The server took too long to answer. Nothing was lost; check the list and try again."), { status: 0, timeout: true });
+    if (e && e.name === "AbortError") throw Object.assign(new Error("The server took too long to answer. It may still have gone through, so check the list before trying again."), { status: 0, timeout: true });
     throw e;
   } finally {
     clearTimeout(timer);

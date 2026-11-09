@@ -261,7 +261,7 @@ export function RidesPage() {
       {error ? <div className="error-text" role="alert">{error} <button className="btn ghost" style={{ padding: "2px 8px" }} onClick={() => setError(null)}>Dismiss</button></div> : null}
 
       <div className="table-wrap">
-        {loading && rides.length === 0 ? (
+        {loading ? (
           <div className="empty-state">Loading rides…</div>
         ) : rides.length === 0 ? (
           <div className="empty-state">No rides match this filter.</div>

@@ -542,7 +542,7 @@ function CashoutsTab({ token }) {
     finally { setBusyId(null); }
   };
   const decline = async (c) => {
-    const reason = await askText(`Decline ${naira(c.amountNaira)} for ${c.driverName}? The money goes back to their wallet. Reason (shown to the driver):`);
+    const reason = await askText(`Decline ${naira(c.amountNaira)} for ${c.driverName}? The money goes back to their wallet. Reason (shown to the driver):`, { required: true });
     if (reason === null) return;
     run(c.id, () => api.declineCashout(token, c.id, reason), "Declined. The money is back in the driver's wallet.");
   };

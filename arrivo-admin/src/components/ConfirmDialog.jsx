@@ -23,7 +23,7 @@ export function ConfirmHost() {
     return () => { host = null; };
   }, []);
   const cur = queue[0];
-  useEffect(() => { setText(""); if (cur) setTimeout(() => okRef.current && okRef.current.focus(), 0); }, [cur]);
+  useEffect(() => { setText(""); if (cur && cur.kind !== "ask") setTimeout(() => okRef.current && okRef.current.focus(), 0); }, [cur]);
   if (!cur) return null;
   const close = (value) => { cur.resolve(value); setQueue((q) => q.slice(1)); };
   const cancelValue = cur.kind === "ask" ? null : false;
@@ -35,11 +35,11 @@ export function ConfirmHost() {
         <p className="confirm-text">{cur.message}</p>
         {cur.kind === "ask" ? (
           <input className="field" style={{ width: "100%", marginTop: 10 }} value={text} onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") close(text); }} autoFocus />
+            onKeyDown={(e) => { if (e.key === "Enter" && (!cur.required || text.trim())) close(text); }} autoFocus />
         ) : null}
         <div className="confirm-actions">
           {cur.kind !== "notify" ? <button type="button" className="btn ghost" onClick={() => close(cancelValue)}>Cancel</button> : null}
-          <button type="button" ref={okRef} className={`btn ${danger ? "revoke" : "primary"}`} onClick={() => close(cur.kind === "ask" ? text : true)}>
+          <button type="button" ref={okRef} disabled={cur.kind === "ask" && cur.required && !text.trim()} className={`btn ${danger ? "revoke" : "primary"}`} onClick={() => close(cur.kind === "ask" ? text : true)}>
             {cur.confirmLabel || (cur.kind === "notify" ? "OK" : danger ? "Yes, do it" : "Confirm")}
           </button>
         </div>
