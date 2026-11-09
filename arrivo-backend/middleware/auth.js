@@ -74,7 +74,9 @@ async function requireAuth(req, res, next) {
   if (staffAccess.STAFF_ROLES.includes(req.user.role)) {
     // Lowercased because Express matches routes case-insensitively: without
     // this, /API/Admin/Wallet-Transactions reaches the route but skips the check.
-    const path = String(req.originalUrl || req.url || "").split("?")[0].toLowerCase();
+    // Express also routes /api/admin//wallet-transactions to the wallet route,
+    // so repeated slashes are collapsed before matching too.
+    const path = String(req.originalUrl || req.url || "").split("?")[0].toLowerCase().replace(/\/{2,}/g, "/");
     const verdict = staffAccess.check({ ...live.rows[0], role: req.user.role }, req.method, path);
     if (verdict) {
       if (!verdict.ok) {
