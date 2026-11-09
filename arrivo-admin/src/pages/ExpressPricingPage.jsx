@@ -3,6 +3,7 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 // ArrivoExpress money controls. Admin only (the operations role is read-only
 // elsewhere and is not given these). Text is English inline, like the rest of
@@ -389,7 +390,7 @@ function QuestsTab({ token }) {
   };
 
   const end = async (q) => {
-    if (!window.confirm(`End "${q.title}"? Drivers keep any reward already earned.`)) return;
+    if (!await confirmAction(`End "${q.title}"? Drivers keep any reward already earned.`)) return;
     try { await api.endExpressQuest(token, q.id); await quests.reload(); } catch (e) { setErr(e.message); }
   };
 
@@ -464,8 +465,8 @@ function PayoutsTab({ token }) {
     catch (e) { setErr(e.message); }
     finally { setBusyId(null); }
   };
-  const payAll = () => {
-    if (!window.confirm(`Credit ${rows.length} reward${rows.length === 1 ? "" : "s"} (${naira(owedTotal)}) to driver wallets now? This cannot be undone.`)) return;
+  const payAll = async () => {
+    if (!await confirmAction(`Credit ${rows.length} reward${rows.length === 1 ? "" : "s"} (${naira(owedTotal)}) to driver wallets now? This cannot be undone.`)) return;
     run("all", () => api.payAllExpressPayouts(token), (r) => `Credited ${r.paid} reward${r.paid === 1 ? "" : "s"}, ${naira(r.paidNaira)} in total.`);
   };
 
@@ -540,8 +541,8 @@ function CashoutsTab({ token }) {
     catch (e) { setErr(e.message); }
     finally { setBusyId(null); }
   };
-  const decline = (c) => {
-    const reason = window.prompt(`Decline ${naira(c.amountNaira)} for ${c.driverName}? The money goes back to their wallet. Reason (shown to the driver):`);
+  const decline = async (c) => {
+    const reason = await askText(`Decline ${naira(c.amountNaira)} for ${c.driverName}? The money goes back to their wallet. Reason (shown to the driver):`, { required: true });
     if (reason === null) return;
     run(c.id, () => api.declineCashout(token, c.id, reason), "Declined. The money is back in the driver's wallet.");
   };
@@ -634,7 +635,7 @@ function AutomationTab({ token }) {
   const toggle = async (sw) => {
     const turningOn = sw.value !== "true";
     const copy = SWITCH_COPY[sw.key];
-    if (turningOn && !window.confirm(`Turn ON: ${copy.title}?\n\n${copy.body}`)) return;
+    if (turningOn && !await confirmAction(`Turn ON: ${copy.title}?\n\n${copy.body}`)) return;
     setBusy(sw.key); setErr(null); setMsg(null);
     try { await api.setExpressAutomation(token, sw.key, turningOn); await info.reload(); }
     catch (e) { setErr(e.message); }
@@ -642,7 +643,7 @@ function AutomationTab({ token }) {
   };
 
   const apply = async () => {
-    if (!window.confirm("Apply the plan below now? Tiers marked Change will have new prices published immediately.")) return;
+    if (!await confirmAction("Apply the plan below now? Tiers marked Change will have new prices published immediately.")) return;
     setBusy("apply"); setErr(null); setMsg(null);
     try {
       const r = await api.applyExpressReprice(token);

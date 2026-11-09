@@ -68,11 +68,20 @@ router.delete("/drivers/:id", requireRole("admin"), async (req, res) => {
   if (!d.rows[0].archived_at) return res.status(409).json({ error: "Archive the driver first, then delete." });
   const trips = await pool.query("SELECT 1 FROM rides WHERE driver_id = $1 LIMIT 1", [req.params.id]);
   if (trips.rows[0]) return res.status(409).json({ error: "This driver has trip history, so it stays archived instead of deleted." });
+  // The delete gets its own short time limit so a locked row answers with an error instead of hanging the page.
+  const client = await pool.connect();
   try {
-    await pool.query("DELETE FROM drivers WHERE id = $1", [req.params.id]);
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("DELETE FROM drivers WHERE id = $1", [req.params.id]);
+    await client.query("COMMIT");
   } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
     if (e.code === "23503") return res.status(409).json({ error: "This driver is still linked to other records, so it stays archived instead of deleted." });
+    if (e.code === "57014") return res.status(503).json({ error: "The database was busy, so nothing was deleted. Try again in a moment." });
     throw e;
+  } finally {
+    client.release();
   }
   res.json({ id: Number(req.params.id), deleted: true });
 });
