@@ -32,6 +32,10 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
   ? `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.replace(".apps.googleusercontent.com", "")}`
   : undefined;
 
+// Google and Apple sign-in are off on iOS for now while we sort out App Review.
+// Apple won't take Google without Apple next to it, so both go. Android keeps Google.
+export const SHOW_SOCIAL_SIGN_IN = Platform.OS !== "ios";
+
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only, per Apple's own button — Android has no Apple button at all).
 // `disabled` is how the signup screen gates these behind the data-protection
