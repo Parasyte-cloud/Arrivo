@@ -5,6 +5,8 @@ import { disconnectStreamVideoClient } from "../hooks/useCreateStreamVideoClient
 import { API_BASE_URL } from "../services/config";
 import { setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
 import { setAppLanguage } from "../i18n";
+import { clientHeaders } from "../services/clientInfo";
+import { noteResponse } from "../utils/updateRequired";
 
 const TOKEN_KEY = "arrivo_token";
 const AuthContext = createContext(null);
@@ -22,9 +24,11 @@ async function request(path, options = {}) {
   // screen would show "Saved ✓" without actually saving anything.
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...clientHeaders(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
+  // Sign-in is a request too: an out-of-date build learns it here.
+  noteResponse(res.status, data);
   if (!res.ok) {
     notifyUnauthorized(res.status, options.headers);
     throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
