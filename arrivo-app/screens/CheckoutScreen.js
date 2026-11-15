@@ -423,7 +423,7 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {status === "success" ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>{t("checkout.confirmed")}</Text> : null}
+        {status === "success" ? <Text style={[styles.statusText, { color: colors.success }]}>{t("checkout.confirmed")}</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   label: { color: colors.dark.text, fontSize: 14, fontWeight: "600", flexShrink: 1, flexBasis: "60%", paddingRight: 8 },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700", flexShrink: 0 },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
-  promoAppliedText: { color: "#1F7A5C", fontSize: 12.5, fontWeight: "600", marginTop: 8 },
+  promoAppliedText: { color: colors.success, fontSize: 12.5, fontWeight: "600", marginTop: 8 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {

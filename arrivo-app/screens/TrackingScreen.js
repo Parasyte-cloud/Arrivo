@@ -929,7 +929,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
-                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>{t("tracking.paidThankYou")}</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: colors.success }]}>{t("tracking.paidThankYou")}</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {overageStatus === "opening" || overageStatus === "verifying" ? (
@@ -1007,7 +1007,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
-                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>{t("tracking.tipSentThankYou")}</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: colors.success }]}>{t("tracking.tipSentThankYou")}</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {tipStatus === "opening" || tipStatus === "verifying" ? (

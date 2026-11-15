@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   venueName: { color: colors.dark.text, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
   venueBrandSuffix: { color: colors.dark.textMuted, fontSize: 13, fontWeight: "500" },
   venueAddress: { color: colors.dark.textMuted, fontSize: 13, lineHeight: 18 },
-  venuePerk: { color: "#1F7A5C", fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
+  venuePerk: { color: colors.success, fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
   errorText: { color: colors.coral, fontSize: 14 },
   emptyText: { color: colors.dark.textMuted, fontSize: 14 },
 });

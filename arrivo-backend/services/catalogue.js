@@ -7,7 +7,6 @@ function buildCatalogue({ expressEnabled }) {
   return [
     { id: "express", group: "ride", flow: "express", enabled: !!expressEnabled },
     { id: "transfer", group: "ride", flow: "route", enabled: true },
-    { id: "schedule", group: "ride", flow: "route", enabled: true },
     { id: "campus", group: "ride", flow: "request", service: "campus", minAge: 16, enabled: true },
     { id: "removals", group: "move", flow: "request", service: "removals", enabled: true },
     { id: "chauffeur", group: "charter", flow: "chauffeur", enabled: true },

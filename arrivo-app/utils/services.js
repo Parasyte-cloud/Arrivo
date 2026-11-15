@@ -31,7 +31,6 @@ export const HUB_GROUPS = ["ride", "move", "charter"];
 export const HUB_DEFAULT = [
   { id: "express", group: "ride", flow: "express", enabled: true },
   { id: "transfer", group: "ride", flow: "route", enabled: true },
-  { id: "schedule", group: "ride", flow: "route", enabled: true },
   { id: "campus", group: "ride", flow: "request", service: "campus", enabled: true },
   { id: "removals", group: "move", flow: "request", service: "removals", enabled: true },
   { id: "chauffeur", group: "charter", flow: "chauffeur", enabled: true },

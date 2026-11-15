@@ -1051,5 +1051,5 @@ const styles = StyleSheet.create({
   partnerVenueHint: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 6, lineHeight: 17 },
   warningText: { color: "#C2362B", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
-  promoText: { color: "#1F7A5C", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
+  promoText: { color: colors.success, fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
 });
