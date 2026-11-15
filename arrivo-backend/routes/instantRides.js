@@ -7,6 +7,14 @@ const {
   requireRole,
 } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
+const { createDriverTiers } = require("../services/driverTiers");
+
+const driverTiers = createDriverTiers(pool);
+const NO_EXPRESS = {
+  error: "ArrivoExpress is not switched on for your account. Ask RideArrivo Ops.",
+  code: "TIER_NOT_GRANTED",
+  tier: "express",
+};
 const {
   sendDriverAssignedEmail,
 } = require("../services/email");
@@ -499,6 +507,10 @@ router.patch(
       });
     }
 
+    if (acceptsInstant && !(await driverTiers.holds(driver.id, "express"))) {
+      return res.status(403).json(NO_EXPRESS);
+    }
+
     if (acceptsInstant && driver.express_paused_at) {
       return res.status(403).json({
         error: "ArrivoExpress is paused on your account while we review a report. Support will contact you.",
@@ -551,6 +563,11 @@ router.get(
       });
     }
 
+    // Offers made before a withdrawal must not linger in the app.
+    if (!(await driverTiers.holds(driver.id, "express"))) {
+      return res.json({ enabled: true, offers: [], tierNotGranted: true });
+    }
+
     const offers = await listDriverOffers(driver.id);
 
     res.json({
@@ -601,6 +618,10 @@ router.post(
         error:
           "Complete your driver profile first",
       });
+    }
+
+    if (!(await driverTiers.holds(driver.id, "express"))) {
+      return res.status(403).json(NO_EXPRESS);
     }
 
     const result =

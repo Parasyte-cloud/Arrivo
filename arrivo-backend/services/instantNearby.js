@@ -7,6 +7,7 @@
 // created. It is an estimate for display only: nothing is promised to the
 // rider, and booking still goes through the normal dispatch path.
 
+const { HOLDS_TIER_SQL } = require("./driverTiers");
 const { listTiers } = require("./instantTiers");
 
 // Beyond this a "pickup time" stops being useful to show.
@@ -69,6 +70,7 @@ async function estimateNearbyDrivers({ lat, lng, db }) {
       WHERE d.is_verified = true
         AND d.is_online = true
         AND d.accepts_instant = true
+        AND ${HOLDS_TIER_SQL("d.id", "'express'")}
         AND d.current_lat IS NOT NULL
         AND d.current_lng IS NOT NULL
         AND d.location_updated_at >= now() - ($3::int * interval '1 second')

@@ -15,7 +15,6 @@ export const TIERS = [
   { id: "removals", label: "ArrivoRemovals", tone: "coral" },
   { id: "campus", label: "ArrivoCampus", tone: "muted" },
 ];
-export const tierOf = (d) => TIERS.find((t) => t.id === (d.tier || "ride")) || TIERS[0];
 
 function exportDriversCsv(drivers) {
   downloadCsv(
@@ -25,7 +24,7 @@ function exportDriversCsv(drivers) {
       { label: "Name", value: (d) => d.name },
       { label: "Email", value: (d) => d.email },
       { label: "Phone", value: (d) => d.phone || "" },
-      { label: "Tier", value: (d) => tierOf(d).label },
+      { label: "Tiers", value: (d) => (d.tiers || []).map((id) => (TIERS.find((t) => t.id === id) || { label: id }).label).join(" | ") },
       { label: "Vehicle", value: (d) => d.make_model || "" },
       { label: "Plate number", value: (d) => d.plate_number || "" },
       { label: "Vehicle type", value: (d) => d.vehicle_type || "" },
@@ -83,11 +82,10 @@ export function DriversPage() {
     setBusyId(driver.id);
     try { await fn(); await load(); } catch (e) { setError(e.message); } finally { setBusyId(null); }
   };
-  const changeTier = (d, tier) => act(d, () => api.setDriverTier(token, d.id, tier));
   const archive = (d, on) => act(d, () => api.archiveDriver(token, d.id, on), on ? `Archive ${d.name}? They go offline and are hidden. You can restore them later.` : null);
   const remove = (d) => act(d, () => api.deleteDriver(token, d.id), `Delete ${d.name} for good? This only works for test drivers with no trips, and cannot be undone.`);
 
-  const shown = drivers.filter((d) => tierFilter === "all" || tierOf(d).id === tierFilter);
+  const shown = drivers.filter((d) => tierFilter === "all" || (d.tiers || []).includes(tierFilter));
   const pendingCount = drivers.filter((d) => !d.is_verified).length;
 
   const viewPlacard = async (driver) => {
@@ -160,7 +158,7 @@ export function DriversPage() {
             <thead>
               <tr>
                 <th>Driver</th>
-                <th>Tier</th>
+                <th>Tiers</th>
                 <th>Vehicle</th>
                 <th>License / LASDRI</th>
                 <th>Joined</th>
@@ -184,12 +182,15 @@ export function DriversPage() {
                     </div>
                   </td>
                   <td>
-                    {isReadOnly || d.source === "engine" ? (
-                      <StatusPill label={tierOf(d).label} tone={tierOf(d).tone} />
+                    {(d.tiers || []).length ? (
+                      <div className="tier-pills">
+                        {(d.tiers || []).map((id) => {
+                          const t = TIERS.find((x) => x.id === id);
+                          return t ? <StatusPill key={id} label={t.label} tone={t.tone} /> : null;
+                        })}
+                      </div>
                     ) : (
-                      <select className="field" value={d.tier || "ride"} disabled={busyId === d.id} onChange={(e) => changeTier(d, e.target.value)} aria-label={`Tier for ${d.name}`}>
-                        {TIERS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                      </select>
+                      <span className="muted">None switched on</span>
                     )}
                   </td>
                   <td>

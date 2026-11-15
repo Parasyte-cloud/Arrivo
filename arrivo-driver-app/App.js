@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LanguageProvider, useT } from "./context/LanguageContext";
+import { TiersProvider } from "./context/TiersContext";
 import { getDriverProfile } from "./services/api";
 import LaunchIntro from "./components/LaunchIntro";
 import { CallOverlayProvider } from "./components/CallOverlay";
@@ -161,12 +162,14 @@ export default function App() {
       <SafeAreaProvider>
         <LanguageProvider>
           <AuthProvider>
-            <CallOverlayProvider>
-              <NavigationContainer theme={navTheme}>
-                <StatusBar style="light" />
-                <RootNavigator />
-              </NavigationContainer>
-            </CallOverlayProvider>
+            <TiersProvider>
+              <CallOverlayProvider>
+                <NavigationContainer theme={navTheme}>
+                  <StatusBar style="light" />
+                  <RootNavigator />
+                </NavigationContainer>
+              </CallOverlayProvider>
+            </TiersProvider>
           </AuthProvider>
         </LanguageProvider>
       </SafeAreaProvider>

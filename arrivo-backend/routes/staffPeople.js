@@ -556,6 +556,13 @@ router.put("/:id/permissions", requireViewer, requireManager, async (req, res) =
 
   const before = access.effectivePermissions(t);
   const next = { ...before, ...wanted };
+  // Who may decide driver tiers is the owner's call alone, so an admin allowed
+  // to manage staff cannot give it to themselves or anyone else. Only a real
+  // change is refused, so a whole-map save that leaves it alone still works.
+  const ownerOnly = access.OWNER_ONLY_AREAS.find((a) => before[a] !== next[a]);
+  if (ownerOnly && !req.actor?.is_owner) {
+    return res.status(403).json({ error: "Only the owner can change who manages driver tiers.", code: "OWNER_ONLY" });
+  }
   const stored = access.diffFromPreset(t.role, next);
   await pool.query("UPDATE users SET staff_permissions = $2 WHERE id = $1",
     [id, Object.keys(stored).length ? JSON.stringify(stored) : null]);

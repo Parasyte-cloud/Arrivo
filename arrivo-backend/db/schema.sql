@@ -2057,3 +2057,65 @@ BEGIN
     ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
   END IF;
 END $$;
+
+-- ── Driver tier access ──
+-- A driver can work more than one service (tier), and only people with manage
+-- access to the "driver-tiers" console area (the owner, plus anyone the owner
+-- names) decide which. One row per driver and tier. status:
+--   requested  the driver asked for it in the app, nobody has decided yet
+--   active     switched on, the driver gets that tier's work
+--   revoked    switched off, or a request declined (note says why)
+-- Kept at the very end of this file, after the drivers ALTERs, for the same
+-- lock-order reason as the block above.
+CREATE TABLE IF NOT EXISTS driver_tier_access (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL CHECK (tier IN ('ride', 'express', 'chauffeur', 'air', 'boat', 'removals', 'campus')),
+  status TEXT NOT NULL CHECK (status IN ('requested', 'active', 'revoked')),
+  decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  decided_at TIMESTAMPTZ,
+  note TEXT,
+  requested_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, tier)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_tier_access_tier_status ON driver_tier_access(tier, status);
+
+-- Every request, grant and withdrawal, newest first in the console. The access
+-- table only holds the latest state, this keeps the history.
+CREATE TABLE IF NOT EXISTS driver_tier_events (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('requested', 'granted', 'revoked')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_driver_tier_events_driver ON driver_tier_events(driver_id, created_at DESC);
+
+-- Drivers who exist when this first runs keep exactly the work they have today
+-- (airport rides, ArrivoExpress, chauffeur) plus any single tier an admin had
+-- tagged them with, so nobody is locked out on deploy. It runs once: the marker
+-- row below stops a later restart from switching on a driver who signed up after
+-- the rollout, or from undoing a withdrawal. A marker, not a date, so it does not
+-- matter when the deploy lands.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM system_config WHERE key = 'driver_tier_backfill_done') THEN
+    INSERT INTO driver_tier_access (driver_id, tier, status, note, decided_at)
+    SELECT d.id, t.tier, 'active', 'Existing driver at rollout', now()
+      FROM drivers d
+      CROSS JOIN (VALUES ('ride'), ('express'), ('chauffeur')) AS t(tier)
+    ON CONFLICT (driver_id, tier) DO NOTHING;
+
+    INSERT INTO driver_tier_access (driver_id, tier, status, note, decided_at)
+    SELECT d.id, d.tier, 'active', 'Existing tier tag at rollout', now()
+      FROM drivers d
+     WHERE d.tier IN ('ride', 'express', 'chauffeur', 'air', 'boat', 'removals', 'campus')
+    ON CONFLICT (driver_id, tier) DO NOTHING;
+
+    INSERT INTO system_config (key, value) VALUES ('driver_tier_backfill_done', 'true')
+    ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;

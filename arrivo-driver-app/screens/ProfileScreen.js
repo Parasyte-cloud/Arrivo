@@ -7,6 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { DeleteAccountSection } from "../components/DeleteAccountSection";
+import ServicesCard from "../components/ServicesCard";
 import { getDriverProfile } from "../services/api";
 import { useT } from "../context/LanguageContext";
 import { LANGUAGES } from "../i18n/translations";
@@ -125,6 +126,7 @@ export default function ProfileScreen() {
 
         <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />
 
+        <ServicesCard lead="The services Ops has switched on for you. Ask for another and Ops will look at it. A service is only on once Ops switches it on." />
         <DeleteAccountSection />
       </ScrollView>
     </View>

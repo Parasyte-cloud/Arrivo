@@ -22,10 +22,17 @@ const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
 // default 20s) so they're polled on their own, quicker cadence below.
 const INSTANT_POLL_INTERVAL_MS = 4000;
+import { useTiers } from "../context/TiersContext";
+import { sectionsFor, queueFor } from "../utils/tiers";
+import TierSwitcher from "../components/TierSwitcher";
+import TierPane from "../components/TierPane";
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
+  // Which service the driver is working on. Each one shows only its own work.
+  const { current: currentTier, legacy: tiersLegacy, loaded: tiersLoaded } = useTiers();
+  const show = sectionsFor(currentTier, { legacy: tiersLegacy });
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
   // Arrivo Express Phase 3 -- the Partner Venues program area lock. Non-null while
@@ -192,6 +199,19 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  // Working on one service at a time: leaving ArrivoExpress for another service
+  // switches the Express opt-in off, so offers never arrive for a service the
+  // driver is not looking at. They flip it on again when they come back.
+  const prevTierRef = useRef(currentTier);
+  useEffect(() => {
+    const prev = prevTierRef.current;
+    prevTierRef.current = currentTier;
+    if (prev === "express" && currentTier !== "express" && acceptsInstant && !tiersLegacy) {
+      setAcceptsInstant(false);
+      setInstantAvailability(token, false).catch(() => setAcceptsInstant(true));
+    }
+  }, [currentTier]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const refreshInstantOffers = useCallback(async () => {
     try {
       const { offers } = await getInstantOffers(token);
@@ -356,7 +376,10 @@ export default function DashboardScreen({ navigation }) {
           />
         </View>
 
-        {instantEnabled ? (
+        <TierSwitcher />
+        {tiersLoaded && show.pane ? <TierPane /> : null}
+
+        {instantEnabled && show.express ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <View style={styles.rowBetween}>
               <View style={{ flex: 1, marginRight: spacing.sm }}>
@@ -385,7 +408,7 @@ export default function DashboardScreen({ navigation }) {
           <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
         ) : isOnline ? (
           <>
-            {acceptsInstant ? (
+            {show.express && acceptsInstant ? (
               <>
                 <Text style={styles.sectionLabel}>ArrivoExpress requests</Text>
                 {instantOffers.map((offer) => (
@@ -402,41 +425,45 @@ export default function DashboardScreen({ navigation }) {
               </>
             ) : null}
 
-            <Text style={styles.sectionLabel}>Nearby requests</Text>
-            {areaLockedToVenue ? (
-              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
-                <Text style={styles.meta}>
-                  🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup — you'll see the full
-                  queue again once it's done.
-                </Text>
-              </Card>
+            {show.queue ? (
+              <>
+                <Text style={styles.sectionLabel}>Nearby requests</Text>
+                {areaLockedToVenue ? (
+                  <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
+                    <Text style={styles.meta}>
+                      🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup. You will see the full
+                      queue again once it's done.
+                    </Text>
+                  </Card>
+                ) : null}
+                {queueFor(available, show.queueTier).length === 0 ? (
+                  <Card tone="dark">
+                    <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
+                      <ActivityIndicator color={colors.amber} />
+                      <Text style={styles.waitingText}>Searching for ride requests…</Text>
+                    </View>
+                  </Card>
+                ) : (
+                  queueFor(available, show.queueTier).map((ride) => (
+                    <RequestCard
+                      key={ride.id}
+                      ride={ride}
+                      busy={busyRideId === ride.id}
+                      // Once ANY accept is in flight, every OTHER card's Accept
+                      // button must be disabled too: busyRideId alone only
+                      // disabled the one row being accepted (it swaps to a
+                      // spinner via the `busy` prop above), leaving every other
+                      // still-visible request card tappable. That let a driver
+                      // fire off Accept on two different rides before either
+                      // network response came back, only for the backend to
+                      // reject the second as already-taken (or worse, race).
+                      disabled={busyRideId !== null && busyRideId !== ride.id}
+                      onAccept={() => handleAccept(ride.id)}
+                    />
+                  ))
+                )}
+              </>
             ) : null}
-            {available.length === 0 ? (
-              <Card tone="dark">
-                <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
-                  <ActivityIndicator color={colors.amber} />
-                  <Text style={styles.waitingText}>Searching for ride requests…</Text>
-                </View>
-              </Card>
-            ) : (
-              available.map((ride) => (
-                <RequestCard
-                  key={ride.id}
-                  ride={ride}
-                  busy={busyRideId === ride.id}
-                  // Once ANY accept is in flight, every OTHER card's Accept
-                  // button must be disabled too — busyRideId alone only
-                  // disabled the one row being accepted (it swaps to a
-                  // spinner via the `busy` prop above), leaving every other
-                  // still-visible request card tappable. That let a driver
-                  // fire off Accept on two different rides before either
-                  // network response came back, only for the backend to
-                  // reject the second as already-taken (or worse, race).
-                  disabled={busyRideId !== null && busyRideId !== ride.id}
-                  onAccept={() => handleAccept(ride.id)}
-                />
-              ))
-            )}
           </>
         ) : (
           <Card tone="dark">

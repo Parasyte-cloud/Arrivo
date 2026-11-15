@@ -33,6 +33,7 @@ router.get("/drivers", async (req, res) => {
             drivers.license_number, drivers.lasdri_number, drivers.spoken_languages, drivers.created_at,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
             drivers.tier, drivers.archived_at,
+            COALESCE((SELECT array_agg(a.tier ORDER BY a.tier) FROM driver_tier_access a WHERE a.driver_id = drivers.id AND a.status = 'active'), '{}') AS tiers,
             users.id as user_id, users.name, users.email, users.phone,
             vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
      FROM drivers

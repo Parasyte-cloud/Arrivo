@@ -39,6 +39,9 @@ const AREAS = [
   ] },
   { id: "riders", label: "Riders", rules: [{ path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ }] },
   { id: "drivers", label: "Drivers", rules: [{ path: /^\/api\/admin\/drivers(\/|$)/ }] },
+  // Which services each driver may work. Not given to admins by default: the
+  // owner holds it and hands it to named people (see OWNER_ONLY_AREAS).
+  { id: "driver-tiers", label: "Driver Tiers", rules: [{ path: /^\/api\/admin\/driver-tiers(\/|$)/ }] },
   { id: "live-map", label: "Live Map", rules: [
     { path: /^\/api\/admin\/rides\/live\/?$/ },
     { path: /^\/api\/live-map(\/|$)/ },
@@ -66,7 +69,7 @@ const AREAS = [
 const AREA_IDS = AREAS.map((a) => a.id);
 // How the Team page lists them: the same order as the console sidebar.
 const DISPLAY_ORDER = [
-  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues", "vehicles",
+  "ride-desk", "panics", "riders", "drivers", "driver-tiers", "rides", "support", "flight-issues", "vehicles",
   "memberships", "wallet", "arrivo-express", "express-pricing", "safety", "trip-tracker", "live-map", "analytics", "exports",
 ];
 
@@ -74,8 +77,12 @@ const all = (level) => Object.fromEntries(AREA_IDS.map((id) => [id, level]));
 
 // Starting points. Support starts narrow on purpose: they see customer data,
 // so they get what the job needs and more is granted per person.
+// Areas only the owner can hand out. An admin who can manage staff may change
+// most things on the Team page, but never who decides driver tiers.
+const OWNER_ONLY_AREAS = ["driver-tiers"];
+
 const PRESETS = {
-  admin: all("manage"),
+  admin: { ...all("manage"), "driver-tiers": "none" },
   support: {
     ...all("none"),
     "ride-desk": "manage",
@@ -164,6 +171,6 @@ function check(person, method, path) {
 }
 
 module.exports = {
-  LEVELS, AREAS, AREA_IDS, DISPLAY_ORDER, PRESETS, STAFF_ROLES,
+  LEVELS, AREAS, AREA_IDS, DISPLAY_ORDER, PRESETS, STAFF_ROLES, OWNER_ONLY_AREAS,
   effectivePermissions, diffFromPreset, cleanOverrides, requirementFor, check, rank,
 };
