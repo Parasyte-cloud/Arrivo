@@ -28,6 +28,7 @@ import TrackingScreen from "./screens/TrackingScreen";
 import ChauffeurScreen from "./screens/ChauffeurScreen";
 import OnTheGoScreen from "./screens/OnTheGoScreen";
 import ArrivoExpressScreen from "./screens/ArrivoExpressScreen";
+import ServiceRequestScreen from "./screens/ServiceRequestScreen";
 import OwnerScreen from "./screens/OwnerScreen";
 import MembershipScreen from "./screens/MembershipScreen";
 import FamilyPlanScreen from "./screens/FamilyPlanScreen";
@@ -99,6 +100,7 @@ function HomeStack() {
       <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: t("nav.liveTracking") }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t("nav.messageDriver") }} />
       <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: t("nav.chauffeurBooking") }} />
+      <Stack.Screen name="ServiceRequest" component={ServiceRequestScreen} options={({ route }) => ({ title: t(`services.${route.params?.service || "campus"}`) })} />
       <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: t("nav.onTheGo") }} />
       <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: t("nav.ownerDashboard") }} />

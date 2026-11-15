@@ -14,6 +14,8 @@ import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from
 import useMinuteTick from "../hooks/useMinuteTick";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import ServiceSwitcher from "../components/ServiceSwitcher";
+import { goToService } from "../utils/services";
 import PhoneInput from "../components/PhoneInput";
 import { validateOptionalPhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
@@ -570,6 +572,7 @@ export default function RouteScreen({ navigation, route }) {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        <ServiceSwitcher current="ride" onSelect={(id) => goToService(navigation, id, { replace: true })} />
         <Text style={styles.title}>{t("route.setYourRoute")}</Text>
 
         {partnerVenueId ? (

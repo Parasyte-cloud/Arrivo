@@ -478,6 +478,16 @@ export function addMembershipProfileUser(token, profileUserEmail) {
 // driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
 // requestedPickupAt (ISO), details and service are optional and carry what the
 // rider had already entered when a booking turned out to be too close.
+// Orders Campus, Air, Boat or Removals. Drivers who hold that service are alerted;
+// RideArrivo confirms the price with the rider before the trip starts.
+export function createServiceRequest(token, body) {
+  return request("/api/service-requests", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
 export function createOnTheGoRequest(
   token,
   { pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone, requestedPickupAt, details, service }

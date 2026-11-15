@@ -1284,6 +1284,13 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
     return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
   }
 
+  if (status === "in_progress" && existing.rows[0].quote_pending) {
+    return res.status(409).json({
+      error: "Ops is still confirming the price with the rider. You can start this trip once it is set.",
+      code: "QUOTE_PENDING",
+    });
+  }
+
   if (status === "in_progress") {
     const pin = await require("../services/pickupPin").checkStartAllowed(existing.rows[0].id);
     if (!pin.allowed) {

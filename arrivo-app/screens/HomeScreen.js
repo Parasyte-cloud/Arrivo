@@ -7,6 +7,8 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getFlightStatus, getInstantStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import ServiceSwitcher from "../components/ServiceSwitcher";
+import { goToService } from "../utils/services";
 
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
@@ -82,6 +84,12 @@ export default function HomeScreen({ navigation }) {
             </View>
           ) : null}
         </View>
+
+        {/* Every rider can order every service. Drivers are the ones limited to the
+            services Ops granted them, so nothing here is hidden per rider. */}
+        <Text style={styles.servicesLabel}>{t("services.title")}</Text>
+        <ServiceSwitcher current={null} expressEnabled={arrivoExpressEnabled} onSelect={(id) => goToService(navigation, id)} />
+        <View style={{ height: spacing.sm }} />
 
         {arrivoExpressEnabled ? (
           <Pressable style={styles.arrivoExpressBanner} onPress={() => navigation.navigate("ArrivoExpress")}>
@@ -188,6 +196,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
   greet: { fontSize: 19, fontWeight: "700", color: colors.dark.text },
   sub: { fontSize: 12, color: colors.dark.textMuted, marginTop: 2 },
+  servicesLabel: { color: colors.dark.textMuted, fontSize: 11.5, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   pill: { backgroundColor: colors.amber, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   pillText: { fontSize: 10, fontWeight: "700", color: colors.ink },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },

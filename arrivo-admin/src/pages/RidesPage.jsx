@@ -62,6 +62,29 @@ const SERVICE_OPTIONS = [
 // New job for a quote-first service. The price is agreed with the customer
 // first; the job then shows up for any driver who holds that service, or Ops can
 // assign one from the table below. Safety check and receipt work on it like any trip.
+// A rider-ordered service job has no price until Ops agrees one with the rider.
+// Until then the driver can accept it but cannot start the trip.
+function PriceSetter({ token, ride, onDone }) {
+  const [price, setPrice] = React.useState("");
+  const [paid, setPaid] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try { await api.quoteServiceJob(token, ride.id, { quoteNaira: Number(price), paid }); onDone(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{ minWidth: 150 }}>
+      <div style={{ color: "var(--coral)", fontWeight: 600, fontSize: 12 }}>Awaiting price</div>
+      <input type="number" min="1" placeholder="Agreed price (naira)" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+      <label style={{ fontSize: 12 }}><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> already paid</label>
+      <button className="btn" disabled={busy || !price} onClick={save} style={{ marginTop: 4 }}>{busy ? "Saving" : "Set price"}</button>
+      {err ? <div style={{ color: "var(--coral)", fontSize: 12 }}>{err}</div> : null}
+    </div>
+  );
+}
+
 function ServiceJobForm({ token, onCreated }) {
   const empty = { service: "boat", riderEmail: "", pickup: "", destination: "", quoteNaira: "", paid: false, notes: "" };
   const [open, setOpen] = useState(false);
@@ -330,7 +353,10 @@ export function RidesPage() {
                       {r.flight_number ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Flight {r.flight_number}</div> : null}
                     </td>
                     <td>{r.driver_name || <span style={{ color: "var(--text-muted)" }}>Unassigned</span>}</td>
-                    <td>₦{r.fare_naira?.toLocaleString()}</td>
+                    <td>{r.quote_pending && !isReadOnly && user?.role === "admin"
+                      ? <PriceSetter token={token} ride={r} onDone={() => load()} />
+                      : r.quote_pending ? <span style={{ color: "var(--coral)", fontWeight: 600 }}>Awaiting price</span>
+                      : <>₦{r.fare_naira?.toLocaleString()}</>}</td>
                     <td><StatusPill label={r.payment_status} tone={r.payment_status === "paid" ? "teal" : "muted"} /></td>
                     <td><StatusPill label={r.ride_status.replace("_", " ")} tone={rideStatusTone(r.ride_status)} /></td>
                     <td onClick={(e) => e.stopPropagation()}>

@@ -291,6 +291,22 @@ router.post("/service-jobs", requireRole("admin"), async (req, res) => {
   res.status(201).json({ ride: { ...ride, stops: JSON.parse(ride.stops || "[]") } });
 });
 
+// PATCH /api/admin/service-jobs/:id/quote: Ops sets the agreed price on a rider-ordered
+// service job, which lets the driver start it. `paid: true` records that it is settled.
+router.patch("/service-jobs/:id/quote", requireRole("admin"), async (req, res) => {
+  const quote = Number(req.body && req.body.quoteNaira);
+  if (!Number.isInteger(quote) || quote < 1 || quote > 50000000) return res.status(400).json({ error: "quoteNaira must be a whole number of naira, 1 or more." });
+  const paid = req.body.paid === true;
+  const r = await pool.query(
+    `UPDATE rides SET fare_naira = $2, quote_pending = false, payment_status = $3,
+            payment_method = CASE WHEN $3 = 'paid' THEN 'invoice' ELSE payment_method END, updated_at = now()
+     WHERE id = $1 AND service IS NOT NULL AND ride_status IN ('requested','accepted') RETURNING *`,
+    [req.params.id, quote, paid ? "paid" : "pending"]);
+  if (!r.rows[0]) return res.status(404).json({ error: "No open service job with that id." });
+  await logSafetyEvent(pool, "service_job_quoted", { rideId: r.rows[0].id, userId: req.user.id, detail: { quoteNaira: quote, paid } });
+  res.json({ ride: { ...r.rows[0], stops: JSON.parse(r.rows[0].stops || "[]") } });
+});
+
 router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
   const { driverId } = req.body;
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
