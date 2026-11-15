@@ -100,21 +100,21 @@ export default function RidePreferencesScreen() {
               <Text style={styles.rowLabel}>Quiet ride</Text>
               <Text style={styles.meta}>Your driver will keep conversation to a minimum.</Text>
             </View>
-            <Switch value={quietRide} onValueChange={setQuietRide} trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }} />
+            <Switch value={quietRide} onValueChange={setQuietRide} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>Child seat required</Text>
               <Text style={styles.meta}>We'll try to arrange one for every booking.</Text>
             </View>
-            <Switch value={childSeatRequired} onValueChange={setChildSeatRequired} trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }} />
+            <Switch value={childSeatRequired} onValueChange={setChildSeatRequired} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>Traveling with a pet</Text>
               <Text style={styles.meta}>Lets your driver know ahead of time.</Text>
             </View>
-            <Switch value={travelingWithPet} onValueChange={setTravelingWithPet} trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }} />
+            <Switch value={travelingWithPet} onValueChange={setTravelingWithPet} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
         </Card>
 
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1, borderColor: "rgba(18,18,59,0.15)",
   },
   chipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
   chipText: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },

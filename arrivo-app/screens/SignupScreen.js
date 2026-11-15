@@ -316,6 +316,7 @@ export default function SignupScreen({ navigation }) {
             ever seeing the privacy notice. */}
         <OAuthButtons
           disabled={!agreedToTerms}
+          onBlocked={() => setError("Tick the box above to agree first, then choose Google or Apple.")}
           busy={oauthBusy}
           onGoogleIdToken={handleGoogleIdToken}
           onGoogleError={setError}

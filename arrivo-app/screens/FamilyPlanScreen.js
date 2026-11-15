@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   warningText: { color: "#FF9B8A", fontSize: 11, marginTop: 6 },
   errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   successText: { color: "#8FD9C4", fontSize: 12, marginTop: 8, textAlign: "center" },
-  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || "rgba(255,255,255,0.08)" },
+  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || "rgba(18,18,59,0.07)" },
   memberName: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   removeLink: { color: "#FF9B8A", fontSize: 12, fontWeight: "600" },
   input: {

@@ -21,7 +21,7 @@ function RouteStrip() {
   return (
     <Svg width={14} height={46} viewBox="0 0 14 46">
       <Circle cx={7} cy={6} r={5} fill={colors.tealBright} />
-      <Line x1={7} y1={12} x2={7} y2={34} stroke="rgba(255,255,255,0.35)" strokeWidth={2} strokeDasharray="3,3" />
+      <Line x1={7} y1={12} x2={7} y2={34} stroke="rgba(18,18,59,0.3)" strokeWidth={2} strokeDasharray="3,3" />
       <Circle cx={7} cy={40} r={5} fill="none" stroke={colors.coral} strokeWidth={2} />
     </Svg>
   );

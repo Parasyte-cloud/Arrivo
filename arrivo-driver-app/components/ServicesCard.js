@@ -36,7 +36,7 @@ export default function ServicesCard({ title = "Your services", lead }) {
         const action = rowAction(status);
         return (
           <View key={slug} style={styles.row} accessible accessibilityLabel={`${m.name}, ${action.label}`}>
-            <View style={[styles.dot, { backgroundColor: status === "active" ? m.accent : "rgba(255,255,255,0.28)" }]} />
+            <View style={[styles.dot, { backgroundColor: status === "active" ? m.accent : "rgba(18,18,59,0.24)" }]} />
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{m.name}</Text>
               <Text style={styles.tag}>{m.tagline}</Text>

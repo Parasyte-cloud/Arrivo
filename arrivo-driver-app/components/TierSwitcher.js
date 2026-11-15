@@ -24,7 +24,7 @@ export default function TierSwitcher() {
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
               accessibilityLabel={m.name}
-              style={({ pressed }) => [styles.chip, on && { borderColor: m.accent, backgroundColor: "rgba(255,255,255,0.14)" }, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [styles.chip, on && { borderColor: m.accent, backgroundColor: "rgba(18,18,59,0.12)" }, pressed && { opacity: 0.8 }]}
             >
               <View style={[styles.dot, { backgroundColor: m.accent, opacity: on ? 1 : 0.55 }]} />
               <Text style={[styles.chipText, on && { color: colors.dark.text }]}>{m.name.replace(/^Arrivo/, "")}</Text>

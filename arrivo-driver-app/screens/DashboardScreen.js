@@ -371,7 +371,7 @@ export default function DashboardScreen({ navigation }) {
             value={isOnline}
             onValueChange={toggleOnline}
             disabled={!!activeRide}
-            trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+            trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
             thumbColor="#fff"
           />
         </View>
@@ -394,7 +394,7 @@ export default function DashboardScreen({ navigation }) {
                 value={acceptsInstant}
                 onValueChange={toggleInstant}
                 disabled={!!activeRide || !instantVerified}
-                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
                 thumbColor="#fff"
               />
             </View>
@@ -926,10 +926,10 @@ const styles = StyleSheet.create({
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
   cancelPickerCard: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(18,18,59,0.05)",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(18,18,59,0.09)",
     padding: spacing.md,
   },
   cancelPickerTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 6 },
@@ -937,7 +937,7 @@ const styles = StyleSheet.create({
   cancelReasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   cancelReasonChip: {
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(18,18,59,0.15)",
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 14,

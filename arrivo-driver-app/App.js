@@ -3,7 +3,7 @@ import { View, ActivityIndicator } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,10 +35,11 @@ const EarningsStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const stackScreenOptions = {
-  headerStyle: { backgroundColor: colors.ink },
-  headerTintColor: colors.cream,
-  headerTitleStyle: { color: colors.cream },
-  contentStyle: { backgroundColor: colors.ink },
+  headerStyle: { backgroundColor: "#FFFFFF" },
+  headerTintColor: colors.ink,
+  headerTitleStyle: { color: colors.ink },
+  headerShadowVisible: false,
+  contentStyle: { backgroundColor: colors.bg },
 };
 
 // Dashboard tab gets its own stack (mirrors the rider app's HomeStack) so
@@ -67,8 +68,8 @@ function EarningsStackScreen() {
 }
 
 const navTheme = {
-  ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.ink, card: colors.ink, border: "rgba(255,255,255,0.08)" },
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: colors.bg, card: "#FFFFFF", text: colors.ink, border: "rgba(18,18,59,0.10)", primary: colors.amber },
 };
 
 function AuthFlow() {
@@ -94,8 +95,8 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.amber,
-        tabBarInactiveTintColor: "#5F5F8F",
-        tabBarStyle: { backgroundColor: colors.ink, borderTopColor: "rgba(255,255,255,0.08)" },
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: "#FFFFFF", borderTopColor: "rgba(18,18,59,0.10)" },
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
@@ -109,7 +110,7 @@ function MainTabs() {
 
 function Loading() {
   return (
-    <View style={{ flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}>
       <ActivityIndicator color={colors.amber} size="large" />
     </View>
   );
@@ -165,7 +166,7 @@ export default function App() {
             <TiersProvider>
               <CallOverlayProvider>
                 <NavigationContainer theme={navTheme}>
-                  <StatusBar style="light" />
+                  <StatusBar style="dark" />
                   <RootNavigator />
                 </NavigationContainer>
               </CallOverlayProvider>

@@ -60,8 +60,11 @@ export function login(payload) {
 export function loginWithGoogle({ idToken, agreedToTerms }) {
   return request("/api/auth/google", { method: "POST", body: JSON.stringify({ idToken, role: "driver", agreedToTerms }) });
 }
-export function loginWithApple({ identityToken, fullName, agreedToTerms }) {
-  return request("/api/auth/apple", { method: "POST", body: JSON.stringify({ identityToken, fullName, role: "driver", agreedToTerms }) });
+// authorizationCode must travel with the identity token. The backend swaps it
+// for the refresh token it needs to revoke Apple access on account deletion,
+// and refuses a brand-new Apple sign-up that arrives without one.
+export function loginWithApple({ identityToken, fullName, agreedToTerms, authorizationCode }) {
+  return request("/api/auth/apple", { method: "POST", body: JSON.stringify({ identityToken, fullName, role: "driver", agreedToTerms, authorizationCode }) });
 }
 // Always responds the same generic message whether or not the email has an
 // account (see the backend route) — this call succeeding just means the

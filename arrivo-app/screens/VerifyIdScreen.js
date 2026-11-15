@@ -160,6 +160,6 @@ const styles = StyleSheet.create({
   previewPlaceholder: {
     width: "100%", height: 140, borderRadius: radius.md, marginBottom: 4,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: colors.dark.hairline, borderStyle: "dashed",
+    backgroundColor: "rgba(18,18,59,0.05)", borderWidth: 1, borderColor: colors.dark.hairline, borderStyle: "dashed",
   },
 });

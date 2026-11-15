@@ -228,10 +228,10 @@ const styles = StyleSheet.create({
   link: { color: colors.tealBright, fontSize: 12.5, fontWeight: "600" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   input: {
-    backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(18,18,59,0.07)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(18,18,59,0.13)",
     paddingHorizontal: 14, paddingVertical: 13, color: colors.dark.text, fontSize: 14, marginBottom: spacing.sm,
   },
-  bankRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)" },
+  bankRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "rgba(18,18,59,0.07)" },
   sectionLabel: { color: colors.dark.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   notice: { color: colors.amber, fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },

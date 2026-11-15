@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   questTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 3, textTransform: "capitalize" },
   reward: { color: colors.amber, fontSize: 18, fontWeight: "800", marginBottom: 4 },
-  barTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.12)", overflow: "hidden" },
+  barTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(18,18,59,0.1)", overflow: "hidden" },
   barFill: { height: 8, borderRadius: 4, backgroundColor: colors.amber },
   progressText: { color: colors.dark.text, fontSize: 12, marginTop: spacing.sm },
   rulesToggle: { color: colors.tealBright, fontSize: 12, fontWeight: "600", marginTop: spacing.sm },

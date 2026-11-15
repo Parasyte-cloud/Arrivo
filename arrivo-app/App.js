@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
-import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -61,15 +61,16 @@ Notifications.setNotificationHandler({
 });
 
 const navTheme = {
-  ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.ink, card: colors.ink, border: "rgba(255,255,255,0.08)" },
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: colors.bg, card: "#FFFFFF", text: colors.ink, border: "rgba(18,18,59,0.10)", primary: colors.amber },
 };
 
 const stackScreenOptions = {
-  headerStyle: { backgroundColor: colors.ink },
-  headerTintColor: colors.cream,
-  headerTitleStyle: { color: colors.cream },
-  contentStyle: { backgroundColor: colors.ink },
+  headerStyle: { backgroundColor: "#FFFFFF" },
+  headerTintColor: colors.ink,
+  headerTitleStyle: { color: colors.ink },
+  headerShadowVisible: false,
+  contentStyle: { backgroundColor: colors.bg },
 };
 
 // Home tab is its own stack so booking flows (Route -> Checkout / Tracking / Chauffeur / Owner)
@@ -135,8 +136,8 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.amber,
-        tabBarInactiveTintColor: "#5F5F8F",
-        tabBarStyle: { backgroundColor: colors.ink, borderTopColor: "rgba(255,255,255,0.08)" },
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: "#FFFFFF", borderTopColor: "rgba(18,18,59,0.10)" },
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
@@ -178,7 +179,7 @@ function RootNavigator() {
   if (initializing) {
     // Restoring a saved session token — brief splash-like loading state.
     return (
-      <View style={{ flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color={colors.amber} size="large" />
       </View>
     );
@@ -212,7 +213,7 @@ export default function App() {
         <AuthProvider>
           <CallOverlayProvider>
             <NavigationContainer theme={navTheme}>
-              <StatusBar style="light" />
+              <StatusBar style="dark" />
               <RootNavigator />
             </NavigationContainer>
           </CallOverlayProvider>
