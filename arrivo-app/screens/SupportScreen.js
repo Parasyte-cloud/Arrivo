@@ -18,13 +18,11 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { createSupportTicket, getRideHistory } from "../services/api";
 import { ACTIVE_STATUSES, pickBooking, describeRide } from "./supportBooking";
+import { getSupportContacts } from "../utils/supportContacts";
 
-// Same info@ridearrivo.com and phone number the website already uses on its
-// privacy/terms pages and footer, so we're not spinning up a second contact
-// channel nobody watches.
-const SUPPORT_EMAIL = "info@ridearrivo.com";
-const SUPPORT_PHONE_DISPLAY = "+234 816 270 6078";
-const SUPPORT_PHONE_DIAL = "+2348162706078";
+// The email and phone number come from utils/supportContacts.js (the same ones
+// the website uses on its privacy/terms pages and footer), which the backend
+// config can update without an app release.
 
 // Matches the TYPES list the backend validates against in routes/support.js.
 // Change one and you have to change the other.
@@ -65,6 +63,7 @@ function openSafely(url) {
 }
 
 export default function SupportScreen() {
+  const { email: SUPPORT_EMAIL, phone: SUPPORT_PHONE_DIAL, phoneDisplay: SUPPORT_PHONE_DISPLAY } = getSupportContacts();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
 
