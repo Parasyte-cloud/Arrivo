@@ -4,6 +4,7 @@ import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
 import { firstName, roleOptions } from "../rideDeskHelpers";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 // Everyone on staff, what each person can see and change in this console, and
 // who changed what. The owner, or an admin the owner allows, makes changes.
@@ -162,11 +163,11 @@ export function TeamPage() {
     }
   };
 
-  const changeRole = (p, r) => {
+  const changeRole = async (p, r) => {
     const word = r === "rider"
       ? `Remove ${firstName(p.name)} from staff? They're signed out everywhere at once and their open rides move to others.`
       : `Make ${firstName(p.name)} ${r}? They're signed out and start from the ${r} preset.`;
-    if (window.confirm(word)) act(() => api.changePersonRole(token, p.id, r), `${firstName(p.name)} is now ${r === "rider" ? "removed from staff" : r}.`);
+    if (await confirmAction(word)) act(() => api.changePersonRole(token, p.id, r), `${firstName(p.name)} is now ${r === "rider" ? "removed from staff" : r}.`);
   };
 
   return (
