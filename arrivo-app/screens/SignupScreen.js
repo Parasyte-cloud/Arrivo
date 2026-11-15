@@ -10,7 +10,7 @@ import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
-import OAuthButtons from "../components/OAuthButtons";
+import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
 import LanguageChips from "../components/LanguageChips";
 import ParasyteSignature from "../components/ParasyteSignature";
 
@@ -306,6 +306,8 @@ export default function SignupScreen({ navigation }) {
           <Button label={t("auth.createAccount")} onPress={submit} />
         )}
 
+        {SHOW_SOCIAL_SIGN_IN ? (
+          <>
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
           <Text style={styles.dividerText}>{t("signup.or")}</Text>
@@ -326,6 +328,8 @@ export default function SignupScreen({ navigation }) {
         />
         {!agreedToTerms ? (
           <Text style={styles.oauthHint}>{t("signup.checkTheBoxAboveTo")}</Text>
+        ) : null}
+          </>
         ) : null}
 
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>

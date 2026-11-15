@@ -7,7 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
-import OAuthButtons from "../components/OAuthButtons";
+import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
 import LanguageChips from "../components/LanguageChips";
 
 export default function LoginScreen({ navigation }) {
@@ -175,6 +175,8 @@ export default function LoginScreen({ navigation }) {
               <Button label={t("auth.login")} onPress={submit} />
             )}
 
+            {SHOW_SOCIAL_SIGN_IN ? (
+              <>
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>{t("login.or")}</Text>
@@ -190,6 +192,8 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.oauthNotice}>
               {t("login.byContinuingWithGoogleOr")}
             </Text>
+              </>
+            ) : null}
 
             <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
               <Text style={styles.link}>{t("auth.needAccount")}</Text>
