@@ -3,6 +3,7 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill } from "../components/StatusPill";
 import { formatDateTime } from "../utils";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 // Trip safety: reports from riders and drivers, driver selfie review, pickup
 // PIN overrides, and the two switches. Admin only. English inline, like the
@@ -135,7 +136,7 @@ function SelfiesTab({ token }) {
   const decide = async (s, decision) => {
     let note = "";
     if (decision === "rejected") {
-      note = window.prompt(`Why reject ${s.driver_name}'s selfie? (shown to the driver)`) || "";
+      note = await askText(`Why reject ${s.driver_name}'s selfie? (shown to the driver)`) || "";
       if (!note) return;
     }
     setBusyId(s.id); setErr(null);
@@ -162,7 +163,7 @@ function SelfiesTab({ token }) {
             <button className="btn primary" disabled={busyId === s.id} onClick={() => decide(s, "approved")}>Approve</button>
             <button className="btn ghost" disabled={busyId === s.id} onClick={() => decide(s, "rejected")}>Reject</button>
             <button className="btn ghost" disabled={busyId === s.id} onClick={async () => {
-              if (!window.confirm(`Take ${s.driver_name} offline and require a new selfie?`)) return;
+              if (!await confirmAction(`Take ${s.driver_name} offline and require a new selfie?`)) return;
               try { await api.requireDriverRecheck(token, s.driver_id); await list.reload(); } catch (e) { setErr(e.message); }
             }}>Require new selfie</button>
           </div>
@@ -180,7 +181,7 @@ function PinTab({ token }) {
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
     e.preventDefault();
-    if (!window.confirm(`Let the driver start ride ${rideId} without the PIN? This is recorded with your name and reason.`)) return;
+    if (!await confirmAction(`Let the driver start ride ${rideId} without the PIN? This is recorded with your name and reason.`)) return;
     setBusy(true); setErr(null); setMsg(null);
     try { await api.overridePickupPin(token, Number(rideId), note); setMsg(`Done. The driver can now start ride ${rideId}.`); setRideId(""); setNote(""); }
     catch (e2) { setErr(e2.message); } finally { setBusy(false); }
@@ -203,8 +204,8 @@ function SwitchesTab({ token }) {
   const toggle = async (sw) => {
     const copy = SWITCH_COPY[sw.key];
     const turningOn = !sw.enabled;
-    if (turningOn && !window.confirm(`Turn ON: ${copy.title}?\n\n${copy.body}`)) return;
-    if (!turningOn && !window.confirm(`Turn OFF: ${copy.title}?`)) return;
+    if (turningOn && !await confirmAction(`Turn ON: ${copy.title}?\n\n${copy.body}`)) return;
+    if (!turningOn && !await confirmAction(`Turn OFF: ${copy.title}?`)) return;
     try { await api.setSafetySwitch(token, sw.key, turningOn); await o.reload(); } catch (e) { setErr(e.message); }
   };
   const sws = o.data ? o.data.switches : [];
