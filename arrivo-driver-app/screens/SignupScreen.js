@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, Keyboa
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, tint } from "../theme/tokens";
+import { colors, spacing, tint, isDark } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
@@ -99,7 +99,7 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]} keyboardShouldPersistTaps="handled">
-        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Image source={isDark ? require("../assets/wordmark-brand-dark.png") : require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
         <Text style={styles.subBrand}>DRIVER</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 

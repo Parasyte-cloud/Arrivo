@@ -19,6 +19,10 @@ export const LANGUAGES = [
 
 export const TRANSLATIONS = {
   en: {
+    mapLive: "Live",
+    mapPickup: "Pickup",
+    mapDestination: "Destination",
+    mapYou: "You",
     svcTitle: "Your services",
     svcLead: "These are the services RideArrivo Ops has switched on for you.",
     svcNone: "No service is on for you yet. RideArrivo Ops will switch one on and it will appear here.",
@@ -132,6 +136,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "Reports can be sent from when you accept a ride until 72 hours after it ends.",
   },
   fr: {
+    mapLive: "En direct",
+    mapPickup: "Prise en charge",
+    mapDestination: "Destination",
+    mapYou: "Vous",
     svcTitle: "Vos services",
     svcLead: "Voici les services que RideArrivo Ops a activés pour vous.",
     svcNone: "Aucun service n'est activé pour vous pour l'instant. RideArrivo Ops en activera un et il apparaîtra ici.",
@@ -245,6 +253,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "Les signalements sont possibles dès que vous acceptez une course et jusqu'à 72 heures après sa fin.",
   },
   es: {
+    mapLive: "En vivo",
+    mapPickup: "Recogida",
+    mapDestination: "Destino",
+    mapYou: "Tú",
     svcTitle: "Tus servicios",
     svcLead: "Estos son los servicios que RideArrivo Ops ha activado para ti.",
     svcNone: "Aún no tienes ningún servicio activado. RideArrivo Ops activará uno y aparecerá aquí.",
@@ -358,6 +370,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "Las denuncias pueden enviarse desde que acepta un viaje hasta 72 horas después de que termine.",
   },
   pt: {
+    mapLive: "Ao vivo",
+    mapPickup: "Embarque",
+    mapDestination: "Destino",
+    mapYou: "Você",
     svcTitle: "Os seus serviços",
     svcLead: "Estes são os serviços que o RideArrivo Ops ativou para si.",
     svcNone: "Ainda não tem nenhum serviço ativado. O RideArrivo Ops ativará um e ele aparecerá aqui.",
@@ -471,6 +487,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "As denúncias podem ser enviadas desde que aceita uma viagem até 72 horas depois de terminar.",
   },
   de: {
+    mapLive: "Live",
+    mapPickup: "Abholung",
+    mapDestination: "Ziel",
+    mapYou: "Sie",
     svcTitle: "Ihre Services",
     svcLead: "Dies sind die Services, die RideArrivo Ops für Sie aktiviert hat.",
     svcNone: "Für Sie ist noch kein Service aktiviert. RideArrivo Ops aktiviert einen, und er erscheint hier.",
@@ -584,6 +604,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "Meldungen sind ab der Annahme einer Fahrt bis 72 Stunden nach deren Ende möglich.",
   },
   zh: {
+    mapLive: "实时",
+    mapPickup: "上车点",
+    mapDestination: "目的地",
+    mapYou: "您",
     svcTitle: "您的服务",
     svcLead: "这些是 RideArrivo Ops 为您开通的服务。",
     svcNone: "目前尚未为您开通任何服务。RideArrivo Ops 开通后会显示在这里。",
@@ -697,6 +721,10 @@ export const TRANSLATIONS = {
     e_WINDOW_CLOSED: "从接单起到行程结束后72小时内可提交举报。",
   },
   hi: {
+    mapLive: "लाइव",
+    mapPickup: "पिकअप",
+    mapDestination: "गंतव्य",
+    mapYou: "आप",
     svcTitle: "आपकी सेवाएँ",
     svcLead: "ये वे सेवाएँ हैं जो RideArrivo Ops ने आपके लिए चालू की हैं।",
     svcNone: "अभी आपके लिए कोई सेवा चालू नहीं है। RideArrivo Ops एक चालू करेगा और वह यहाँ दिखेगी।",

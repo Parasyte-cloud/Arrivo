@@ -121,4 +121,103 @@ async function reverseGeocode(lat, lng) {
   return { address: result.formatted_address, lat, lng };
 }
 
-module.exports = { placesAutocomplete, placeDetails, getDistanceDuration, reverseGeocode };
+
+// ── Road route for the live map ─────────────────────────────────────────
+// The map in both apps draws the road the car will take, like ArrivoExpress,
+// not a straight line. The browser never sees the server key, so the apps ask
+// us. Routes API first, the older Directions API as the backup, and null when
+// neither answers so the app falls back to a plain line.
+const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+const DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json";
+const ROUTE_CACHE_MS = 5 * 60 * 1000;
+const routeCache = new Map();
+
+// Google's encoded polyline format: each number is a delta from the last point.
+function decodePolyline(encoded) {
+  const out = [];
+  let i = 0, lat = 0, lng = 0;
+  const str = String(encoded || "");
+  while (i < str.length) {
+    for (const axis of [0, 1]) {
+      let shift = 0, result = 0, b;
+      do {
+        if (i >= str.length) return out;
+        b = str.charCodeAt(i++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (axis === 0) lat += delta; else lng += delta;
+    }
+    out.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return out;
+}
+
+// Keeps the reply small: at most `max` points, always including both ends.
+function thinPath(path, max = 250) {
+  if (path.length <= max) return path;
+  const step = (path.length - 1) / (max - 1);
+  const out = [];
+  for (let k = 0; k < max; k++) out.push(path[Math.round(k * step)]);
+  return out;
+}
+
+async function computeRoute(from, to) {
+  const key = requireKey();
+  // About 11 m grid, so a car creeping along does not defeat the cache.
+  const r = (n) => Number(n).toFixed(4);
+  const cacheKey = `${r(from.lat)},${r(from.lng)}>${r(to.lat)},${r(to.lng)}`;
+  const hit = routeCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < ROUTE_CACHE_MS) return hit.value;
+
+  let value = null;
+  try {
+    const res = await axios.post(
+      ROUTES_URL,
+      {
+        origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
+        destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
+        travelMode: "DRIVE",
+        routingPreference: "TRAFFIC_AWARE",
+      },
+      { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline" }, timeout: 8000 }
+    );
+    const route = res.data?.routes?.[0];
+    if (route?.polyline?.encodedPolyline) {
+      value = {
+        path: thinPath(decodePolyline(route.polyline.encodedPolyline)),
+        distanceMeters: route.distanceMeters ?? null,
+        durationSeconds: parseInt(String(route.duration || "").replace("s", ""), 10) || null,
+      };
+    }
+  } catch (err) {
+    console.error("Routes API failed, trying Directions:", err.response?.data?.error?.message || err.message);
+  }
+  if (!value) {
+    try {
+      const res = await axios.get(DIRECTIONS_URL, {
+        params: { origin: `${from.lat},${from.lng}`, destination: `${to.lat},${to.lng}`, departure_time: "now", key },
+        timeout: 8000,
+      });
+      const route = res.data?.routes?.[0];
+      const leg = route?.legs?.[0];
+      if (res.data?.status === "OK" && route?.overview_polyline?.points) {
+        value = {
+          path: thinPath(decodePolyline(route.overview_polyline.points)),
+          distanceMeters: leg?.distance?.value ?? null,
+          durationSeconds: (leg?.duration_in_traffic || leg?.duration)?.value ?? null,
+        };
+      }
+    } catch (err) {
+      console.error("Directions API failed:", err.message);
+    }
+  }
+  if (value) {
+    routeCache.set(cacheKey, { at: Date.now(), value });
+    if (routeCache.size > 500) routeCache.delete(routeCache.keys().next().value);
+  }
+  return value;
+}
+
+module.exports = { placesAutocomplete, placeDetails, getDistanceDuration, reverseGeocode, computeRoute, decodePolyline, thinPath };

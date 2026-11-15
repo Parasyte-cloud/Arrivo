@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, tint } from "../theme/tokens";
+import { colors, spacing, tint, isDark } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
@@ -172,7 +172,7 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
-        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Image source={isDark ? require("../assets/wordmark-brand-dark.png") : require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
 
         <Pressable onPress={pickAvatar} style={styles.avatarPicker}>
           {avatarUri ? (
