@@ -92,6 +92,8 @@ const PRESETS = {
     ...all("none"),
     "ride-desk": "view",
     panics: "view",
+    // The list only (see operationsReadOnly.js). Verify-ID and wallet adjustments stay admin-only writes.
+    riders: "view",
     drivers: "view",
     rides: "view",
     "flight-issues": "view",
@@ -158,6 +160,11 @@ function requirementFor(method, path) {
 function check(person, method, path) {
   const req = requirementFor(method, path);
   if (!req) return null;
+  // The waitlist shares the Riders area (one page in the console), but it holds sign-up emails of people who
+  // are not riders yet. Operations may read the riders list, not the waitlist.
+  if (person && person.role === "operations" && /^\/api\/admin\/waitlist(\/|$)/.test(path)) {
+    return { ok: false, area: req.area, need: req.need, has: "none" };
+  }
   const perms = effectivePermissions(person) || {};
   const has = perms[req.area] || "none";
   return { ok: rank(has) >= rank(req.need), area: req.area, need: req.need, has };

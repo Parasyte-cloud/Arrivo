@@ -26,13 +26,17 @@ test("admins keep everything they had", () => {
 
 test("operations keep exactly the pages they had, read only", () => {
   const p = a.effectivePermissions(ops);
-  for (const id of ["ride-desk", "panics", "drivers", "rides", "flight-issues", "vehicles", "live-map", "analytics", "exports"]) assert.strictEqual(p[id], "view", id);
-  for (const id of ["riders", "wallet", "support", "memberships", "arrivo-express", "express-pricing", "safety"]) assert.strictEqual(p[id], "none", id);
+  for (const id of ["ride-desk", "panics", "riders", "drivers", "rides", "flight-issues", "vehicles", "live-map", "analytics", "exports"]) assert.strictEqual(p[id], "view", id);
+  for (const id of ["wallet", "support", "memberships", "arrivo-express", "express-pricing", "safety"]) assert.strictEqual(p[id], "none", id);
   assert.ok(a.check(ops, "GET", "/api/admin/drivers").ok);
   assert.ok(a.check(ops, "GET", "/api/admin/rides/live").ok);
   assert.ok(a.check(ops, "GET", "/api/rides/12/fleet").ok);
   assert.ok(!a.check(ops, "PATCH", "/api/admin/drivers/9/verify").ok);
-  assert.ok(!a.check(ops, "GET", "/api/admin/riders").ok);
+  // Riders list is readable now; everything that changes a rider or a wallet, and the waitlist, is not.
+  assert.ok(a.check(ops, "GET", "/api/admin/riders").ok);
+  assert.ok(!a.check(ops, "GET", "/api/admin/waitlist").ok);
+  assert.ok(!a.check(ops, "PATCH", "/api/admin/riders/5/wallet-adjust").ok);
+  assert.ok(!a.check(ops, "PATCH", "/api/admin/riders/5/verify-id").ok);
 });
 
 test("operations can still do their job on Ride Desk with view only", () => {
