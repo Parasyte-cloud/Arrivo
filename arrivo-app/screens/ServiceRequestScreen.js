@@ -7,6 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import PhoneInput from "../components/PhoneInput";
 import ServiceSwitcher from "../components/ServiceSwitcher";
+import ParasyteSignature from "../components/ParasyteSignature";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { splitPhone, validatePhone } from "../utils/phoneValidation";
@@ -33,6 +34,7 @@ export default function ServiceRequestScreen({ navigation, route }) {
   const [passengers, setPassengers] = useState("");
   const [details, setDetails] = useState("");
   const [phone, setPhone] = useState(() => splitPhone(user?.phone || user?.whatsapp_number));
+  const [ageOk, setAgeOk] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(null);
@@ -46,6 +48,7 @@ export default function ServiceRequestScreen({ navigation, route }) {
       count = Number(passengers);
       if (!Number.isInteger(count) || count < 1 || count > 50) return setError(t("services.errPassengers"));
     }
+    if (service === "campus" && !ageOk) return setError(t("hub.campusConfirm"));
     const ph = validatePhone(phone.dial, phone.national);
     if (!ph.valid) return setError(ph.message);
     setSending(true);
@@ -53,6 +56,7 @@ export default function ServiceRequestScreen({ navigation, route }) {
       const noteParts = [when.trim() ? `${t("services.when")}: ${when.trim()}` : null, details.trim() || null].filter(Boolean);
       const data = await createServiceRequest(token, {
         service,
+        confirmAge16: service === "campus" ? true : undefined,
         pickupAddress: pickup.trim(),
         destinationAddress: destination.trim(),
         passengerCount: count,
@@ -96,6 +100,12 @@ export default function ServiceRequestScreen({ navigation, route }) {
                 <TextInput style={styles.input} value={passengers} onChangeText={setPassengers} placeholder={t("services.passengers")} placeholderTextColor={colors.dark.textMuted} keyboardType="number-pad" />
                 <TextInput style={styles.input} value={details} onChangeText={setDetails} placeholder={t("services.details")} placeholderTextColor={colors.dark.textMuted} maxLength={900} multiline />
                 <PhoneInput tone="dark" dial={phone.dial} national={phone.national} onChangeDial={(dial) => setPhone((p) => ({ ...p, dial }))} onChangeNational={(national) => setPhone((p) => ({ ...p, national }))} placeholder={t("services.phone")} />
+                {service === "campus" ? (
+                  <Pressable onPress={() => setAgeOk((v) => !v)} style={styles.confirmRow} accessibilityRole="checkbox" accessibilityState={{ checked: ageOk }}>
+                    <View style={[styles.box, ageOk && styles.boxOn]}>{ageOk ? <Text style={styles.tick}>✓</Text> : null}</View>
+                    <Text style={[styles.meta, { flex: 1 }]}>{t("hub.campusConfirm")}</Text>
+                  </Pressable>
+                ) : null}
                 <Text style={[styles.meta, { marginBottom: spacing.sm }]}>{t("services.pricePendingLong")}</Text>
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 {sending ? <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.sm }} /> : <Button label={t("services.send")} variant="primary" onPress={submit} />}
@@ -105,6 +115,7 @@ export default function ServiceRequestScreen({ navigation, route }) {
               </Pressable>
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -119,6 +130,10 @@ const styles = StyleSheet.create({
   successTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
   errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   input: { backgroundColor: colors.dark.fieldBg, color: colors.dark.text, borderRadius: radius.sm + 2, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 13, marginBottom: spacing.sm },
+  confirmRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.sm },
+  box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.dark.textMuted, alignItems: "center", justifyContent: "center" },
+  boxOn: { backgroundColor: colors.amber, borderColor: colors.amber },
+  tick: { color: colors.ink, fontWeight: "800", fontSize: 14 },
   whatsappRow: { marginTop: spacing.lg, alignItems: "center" },
   whatsappText: { color: colors.tealBright, fontSize: 12.5, fontWeight: "600" },
 });

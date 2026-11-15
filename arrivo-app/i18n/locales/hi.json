@@ -771,5 +771,29 @@
     "sendFailed": "भेजा नहीं जा सका। फिर कोशिश करें, या WhatsApp पर हमसे संपर्क करें।",
     "pricePending": "कीमत की पुष्टि बाकी",
     "pricePendingLong": "यात्रा शुरू होने से पहले RideArrivo कीमत की पुष्टि करेगा।"
+  },
+  "hub": {
+    "tab_ride": "राइड",
+    "tab_move": "सामान ढुलाई",
+    "tab_charter": "चार्टर",
+    "express_t": "अभी राइड",
+    "express_s": "माँग पर, ArrivoExpress के साथ",
+    "transfer_t": "एयरपोर्ट ट्रांसफ़र",
+    "transfer_s": "आपकी उड़ान के हिसाब से पिकअप",
+    "schedule_t": "राइड शेड्यूल करें",
+    "schedule_s": "पहले से बुक करें, तय किराए पर",
+    "campus_t": "छात्र राइड",
+    "campus_s": "ArrivoCampus। दोस्तों के साथ एक कार बाँटें",
+    "removals_t": "सामान ढुलाई",
+    "removals_s": "ArrivoRemovals। घर बदलना या भारी सामान",
+    "chauffeur_t": "शोफ़र",
+    "chauffeur_s": "दिन या हफ़्ते के लिए एक ड्राइवर",
+    "air_t": "हवाई ट्रांसफ़र",
+    "air_s": "ArrivoAir। चार्टर और हवाई ट्रांसफ़र",
+    "boat_t": "नाव ट्रांसफ़र",
+    "boat_s": "ArrivoBoat। नाव और जेटी ट्रांसफ़र",
+    "comingSoon": "जल्द आ रहा है",
+    "trackFlight": "उड़ान ट्रैक करें",
+    "campusConfirm": "मैं 16 वर्ष या उससे अधिक का हूँ और छात्र हूँ।"
   }
 }

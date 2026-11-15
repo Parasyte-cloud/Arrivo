@@ -771,5 +771,29 @@
     "sendFailed": "Senden nicht möglich. Bitte erneut versuchen oder per WhatsApp melden.",
     "pricePending": "Preis wird bestätigt",
     "pricePendingLong": "RideArrivo bestätigt den Preis, bevor Ihre Fahrt beginnt."
+  },
+  "hub": {
+    "tab_ride": "Fahrt",
+    "tab_move": "Umzug",
+    "tab_charter": "Charter",
+    "express_t": "Jetzt fahren",
+    "express_s": "Auf Abruf, mit ArrivoExpress",
+    "transfer_t": "Flughafentransfer",
+    "transfer_s": "Abholung mit Flugverfolgung",
+    "schedule_t": "Fahrt planen",
+    "schedule_s": "Im Voraus buchen zum Festpreis",
+    "campus_t": "Studentenfahrt",
+    "campus_s": "ArrivoCampus. Ein Auto mit Freunden teilen",
+    "removals_t": "Umzüge",
+    "removals_s": "ArrivoRemovals. Umzug oder schwere Ladung",
+    "chauffeur_t": "Chauffeur",
+    "chauffeur_s": "Ein Fahrer für einen Tag oder eine Woche",
+    "air_t": "Lufttransfers",
+    "air_s": "ArrivoAir. Charter und Lufttransfers",
+    "boat_t": "Boots-Transfers",
+    "boat_s": "ArrivoBoat. Boots- und Anleger-Transfers",
+    "comingSoon": "Demnächst",
+    "trackFlight": "Flug verfolgen",
+    "campusConfirm": "Ich bin 16 oder älter und Student(in)."
   }
 }
