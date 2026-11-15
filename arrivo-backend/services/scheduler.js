@@ -255,6 +255,8 @@ async function sweepPreferredDriverExpiry() {
         "UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now() WHERE id = $2",
         [reason, ride.id]
       );
+      // Now any driver can take it, so tell them (services/dispatch.js).
+      require("./dispatch").alertDrivers(ride.id, "preferred_released");
       if (ride.rider_push_token) {
         sendPushNotification(
           ride.rider_push_token,
@@ -410,6 +412,8 @@ async function runSweep() {
   await sweepReminders().catch((err) => console.error("[scheduler] sweepReminders crashed:", err.message));
   await sweepFlightIssues().catch((err) => console.error("[scheduler] sweepFlightIssues crashed:", err.message));
   await sweepPreferredDriverExpiry().catch((err) => console.error("[scheduler] sweepPreferredDriverExpiry crashed:", err.message));
+  // Rides still without a driver 2 hours before pickup: one more round of alerts.
+  await require("./dispatch").sweepUnassigned().catch((err) => console.error("[scheduler] dispatch reminders crashed:", err.message));
   await sweepLuckyRideDraw().catch((err) => console.error("[scheduler] sweepLuckyRideDraw crashed:", err.message));
   await sweepUnmatchedPayments().catch((err) => console.error("[scheduler] sweepUnmatchedPayments crashed:", err.message));
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.

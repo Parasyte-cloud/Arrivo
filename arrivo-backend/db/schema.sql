@@ -2155,3 +2155,19 @@ ALTER TABLE rides ADD COLUMN IF NOT EXISTS quote_pending BOOLEAN NOT NULL DEFAUL
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS rider_note TEXT;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS contact_phone TEXT;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_count INTEGER;
+
+-- Every step of getting a driver onto a ride (services/dispatch.js): drivers
+-- alerted when it was booked, reminders, and assignments or changes made from
+-- the ops console, with who made them.
+CREATE TABLE IF NOT EXISTS ride_dispatch_events (
+  id BIGSERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('alerted', 'preferred_released', 'reminder', 'accepted', 'assigned', 'reassigned')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  from_driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  drivers_alerted INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_dispatch_events_ride ON ride_dispatch_events(ride_id, id DESC);

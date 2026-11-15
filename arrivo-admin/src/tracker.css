@@ -126,3 +126,13 @@
 .tt-viewtoggle button { border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
 .tt-viewtoggle button.on { background: var(--amber); color: var(--ink); }
 .tt-map-col { position: relative; }
+
+/* Dispatch block (components/DispatchPanel.jsx). */
+.dp-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; max-height: 320px; overflow-y: auto; }
+.dp-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: 12px; }
+.dp-row > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dp-row span { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); display: inline-block; }
+.dp-dot.on { background: var(--teal); }
+.dp-log { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.dp-log li span { color: var(--text-muted); margin-right: 8px; }
