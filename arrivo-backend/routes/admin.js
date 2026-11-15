@@ -557,6 +557,39 @@ router.get("/trips/active", async (req, res) => {
   res.json({ trips: result.rows.map((r) => hideTripNumbers(shapeTrip(r))), generatedAt: new Date().toISOString() });
 });
 
+// GET /api/admin/trips/dispatch-sheet
+// The fallback if the console or the live map is down: every live ride with the
+// full phone numbers on one page, to print or keep on a phone. It shows numbers,
+// so each ride leaves the same trace as opening it (staff_contact_access).
+// Declared before /trips/:id so "dispatch-sheet" is not read as a ride id.
+router.get("/trips/dispatch-sheet", async (req, res) => {
+  const result = await pool.query(
+    `${TRIP_SELECT}
+     WHERE rides.created_at > now() - interval '30 days'
+       AND rides.ride_status IN ('requested', 'accepted', 'in_progress')
+     ORDER BY (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) DESC,
+              COALESCE(rides.scheduled_pickup_at, rides.created_at) ASC
+     LIMIT 200`
+  );
+  const trips = result.rows.map(shapeTrip);
+  for (const trip of trips) {
+    await logNumberView(req.user.id, trip.id, trip.rider_id, "rider");
+    if (trip.driver_phone) await logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver");
+  }
+  res.json({
+    generatedAt: new Date().toISOString(),
+    trips: trips.map((t) => ({
+      id: t.id, status: t.ride_status, panic: !!t.has_active_panic,
+      pickup: t.pickup_address, stops: t.stops, flight: t.flight_number,
+      scheduledAt: t.scheduled_pickup_at, vehicle: t.vehicle_type,
+      riderName: t.rider_name, riderPhone: t.rider_phone,
+      emergencyName: t.emergency_contact_name, emergencyPhone: t.emergency_contact_phone,
+      driverName: t.driver_name, driverPhone: t.driver_phone,
+      car: [t.make_model, t.plate_number].filter(Boolean).join(" "),
+    })),
+  });
+});
+
 // Flight lookups are paid and quota-limited, so one flight is looked up at most
 // once every five minutes no matter how many people have the page open.
 const FLIGHT_CACHE_MS = 5 * 60 * 1000;

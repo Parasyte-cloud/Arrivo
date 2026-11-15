@@ -4,47 +4,58 @@ import * as api from "../api";
 import wordmarkLight from "../assets/wordmark-light.png";
 import { OpsIcon } from "./OpsIcon";
 
+// Grouped by the job someone is doing, not by which table the page reads.
+// Who sees what is still decided by can(item.id), so this is only the layout.
 const NAV_GROUPS = [
   {
-    label: "Command",
+    label: "Live",
     items: [
       { id: "overview", label: "Overview", icon: "overview" },
       { id: "ride-desk", label: "Ride Desk", icon: "headset" },
-      { id: "panics", label: "Panic Alerts", icon: "alert", danger: true, badgeColor: "var(--coral)" },
       { id: "trip-tracker", label: "Trip Tracker", icon: "radar" },
       { id: "live-map", label: "Live Map", icon: "map" },
+      { id: "rides", label: "Rides", icon: "layers" },
+      { id: "support", label: "Support Tickets", icon: "message" },
     ],
   },
   {
-    label: "People & service",
+    label: "People & fleet",
     items: [
       { id: "riders", label: "Riders", icon: "users" },
       { id: "drivers", label: "Drivers", icon: "car" },
       { id: "driver-tiers", label: "Driver Tiers", icon: "shield" },
-      { id: "rides", label: "Rides", icon: "layers" },
-      { id: "support", label: "Support Tickets", icon: "message" },
+      { id: "vehicles", label: "Vehicles", icon: "car" },
+    ],
+  },
+  {
+    label: "Money",
+    items: [
+      { id: "wallet", label: "Wallet", icon: "wallet" },
+      { id: "memberships", label: "Memberships", icon: "ticket" },
+      { id: "express-pricing", label: "Express Pricing", icon: "pricing" },
       { id: "flight-issues", label: "Flight Issues", icon: "plane", badgeColor: "var(--amber)" },
     ],
   },
   {
-    label: "Fleet & products",
+    label: "Safety",
     items: [
-      { id: "vehicles", label: "Vehicles", icon: "car" },
-      { id: "memberships", label: "Memberships", icon: "ticket" },
-      { id: "wallet", label: "Wallet", icon: "wallet" },
-      { id: "arrivo-express", label: "Arrivo Express", icon: "shield" },
-      { id: "express-pricing", label: "Express Pricing", icon: "pricing" },
+      { id: "panics", label: "Panic Alerts", icon: "alert", danger: true, badgeColor: "var(--coral)" },
       { id: "safety", label: "Trip Safety", icon: "compass" },
     ],
   },
   {
-    label: "Intelligence",
+    label: "Platform",
     items: [
+      { id: "arrivo-express", label: "Arrivo Express", icon: "shield" },
       { id: "analytics", label: "Analytics", icon: "chart" },
       { id: "exports", label: "Exports", icon: "download" },
     ],
   },
 ];
+
+// The web side (journeys, KYC documents, WhatsApp) lives in the Engine Ops page.
+// One door for both, so nobody has to remember a second address.
+const ENGINE_OPS_URL = import.meta.env.VITE_ENGINE_OPS_URL || "https://www.ridearrivo.com/ops";
 
 export function Sidebar({ page, setPage, open, onClose, collapsed, setCollapsed }) {
   const { user, token, logout, access, can } = useAuth();
@@ -111,6 +122,14 @@ export function Sidebar({ page, setPage, open, onClose, collapsed, setCollapsed 
               })}
             </div>
           ))}
+          {access?.isOwner || user?.role === "admin" ? (
+            <div className="nav-group">
+              <div className="nav-group-label">Web side</div>
+              <a className="nav-item" href={ENGINE_OPS_URL} target="_blank" rel="noopener noreferrer" title={collapsed ? "Engine Ops" : "Web journeys, driver documents, WhatsApp. Opens in a new tab."}>
+                <span className="nav-icon"><OpsIcon name="layers" size={17} /></span><span className="nav-label">Engine Ops</span>
+              </a>
+            </div>
+          ) : null}
           {access?.canSeeTeam ? (
             <div className="nav-group">
               <div className="nav-group-label">Administration</div>

@@ -328,6 +328,7 @@ export const setPersonPermissions = (token, id, permissions) =>
 // Trip Tracker: every ride that is waiting, en route or on the road (plus anything finished in
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
+export const getDispatchSheet = (token) => request("/api/admin/trips/dispatch-sheet", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
 
 export const resendPersonSetup = (token, id) =>
