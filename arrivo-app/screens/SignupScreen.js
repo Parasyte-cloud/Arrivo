@@ -10,7 +10,7 @@ import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
-import OAuthButtons from "../components/OAuthButtons";
+import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -304,11 +304,13 @@ export default function SignupScreen({ navigation }) {
           <Button label={t("auth.createAccount")} onPress={submit} />
         )}
 
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {SHOW_SOCIAL_SIGN_IN ? (
+          <>
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
         {/* Disabled until the data-protection checkbox above is checked —
             same rule the password path enforces in submit(), just applied
@@ -324,6 +326,8 @@ export default function SignupScreen({ navigation }) {
         />
         {!agreedToTerms ? (
           <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+        ) : null}
+          </>
         ) : null}
 
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
