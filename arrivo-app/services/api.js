@@ -1,15 +1,20 @@
 import { Platform } from "react-native";
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "./config";
+import { clientHeaders, appVersion } from "./clientInfo";
+import { noteResponse } from "../utils/updateRequired";
+import { buildPaymentInit, paymentInitHeaders } from "../utils/paymentIntent";
 import { newRef, pushReport, shortStack } from "../utils/errorRef";
+
 
 // Sent on every call so a failure on the server can be matched to this phone
 // and app version. X-App-Build also tells the server we show the ref ourselves.
-const APP_VERSION = String(Constants.expoConfig?.version || "unknown");
+// clientHeaders() (clientInfo.js) adds the app name, platform and version the
+// minimum-version check reads; these add the request ref the error log keys on.
+const APP_VERSION = appVersion() || "unknown";
 const PLATFORM = `${Platform.OS} ${Platform.Version}`;
-function clientHeaders(ref) {
-  return { "X-Request-Id": ref, "X-App-Version": APP_VERSION, "X-App-Build": APP_VERSION, "X-Platform": PLATFORM };
+function traceHeaders(ref) {
+  return { ...clientHeaders(), "X-Request-Id": ref, "X-App-Build": APP_VERSION, "X-Platform": PLATFORM };
 }
 
 // Errors the server never saw (no signal, a crash) are queued here and sent to
@@ -54,7 +59,7 @@ export async function flushErrorReports() {
       const r = queue[0];
       const res = await fetch(`${API_BASE_URL}/api/client-errors`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...clientHeaders(newRef()) },
+        headers: { "Content-Type": "application/json", ...traceHeaders(newRef()) },
         body: JSON.stringify({ ...r, context: { ...(r.context || {}), happenedAt: r.at } }),
       });
       // 4xx means the report itself is bad, so drop it rather than retry forever.
@@ -113,7 +118,7 @@ async function request(path, options = {}) {
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", ...clientHeaders(ref), ...options.headers },
+      headers: { "Content-Type": "application/json", ...traceHeaders(ref), ...options.headers },
     });
   } catch (e) {
     // Never reached the server, so it has no record of this. Report it once
@@ -124,13 +129,16 @@ async function request(path, options = {}) {
     throw e;
   }
   const data = await res.json().catch(() => ({}));
+  // A 426 means this build is below the backend's minimum. Record it so the
+  // app can swap to the update screen.
+  noteResponse(res.status, data);
   if (!res.ok) {
     notifyUnauthorized(res.status, options.headers);
     const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
     err.code = data.code;
     err.support = data.support; // company support details, never a rider's or driver's number
     err.sessionId = data.sessionId;
-    err.status = res.status;
     // The server logged this under the same ref (or its own, if it had to make one).
     err.ref = data.requestId || res.headers.get("X-Request-Id") || ref;
     err.errorCode = data.errorCode || `HTTP_${res.status}`;
@@ -168,14 +176,19 @@ export function forgotPassword(email) {
   return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 }
 
-// The token is sent so the backend can require a signed-in rider on these two
-// routes (PAYMENT_ROUTES_REQUIRE_AUTH). Builds that predate this change send
-// none, which is why the backend keeps that switch off until they have aged out.
-export function initializePayment(email, amountNaira, token) {
+// Booking rules, support contacts and the minimum app version. Public.
+export function getBookingConfig() {
+  return request("/api/config/booking");
+}
+
+// Phase 1: sends the login token and a purpose. The backend does not require
+// either yet (see docs/PAYMENT-TOKEN-ROLLOUT.md), so a missing token must never
+// stop a payment from starting.
+export function initializePayment(token, { email, amountNaira, purpose, refId }) {
   return request("/api/payments/initialize", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: JSON.stringify({ email, amountNaira }),
+    headers: paymentInitHeaders(token),
+    body: JSON.stringify(buildPaymentInit({ email, amountNaira, purpose, refId })),
   });
 }
 
