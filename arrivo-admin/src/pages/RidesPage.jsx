@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { openInWindow } from "../lib/openWindow";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -77,12 +78,25 @@ export function RidesPage() {
   const [fleetLoadingIds, setFleetLoadingIds] = useState(() => new Set());
   // Manual driver assignment + status override -- loaded once, not per row.
   const [drivers, setDrivers] = useState([]);
+  // Saved notice shown next to the buttons, per ride, instead of a silent reload.
+  const [notice, setNotice] = useState(null); // { id, text }
+  const noticeTimer = useRef(null);
+  const flash = (id, text) => {
+    setNotice({ id, text });
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3500);
+  };
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  // Swap the saved ride into the list at once so the UI never shows stale data.
+  const patchRide = (saved) => setRides((prev) => prev.map((x) => (x.id === saved.id ? { ...x, ...saved } : x)));
   const [rowBusy, setRowBusy] = useState(() => new Set());
 
   const debouncedSearch = useDebounced(search, 350);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent=true refreshes the list in the background: no "Loading rides" screen,
+  // so an open row, its scroll position and the typed note survive a save.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { rides } = await api.getRides(token, {
         status: filter || undefined,
@@ -112,11 +126,13 @@ export function RidesPage() {
 
   const assignDriver = async (ride, driverId) => {
     const label = driverId ? drivers.find((d) => d.id === Number(driverId))?.name || "this driver" : "no driver (unassign)";
-    if (!window.confirm(`Set ${label} on ride #${ride.id}?`)) return;
+    if (!await confirmAction(`Set ${label} on ride #${ride.id}?`)) return;
     setBusy(ride.id, true);
     try {
-      await api.assignRideDriver(token, ride.id, driverId ? Number(driverId) : null);
-      await load();
+      const out = await api.assignRideDriver(token, ride.id, driverId ? Number(driverId) : null);
+      if (out?.ride) patchRide(out.ride);
+      flash(ride.id, "Driver updated");
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -126,11 +142,14 @@ export function RidesPage() {
 
   const changeStatus = async (ride, rideStatus) => {
     if (rideStatus === ride.ride_status) return;
-    if (!window.confirm(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
+    if (!await confirmAction(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
     setBusy(ride.id, true);
     try {
-      await api.updateRide(token, ride.id, { rideStatus });
-      await load();
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { rideStatus });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, ride_status: rideStatus });
+      flash(ride.id, `Status set to ${rideStatus.replace("_", " ")}`);
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -161,8 +180,11 @@ export function RidesPage() {
   const saveNote = async (ride) => {
     setSaving(true);
     try {
-      await api.updateRide(token, ride.id, { adminNotes: noteDraft });
-      await load();
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { adminNotes: noteDraft });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, admin_notes: noteDraft });
+      flash(ride.id, "Note saved");
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -173,13 +195,16 @@ export function RidesPage() {
   const forceCancel = async (ride) => {
     // Force-cancel had no confirmation step -- a misclick immediately
     // cancelled a real, possibly in-progress ride with no undo.
-    if (!window.confirm(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
+    if (!await confirmAction(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
       return;
     }
     setSaving(true);
     try {
-      await api.updateRide(token, ride.id, { rideStatus: "cancelled", adminNotes: noteDraft || ride.admin_notes });
-      await load();
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { rideStatus: "cancelled", adminNotes: noteDraft || ride.admin_notes });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, ride_status: "cancelled" });
+      flash(ride.id, "Ride cancelled");
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -233,7 +258,7 @@ export function RidesPage() {
         ) : null}
       </div>
 
-      {error ? <div className="error-text">{error}</div> : null}
+      {error ? <div className="error-text" role="alert">{error} <button className="btn ghost" style={{ padding: "2px 8px" }} onClick={() => setError(null)}>Dismiss</button></div> : null}
 
       <div className="table-wrap">
         {loading ? (
@@ -294,7 +319,7 @@ export function RidesPage() {
                   {expandedId === r.id ? (
                     <tr>
                       <td colSpan={8} style={{ background: "rgba(255,255,255,0.03)" }}>
-                        <div style={{ padding: "8px 4px" }}>
+                        <div className="ride-expand" style={{ padding: "8px 4px" }}>
                           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                             <button className="btn ghost" onClick={() => openInWindow(`ride/${r.id}`, `Ride #${r.id}`)}>⤢ Ride in window</button>
                             <button className="btn ghost" onClick={() => openInWindow(`track/${r.id}`, `Track #${r.id}`)}>⤢ Live tracking</button>
@@ -380,7 +405,7 @@ export function RidesPage() {
                             </p>
                           ) : (
                             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                              <button className="btn primary" disabled={saving} onClick={() => saveNote(r)}>
+                              <button className="btn primary" disabled={saving || noteDraft === (r.admin_notes || "")} onClick={() => saveNote(r)}>
                                 {saving ? "Saving…" : "Save note"}
                               </button>
                               {r.ride_status !== "cancelled" && r.ride_status !== "completed" ? (
@@ -388,6 +413,9 @@ export function RidesPage() {
                                   Force-cancel ride
                                 </button>
                               ) : null}
+                              <span role="status" aria-live="polite" style={{ alignSelf: "center", fontSize: 12.5, fontWeight: 600, color: "var(--teal)" }}>
+                                {notice && notice.id === r.id ? `✓ ${notice.text}` : ""}
+                              </span>
                             </div>
                           )}
                         </div>
