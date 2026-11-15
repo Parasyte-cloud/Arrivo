@@ -1,7 +1,8 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing } from "../theme/tokens";
+import { colors, radius, spacing, tint, isDark } from "../theme/tokens";
 
 // Plain, website-style building blocks: flat white cards with a thin border,
 // one amber primary button, one outlined secondary button. No blur, no gloss.
@@ -9,6 +10,9 @@ import { colors, radius, spacing } from "../theme/tokens";
 export function Card({ children, style, tinted }) {
   return (
     <View style={[styles.card, tinted && styles.cardTinted, style]}>
+      {/* Liquid glass: a real blur behind a translucent fill, with a bright top edge like the website. */}
+      {Platform.OS === "web" ? null : <BlurView pointerEvents="none" intensity={isDark ? 30 : 40} tint={colors.blurTint} style={StyleSheet.absoluteFill} />}
+      <View pointerEvents="none" style={styles.shine} />
       {children}
     </View>
   );
@@ -17,7 +21,8 @@ export function Card({ children, style, tinted }) {
 export function Button({ label, onPress, variant = "primary", style, disabled, trailingIcon = false }) {
   const isPrimary = variant === "primary";
   const isTeal = variant === "teal";
-  const textColor = isTeal ? "#fff" : colors.ink;
+  // Amber and the website blue both carry fixed text so they read in light and dark.
+  const textColor = isTeal ? (isDark ? "#06142a" : "#fff") : "#0a1b33";
 
   if (variant === "ghost") {
     return (
@@ -49,7 +54,7 @@ export function Button({ label, onPress, variant = "primary", style, disabled, t
       <Text style={[styles.btnText, { color: textColor }, trailingIcon && { marginRight: 30 }]}>{label}</Text>
       {trailingIcon ? (
         <View style={styles.btnArrowBadge}>
-          <Ionicons name="arrow-forward" size={14} color={isTeal ? "#fff" : colors.ink} />
+          <Ionicons name="arrow-forward" size={14} color={textColor} />
         </View>
       ) : null}
     </Pressable>
@@ -83,8 +88,8 @@ export function Tag({ label, tone = "teal" }) {
 // tone="amber": solid amber circle for the single most prominent action.
 export function IconBadge({ children, tone = "dark", size = 40, style }) {
   const variants = {
-    dark: { backgroundColor: "rgba(18,18,59,0.06)", borderColor: "rgba(18,18,59,0.12)" },
-    light: { backgroundColor: "rgba(18,18,59,0.06)", borderColor: "rgba(18,18,59,0.12)" },
+    dark: { backgroundColor: tint(0.06), borderColor: tint(0.12) },
+    light: { backgroundColor: tint(0.06), borderColor: tint(0.12) },
     amber: { backgroundColor: colors.amber, borderColor: colors.amber },
   };
   return (
@@ -110,11 +115,18 @@ export function IconBadge({ children, tone = "dark", size = 40, style }) {
 const styles = StyleSheet.create({
   card: {
     borderRadius: radius.md,
-    backgroundColor: colors.dark.surface,
+    backgroundColor: colors.glass,
     borderWidth: 1,
-    borderColor: colors.dark.surfaceBorder,
+    borderColor: colors.glassBorder,
     padding: spacing.md,
+    overflow: "hidden",
+    shadowColor: "#06142a",
+    shadowOpacity: isDark ? 0.4 : 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
+  shine: { position: "absolute", top: 0, left: 12, right: 12, height: 1, backgroundColor: colors.shine },
   cardTinted: {
     backgroundColor: "rgba(244,163,0,0.10)",
     borderColor: "rgba(244,163,0,0.35)",
@@ -122,8 +134,8 @@ const styles = StyleSheet.create({
   ghost: {
     borderRadius: radius.sm + 2,
     borderWidth: 1.5,
-    borderColor: "rgba(18,18,59,0.25)",
-    backgroundColor: "#FFFFFF",
+    borderColor: tint(0.25),
+    backgroundColor: colors.glass,
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
@@ -151,7 +163,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: "rgba(18,18,59,0.16)",
+    backgroundColor: tint(0.16),
     alignItems: "center",
     justifyContent: "center",
   },

@@ -43,7 +43,7 @@ import RidePreferencesScreen from "./screens/RidePreferencesScreen";
 import SupportScreen from "./screens/SupportScreen";
 import ChatScreen from "./screens/ChatScreen";
 
-import { colors } from "./theme/tokens";
+import { colors, tint, isDark } from "./theme/tokens";
 
 // JS crashes get a ref and are sent to the server (services/api.js).
 installCrashReporter();
@@ -64,11 +64,12 @@ Notifications.setNotificationHandler({
 
 const navTheme = {
   ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: colors.bg, card: "#FFFFFF", text: colors.ink, border: "rgba(18,18,59,0.10)", primary: colors.amber },
+  dark: isDark,
+  colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.sheet, text: colors.ink, border: tint(0.10), primary: colors.amber },
 };
 
 const stackScreenOptions = {
-  headerStyle: { backgroundColor: "#FFFFFF" },
+  headerStyle: { backgroundColor: colors.sheet },
   headerTintColor: colors.ink,
   headerTitleStyle: { color: colors.ink },
   headerShadowVisible: false,
@@ -143,7 +144,7 @@ function MainTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.amber,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: "#FFFFFF", borderTopColor: "rgba(18,18,59,0.10)" },
+        tabBarStyle: { backgroundColor: colors.sheet, borderTopColor: tint(0.10) },
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
@@ -219,7 +220,7 @@ export default function App() {
         <AuthProvider>
           <CallOverlayProvider>
             <NavigationContainer theme={navTheme}>
-              <StatusBar style="dark" />
+              <StatusBar style={isDark ? "light" : "dark"} />
               <RootNavigator />
             </NavigationContainer>
           </CallOverlayProvider>

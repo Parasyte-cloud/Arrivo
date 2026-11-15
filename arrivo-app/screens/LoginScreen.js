@@ -4,7 +4,7 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, Keyboa
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
 import OAuthButtons from "../components/OAuthButtons";
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerLine: { flex: 1, height: 1, backgroundColor: tint(0.15) },
   dividerText: { color: colors.textMuted, fontSize: 12 },
   oauthNotice: { color: colors.textMuted, fontSize: 10.5, textAlign: "center", marginTop: 10, lineHeight: 15 },
 });

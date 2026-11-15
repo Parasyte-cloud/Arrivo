@@ -127,6 +127,18 @@ const SERVICES = ["campus", "air", "boat", "removals"];
     assert.equal((await call("GET", "/api/service-requests/catalogue", rt)).body.services[0].enabled, false);
   });
 
+  await test("map points: a service job lands on the live map like an Express trip; bad points are ignored, never an error", async () => {
+    const mapper = await makeUser("rider", "Map Rider"); const mt = tokenFor(mapper);
+    const ok = await call("POST", "/api/service-requests", mt, { ...good("air"), pickupLat: 6.4281, pickupLng: 3.4219, destinationLat: "6.5774", destinationLng: 3.3212 });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body)); made.rides.push(ok.body.ride.id);
+    const row = (await pool.query("SELECT pickup_lat, pickup_lng, destination_lat, destination_lng FROM rides WHERE id=$1", [ok.body.ride.id])).rows[0];
+    assert.equal(Number(row.pickup_lat), 6.4281); assert.equal(Number(row.destination_lng), 3.3212);
+    const bad = await call("POST", "/api/service-requests", mt, { ...good("removals"), pickupAddress: "Somewhere else 12", pickupLat: 999, pickupLng: 3.4, destinationLat: "abc", destinationLng: 3.3 });
+    assert.equal(bad.status, 201); made.rides.push(bad.body.ride.id);
+    const r2 = (await pool.query("SELECT pickup_lat, destination_lat FROM rides WHERE id=$1", [bad.body.ride.id])).rows[0];
+    assert.equal(r2.pickup_lat, null); assert.equal(r2.destination_lat, null);
+  });
+
   await test("one account cannot flood Ops: orders are rate limited per user", async () => {
     const flooder = tokenFor(await makeUser("rider", "Flood Rider")); let last = 0;
     for (let i = 0; i < 18; i++) { const r = await call("POST", "/api/service-requests", flooder, { ...good("air"), pickupAddress: "Flood pickup " + i }); if (r.body.ride) made.rides.push(r.body.ride.id); last = r.status; }

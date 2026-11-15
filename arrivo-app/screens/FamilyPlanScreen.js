@@ -10,7 +10,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Press
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import {
   getFamilyPlanPricing, getMyFamilyPlan, createFamilyPlan, addFamilyMember,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   warningText: { color: "#C2362B", fontSize: 11, marginTop: 6 },
   errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   successText: { color: "#1F7A5C", fontSize: 12, marginTop: 8, textAlign: "center" },
-  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || "rgba(18,18,59,0.07)" },
+  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || tint(0.07) },
   memberName: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   removeLink: { color: "#C2362B", fontSize: 12, fontWeight: "600" },
   input: {

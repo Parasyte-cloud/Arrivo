@@ -619,8 +619,18 @@ export default function TrackingScreen({ route, navigation }) {
           destination={ride?.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
           driverLocation={ride?.current_lat != null ? { lat: Number(ride.current_lat), lng: Number(ride.current_lng) } : null}
           etaLabel={`🚗 ${statusLabel}`}
-          height={220}
+          height={300}
+          heading={ride?.ride_status === "in_progress" ? "destination" : "pickup"}
+          live={["accepted", "in_progress"].includes(ride?.ride_status)}
+          tierLabel={ride?.service ? t(`services.${ride.service}`) : undefined}
         />
+
+        {ride?.quote_pending ? (
+          <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
+            <Text style={styles.cardLabel}>{t("services.pricePending")}</Text>
+            <Text style={styles.meta}>{t("services.pricePendingLong")}</Text>
+          </Card>
+        ) : null}
 
         {offlineMode ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>

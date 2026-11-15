@@ -6,7 +6,7 @@ import Svg, { Circle, Line } from "react-native-svg";
 import { useTranslation } from "react-i18next";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import PhoneInput from "../components/PhoneInput";
@@ -22,7 +22,7 @@ function RouteStrip() {
   return (
     <Svg width={14} height={46} viewBox="0 0 14 46">
       <Circle cx={7} cy={6} r={5} fill={colors.tealBright} />
-      <Line x1={7} y1={12} x2={7} y2={34} stroke="rgba(18,18,59,0.3)" strokeWidth={2} strokeDasharray="3,3" />
+      <Line x1={7} y1={12} x2={7} y2={34} stroke={tint(0.3)} strokeWidth={2} strokeDasharray="3,3" />
       <Circle cx={7} cy={40} r={5} fill="none" stroke={colors.coral} strokeWidth={2} />
     </Svg>
   );

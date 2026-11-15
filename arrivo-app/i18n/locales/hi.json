@@ -279,7 +279,8 @@
   "liveMap": {
     "pickup": "पिकअप",
     "destination": "गंतव्य",
-    "yourDriver": "आपका ड्राइवर"
+    "yourDriver": "आपका ड्राइवर",
+    "live": "लाइव"
   },
   "phoneInput": {
     "chooseACountryCode": "देश कोड चुनें",

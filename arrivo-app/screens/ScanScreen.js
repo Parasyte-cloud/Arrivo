@@ -235,7 +235,7 @@ export default function ScanScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.fill, alignItems: "center", justifyContent: "center" },
   permissionText: { color: colors.dark.text, fontSize: 14, textAlign: "center", lineHeight: 20 },
   overlay: {
     ...StyleSheet.absoluteFillObject,

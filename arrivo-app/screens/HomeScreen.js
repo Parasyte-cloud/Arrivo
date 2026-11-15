@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import { Card, Button, Tag, IconBadge } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { getFlightStatus, getInstantStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import ParasyteSignature from "../components/ParasyteSignature";
@@ -178,9 +178,9 @@ const styles = StyleSheet.create({
   greet: { fontSize: 19, fontWeight: "700", color: colors.dark.text },
   sub: { fontSize: 12, color: colors.dark.textMuted, marginTop: 2 },
   servicesLabel: { color: colors.dark.textMuted, fontSize: 11.5, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
-  tabs: { flexDirection: "row", backgroundColor: "rgba(18,18,59,0.06)", borderRadius: radius.pill, padding: 4, marginBottom: spacing.md },
+  tabs: { flexDirection: "row", backgroundColor: tint(0.06), borderRadius: radius.pill, padding: 4, marginBottom: spacing.md },
   tab: { flex: 1, paddingVertical: 10, borderRadius: radius.pill, alignItems: "center" },
-  tabOn: { backgroundColor: colors.ink },
+  tabOn: { backgroundColor: colors.fill },
   tabText: { fontWeight: "700", fontSize: 13.5, color: colors.ink },
   tabTextOn: { color: "#FFFFFF" },
   hubCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.dark.surface, borderColor: colors.dark.surfaceBorder, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },

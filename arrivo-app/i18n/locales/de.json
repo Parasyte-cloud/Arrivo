@@ -279,7 +279,8 @@
   "liveMap": {
     "pickup": "Abholung",
     "destination": "Ziel",
-    "yourDriver": "Ihr Fahrer"
+    "yourDriver": "Ihr Fahrer",
+    "live": "Live"
   },
   "phoneInput": {
     "chooseACountryCode": "Ländervorwahl wählen",

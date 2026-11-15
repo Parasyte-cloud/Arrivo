@@ -279,7 +279,8 @@
   "liveMap": {
     "pickup": "Recogida",
     "destination": "Destino",
-    "yourDriver": "Tu conductor"
+    "yourDriver": "Tu conductor",
+    "live": "En vivo"
   },
   "phoneInput": {
     "chooseACountryCode": "Elige un prefijo de país",

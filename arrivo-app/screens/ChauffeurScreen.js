@@ -8,7 +8,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import ServiceSwitcher from "../components/ServiceSwitcher";
 import { goToService } from "../utils/services";
@@ -498,7 +498,7 @@ export default function ChauffeurScreen({ navigation, route }) {
               <Switch
                 value={luxury}
                 onValueChange={setLuxury}
-                trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+                trackColor={{ false: tint(0.15), true: colors.amber }}
               />
             </View>
           ) : null}

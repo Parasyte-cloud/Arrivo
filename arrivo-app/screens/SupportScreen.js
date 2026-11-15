@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { createSupportTicket, getRideHistory } from "../services/api";
 import { ACTIVE_STATUSES, pickBooking, describeRide } from "./supportBooking";
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
   },
   textArea: { minHeight: 120, paddingTop: 12 },
   attachBox: {
-    backgroundColor: "rgba(18,18,59,0.05)",
+    backgroundColor: tint(0.05),
     borderRadius: radius.sm + 2,
     padding: spacing.md,
     marginBottom: spacing.sm,

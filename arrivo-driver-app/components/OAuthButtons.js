@@ -4,7 +4,7 @@ import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { API_BASE_URL } from "../services/config";
 
 // Needed once, at module load, so the in-app browser sheet Google sign-in
@@ -95,6 +95,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
   // reviewer and to a driver alike, so a blocked tap says why instead.
   const handleGoogle = () => {
     if (disabled) { onBlocked && onBlocked(); return; }
+    if (!googleConfigured) { onGoogleError && onGoogleError(t("auth.googleNotReady")); return; }
     if (!request) { onGoogleError && onGoogleError("Google sign-in is still getting ready. Try again in a moment."); return; }
     promptAsync().catch((e) => {
       explain("GOOGLE_PROMPT", e, "Couldn't sign in with Google. Please try again.").then((m) => onGoogleError && onGoogleError(m));
@@ -140,7 +141,8 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
         </View>
       ) : (
         <>
-          {googleConfigured ? (
+          {/* Always shown: a hidden button looks like a missing feature. If the keys are not in this build, a tap says so. */}
+          {(
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continue with Google"
@@ -150,7 +152,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
               <Text style={styles.googleG}>G</Text>
               <Text style={styles.buttonText}>Continue with Google</Text>
             </Pressable>
-          ) : null}
+          )}
 
           {Platform.OS === "ios" ? (
             <AppleAuthentication.AppleAuthenticationButton
@@ -180,7 +182,7 @@ const styles = StyleSheet.create({
   googleButton: {
     backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.15)",
+    borderColor: tint(0.15),
   },
   googleG: { fontSize: 16, fontWeight: "700", color: "#4285F4" },
   buttonText: { fontSize: 14, fontWeight: "600", color: "#12123B" },

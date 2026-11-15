@@ -1,40 +1,102 @@
-// Central design tokens — mirrors the RideArrivo website's actual light
-// theme (cream background, navy ink text, amber accent) rather than the
-// dark theme this app previously used. Real Liquid Glass blur is provided
-// by expo-blur in components/UI.js, using these surface/border values.
+// Design tokens that follow ridearrivo.com exactly: the same light and dark palettes as the website
+// (arrivo-ui.css), picked from the phone's own light/dark setting. The website's "liquid glass" is
+// reproduced with translucent fills, a bright top edge and (in components/UI.js) a real blur.
+//
+// The palette is chosen once, when the app starts, because every StyleSheet in the app is built at
+// that moment. So if someone flips their phone between light and dark while the app is open, the
+// new look appears the next time the app is opened.
+import { Appearance } from "react-native";
+
+const LIGHT = {
+  ink: "#0a1b33",
+  inkSoft: "#14294a",
+  bg: "#f4f6fa",
+  primary: "#14407a",
+  textMuted: "#56657c",
+  amber: "#f5a300",
+  amberText: "#7a4800",
+  coral: "#C2362B",
+  glass: "rgba(255,255,255,0.62)",
+  glassStrong: "rgba(255,255,255,0.80)",
+  glassBorder: "rgba(255,255,255,0.70)",
+  shine: "rgba(255,255,255,0.85)",
+  line: "rgba(10,27,51,0.10)",
+  lineStrong: "rgba(10,27,51,0.18)",
+  tintRGB: "10,27,51",
+  sheet: "#FFFFFF",
+  fill: "#0a1b33",
+  blurTint: "light",
+};
+
+const DARK = {
+  ink: "#eef3fb",
+  inkSoft: "#c5d3e8",
+  bg: "#050c18",
+  primary: "#7fb0f5",
+  textMuted: "#9db0c9",
+  amber: "#f5a300",
+  amberText: "#ffc24d",
+  coral: "#ff8a7d",
+  glass: "rgba(16,36,66,0.50)",
+  glassStrong: "rgba(10,26,50,0.78)",
+  glassBorder: "rgba(255,255,255,0.12)",
+  shine: "rgba(255,255,255,0.12)",
+  line: "rgba(255,255,255,0.10)",
+  lineStrong: "rgba(255,255,255,0.20)",
+  tintRGB: "255,255,255",
+  sheet: "#0a1a32",
+  fill: "#1b3a66",
+  blurTint: "dark",
+};
+
+let scheme = "light";
+try { scheme = Appearance.getColorScheme() === "dark" ? "dark" : "light"; } catch (e) { /* light */ }
+export const isDark = scheme === "dark";
+const P = isDark ? DARK : LIGHT;
+
+// A faint wash of the ink colour (navy on light, white on dark) for fills, borders and dividers.
+export const tint = (alpha) => `rgba(${P.tintRGB},${alpha})`;
 
 export const colors = {
-  ink: "#12123B",        // primary dark navy — headings, primary text
-  inkSoft: "#2E4C8C",     // lighter navy — secondary accents, links
-  bg: "#F7F4EC",          // the website's cream page background
-  surface: "rgba(255,255,255,0.55)", // translucent white glass card fill, sits over BlurView
-  surfaceBorder: "rgba(255,255,255,0.6)",
-  cream: "#F7F4EC",       // kept as an alias for bg — some screens may still reference colors.cream directly
-  textMuted: "#6B6B94",   // muted navy-gray, readable on the light background (old value was tuned for dark bg and is too low-contrast here)
-  amber: "#F4A300",
-  teal: "#2E4C8C",        // repointed to navy — the website dropped a separate teal accent in favor of navy/amber
-  tealBright: "#2E4C8C",
-  coral: "#C2362B",
-  fieldBg: "rgba(18,18,59,0.05)", // subtle dark tint for input fields on a light background
-  card: "rgba(18,18,59,0.04)",       // light-surface tile fill (was previously referenced but undefined)
-  cardBorder: "rgba(18,18,59,0.12)",
+  ink: P.ink,
+  inkSoft: P.inkSoft,
+  bg: P.bg,
+  surface: P.glass,
+  surfaceBorder: P.glassBorder,
+  cream: P.bg,            // alias kept for older screens
+  textMuted: P.textMuted,
+  amber: P.amber,
+  amberText: P.amberText,
+  teal: P.primary,        // the website has one blue, "primary"; older code still says teal
+  tealBright: P.primary,
+  primary: P.primary,
+  coral: P.coral,
+  fieldBg: tint(0.06),
+  card: tint(0.04),
+  cardBorder: P.line,
+  glass: P.glass,
+  glassStrong: P.glassStrong,
+  glassBorder: P.glassBorder,
+  shine: P.shine,
+  line: P.line,
+  lineStrong: P.lineStrong,
+  sheet: P.sheet,         // solid surface for sheets, headers and the tab bar
+  fill: P.fill,           // a dark solid that always carries white text (selected chips, camera screens)
+  blurTint: P.blurTint,
 
-  // The main (post-login) screens read their colours from this block. It used
-  // to be a navy "glass" palette; the apps now open in light mode like the
-  // website, so the same keys hold plain light values. Every screen that asked
-  // for colors.dark.* gets the light look without being edited one by one.
+  // Older screens still read colors.dark.*; it now holds the same palette.
   dark: {
-    bg0: "#F7F4EC",                    // page: the website cream
-    bg1: "#FFFFFF",
+    bg0: P.bg,
+    bg1: P.sheet,
     glow: "transparent",
     glow2: "transparent",
-    text: "#12123B",                   // ink
-    textMuted: "#6B6B94",
-    surface: "#FFFFFF",                // flat white card
-    surfaceBorder: "rgba(18,18,59,0.10)",
-    surfaceHighlight: "transparent",
-    hairline: "rgba(18,18,59,0.10)",
-    fieldBg: "rgba(18,18,59,0.05)",
+    text: P.ink,
+    textMuted: P.textMuted,
+    surface: P.glass,
+    surfaceBorder: P.glassBorder,
+    surfaceHighlight: P.shine,
+    hairline: P.line,
+    fieldBg: tint(0.06),
   },
 };
 

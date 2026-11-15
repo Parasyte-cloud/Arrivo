@@ -12,7 +12,7 @@ import { BookingWindowNotice } from "../components/BookingWindowNotice";
 import { isStandardBookingBlocked, ON_THE_GO_ONLY_HOURS } from "../utils/bookingWindow";
 import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from "../utils/lagosTime";
 import useMinuteTick from "../hooks/useMinuteTick";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import ServiceSwitcher from "../components/ServiceSwitcher";
 import { goToService } from "../utils/services";
@@ -853,7 +853,7 @@ export default function RouteScreen({ navigation, route }) {
             <Switch
               value={bulkyLuggage}
               onValueChange={setBulkyLuggage}
-              trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+              trackColor={{ false: tint(0.15), true: colors.amber }}
             />
           </View>
         </Card>
@@ -907,7 +907,7 @@ export default function RouteScreen({ navigation, route }) {
               <Switch
                 value={luxury}
                 onValueChange={setLuxury}
-                trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+                trackColor={{ false: tint(0.15), true: colors.amber }}
               />
             </View>
           ) : null}
@@ -1007,7 +1007,7 @@ const styles = StyleSheet.create({
   // passenger and luggage rows further down.
   addressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.sm },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
-  thread: { width: 2, height: 16, backgroundColor: "rgba(18,18,59,0.21)", marginLeft: 3.5 },
+  thread: { width: 2, height: 16, backgroundColor: tint(0.21), marginLeft: 3.5 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   hintText: { color: colors.amber, fontSize: 11, marginTop: 8, marginLeft: 18, lineHeight: 15 },

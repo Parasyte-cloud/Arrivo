@@ -116,7 +116,7 @@ export default function SelfieScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink },
+  screen: { flex: 1, backgroundColor: colors.fill },
   title: { color: colors.dark.text, fontSize: 22, fontWeight: "800", marginBottom: 6 },
   body: { color: colors.dark.textMuted, fontSize: 14, lineHeight: 20 },
   warn: { color: colors.amber, fontSize: 14, marginTop: spacing.sm },
