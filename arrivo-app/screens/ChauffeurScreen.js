@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
   },
   optLabel: { color: colors.dark.text, fontSize: 13 },
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
-  warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: spacing.sm, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 11.5, marginTop: spacing.sm, textAlign: "center" },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
   pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   pickerCard: { backgroundColor: colors.dark.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20 },

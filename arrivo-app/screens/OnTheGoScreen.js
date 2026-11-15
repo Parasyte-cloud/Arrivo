@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   successTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

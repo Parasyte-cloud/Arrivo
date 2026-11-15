@@ -38,5 +38,5 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   kicker: { color: colors.dark.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
   title: { color: colors.dark.text, fontSize: 19, fontWeight: "800", marginBottom: 8 },
-  body: { color: "#D6D6E8", fontSize: 14.5, lineHeight: 21 },
+  body: { color: "#6B6B94", fontSize: 14.5, lineHeight: 21 },
 });

@@ -115,6 +115,6 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Tag } from "../components/UI";
@@ -10,11 +10,15 @@ import { getEarnings, getMyDriverRides, getCashout } from "../services/api";
 import { useT } from "../context/LanguageContext";
 import { formatNumber } from "../i18n/i18n";
 import { Button } from "../components/UI";
+import DriverReceipt from "../components/DriverReceipt";
+import { tierForRide, metaFor } from "../utils/tiers";
 
-function tripTypeLabel(bookingType) {
-  if (bookingType === "dropoff") return "Airport Drop-off";
-  if (bookingType === "one_way") return "Airport Pickup";
-  return "Chauffeur";
+// What kind of trip this was. Charters are Chauffeur, drop-offs are airport
+// drop-offs, and every other booking on the rides queue is an airport pickup.
+// (This used to call everything that was not a drop-off or one-way "Chauffeur".)
+function tripTypeLabel(ride) {
+  if (tierForRide(ride) === "chauffeur") return metaFor("chauffeur").name.replace(/^Arrivo/, "");
+  return ride.booking_type === "dropoff" ? "Airport Drop-off" : "Airport Pickup";
 }
 function scheduledLabel(ride) {
   if (!ride.scheduled_pickup_at) return null;
@@ -33,6 +37,7 @@ export default function EarningsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [summary, setSummary] = useState(null);
+  const [openReceipt, setOpenReceipt] = useState(null);
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -122,7 +127,7 @@ export default function EarningsScreen({ navigation }) {
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
-                  <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+                  <Tag label={tripTypeLabel(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
                   {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
                 </View>
                 <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
@@ -149,6 +154,10 @@ export default function EarningsScreen({ navigation }) {
                 ) : null}
               </View>
             </View>
+            <Pressable accessibilityRole="button" onPress={() => setOpenReceipt(openReceipt === ride.id ? null : ride.id)} style={{ marginTop: spacing.sm }}>
+              <Text style={styles.receiptLink}>{openReceipt === ride.id ? "Hide receipt" : "Receipt"}</Text>
+            </Pressable>
+            {openReceipt === ride.id ? <DriverReceipt rideId={ride.id} /> : null}
           </Card>
         ))}
       </ScrollView>
@@ -167,9 +176,10 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
+  receiptLink: { color: colors.inkSoft, fontSize: 12.5, fontWeight: "700" },
   tipLine: { color: colors.amber, fontSize: 11, fontWeight: "600", marginTop: 2 },
   scheduledText: { color: colors.amber, fontSize: 11, fontWeight: "600", marginTop: 2 },
   tipsNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: spacing.sm, lineHeight: 16 },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.lg },
 });

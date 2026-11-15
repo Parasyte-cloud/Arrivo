@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   },
   bankRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "rgba(18,18,59,0.07)" },
   sectionLabel: { color: colors.dark.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   notice: { color: colors.amber, fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.sm },
 });

@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   statusHeading: { color: colors.dark.text, fontWeight: "700", fontSize: 15, marginBottom: 6 },
   meta: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18 },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 8 },
   preview: { width: "100%", height: 200, borderRadius: radius.md, marginBottom: 4 },
   previewPlaceholder: {
     width: "100%", height: 140, borderRadius: radius.md, marginBottom: 4,

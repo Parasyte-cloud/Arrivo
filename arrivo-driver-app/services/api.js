@@ -129,6 +129,9 @@ export function updateRideStatus(token, rideId, status) {
 export function cancelRideWithReason(token, rideId, reason) {
   return request(`/api/rides/${rideId}/cancel-request`, authed(token, { method: "POST", body: JSON.stringify({ reason }) }));
 }
+export function getRideReceipt(token, rideId) {
+  return request(`/api/rides/${rideId}/receipt`, { headers: { Authorization: `Bearer ${token}` } });
+}
 export function getMyDriverRides(token) {
   return request("/api/rides/driver/mine", authed(token));
 }

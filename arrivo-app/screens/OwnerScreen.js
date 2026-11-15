@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10.5, color: colors.dark.textMuted, marginTop: 2 },
   noteText: { fontSize: 11.5, color: colors.dark.textMuted, marginTop: spacing.sm, lineHeight: 16 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

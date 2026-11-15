@@ -16,7 +16,7 @@
       "usesAppleSignIn": true,
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
+        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups, show your live route, and check that you are safe during a trip.",
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {

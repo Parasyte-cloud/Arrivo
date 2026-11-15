@@ -277,7 +277,7 @@ export default function FamilyPlanScreen({ navigation }) {
               </Card>
 
               <Text style={styles.walletNote}>
-                Book a ride and choose "Family Wallet" at checkout — any member can do this for themselves,{isAdmin ? " or you can book on their behalf from the ride booking screen." : "."}
+                Book a ride and choose "Family Wallet" at checkout, any member can do this for themselves,{isAdmin ? " or you can book on their behalf from the ride booking screen." : "."}
               </Text>
             </>
           )}
@@ -297,12 +297,12 @@ const styles = StyleSheet.create({
   price: { color: colors.amber, fontSize: 16, fontWeight: "700" },
   balance: { color: colors.amber, fontSize: 22, fontWeight: "700", marginTop: 4 },
   meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 2, lineHeight: 17 },
-  warningText: { color: "#FF9B8A", fontSize: 11, marginTop: 6 },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  successText: { color: "#8FD9C4", fontSize: 12, marginTop: 8, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 11, marginTop: 6 },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  successText: { color: "#1F7A5C", fontSize: 12, marginTop: 8, textAlign: "center" },
   memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || "rgba(18,18,59,0.07)" },
   memberName: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
-  removeLink: { color: "#FF9B8A", fontSize: 12, fontWeight: "600" },
+  removeLink: { color: "#C2362B", fontSize: 12, fontWeight: "600" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

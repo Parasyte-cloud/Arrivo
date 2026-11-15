@@ -151,5 +151,5 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.dark.hairline,
   },
   suggestionText: { color: colors.dark.text, fontSize: 12.5 },
-  errorText: { color: "#FF9B8A", fontSize: 10.5, marginTop: 2 },
+  errorText: { color: "#C2362B", fontSize: 10.5, marginTop: 2 },
 });

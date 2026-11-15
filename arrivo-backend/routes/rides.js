@@ -24,6 +24,7 @@ const { creditMembershipCashback } = require("../services/membershipCashback");
 const { recordQuestProgress } = require("../services/driverQuests");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { sendPanicAlert } = require("../services/panicAlert");
+const receipts = require("../services/receipt");
 const { getActivePlanForUser } = require("../services/familyPlan");
 const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
 const { isWithinRadiusKm } = require("../services/routeDeviation");
@@ -1770,6 +1771,20 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
+});
+
+// GET /api/rides/:id/receipt: the receipt for a finished trip, for the rider
+// who booked it or the driver who drove it. Same shape for every service.
+router.get("/:id/receipt", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ride id" });
+  try {
+    res.set("Cache-Control", "no-store");
+    res.json({ receipt: await receipts.getReceipt(pool, id, req.user.id) });
+  } catch (e) {
+    if (e instanceof receipts.ReceiptError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
 });
 
 // GET /api/rides/:id/share — the rider (or assigned driver, or admin) calls

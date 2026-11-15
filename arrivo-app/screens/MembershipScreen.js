@@ -219,9 +219,9 @@ const styles = StyleSheet.create({
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 13, marginBottom: 4 },
   price: { color: colors.amber, fontSize: 16, fontWeight: "700", marginBottom: 6 },
   meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 2, lineHeight: 17 },
-  warningText: { color: "#FF9B8A", fontSize: 11, marginTop: 6 },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  successText: { color: "#8FD9C4", fontSize: 12, marginTop: 8, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 11, marginTop: 6 },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  successText: { color: "#1F7A5C", fontSize: 12, marginTop: 8, textAlign: "center" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

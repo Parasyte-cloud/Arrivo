@@ -967,7 +967,7 @@ export default function RouteScreen({ navigation, route }) {
 
         {!quoteLoading && quote?.promo ? (
           <Text style={styles.promoText}>
-            {quote.promo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} — {quote.promoDiscountPercent}% off
+            {quote.promo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} · {quote.promoDiscountPercent}% off
             applied, you saved {formatFare(quote.originalFareNaira - quote.fareNaira)}
           </Text>
         ) : null}
@@ -1043,7 +1043,7 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: "row", alignItems: "center" },
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   partnerVenueHint: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 6, lineHeight: 17 },
-  warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
+  warningText: { color: "#C2362B", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
-  promoText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
+  promoText: { color: "#1F7A5C", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
 });

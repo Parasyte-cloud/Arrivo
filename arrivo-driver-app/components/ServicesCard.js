@@ -52,7 +52,7 @@ export default function ServicesCard({ title = "Your services", lead }) {
                 {busy === slug ? <ActivityIndicator color={colors.amber} /> : <Text style={styles.askText}>{action.label}</Text>}
               </Pressable>
             ) : (
-              <Text style={[styles.state, status === "active" && { color: "#54D69B" }]}>{action.label.toUpperCase()}</Text>
+              <Text style={[styles.state, status === "active" && { color: "#1F7A5C" }]}>{action.label.toUpperCase()}</Text>
             )}
           </View>
         );

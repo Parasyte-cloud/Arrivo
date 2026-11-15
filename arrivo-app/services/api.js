@@ -686,6 +686,16 @@ export function getPartnerVenues(token) {
 export function getPickupPin(token, rideId) {
   return request(`/api/safety/rides/${rideId}/pin`, { headers: { Authorization: `Bearer ${token}` } });
 }
+// Welfare check: send where the rider is, and answer "Are you safe?".
+export function sendWelfarePing(token, rideId, { lat, lng, accuracy }) {
+  return request(`/api/safety/rides/${rideId}/welfare/ping`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ lat, lng, accuracy }) });
+}
+export function answerWelfare(token, rideId, safe) {
+  return request(`/api/safety/rides/${rideId}/welfare/answer`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ safe }) });
+}
+export function getRideReceipt(token, rideId) {
+  return request(`/api/rides/${rideId}/receipt`, { headers: { Authorization: `Bearer ${token}` } });
+}
 // A new expiring link each time. The link is only shown now, so share it right away.
 export function createRideShareLink(token, rideId) {
   return request(`/api/safety/rides/${rideId}/share`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });

@@ -131,6 +131,6 @@ const styles = StyleSheet.create({
   progressText: { color: colors.dark.text, fontSize: 12, marginTop: spacing.sm },
   rulesToggle: { color: colors.tealBright, fontSize: 12, fontWeight: "600", marginTop: spacing.sm },
   rule: { color: colors.dark.textMuted, fontSize: 11.5, lineHeight: 17, marginTop: 4 },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.lg },
 });

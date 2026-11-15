@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   txLabel: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600" },
   txDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },

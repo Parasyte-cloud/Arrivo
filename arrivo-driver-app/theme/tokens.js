@@ -14,7 +14,7 @@ export const colors = {
   amber: "#F4A300",
   teal: "#2E4C8C",        // repointed to navy — the website dropped a separate teal accent in favor of navy/amber
   tealBright: "#2E4C8C",
-  coral: "#E1523D",
+  coral: "#C2362B",
   fieldBg: "rgba(18,18,59,0.05)", // subtle dark tint for input fields on a light background
   card: "rgba(18,18,59,0.04)",       // light-surface tile fill (was previously referenced but undefined)
   cardBorder: "rgba(18,18,59,0.12)",
