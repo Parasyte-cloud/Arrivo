@@ -9,6 +9,7 @@ import {
   getMembership, getWallet, getMembershipPlans,
   subscribeMembership, addMembershipProfileUser,
 } from "../services/api";
+import { useTranslation } from "react-i18next";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -21,6 +22,7 @@ function formatDate(iso) {
 const PLAN_LABEL = { premium: "Premium", executive: "Executive", executive_profile: "Executive (profile user)" };
 
 export default function MembershipScreen({ navigation }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [membership, setMembership] = useState(null);
   const [profileUsers, setProfileUsers] = useState([]);
@@ -111,7 +113,7 @@ export default function MembershipScreen({ navigation }) {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Membership</Text>
+        <Text style={styles.title}>{t("membership.membership")}</Text>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -119,18 +121,18 @@ export default function MembershipScreen({ navigation }) {
           <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
             <View style={styles.rowBetween}>
               <Text style={styles.planName}>{PLAN_LABEL[membership.plan_type] || membership.plan_type}</Text>
-              <Tag label="Active" tone="teal" />
+              <Tag label={t("membership.active")} tone="teal" />
             </View>
             <Text style={styles.meta}>
               {membership.cashback_percent > 0
-                ? `${membership.cashback_percent}% cashback credited to your wallet after every completed trip.`
-                : "No per-trip charge while this is active."}
+                ? t("membership.cashbackCredited", { percent: membership.cashback_percent })
+                : t("membership.noPerTripCharge")}
             </Text>
             <Text style={styles.meta}>Renews / expires {formatDate(membership.expires_at)}</Text>
           </Card>
         ) : (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.meta}>No active membership yet.</Text>
+            <Text style={styles.meta}>{t("membership.noActiveMembershipYet")}</Text>
           </Card>
         )}
 
@@ -140,9 +142,9 @@ export default function MembershipScreen({ navigation }) {
                 <Text style={styles.cardLabel}>{plan.label}</Text>
                 <Text style={styles.price}>{formatNaira(plan.priceNaira)}/month</Text>
                 <Text style={styles.meta}>{plan.tripCoverage}</Text>
-                <Text style={styles.meta}>{plan.cashbackPercent}% cashback on every trip, credited to your wallet.</Text>
+                <Text style={styles.meta}>{t("membership.cashbackOnEveryTripCredited", { cashbackPercent: plan.cashbackPercent })}</Text>
                 <Text style={styles.meta}>
-                  {plan.maxProfileUsers > 1 ? `Up to ${plan.maxProfileUsers} profile users.` : "Single user."}
+                  {plan.maxProfileUsers > 1 ? t("membership.upToUsers", { count: plan.maxProfileUsers }) : t("membership.singleUser")}
                 </Text>
                 {walletBalance != null && walletBalance < plan.priceNaira ? (
                   <Text style={styles.warningText}>
@@ -168,9 +170,9 @@ export default function MembershipScreen({ navigation }) {
         {isExecutiveOwner ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <Text style={styles.cardLabel}>
-              Profile users ({profileUsers.length}/{maxAdditionalProfileUsers})
+              {t("membership.profileUsers", { length: profileUsers.length, maxAdditionalProfileUsers })}
             </Text>
-            <Text style={styles.meta}>Add a profile user by the email they used to sign up for RideArrivo. They'll share your plan's trip coverage and cashback rate.</Text>
+            <Text style={styles.meta}>{t("membership.addAProfileUserBy")}</Text>
             <View style={{ height: spacing.sm }} />
             {profileUsers.map((u) => (
               <Text style={styles.meta} key={u.id}>• {u.name} ({u.email})</Text>
@@ -180,7 +182,7 @@ export default function MembershipScreen({ navigation }) {
                 <View style={{ height: spacing.sm }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="teammate@example.com"
+                  placeholder={t("membership.teammateExampleCom")}
                   placeholderTextColor={colors.dark.textMuted}
                   value={profileUserEmail}
                   onChangeText={setProfileUserEmail}
@@ -191,9 +193,9 @@ export default function MembershipScreen({ navigation }) {
                 {linkStatus === "busy" ? (
                   <ActivityIndicator color={colors.amber} />
                 ) : (
-                  <Button label="Add profile user" variant="ghost" tone="dark" onPress={addProfileUser} />
+                  <Button label={t("membership.addProfileUser")} variant="ghost" tone="dark" onPress={addProfileUser} />
                 )}
-                {linkStatus === "success" ? <Text style={styles.successText}>Profile user added ✓</Text> : null}
+                {linkStatus === "success" ? <Text style={styles.successText}>{t("membership.profileUserAdded")}</Text> : null}
               </>
             ) : null}
           </Card>
@@ -201,8 +203,8 @@ export default function MembershipScreen({ navigation }) {
 
         {walletBalance != null ? (
           <Text style={styles.walletNote}>
-            Wallet balance: {formatNaira(walletBalance)} ·{" "}
-            <Text style={styles.link} onPress={() => navigation.navigate("Wallet")}>Top up</Text>
+            {t("membership.walletBalance")}: {formatNaira(walletBalance)} ·{" "}
+            <Text style={styles.link} onPress={() => navigation.navigate("Wallet")}>{t("membership.topUp")}</Text>
           </Text>
         ) : null}
       </ScrollView>

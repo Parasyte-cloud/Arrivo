@@ -176,7 +176,7 @@ export default function HomeScreen({ navigation }) {
             book the normal way, this is for when there isn't time. */}
         <Pressable style={styles.onTheGoRow} onPress={() => navigation.navigate("OnTheGo")}>
           <Ionicons name="flash-outline" size={15} color={colors.tealBright} />
-          <Text style={styles.onTheGoText}>Travelling in the next few hours? Try On the Go</Text>
+          <Text style={styles.onTheGoText}>{t("home.travellingInTheNextFew")}</Text>
         </Pressable>
       </ScrollView>
     </View>

@@ -8,6 +8,7 @@ import {
   fleetDescription,
   FLEET_SIZES,
 } from "../utils/addonPricing";
+import { useTranslation } from "react-i18next";
 
 // The two paid add-ons that sit between the vehicle picker and the emergency
 // contact on Plan Route. Pulled out of RouteScreen so the pricing labels can be
@@ -26,12 +27,13 @@ export function AddonOptions({
   ngnPerUsd,
   formatFare,
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <Card tone="dark" style={{ marginBottom: spacing.md }}>
         <View style={styles.toggleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.cardLabel}>Security escort</Text>
+            <Text style={styles.cardLabel}>{t("addonOptions.securityEscort")}</Text>
             <Text style={styles.addonNote}>
               {securityEscortDescription(ngnPerUsd, formatFare)}
             </Text>
@@ -45,7 +47,7 @@ export function AddonOptions({
       </Card>
 
       <Card tone="dark" style={{ marginBottom: spacing.md }}>
-        <Text style={styles.cardLabel}>Fleet accompaniment</Text>
+        <Text style={styles.cardLabel}>{t("addonOptions.fleetAccompaniment")}</Text>
         <Text style={styles.addonNote}>{fleetDescription(fleetSize, formatFare)}</Text>
         {/* Prices live on the chips so a rider can compare them without
             having to select one first. The row wraps, since the labels are

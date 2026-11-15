@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Linking } from "react-native";
 import { colors } from "../theme/tokens";
 import { PRIVACY_SECTIONS, PRIVACY_LAST_UPDATED, PRIVACY_FULL_URL } from "../utils/privacyPolicy";
+import { useTranslation } from "react-i18next";
 
 // The privacy notice shown at signup. Pulled out of SignupScreen so it can be
 // rendered on its own: the screen reaches AuthContext, which imports the
@@ -21,19 +22,20 @@ function openFullPolicy() {
 }
 
 export function PrivacyPolicyModal({ visible, onClose, onAgree }) {
+  const { t } = useTranslation();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Data Protection &amp; Privacy Policy</Text>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+            <Text style={styles.modalTitle}>{t("privacyPolicyModal.title")}</Text>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel={t("privacyPolicyModal.close")}>
               <Text style={styles.modalClose}>✕</Text>
             </Pressable>
           </View>
 
           <ScrollView style={styles.modalBody} contentContainerStyle={styles.modalBodyContent}>
-            <Text style={styles.modalUpdated}>Last updated {PRIVACY_LAST_UPDATED}</Text>
+            <Text style={styles.modalUpdated}>{t("privacyPolicyModal.lastUpdated", { PRIVACY_LAST_UPDATED })}</Text>
             {PRIVACY_SECTIONS.map((section) => (
               <View key={section.title} style={styles.modalSection}>
                 <Text style={styles.modalSectionTitle}>{section.title}</Text>
@@ -50,7 +52,7 @@ export function PrivacyPolicyModal({ visible, onClose, onAgree }) {
           </ScrollView>
 
           <Pressable style={styles.modalAgreeBtn} onPress={onAgree}>
-            <Text style={styles.modalAgreeBtnText}>I've read this. I agree</Text>
+            <Text style={styles.modalAgreeBtnText}>{t("privacyPolicyModal.iVeReadThisI")}</Text>
           </Pressable>
         </View>
       </View>

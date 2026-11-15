@@ -4,13 +4,16 @@ import { Card } from "./UI";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideReceipt } from "../services/api";
+import { useTranslation } from "react-i18next";
 
 const SERVICE = { ride: "RideArrivo", express: "ArrivoExpress", chauffeur: "ArrivoChauffeur" };
+const LINE_KEYS = { "Fare": "receiptCard.lineFare", "Traffic delay": "receiptCard.lineTraffic", "Extra hours": "receiptCard.lineExtraHours", "Tip": "receiptCard.lineTip" };
 const naira = (n) => `₦${Number(n || 0).toLocaleString()}`;
 
 // The receipt for a finished trip. Same card for every service. Shows nothing
 // until the trip is completed, and never gets in the way of the screen.
 export default function ReceiptCard({ rideId, rideStatus }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [receipt, setReceipt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -24,18 +27,18 @@ export default function ReceiptCard({ rideId, rideStatus }) {
   const when = receipt.completedAt ? new Date(receipt.completedAt).toLocaleString() : "";
   return (
     <Card tone="dark" style={{ marginTop: spacing.md }}>
-      <Text style={styles.title}>Receipt</Text>
-      <Text style={styles.meta}>{SERVICE[receipt.service] || "RideArrivo"} · Trip #{receipt.tripNumber}{when ? ` · ${when}` : ""}</Text>
+      <Text style={styles.title}>{t("receiptCard.receipt")}</Text>
+      <Text style={styles.meta}>{SERVICE[receipt.service] || "RideArrivo"} · {t("receiptCard.trip", { n: receipt.tripNumber })}{when ? ` · ${when}` : ""}</Text>
       <Text style={styles.route}>{[receipt.pickup, ...receipt.stops].join("  →  ")}</Text>
-      {receipt.driver ? <Text style={styles.meta}>Driver {receipt.driver.name}{receipt.driver.plate ? ` · ${receipt.driver.vehicle ? receipt.driver.vehicle + " " : ""}${receipt.driver.plate}` : ""}</Text> : null}
+      {receipt.driver ? <Text style={styles.meta}>{t("receiptCard.driver")} {receipt.driver.name}{receipt.driver.plate ? ` · ${receipt.driver.vehicle ? receipt.driver.vehicle + " " : ""}${receipt.driver.plate}` : ""}</Text> : null}
       <View style={styles.rule} />
       {receipt.lines.map((l) => (
-        <View key={l.label} style={styles.row}><Text style={styles.label}>{l.label}</Text><Text style={styles.value}>{naira(l.naira)}</Text></View>
+        <View key={l.label} style={styles.row}><Text style={styles.label}>{LINE_KEYS[l.label] ? t(LINE_KEYS[l.label]) : l.label}</Text><Text style={styles.value}>{naira(l.naira)}</Text></View>
       ))}
-      {receipt.promo ? <Text style={styles.promo}>Promo{receipt.promo.code ? ` ${receipt.promo.code}` : ""} saved you {naira(receipt.promo.savedNaira)}</Text> : null}
+      {receipt.promo ? <Text style={styles.promo}>{t("receiptCard.promoSaved", { code: receipt.promo.code ? ` ${receipt.promo.code}` : "", amount: naira(receipt.promo.savedNaira) })}</Text> : null}
       <View style={styles.rule} />
-      <View style={styles.row}><Text style={styles.total}>Total</Text><Text style={styles.total}>{naira(receipt.totalNaira)}</Text></View>
-      {receipt.paymentMethod ? <Text style={styles.meta}>Paid by {String(receipt.paymentMethod).replace(/_/g, " ")}</Text> : null}
+      <View style={styles.row}><Text style={styles.total}>{t("receiptCard.total")}</Text><Text style={styles.total}>{naira(receipt.totalNaira)}</Text></View>
+      {receipt.paymentMethod ? <Text style={styles.meta}>{t("receiptCard.paidBy", { method: String(receipt.paymentMethod).replace(/_/g, " ") })}</Text> : null}
     </Card>
   );
 }

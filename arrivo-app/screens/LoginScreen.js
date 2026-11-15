@@ -7,6 +7,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
 import OAuthButtons from "../components/OAuthButtons";
+import LanguageChips from "../components/LanguageChips";
 
 export default function LoginScreen({ navigation }) {
   const { t } = useTranslation();
@@ -175,7 +176,7 @@ export default function LoginScreen({ navigation }) {
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>{t("login.or")}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -186,7 +187,7 @@ export default function LoginScreen({ navigation }) {
               onAppleResult={handleAppleResult}
             />
             <Text style={styles.oauthNotice}>
-              By continuing with Google or Apple, you agree to RideArrivo's Data Protection & Privacy Policy.
+              {t("login.byContinuingWithGoogleOr")}
             </Text>
 
             <Pressable onPress={() => navigation.navigate("Signup")} style={{ marginTop: spacing.lg }}>
@@ -194,6 +195,7 @@ export default function LoginScreen({ navigation }) {
             </Pressable>
           </>
         )}
+        <LanguageChips />
       </View>
     </KeyboardAvoidingView>
     </View>

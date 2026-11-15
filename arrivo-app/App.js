@@ -10,6 +10,7 @@ import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { useTranslation } from "react-i18next";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { usePushNotifications } from "./hooks/usePushNotifications";
@@ -76,6 +77,7 @@ const stackScreenOptions = {
 // Home tab is its own stack so booking flows (Route -> Checkout / Tracking / Chauffeur / Owner)
 // can be pushed on top without losing the bottom tab bar structure.
 function HomeStack() {
+  const { t } = useTranslation();
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
@@ -92,18 +94,18 @@ function HomeStack() {
           ),
         }}
       />
-      <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
-      <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
-      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Message driver" }} />
-      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
-      <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: "On the Go" }} />
+      <Stack.Screen name="Route" component={RouteScreen} options={{ title: t("nav.planRoute") }} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: t("nav.confirmPay") }} />
+      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: t("nav.liveTracking") }} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t("nav.messageDriver") }} />
+      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: t("nav.chauffeurBooking") }} />
+      <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: t("nav.onTheGo") }} />
       <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
-      <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
-      <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: "Membership" }} />
-      <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: "Family Plan" }} />
-      <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: "Reserved Pickups" }} />
-      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />
+      <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: t("nav.ownerDashboard") }} />
+      <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: t("nav.membership") }} />
+      <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: t("nav.familyPlan") }} />
+      <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: t("nav.reservedPickups") }} />
+      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: t("nav.scanTracking") }} />
     </Stack.Navigator>
   );
 }
@@ -119,18 +121,20 @@ const ICONS = {
 // VerifyIdScreen can push on top of it with a real back button, instead of
 // only being reachable as a modal or another tab.
 function ProfileStack() {
+  const { t } = useTranslation();
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: "Verified ID" }} />
-      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: "Emergency Contacts" }} />
-      <Stack.Screen name="RidePreferences" component={RidePreferencesScreen} options={{ title: "Ride Preferences" }} />
-      <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />
+      <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: t("nav.verifiedId") }} />
+      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: t("nav.emergencyContacts") }} />
+      <Stack.Screen name="RidePreferences" component={RidePreferencesScreen} options={{ title: t("nav.ridePreferences") }} />
+      <Stack.Screen name="Support" component={SupportScreen} options={{ title: t("nav.support") }} />
     </Stack.Navigator>
   );
 }
 
 function MainTabs() {
+  const { t } = useTranslation();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -141,10 +145,10 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
-      <Tab.Screen name="Home" component={HomeStack} />
-      <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="Profile" component={ProfileStack} />
+      <Tab.Screen name="Home" component={HomeStack} options={{ title: t("nav.tab_home") }} />
+      <Tab.Screen name="Activity" component={ActivityScreen} options={{ title: t("nav.tab_activity") }} />
+      <Tab.Screen name="Wallet" component={WalletScreen} options={{ title: t("nav.tab_wallet") }} />
+      <Tab.Screen name="Profile" component={ProfileStack} options={{ title: t("nav.tab_profile") }} />
     </Tab.Navigator>
   );
 }

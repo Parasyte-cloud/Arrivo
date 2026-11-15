@@ -6,6 +6,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone } from "../utils/phoneValidation";
+import { useTranslation } from "react-i18next";
 
 // Shown once, right after auth, for any rider whose account is missing a
 // WhatsApp number or country of residence — both required fields on the
@@ -18,6 +19,7 @@ import { validatePhone } from "../utils/phoneValidation";
 // they land right back on it next launch instead of slipping through with
 // an incomplete profile.
 export default function CompleteProfileScreen() {
+  const { t } = useTranslation();
   const { updateProfile, logout } = useAuth();
   const [whatsappDial, setWhatsappDial] = useState("+234");
   const [whatsappNational, setWhatsappNational] = useState("");
@@ -33,7 +35,7 @@ export default function CompleteProfileScreen() {
       return;
     }
     if (!country.trim()) {
-      setError("Please enter your country of residence.");
+      setError(t("signup.enterCountry"));
       return;
     }
     setLoading(true);
@@ -53,25 +55,24 @@ export default function CompleteProfileScreen() {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Just a couple more details</Text>
+          <Text style={styles.title}>{t("completeProfile.justACoupleMoreDetails")}</Text>
           <Text style={styles.subtitle}>
-            We need these to keep you in the loop about your rides: driver assignments and any flight
-            changes get sent here.
+            {t("completeProfile.weNeedTheseToKeep")}
           </Text>
 
-          <Text style={styles.label}>WhatsApp number</Text>
+          <Text style={styles.label}>{t("completeProfile.whatsappNumber")}</Text>
           <PhoneInput
             dial={whatsappDial}
             national={whatsappNational}
             onChangeDial={setWhatsappDial}
             onChangeNational={setWhatsappNational}
-            placeholder="WhatsApp number"
+            placeholder={t("completeProfile.whatsappNumber")}
           />
 
-          <Text style={styles.label}>Country of residence</Text>
+          <Text style={styles.label}>{t("completeProfile.countryOfResidence")}</Text>
           <TextInput
             style={styles.input}
-            placeholder="Country of residence"
+            placeholder={t("completeProfile.countryOfResidence")}
             placeholderTextColor={colors.textMuted}
             value={country}
             onChangeText={setCountry}
@@ -80,10 +81,10 @@ export default function CompleteProfileScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <View style={{ height: spacing.sm }} />
-          {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Continue" onPress={submit} />}
+          {loading ? <ActivityIndicator color={colors.amber} /> : <Button label={t("completeProfile.continue")} onPress={submit} />}
 
           <Text style={styles.logoutLink} onPress={logout}>
-            Log out
+            {t("completeProfile.logOut")}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

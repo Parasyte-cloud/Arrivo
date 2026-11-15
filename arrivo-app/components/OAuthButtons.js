@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
+import { useTranslation } from "react-i18next";
 import { colors, spacing } from "../theme/tokens";
 
 // Needed once, at module load, so the in-app browser sheet Google sign-in
@@ -38,6 +39,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 // the same flag — nobody creates a RideArrivo profile any way, including via
 // Google/Apple, without agreeing to the same terms.
 export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, onBlocked, disabled, busy }) {
+  const { t } = useTranslation();
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -66,7 +68,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // how the Apple handler below ignores ERR_REQUEST_CANCELED — only a
     // genuine "error" type is worth surfacing.
     if (response.type === "error") {
-      onGoogleError && onGoogleError(response.error?.message || "Couldn't sign in with Google. Please try again.");
+      onGoogleError && onGoogleError(response.error?.message || t("auth.googleFailed"));
       return;
     }
     if (response.type !== "success") return;
@@ -77,7 +79,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     if (idToken) {
       onGoogleIdToken(idToken);
     } else {
-      onGoogleError && onGoogleError("Couldn't complete Google sign-in. Please try again.");
+      onGoogleError && onGoogleError(t("auth.googleIncomplete"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
@@ -86,7 +88,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
   // reviewer and to a driver alike, so a blocked tap says why instead.
   const handleGoogle = () => {
     if (disabled) { onBlocked && onBlocked(); return; }
-    if (!request) { onGoogleError && onGoogleError("Google sign-in is still getting ready. Try again in a moment."); return; }
+    if (!request) { onGoogleError && onGoogleError(t("auth.googleNotReady")); return; }
     promptAsync();
   };
 
@@ -112,7 +114,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       });
     } catch (e) {
       if (e.code === "ERR_REQUEST_CANCELED") return; // person just backed out — not an error
-      onAppleResult({ error: e.message || "Apple sign-in failed. Please try again." });
+      onAppleResult({ error: e.message || t("auth.appleFailed") });
     }
   };
 
@@ -127,12 +129,12 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
           {googleConfigured ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Continue with Google"
+              accessibilityLabel={t("auth.continueWithGoogle")}
               onPress={handleGoogle}
               style={[styles.button, styles.googleButton, disabled && styles.buttonDisabled]}
             >
               <Text style={styles.googleG}>G</Text>
-              <Text style={styles.buttonText}>Continue with Google</Text>
+              <Text style={styles.buttonText}>{t("auth.continueWithGoogle")}</Text>
             </Pressable>
           ) : null}
 

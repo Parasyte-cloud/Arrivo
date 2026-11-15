@@ -21,6 +21,7 @@ import {
   premiumUpgradeDescription,
   premiumUpgradePrice,
 } from "../utils/premiumUpgrade";
+import { useTranslation } from "react-i18next";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1); // 1..24
 // Mirrors MAX_FULL_DAY_COUNT in arrivo-backend/services/fare.js — that's a
@@ -74,6 +75,7 @@ const DURATIONS = [
 const QUOTE_DEBOUNCE_MS = 400;
 
 export default function ChauffeurScreen({ navigation }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
   const [pickupAddress, setPickupAddress] = useState("");
@@ -145,7 +147,7 @@ export default function ChauffeurScreen({ navigation }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setLocationError("Location permission denied. You can still type your pickup address above.");
+        setLocationError(t("chauffeur.locationPermissionDeniedYouCan"));
         return;
       }
       let position;
@@ -155,7 +157,7 @@ export default function ChauffeurScreen({ navigation }) {
         // stuck on "Finding your location…" indefinitely with no way out.
         position = await Promise.race([
           Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(t("route.locationTimeout"))), 12000)),
         ]);
       } catch (e) {
         // GPS itself never produced a fix — most commonly a weak/no signal
@@ -164,7 +166,7 @@ export default function ChauffeurScreen({ navigation }) {
         // couldn't resolve to an address) so the wording actually points
         // at what went wrong, instead of one generic catch-all hiding
         // which of the two very different failure modes actually happened.
-        setLocationError("Couldn't get a GPS signal. Try again near a window or outdoors, or type your pickup address above.");
+        setLocationError(t("chauffeur.couldnTGetAGps"));
         return;
       }
 
@@ -172,7 +174,7 @@ export default function ChauffeurScreen({ navigation }) {
         const result = await getReverseGeocode(token, position.coords.latitude, position.coords.longitude);
         setPickupAddress(result.address);
       } catch (e) {
-        setLocationError("Got your location, but couldn't look up an address for it. You can still type your pickup address above.");
+        setLocationError(t("chauffeur.gotYourLocationButCouldn"));
       }
     } finally {
       setLocatingPickup(false);
@@ -212,7 +214,7 @@ export default function ChauffeurScreen({ navigation }) {
     const scheduledPickupAt = scheduledPickupAtValue;
     navigation.navigate("Checkout", {
       amountNaira: quote.fareNaira,
-      label: `Chauffeur: ${VEHICLES.find((v) => v.id === choice).label} · ${selectedDuration.label}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
+      label: `${t("chauffeur.chauffeurPrefix")}: ${t(`labels.vehicle_${choice}`)} · ${t(`labels.duration_${selectedDuration.id}`)}${duration === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""} · ${formatDateDisplay(dateValue)} ${formatTimeDisplay(timeValue)}${duration === "full_day" ? ` · ${hours}h/day` : ""}${purpose ? ` (${purpose})` : ""}`,
       pickupAddress: pickupAddress.trim(),
       stops: [],
       vehicleType: choice,
@@ -242,10 +244,10 @@ export default function ChauffeurScreen({ navigation }) {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Chauffeur</Text>
+        <Text style={styles.title}>{t("chauffeur.chauffeur")}</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>How long do you need a chauffeur?</Text>
+          <Text style={styles.cardLabel}>{t("chauffeur.howLongDoYouNeed")}</Text>
           <View style={styles.bookingRow}>
             {DURATIONS.map((d) => (
               <Pressable
@@ -253,13 +255,13 @@ export default function ChauffeurScreen({ navigation }) {
                 onPress={() => setDuration(d.id)}
                 style={[styles.bookingChip, duration === d.id && styles.bookingChipActive]}
               >
-                <Text style={[styles.bookingChipText, duration === d.id && styles.bookingChipTextActive]}>{d.label}</Text>
+                <Text style={[styles.bookingChipText, duration === d.id && styles.bookingChipTextActive]}>{t(`labels.duration_${d.id}`)}</Text>
               </Pressable>
             ))}
           </View>
           {duration === "full_day" ? (
             <Pressable style={{ marginTop: spacing.sm }} onPress={() => setShowDaysPicker(true)}>
-              <Text style={styles.addonNote}>Number of days</Text>
+              <Text style={styles.addonNote}>{t("chauffeur.numberOfDays")}</Text>
               <Text style={[styles.smallInput, { marginTop: 6 }]}>
                 {fullDayCount} day{fullDayCount === 1 ? "" : "s"}
               </Text>
@@ -271,9 +273,9 @@ export default function ChauffeurScreen({ navigation }) {
           <Pressable style={styles.pickerOverlay} onPress={() => setShowDaysPicker(false)}>
             <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>Number of days</Text>
+                <Text style={styles.pickerTitle}>{t("chauffeur.numberOfDays")}</Text>
                 <Pressable onPress={() => setShowDaysPicker(false)}>
-                  <Text style={styles.pickerDone}>Done</Text>
+                  <Text style={styles.pickerDone}>{t("chauffeur.done")}</Text>
                 </Pressable>
               </View>
               <Picker selectedValue={fullDayCount} onValueChange={setFullDayCount} itemStyle={{ color: colors.dark.text }}>
@@ -286,12 +288,12 @@ export default function ChauffeurScreen({ navigation }) {
         </Modal>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Pickup address</Text>
+          <Text style={styles.cardLabel}>{t("chauffeur.pickupAddress")}</Text>
           <TextInput
             style={styles.input}
             value={pickupAddress}
             onChangeText={setPickupAddress}
-            placeholder="Where should your chauffeur meet you?"
+            placeholder={t("chauffeur.whereShouldYourChauffeurMeet")}
             placeholderTextColor={colors.dark.textMuted}
             autoCorrect={false}
             spellCheck={false}
@@ -324,7 +326,7 @@ export default function ChauffeurScreen({ navigation }) {
               setShowDatePicker(true);
             }}
           >
-            <Text style={styles.rowLabel}>📅 Date</Text>
+            <Text style={styles.rowLabel}>{t("chauffeur.date")}</Text>
             <Text style={[styles.smallInput, !dateValue && { color: colors.dark.textMuted }]}>
               {dateValue ? formatDateDisplay(dateValue) : "Select date"}
             </Text>
@@ -343,7 +345,7 @@ export default function ChauffeurScreen({ navigation }) {
               setShowTimePicker(true);
             }}
           >
-            <Text style={styles.rowLabel}>🕘 Time</Text>
+            <Text style={styles.rowLabel}>{t("chauffeur.time")}</Text>
             <Text style={[styles.smallInput, !timeValue && { color: colors.dark.textMuted }]}>
               {timeValue ? formatTimeDisplay(timeValue) : "Select time"}
             </Text>
@@ -352,19 +354,19 @@ export default function ChauffeurScreen({ navigation }) {
             <>
               <View style={styles.divider} />
               <Pressable style={styles.row} onPress={() => setShowHoursPicker(true)}>
-                <Text style={styles.rowLabel}>⏱ Hours that day</Text>
+                <Text style={styles.rowLabel}>{t("chauffeur.hoursThatDay")}</Text>
                 <Text style={styles.smallInput}>{hours}h</Text>
               </Pressable>
             </>
           ) : null}
           <View style={styles.divider} />
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>🎯 Purpose</Text>
+            <Text style={styles.rowLabel}>{t("chauffeur.purpose")}</Text>
             <TextInput
               style={styles.purposeInput}
               value={purpose}
               onChangeText={setPurpose}
-              placeholder="e.g. Wedding run"
+              placeholder={t("chauffeur.eGWeddingRun")}
               placeholderTextColor={colors.dark.textMuted}
             />
           </View>
@@ -407,9 +409,9 @@ export default function ChauffeurScreen({ navigation }) {
           <Pressable style={styles.pickerOverlay} onPress={() => setShowDatePicker(false)}>
             <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>Pickup date</Text>
+                <Text style={styles.pickerTitle}>{t("chauffeur.pickupDate")}</Text>
                 <Pressable onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.pickerDone}>Done</Text>
+                  <Text style={styles.pickerDone}>{t("chauffeur.done")}</Text>
                 </Pressable>
               </View>
               <DateTimePicker
@@ -429,9 +431,9 @@ export default function ChauffeurScreen({ navigation }) {
           <Pressable style={styles.pickerOverlay} onPress={() => setShowTimePicker(false)}>
             <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>Pickup time</Text>
+                <Text style={styles.pickerTitle}>{t("chauffeur.pickupTime")}</Text>
                 <Pressable onPress={() => setShowTimePicker(false)}>
-                  <Text style={styles.pickerDone}>Done</Text>
+                  <Text style={styles.pickerDone}>{t("chauffeur.done")}</Text>
                 </Pressable>
               </View>
               <DateTimePicker
@@ -454,9 +456,9 @@ export default function ChauffeurScreen({ navigation }) {
           <Pressable style={styles.pickerOverlay} onPress={() => setShowHoursPicker(false)}>
             <View style={styles.pickerCard} onStartShouldSetResponder={() => true}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>Hours that day</Text>
+                <Text style={styles.pickerTitle}>{t("chauffeur.hoursThatDay2")}</Text>
                 <Pressable onPress={() => setShowHoursPicker(false)}>
-                  <Text style={styles.pickerDone}>Done</Text>
+                  <Text style={styles.pickerDone}>{t("chauffeur.done")}</Text>
                 </Pressable>
               </View>
               <Picker selectedValue={hours} onValueChange={setHours} itemStyle={{ color: colors.dark.text }}>
@@ -469,12 +471,12 @@ export default function ChauffeurScreen({ navigation }) {
         </Modal>
 
         <Card tone="dark">
-          <Text style={styles.cardLabel}>Choose a vehicle</Text>
+          <Text style={styles.cardLabel}>{t("chauffeur.chooseAVehicle")}</Text>
           {VEHICLES.map((v) => (
             <Pressable key={v.id} onPress={() => setChoice(v.id)} style={styles.optRow}>
               <Text style={[styles.optLabel, choice === v.id && { color: colors.amber }]}>
                 {choice === v.id ? "● " : "○ "}
-                {v.label}
+                {t(`labels.vehicle_${v.id}`)}
               </Text>
             </Pressable>
           ))}
@@ -505,7 +507,7 @@ export default function ChauffeurScreen({ navigation }) {
               service: "Chauffeur",
               pickupAddress: pickupAddress.trim(),
               requestedPickupAt: scheduledPickupAtValue ? scheduledPickupAtValue.toISOString() : undefined,
-              details: `${VEHICLES.find((v) => v.id === choice).label}, ${selectedDuration.label}${purpose ? `, ${purpose}` : ""}`,
+              details: `${t(`labels.vehicle_${choice}`)}, ${t(`labels.duration_${selectedDuration.id}`)}${purpose ? `, ${purpose}` : ""}`,
             }}
             onUseEarliest={() => {
               const e = earliestPickerValue();
@@ -515,20 +517,20 @@ export default function ChauffeurScreen({ navigation }) {
             earliestLabel="Use the earliest time I can book"
           />
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue && !scheduledTimeValid ? (
-          <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+          <Text style={styles.warningText}>{t("chauffeur.pleaseChooseAPickupTime")}</Text>
         ) : !canConfirm && pickupAddress.trim() && dateValue && timeValue ? (
           phoneNeeded ? (
             <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setQuoteRetry((n) => n + 1); }} />
           ) : quoteError ? <Text style={styles.warningText}>{quoteError}</Text> : null
         ) : !canConfirm ? (
-          <Text style={styles.warningText}>Add a pickup address, date, and time to continue.</Text>
+          <Text style={styles.warningText}>{t("chauffeur.addAPickupAddressDate")}</Text>
         ) : null}
 
         <View style={{ height: spacing.lg }} />
         {quoteLoading ? (
           <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
             <ActivityIndicator color={colors.amber} />
-            <Text style={styles.quotingText}>Calculating price…</Text>
+            <Text style={styles.quotingText}>{t("chauffeur.calculatingPrice")}</Text>
           </View>
         ) : (
           <Button

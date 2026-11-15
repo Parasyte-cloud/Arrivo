@@ -6,6 +6,7 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { sendWelfarePing, answerWelfare } from "../services/api";
 import { WELFARE_PING_MS, shouldWatch, secondsLeft, clock, pingBody } from "../utils/welfare";
+import { useTranslation } from "react-i18next";
 
 // While a trip is in progress, tell the server where the rider is every 30
 // seconds. If the server decides the rider has been still for too long it asks
@@ -17,6 +18,7 @@ import { WELFARE_PING_MS, shouldWatch, secondsLeft, clock, pingBody } from "../u
 // quiet. A silent phone is handled by the server, which alerts on its own when
 // a question goes unanswered.
 export default function WelfareCheck({ rideId, rideStatus }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [deadline, setDeadline] = useState(null);
   const [now, setNow] = useState(Date.now());
@@ -73,21 +75,21 @@ export default function WelfareCheck({ rideId, rideStatus }) {
       <Modal visible={!!deadline && !alerted} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={styles.backdrop}>
           <View style={styles.sheet} accessibilityViewIsModal>
-            <Text style={styles.title}>Are you safe?</Text>
-            <Text style={styles.body}>You have not moved for a while. Tell us you are okay, or we will alert the RideArrivo team.</Text>
+            <Text style={styles.title}>{t("welfareCheck.areYouSafe")}</Text>
+            <Text style={styles.body}>{t("welfareCheck.youHaveNotMovedFor")}</Text>
             <Text style={styles.timer}>{clock(left)}</Text>
-            <Button label="Yes, I am safe" onPress={() => answer(true)} disabled={sending} />
+            <Button label={t("welfareCheck.yesIAmSafe")} onPress={() => answer(true)} disabled={sending} />
             <View style={{ height: spacing.sm }} />
-            <Button label="No, I need help" variant="ghost" onPress={() => answer(false)} disabled={sending} />
+            <Button label={t("welfareCheck.noINeedHelp")} variant="ghost" onPress={() => answer(false)} disabled={sending} />
           </View>
         </View>
       </Modal>
       <Modal visible={alerted} transparent animationType="fade" onRequestClose={() => setAlerted(false)}>
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
-            <Text style={styles.title}>We have alerted the team</Text>
-            <Text style={styles.body}>The RideArrivo team has been told and will try to reach you. If you are in danger, call the emergency number now.</Text>
-            <Button label="Okay" onPress={() => setAlerted(false)} />
+            <Text style={styles.title}>{t("welfareCheck.weHaveAlertedTheTeam")}</Text>
+            <Text style={styles.body}>{t("welfareCheck.theRidearrivoTeamHasBeen")}</Text>
+            <Button label={t("welfareCheck.okay")} onPress={() => setAlerted(false)} />
           </View>
         </View>
       </Modal>

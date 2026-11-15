@@ -84,7 +84,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
     dispatch({ type: "TAP" });
     setSupportMsg(null);
     try {
-      if (!client) throw Object.assign(new Error("Calling isn't ready yet. Give it a moment."), { status: 503, code: "calling_unavailable" });
+      if (!client) throw Object.assign(new Error(t("call.notReady")), { status: 503, code: "calling_unavailable" });
       dispatch({ type: "STARTING" });
       const res = await startRideCall(token, rideId, media);
       sessionRef.current = res.session.id;
@@ -128,7 +128,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
   // told clearly, rather than hearing ringing forever.
   useEffect(() => {
     if (state.phase !== PHASE.RINGING) return undefined;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       const left = ringRemaining(startedAt.current, Date.now(), state.ringTimeoutSeconds);
       setRemaining(left);
       if (left <= 0) {
@@ -138,7 +138,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
         inFlight.current = false;
       }
     }, 500);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [state.phase, state.ringTimeoutSeconds, leaveQuietly, report]);
 
   const cancel = async () => {

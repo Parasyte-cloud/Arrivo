@@ -3,6 +3,9 @@ import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideReceipt } from "../services/api";
+import { useT } from "../context/LanguageContext";
+
+const LINE_KEYS = { "Fare": "rcptFare", "Traffic delay": "rcptTraffic", "Extra hours": "rcptHours", "Tip": "rcptTip" };
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString()}`;
 
@@ -10,6 +13,7 @@ const naira = (n) => `₦${Number(n || 0).toLocaleString()}`;
 // (only now that the trip is done) and the fare lines. Loads when opened.
 export default function DriverReceipt({ rideId }) {
   const { token } = useAuth();
+  const { t } = useT();
   const [receipt, setReceipt] = useState(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -18,18 +22,18 @@ export default function DriverReceipt({ rideId }) {
     return () => { live = false; };
   }, [token, rideId]);
 
-  if (failed) return <Text style={styles.meta}>The receipt could not be loaded. Pull down to refresh and try again.</Text>;
+  if (failed) return <Text style={styles.meta}>{t("rcptFail")}</Text>;
   if (!receipt) return <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.sm }} />;
   return (
     <View style={{ marginTop: spacing.sm }}>
       <View style={styles.rule} />
-      {receipt.rider ? <Text style={styles.meta}>Rider {receipt.rider.name}</Text> : null}
+      {receipt.rider ? <Text style={styles.meta}>{t("rcptRider", { name: receipt.rider.name })}</Text> : null}
       {receipt.lines.map((l) => (
-        <View key={l.label} style={styles.row}><Text style={styles.label}>{l.label}</Text><Text style={styles.value}>{naira(l.naira)}</Text></View>
+        <View key={l.label} style={styles.row}><Text style={styles.label}>{LINE_KEYS[l.label] ? t(LINE_KEYS[l.label]) : l.label}</Text><Text style={styles.value}>{naira(l.naira)}</Text></View>
       ))}
       <View style={styles.rule} />
-      <View style={styles.row}><Text style={styles.total}>Total</Text><Text style={styles.total}>{naira(receipt.totalNaira)}</Text></View>
-      {receipt.paymentMethod ? <Text style={styles.meta}>Paid by {String(receipt.paymentMethod).replace(/_/g, " ")}</Text> : null}
+      <View style={styles.row}><Text style={styles.total}>{t("rcptTotal")}</Text><Text style={styles.total}>{naira(receipt.totalNaira)}</Text></View>
+      {receipt.paymentMethod ? <Text style={styles.meta}>{t("rcptPaidBy", { method: String(receipt.paymentMethod).replace(/_/g, " ") })}</Text> : null}
     </View>
   );
 }

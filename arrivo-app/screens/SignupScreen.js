@@ -11,6 +11,7 @@ import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons from "../components/OAuthButtons";
+import LanguageChips from "../components/LanguageChips";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -58,7 +59,7 @@ export default function SignupScreen({ navigation }) {
     setAvatarError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setAvatarError("Please allow photo access to add a profile picture.");
+      setAvatarError(t("signup.pleaseAllowPhotoAccessTo"));
       return;
     }
 
@@ -74,11 +75,11 @@ export default function SignupScreen({ navigation }) {
     const asset = result.assets[0];
 
     if (asset.fileSize && asset.fileSize > MAX_AVATAR_BYTES) {
-      setAvatarError("Please choose an image smaller than 4MB.");
+      setAvatarError(t("signup.pleaseChooseAnImageSmaller"));
       return;
     }
     if (!asset.base64) {
-      setAvatarError("Couldn't read that photo. Please try another.");
+      setAvatarError(t("signup.couldnTReadThatPhoto"));
       return;
     }
 
@@ -90,11 +91,11 @@ export default function SignupScreen({ navigation }) {
   const submit = async () => {
     setError(null);
     if (!firstName || !lastName || !email || !password) {
-      setError("First name, last name, email, and password are required.");
+      setError(t("signup.requiredFields"));
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("signup.passwordsDoNotMatch"));
       return;
     }
     const whatsappResult = validatePhone(whatsappDial, whatsappNational);
@@ -108,11 +109,11 @@ export default function SignupScreen({ navigation }) {
       return;
     }
     if (!country.trim()) {
-      setError("Please enter your country of residence.");
+      setError(t("signup.enterCountry"));
       return;
     }
     if (!agreedToTerms) {
-      setError("You must agree to the data protection and privacy terms to continue.");
+      setError(t("signup.mustAgree"));
       return;
     }
     setLoading(true);
@@ -179,11 +180,11 @@ export default function SignupScreen({ navigation }) {
             <Text style={styles.avatarPlus}>＋</Text>
           )}
         </Pressable>
-        <Text style={styles.avatarLabel}>Add profile photo</Text>
+        <Text style={styles.avatarLabel}>{t("signup.addProfilePhoto")}</Text>
         {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
 
-        <TextInput style={styles.input} placeholder="First name" placeholderTextColor={colors.textMuted} value={firstName} onChangeText={setFirstName} />
-        <TextInput style={styles.input} placeholder="Last name" placeholderTextColor={colors.textMuted} value={lastName} onChangeText={setLastName} />
+        <TextInput style={styles.input} placeholder={t("signup.firstName")} placeholderTextColor={colors.textMuted} value={firstName} onChangeText={setFirstName} />
+        <TextInput style={styles.input} placeholder={t("signup.lastName")} placeholderTextColor={colors.textMuted} value={lastName} onChangeText={setLastName} />
         <TextInput
           style={styles.input}
           placeholder={t("auth.email")}
@@ -195,12 +196,12 @@ export default function SignupScreen({ navigation }) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Identification number (optional)"
+          placeholder={t("signup.identificationNumberOptional")}
           placeholderTextColor={colors.textMuted}
           value={passportNumber}
           onChangeText={setPassportNumber}
         />
-        <Text style={styles.helperText}>Any government-licensed ID: passport, NIN, etc.</Text>
+        <Text style={styles.helperText}>{t("signup.anyGovernmentLicensedIdPassport")}</Text>
         <Text style={styles.label}>{t("auth.phone")}</Text>
         <PhoneInput
           dial={phoneDial}
@@ -210,18 +211,18 @@ export default function SignupScreen({ navigation }) {
           placeholder={t("auth.phone")}
         />
 
-        <Text style={styles.label}>WhatsApp number</Text>
+        <Text style={styles.label}>{t("signup.whatsappNumber")}</Text>
         <PhoneInput
           dial={whatsappDial}
           national={whatsappNational}
           onChangeDial={setWhatsappDial}
           onChangeNational={setWhatsappNational}
-          placeholder="WhatsApp number"
+          placeholder={t("signup.whatsappNumber")}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Country of residence"
+          placeholder={t("signup.countryOfResidence")}
           placeholderTextColor={colors.textMuted}
           value={country}
           onChangeText={setCountry}
@@ -237,7 +238,7 @@ export default function SignupScreen({ navigation }) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Confirm password"
+          placeholder={t("signup.confirmPassword")}
           placeholderTextColor={colors.textMuted}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
@@ -280,7 +281,7 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.agreeText}>
             I agree to RideArrivo's{" "}
             <Text style={styles.agreeLink} onPress={() => setPrivacyModalVisible(true)}>
-              data protection and privacy policy
+              {t("signup.dataProtectionAndPrivacyPolicy")}
             </Text>
             .
           </Text>
@@ -306,7 +307,7 @@ export default function SignupScreen({ navigation }) {
 
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
+          <Text style={styles.dividerText}>{t("signup.or")}</Text>
           <View style={styles.dividerLine} />
         </View>
 
@@ -316,19 +317,20 @@ export default function SignupScreen({ navigation }) {
             ever seeing the privacy notice. */}
         <OAuthButtons
           disabled={!agreedToTerms}
-          onBlocked={() => setError("Tick the box above to agree first, then choose Google or Apple.")}
+          onBlocked={() => setError(t("signup.tickBoxFirst"))}
           busy={oauthBusy}
           onGoogleIdToken={handleGoogleIdToken}
           onGoogleError={setError}
           onAppleResult={handleAppleResult}
         />
         {!agreedToTerms ? (
-          <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+          <Text style={styles.oauthHint}>{t("signup.checkTheBoxAboveTo")}</Text>
         ) : null}
 
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>{t("auth.haveAccount")}</Text>
         </Pressable>
+        <LanguageChips />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

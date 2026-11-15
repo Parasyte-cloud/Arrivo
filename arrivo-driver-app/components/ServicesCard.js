@@ -2,33 +2,35 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Card } from "./UI";
 import { colors, spacing } from "../theme/tokens";
-import { metaFor } from "../utils/tiers";
+import { metaFor, tagFor } from "../utils/tiers";
 import { useTiers } from "../context/TiersContext";
+import { useT } from "../context/LanguageContext";
 
 // "Your services": ONLY the services RideArrivo Ops has switched on for this
 // driver. A service that is off is not listed, named or hinted at, and there is
 // nothing to ask for here: Ops decides who works what.
-export default function ServicesCard({ title = "Your services", lead }) {
+export default function ServicesCard({ title, lead }) {
+  const { t } = useT();
   const { tiers, active, legacy, loaded } = useTiers();
   if (legacy || !loaded) return null;
 
   return (
     <Card tone="dark" style={{ marginBottom: spacing.md }}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.title}>{title || t("svcTitle")}</Text>
       {lead ? <Text style={styles.lead}>{lead}</Text> : null}
       {active.length === 0 ? (
-        <Text style={styles.lead}>No service is on for you yet. RideArrivo Ops will switch one on and it will appear here.</Text>
+        <Text style={styles.lead}>{t("svcNone")}</Text>
       ) : (
         active.map((slug) => {
           const m = metaFor(slug, tiers);
           return (
-            <View key={slug} style={styles.row} accessible accessibilityLabel={`${m.name}, on`}>
+            <View key={slug} style={styles.row} accessible accessibilityLabel={`${m.name}, ${t("svcOn")}`}>
               <View style={[styles.dot, { backgroundColor: m.accent }]} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{m.name}</Text>
-                <Text style={styles.tag}>{m.tagline}</Text>
+                <Text style={styles.tag}>{tagFor(t, slug, m)}</Text>
               </View>
-              <Text style={styles.state}>ON</Text>
+              <Text style={styles.state}>{t("svcOn")}</Text>
             </View>
           );
         })
