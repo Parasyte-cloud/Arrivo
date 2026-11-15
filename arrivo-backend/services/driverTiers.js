@@ -32,14 +32,17 @@ const cleanTier = (v) => (typeof v === "string" && TIER_SLUGS.includes(v.trim().
 // Rides booked as a charter belong to Chauffeur, every other booking on the
 // rides table (arrival pickups and drop-offs) belongs to RideArrivo.
 const CHARTER_BOOKING_TYPES = ["full_day", "full_week", "full_month"];
+// A ride Ops created for Campus, Air, Boat or Removals carries its own service.
+const SERVICE_JOB_TIERS = Object.freeze(["campus", "air", "boat", "removals"]);
 function tierForRide(ride) {
+  if (ride && SERVICE_JOB_TIERS.includes(ride.service)) return ride.service;
   return CHARTER_BOOKING_TYPES.includes(String(ride?.booking_type || "").toLowerCase()) ? "chauffeur" : "ride";
 }
 
 // The same rule as tierForRide, for use inside a query. $-less on purpose:
 // the list is fixed, never user input.
 const RIDE_TIER_SQL = (alias = "rides") =>
-  `(CASE WHEN ${alias}.booking_type IN (${CHARTER_BOOKING_TYPES.map((t) => `'${t}'`).join(", ")}) THEN 'chauffeur' ELSE 'ride' END)`;
+  `(CASE WHEN ${alias}.service IS NOT NULL THEN ${alias}.service WHEN ${alias}.booking_type IN (${CHARTER_BOOKING_TYPES.map((t) => `'${t}'`).join(", ")}) THEN 'chauffeur' ELSE 'ride' END)`;
 
 // True when the driver holds an active row for the tier, as SQL. $1 is the
 // driver id column or parameter the caller passes in.
@@ -188,4 +191,4 @@ function createDriverTiers(pool) {
   return { listForDriver, activeSlugs, holds, grant, revoke, request, overview, events };
 }
 
-module.exports = { TIERS, TIER_SLUGS, cleanTier, tierForRide, RIDE_TIER_SQL, HOLDS_TIER_SQL, TierError, createDriverTiers };
+module.exports = { SERVICE_JOB_TIERS, TIERS, TIER_SLUGS, cleanTier, tierForRide, RIDE_TIER_SQL, HOLDS_TIER_SQL, TierError, createDriverTiers };

@@ -1178,7 +1178,7 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
 
   // The ride's service must be one this driver has switched on. GET /available
   // already hides the others, this stops a direct call with an old ride id.
-  const target = (await pool.query("SELECT booking_type FROM rides WHERE id = $1", [req.params.id])).rows[0];
+  const target = (await pool.query("SELECT booking_type, service FROM rides WHERE id = $1", [req.params.id])).rows[0];
   if (target) {
     const need = tierForRide(target);
     if (!(await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driver.id, need])).rowCount) {

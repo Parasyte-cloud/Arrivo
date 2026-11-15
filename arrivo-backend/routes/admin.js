@@ -258,6 +258,39 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
 // route rather than folded into the generic PATCH /rides/:id above: it only
 // ever touches driver_id/ride_status, never money, so it carries none of
 // that route's completion guardrails and doesn't need to.
+// POST /api/admin/service-jobs: Ops creates a job for a quote-first service
+// (Campus, Air, Boat, Removals). It is a normal ride row tagged with its
+// service, so a driver who holds the service sees it in their queue, and the
+// "Are you safe?" check and the receipt work on it like any other trip.
+// Payment is agreed with the customer outside the app (invoice or transfer);
+// `paid: true` records that it has been settled.
+router.post("/service-jobs", requireRole("admin"), async (req, res) => {
+  const { SERVICE_JOB_TIERS } = require("../services/driverTiers");
+  const b = req.body || {};
+  const service = String(b.service || "").toLowerCase();
+  if (!SERVICE_JOB_TIERS.includes(service)) return res.status(400).json({ error: `service must be one of: ${SERVICE_JOB_TIERS.join(", ")}.` });
+  const pickup = String(b.pickup || "").trim();
+  const destination = String(b.destination || "").trim();
+  if (pickup.length < 3) return res.status(400).json({ error: "Add a pickup address." });
+  if (destination.length < 3) return res.status(400).json({ error: "Add a destination." });
+  const quote = Number(b.quoteNaira);
+  if (!Number.isInteger(quote) || quote < 0 || quote > 50000000) return res.status(400).json({ error: "quoteNaira must be a whole number of naira, 0 or more." });
+  const email = String(b.riderEmail || "").trim().toLowerCase();
+  const rider = (await pool.query("SELECT id, role FROM users WHERE lower(email) = $1", [email])).rows[0];
+  if (!rider || rider.role !== "rider") return res.status(404).json({ error: "No rider account with that email. They need to sign up in the rider app first." });
+  const paid = b.paid === true;
+  const created = await pool.query(
+    `INSERT INTO rides (rider_id, pickup_address, stops, booking_type, service, fare_naira, payment_status, payment_method,
+                        ride_status, agreed_cancellation_policy, admin_notes)
+     VALUES ($1, $2, $3, 'service_job', $4, $5, $6, $7, 'requested', true, $8) RETURNING *`,
+    [rider.id, pickup, JSON.stringify([destination]), service, quote, paid ? "paid" : "pending", paid ? "invoice" : null,
+     b.notes ? String(b.notes).slice(0, 1000) : null]
+  );
+  const ride = created.rows[0];
+  await logSafetyEvent(pool, "service_job_created", { rideId: ride.id, userId: req.user.id, detail: { service, quoteNaira: quote, paid } });
+  res.status(201).json({ ride: { ...ride, stops: JSON.parse(ride.stops || "[]") } });
+});
+
 router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
   const { driverId } = req.body;
   const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
@@ -327,7 +360,7 @@ router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
   // to cover a gap. It is never blocked, but when the driver does not hold the
   // service this ride belongs to, that is written to the audit trail and the
   // response says so, so the console can show a note and nobody is surprised.
-  const rideTier = finalRide.booking_type && ["full_day", "full_week", "full_month"].includes(finalRide.booking_type) ? "chauffeur" : "ride";
+  const rideTier = require("../services/driverTiers").tierForRide(finalRide);
   const isExpress = (await pool.query("SELECT 1 FROM instant_ride_requests WHERE ride_id = $1", [finalRide.id])).rowCount > 0;
   const tier = isExpress ? "express" : rideTier;
   const holds = (await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driverId, tier])).rowCount > 0;

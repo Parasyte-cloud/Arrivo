@@ -7,7 +7,7 @@
 //   ride       airport pickups and drop-offs (booking_type one_way, dropoff)
 //   express    on-demand offers, with their own opt-in switch
 //   chauffeur  charters (booking_type full_day, full_week, full_month)
-//   campus, air, boat, removals  no jobs in the app yet, so a clear pane
+//   campus, air, boat, removals  jobs Ops creates and assigns (ride.service), listed like the others
 
 export const TIER_ORDER = ["ride", "express", "chauffeur", "campus", "air", "boat", "removals"];
 
@@ -22,10 +22,12 @@ export const TIER_FALLBACK = {
 };
 
 const CHARTER = ["full_day", "full_week", "full_month"];
+const SERVICE_JOBS = ["campus", "air", "boat", "removals"];
 
 // Same rule as the server: charters are Chauffeur, every other booking on the
 // rides queue is RideArrivo.
 export function tierForRide(ride) {
+  if (ride && SERVICE_JOBS.includes(ride.service)) return ride.service;
   return CHARTER.includes(String((ride && ride.booking_type) || "").toLowerCase()) ? "chauffeur" : "ride";
 }
 
@@ -43,7 +45,7 @@ export function sectionsFor(current, { legacy = false } = {}) {
   if (legacy) return { express: true, queue: true, pane: false, queueTier: null };
   if (!current) return { express: false, queue: false, pane: true, queueTier: null };
   if (current === "express") return { express: true, queue: false, pane: false, queueTier: null };
-  if (current === "ride" || current === "chauffeur") return { express: false, queue: true, pane: false, queueTier: current };
+  if (current === "ride" || current === "chauffeur" || SERVICE_JOBS.includes(current)) return { express: false, queue: true, pane: false, queueTier: current };
   return { express: false, queue: false, pane: true, queueTier: null };
 }
 

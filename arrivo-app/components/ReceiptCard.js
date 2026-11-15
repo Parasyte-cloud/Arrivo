@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { getRideReceipt } from "../services/api";
 import { useTranslation } from "react-i18next";
 
-const SERVICE = { ride: "RideArrivo", express: "ArrivoExpress", chauffeur: "ArrivoChauffeur" };
+const SERVICE = { ride: "RideArrivo", express: "ArrivoExpress", chauffeur: "ArrivoChauffeur", campus: "ArrivoCampus", air: "ArrivoAir", boat: "ArrivoBoat", removals: "ArrivoRemovals" };
 const LINE_KEYS = { "Fare": "receiptCard.lineFare", "Traffic delay": "receiptCard.lineTraffic", "Extra hours": "receiptCard.lineExtraHours", "Tip": "receiptCard.lineTip" };
 const naira = (n) => `₦${Number(n || 0).toLocaleString()}`;
 
