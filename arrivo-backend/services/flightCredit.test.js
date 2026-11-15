@@ -173,3 +173,10 @@ test("drop-off flight change: cash rails are refunded, membership and family wal
   // a pay-later ride was never charged: nothing to refund, reconfirm as before
   assert.deepEqual(fc.dropoffIssuePlan({ payment_status: "pending", payment_method: "card" }), { refund: false, nextPaymentStatus: "pending_reconfirmation", notify: "refunded_to_wallet" });
 });
+
+test("a flight date more than a day from the pickup never cancels the pickup (date left on today)", () => {
+  const tomorrowPickup = { ...paid, scheduled_pickup_at: "2026-11-03T14:00:00Z" }; // flight_date is 2026-11-02: one day, fine
+  assert.equal(fc.decideCredit(tomorrowPickup, cancelled, ON, NOW).action, "credit");
+  const inThreeDays = { ...paid, scheduled_pickup_at: "2026-11-05T14:00:00Z" };
+  assert.deepEqual(fc.decideCredit(inThreeDays, cancelled, ON, NOW), { action: "none", why: "flight_date_far_from_pickup" });
+});

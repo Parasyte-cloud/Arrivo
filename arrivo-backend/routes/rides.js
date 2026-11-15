@@ -1665,6 +1665,10 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
   if (!ride.payment_reference) {
     return res.status(400).json({ error: "This ride has no payment reference to verify." });
   }
+  // Never mark a cancelled ride paid. If money did arrive it goes to Ops as a payment exception to refund.
+  if (ride.ride_status === "cancelled") {
+    return res.status(409).json({ error: "This ride was cancelled, so it can't be marked paid. If you were charged, contact support and we will refund you.", code: "RIDE_CANCELLED" });
+  }
 
   let verification;
   try {

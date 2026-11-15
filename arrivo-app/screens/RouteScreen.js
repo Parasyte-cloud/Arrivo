@@ -182,7 +182,7 @@ export default function RouteScreen({ navigation, route }) {
   // The flight is tracked by number and date. The surname helps support find the booking; the
   // booking code (PNR) is optional and only ever used by support, never to look a flight up.
   const todayLagos = (() => { const p = lagosParts(); return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`; })();
-  const [flightDate, setFlightDate] = useState(todayLagos);
+  const [flightDate, setFlightDate] = useState("");  // Not pre-filled: a rider flying tomorrow who never touched it would get today's flight tracked.
   const [passengerSurname, setPassengerSurname] = useState("");
   const [pnr, setPnr] = useState("");
   const [emergencyContactName, setEmergencyContactName] = useState("");
