@@ -126,7 +126,7 @@ export default function ProfileScreen() {
 
         <Button label="Log Out" variant="ghost" tone="dark" onPress={logout} />
 
-        <ServicesCard lead="The services Ops has switched on for you. Ask for another and Ops will look at it. A service is only on once Ops switches it on." />
+        <ServicesCard lead="These are the services RideArrivo Ops has switched on for you." />
         <DeleteAccountSection />
       </ScrollView>
     </View>

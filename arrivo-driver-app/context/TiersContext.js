@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import { useAuth } from "./AuthContext";
-import { getMyTiers, requestTier } from "../services/api";
+import { getMyTiers } from "../services/api";
 import { pickTier } from "../utils/tiers";
 
 // The services this driver can work, and which one the Dashboard is showing.
@@ -63,13 +63,7 @@ export function TiersProvider({ children }) {
     AsyncStorage.setItem(SAVED_KEY, slug).catch(() => {});
   }, []);
 
-  const ask = useCallback(async (slug) => {
-    const r = await requestTier(token, slug);
-    await reload();
-    return r;
-  }, [token, reload]);
-
-  const value = useMemo(() => ({ tiers, active, current, select, ask, reload, loaded, legacy }), [tiers, active, current, select, ask, reload, loaded, legacy]);
+  const value = useMemo(() => ({ tiers, active, current, select, reload, loaded, legacy }), [tiers, active, current, select, reload, loaded, legacy]);
   return <TiersContext.Provider value={value}>{children}</TiersContext.Provider>;
 }
 

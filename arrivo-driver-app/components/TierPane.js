@@ -14,7 +14,7 @@ export default function TierPane() {
     return (
       <ServicesCard
         title="No service is on yet"
-        lead="RideArrivo Ops switches services on for each driver. Ask for the ones you want to work and you will see them here as soon as they are on."
+        lead="RideArrivo Ops switches services on for each driver. As soon as one is on for you, it appears here and you can start."
       />
     );
   }

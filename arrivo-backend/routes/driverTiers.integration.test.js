@@ -173,20 +173,28 @@ const revoke = (as, driverId, tier, note) => api("/api/admin/driver-tiers/revoke
     assert.strictEqual((await api("/api/drivers/tiers", { as: await mkUser("rider") })).status, 403);
   });
 
-  await test("asking for a tier never switches it on, and shows up for the owner", async () => {
+  await test("a driver is shown ONLY the services Ops switched on, never the others", async () => {
+    await grant(owner, d2.driverId, "campus", "for visibility test");
+    await revoke(owner, d2.driverId, "campus", "withdrawn again");
+    const mine = await api("/api/drivers/tiers", { as: d1 });
+    assert.deepStrictEqual(mine.body.tiers.map((t) => t.slug).sort(), ["express", "ride"], "only what is on is listed");
+    assert.ok(mine.body.tiers.every((t) => t.status === "active"));
+    const raw = JSON.stringify(mine.body);
+    for (const hidden of ["ArrivoCampus", "ArrivoAir", "ArrivoBoat", "ArrivoRemovals", "ArrivoChauffeur", "revoked", "requested"]) {
+      assert.ok(!raw.includes(hidden), `${hidden} must not reach a driver who does not hold it`);
+    }
+    // A withdrawn service disappears, a driver with nothing sees an empty list.
+    assert.deepStrictEqual((await api("/api/drivers/tiers", { as: d2 })).body.tiers, []);
+  });
+
+  await test("a driver cannot ask for a service from the app, nothing is recorded", async () => {
+    const before = (await pool.query("SELECT count(*)::int n FROM driver_tier_access WHERE driver_id = $1 AND status = 'requested'", [d2.driverId])).rows[0].n;
     const r = await api("/api/drivers/tiers/request", { method: "POST", as: d2, body: { tier: "air" } });
-    assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.body.status, "requested");
+    assert.strictEqual(r.status, 403);
+    assert.strictEqual(r.body.code, "tier_request_closed");
+    const after = (await pool.query("SELECT count(*)::int n FROM driver_tier_access WHERE driver_id = $1 AND status = 'requested'", [d2.driverId])).rows[0].n;
+    assert.strictEqual(after, before);
     assert.deepStrictEqual((await api("/api/drivers/tiers", { as: d2 })).body.active, []);
-    const again = await api("/api/drivers/tiers/request", { method: "POST", as: d2, body: { tier: "air" } });
-    assert.strictEqual(again.body.changed, false);
-    const list = await api("/api/admin/driver-tiers", { as: owner });
-    assert.strictEqual(list.body.drivers[0].id, d2.driverId, "drivers with a request come first");
-    assert.strictEqual(list.body.drivers[0].waiting, 1);
-    assert.strictEqual((await api("/api/drivers/tiers/request", { method: "POST", as: d2, body: { tier: "x" } })).status, 400);
-    // Declining then asking again works.
-    await revoke(owner, d2.driverId, "air", "Not yet");
-    assert.strictEqual((await api("/api/drivers/tiers/request", { method: "POST", as: d2, body: { tier: "air" } })).body.status, "requested");
   });
 
   await test("a driver with no tier cannot go online, one with a tier can", async () => {
