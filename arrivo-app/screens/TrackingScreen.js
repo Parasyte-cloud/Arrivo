@@ -528,7 +528,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setOverageStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, overageNaira, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: overageNaira, purpose: "overage", refId: rideId });
       pendingOverageRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
@@ -566,7 +566,7 @@ export default function TrackingScreen({ route, navigation }) {
     }
     setTipStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, tipAmount, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: tipAmount, purpose: "tip", refId: rideId });
       pendingTipRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Card checkout continues in the browser -- reset once we've handed
