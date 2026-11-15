@@ -18,7 +18,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const { t } = useTranslation();
   const {
     amountNaira = 12500, label = "Airport Pickup", pickupAddress = "Murtala Muhammed Airport",
-    stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
+    stops = [], flightNumber, flightDate, passengerSurname, pnr, vehicleType, bookingType = "one_way", durationDays = 1,
     securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
@@ -128,7 +128,7 @@ export default function CheckoutScreen({ route, navigation }) {
         // the card had already been charged.
         try {
           const { ride } = await createRide(token, {
-            pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
+            pickupAddress, stops, flightNumber, flightDate, passengerSurname, pnr, vehicleType, fareNaira: amountNaira,
             paymentReference: reference, bookingType, durationDays,
             agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
             emergencyContactName, emergencyContactPhone, dashCamConsent,
@@ -217,7 +217,7 @@ export default function CheckoutScreen({ route, navigation }) {
     setStatus("verifying");
     try {
       const { ride } = await createRide(token, {
-        pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
+        pickupAddress, stops, flightNumber, flightDate, passengerSurname, pnr, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
         securityEscort, fleetSize, luxury, paymentMethod,
         emergencyContactName, emergencyContactPhone, dashCamConsent,

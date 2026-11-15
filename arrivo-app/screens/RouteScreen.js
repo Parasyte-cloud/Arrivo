@@ -11,6 +11,7 @@ import AddressAutocomplete from "../components/AddressAutocomplete";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
 import { isStandardBookingBlocked, getBookingRules } from "../utils/bookingWindow";
 import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from "../utils/lagosTime";
+import { flightNumberProblem, flightDateProblem, pnrProblem, addDays } from "../utils/flightFields";
 import useMinuteTick from "../hooks/useMinuteTick";
 import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
@@ -178,6 +179,12 @@ export default function RouteScreen({ navigation, route }) {
   const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
   const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
+  // The flight is tracked by number and date. The surname helps support find the booking; the
+  // booking code (PNR) is optional and only ever used by support, never to look a flight up.
+  const todayLagos = (() => { const p = lagosParts(); return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`; })();
+  const [flightDate, setFlightDate] = useState(todayLagos);
+  const [passengerSurname, setPassengerSurname] = useState("");
+  const [pnr, setPnr] = useState("");
   const [emergencyContactName, setEmergencyContactName] = useState("");
   // Country code is picked, never typed — same PhoneInput and same
   // validation as the saved contacts on Profile -> Emergency contacts and
@@ -489,6 +496,9 @@ export default function RouteScreen({ navigation, route }) {
   // TrackingScreen, which fetches live flight status from it). Not
   // required for charter/Chauffeur bookings, which aren't tied to a flight.
   const needsFlightNumber = bookingType === "one_way";
+  const flightNumberMsg = flightNumberProblem(flightNumber);
+  const flightDateMsg = needsFlightNumber ? (flightDate.trim() ? flightDateProblem(flightDate, todayLagos) : "Choose the day your flight lands.") : null;
+  const pnrMsg = pnrProblem(pnr);
 
   // Only drop-offs carry a date the rider picks. An airport pickup is timed
   // off the flight, so there's nothing here to measure it against and the rule
@@ -526,7 +536,7 @@ export default function RouteScreen({ navigation, route }) {
 
   const canConfirm =
     !excludedArea && !groupTooLarge && pickup.trim().length > 0 && destination.trim().length > 0 &&
-    (!needsFlightNumber || flightNumber.trim().length > 0) &&
+    (!needsFlightNumber || flightNumber.trim().length > 0) && !flightNumberMsg && !flightDateMsg && !pnrMsg &&
     scheduledTimeValid && !bookingWindowBlocked && emergencyPhoneResult.valid &&
     coordsResolved && !!quote && !quoteLoading;
 
@@ -542,6 +552,9 @@ export default function RouteScreen({ navigation, route }) {
       pickupAddress: pickup,
       stops,
       flightNumber: flightNumber.trim() || undefined,
+      flightDate: needsFlightNumber ? flightDate.trim() : undefined,
+      passengerSurname: passengerSurname.trim() || undefined,
+      pnr: pnr.trim() || undefined,
       vehicleType: vehicle,
       bookingType: selectedBooking.id,
       durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
@@ -712,6 +725,53 @@ export default function RouteScreen({ navigation, route }) {
             placeholderTextColor={colors.dark.textMuted}
             autoCapitalize="characters"
           />
+          {flightNumberMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{flightNumberMsg}</Text> : null}
+          {needsFlightNumber ? (
+            <>
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Flight date</Text>
+              <Text style={styles.addonNote}>The day your flight lands (Lagos time).</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginVertical: 6 }}>
+                {[["Today", todayLagos], ["Tomorrow", addDays(todayLagos, 1)]].map(([label, day]) => (
+                  <Pressable key={label} onPress={() => setFlightDate(day)} style={[styles.flightDayChip, flightDate === day && styles.flightDayChipOn]}>
+                    <Text style={styles.addonNote}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput
+                style={styles.flightInput}
+                value={flightDate}
+                onChangeText={setFlightDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="none"
+                keyboardType="numbers-and-punctuation"
+              />
+              {flightDateMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{flightDateMsg}</Text> : null}
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Passenger surname (optional)</Text>
+              <TextInput
+                style={styles.flightInput}
+                value={passengerSurname}
+                onChangeText={setPassengerSurname}
+                placeholder="As on the ticket"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="words"
+              />
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Booking code, PNR (optional)</Text>
+              <Text style={styles.addonNote}>Only our support team can see it, to confirm your booking with the airline. It does not track your flight.</Text>
+              <TextInput
+                style={styles.flightInput}
+                value={pnr}
+                onChangeText={(v) => setPnr(v.toUpperCase())}
+                placeholder="e.g. AB12CD"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="characters"
+              />
+              {pnrMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{pnrMsg}</Text> : null}
+            </>
+          ) : null}
         </Card>
 
         {needsScheduledTime ? (
@@ -1012,6 +1072,11 @@ const styles = StyleSheet.create({
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   hintText: { color: colors.amber, fontSize: 11, marginTop: 8, marginLeft: 18, lineHeight: 15 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  flightDayChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: colors.dark.fieldBg, borderWidth: 1, borderColor: "transparent",
+  },
+  flightDayChipOn: { borderColor: colors.dark.text },
   flightInput: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,
