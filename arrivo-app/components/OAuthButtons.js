@@ -6,6 +6,7 @@ import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useTranslation } from "react-i18next";
 import { colors, spacing } from "../theme/tokens";
+import { reportClientError } from "../services/api";
 
 // Needed once, at module load, so the in-app browser sheet Google sign-in
 // opens actually closes itself and hands control back to the app when the
@@ -38,6 +39,24 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 // checkbox, exactly like the "Create account" button below it is gated by
 // the same flag — nobody creates a RideArrivo profile any way, including via
 // Google/Apple, without agreeing to the same terms.
+// A sign-in that fails on the phone never reaches our server, so nothing would
+// ever show up in the logs. Report it (the code Apple/Google gave, the screen,
+// the build) and show the person a short Ref they can read out to support.
+async function explain(stage, err, fallback) {
+  const code = err && err.code ? String(err.code) : "";
+  let ref = "";
+  try {
+    ref = await reportClientError({
+      code: "OAUTH_" + stage,
+      message: (err && err.message) || fallback,
+      detail: code,
+      screen: "oauth",
+      context: { os: Platform.OS, nativeCode: code || "none" },
+    });
+  } catch (e) { /* reporting is best effort */ }
+  return `${fallback}${code || ref ? ` (${[code, ref && "Ref " + ref].filter(Boolean).join(", ")})` : ""}`;
+}
+
 export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, onBlocked, disabled, busy }) {
   const { t } = useTranslation();
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
@@ -68,7 +87,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // how the Apple handler below ignores ERR_REQUEST_CANCELED — only a
     // genuine "error" type is worth surfacing.
     if (response.type === "error") {
-      onGoogleError && onGoogleError(response.error?.message || t("auth.googleFailed"));
+      explain("GOOGLE_RESPONSE", response.error || { code: response.params?.error }, response.error?.message || t("auth.googleFailed")).then((m) => onGoogleError && onGoogleError(m));
       return;
     }
     if (response.type !== "success") return;
@@ -79,7 +98,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     if (idToken) {
       onGoogleIdToken(idToken);
     } else {
-      onGoogleError && onGoogleError(t("auth.googleIncomplete"));
+      explain("GOOGLE_NO_TOKEN", { code: "no_id_token" }, t("auth.googleIncomplete")).then((m) => onGoogleError && onGoogleError(m));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
@@ -89,12 +108,18 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
   const handleGoogle = () => {
     if (disabled) { onBlocked && onBlocked(); return; }
     if (!request) { onGoogleError && onGoogleError(t("auth.googleNotReady")); return; }
-    promptAsync();
+    promptAsync().catch((e) => {
+      explain("GOOGLE_PROMPT", e, t("auth.googleFailed")).then((m) => onGoogleError && onGoogleError(m));
+    });
   };
 
   const handleAppleSignIn = async () => {
     if (disabled) { onBlocked && onBlocked(); return; }
     try {
+      if (!(await AppleAuthentication.isAvailableAsync())) {
+        onAppleResult({ error: await explain("APPLE_UNAVAILABLE", { code: "unavailable" }, t("auth.appleUnavailable")) });
+        return;
+      }
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -107,6 +132,10 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       // authorizationCode is one-time and only useful right now: the backend
       // swaps it for a refresh token, which is the only thing that can revoke
       // this Apple authorization when the account is deleted.
+      if (!credential.identityToken) {
+        onAppleResult({ error: await explain("APPLE_NO_TOKEN", { code: "no_identity_token" }, t("auth.appleFailed")) });
+        return;
+      }
       onAppleResult({
         identityToken: credential.identityToken,
         fullName: credential.fullName,
@@ -114,7 +143,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       });
     } catch (e) {
       if (e.code === "ERR_REQUEST_CANCELED") return; // person just backed out — not an error
-      onAppleResult({ error: e.message || t("auth.appleFailed") });
+      onAppleResult({ error: await explain("APPLE_SIGNIN", e, t("auth.appleFailed")) });
     }
   };
 
