@@ -572,10 +572,17 @@ router.get("/trips/dispatch-sheet", async (req, res) => {
      LIMIT 200`
   );
   const trips = result.rows.map(shapeTrip);
+  // Record who saw which numbers, same trace as opening a ride. Best-effort and
+  // in parallel: this is the fallback for when the console or live map is down,
+  // so a slow or degraded audit table (the most likely thing to be failing then)
+  // must never stop the emergency page from rendering. Every number still gets a
+  // logging attempt; only the blocking and the fail-together are removed.
+  const auditWrites = [];
   for (const trip of trips) {
-    await logNumberView(req.user.id, trip.id, trip.rider_id, "rider");
-    if (trip.driver_phone) await logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver");
+    auditWrites.push(logNumberView(req.user.id, trip.id, trip.rider_id, "rider"));
+    if (trip.driver_phone) auditWrites.push(logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver"));
   }
+  await Promise.allSettled(auditWrites);
   res.json({
     generatedAt: new Date().toISOString(),
     trips: trips.map((t) => ({
