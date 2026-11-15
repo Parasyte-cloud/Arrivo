@@ -15,6 +15,7 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getPartnerVenues } from "../services/api";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const CATEGORY_LABELS = { club: "Club", restaurant: "Restaurant", other: "Venue" };
 const CATEGORY_ICONS = { club: "musical-notes-outline", restaurant: "restaurant-outline", other: "location-outline" };
@@ -102,6 +103,7 @@ export default function PartnerVenuesScreen({ navigation }) {
             </Card>
           ))
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

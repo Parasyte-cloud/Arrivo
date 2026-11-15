@@ -7,6 +7,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Same 6MB cap as the backend (routes/auth.js MAX_ID_DOCUMENT_BYTES) — an
 // ID photo needs to stay legible, so this is looser than the 4MB avatar cap.
@@ -144,6 +145,7 @@ export default function VerifyIdScreen() {
             />
           </>
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

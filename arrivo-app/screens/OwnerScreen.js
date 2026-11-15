@@ -7,6 +7,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getOwnerDashboard, addVehicle, updateVehicleAvailability } from "../services/api";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const VEHICLE_TYPES = [
   { id: "sedan", label: "Sedan" },
@@ -195,6 +196,7 @@ export default function OwnerScreen() {
           <View style={{ height: spacing.md }} />
           {adding ? <ActivityIndicator color={colors.amber} /> : <Button label={t("owner.listThisVehicle")} onPress={submitVehicle} trailingIcon />}
         </Card>
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

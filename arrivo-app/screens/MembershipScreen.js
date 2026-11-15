@@ -10,6 +10,7 @@ import {
   subscribeMembership, addMembershipProfileUser,
 } from "../services/api";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -207,6 +208,7 @@ export default function MembershipScreen({ navigation }) {
             <Text style={styles.link} onPress={() => navigation.navigate("Wallet")}>{t("membership.topUp")}</Text>
           </Text>
         ) : null}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

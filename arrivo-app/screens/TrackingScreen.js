@@ -18,6 +18,7 @@ import { PickupPinCard, ReportDriverCard } from "../components/SafetyCards";
 import WelfareCheck from "../components/WelfareCheck";
 import ReceiptCard from "../components/ReceiptCard";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
 // amount option for anyone who wants a specific number instead.
@@ -1096,6 +1097,7 @@ export default function TrackingScreen({ route, navigation }) {
             </Text>
           )}
         </Pressable>
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

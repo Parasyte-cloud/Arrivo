@@ -19,6 +19,7 @@ import { useAuth } from "../context/AuthContext";
 import { createSupportTicket, getRideHistory } from "../services/api";
 import { ACTIVE_STATUSES, pickBooking, describeRide } from "./supportBooking";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Same info@ridearrivo.com and phone number the website already uses on its
 // privacy/terms pages and footer, so we're not spinning up a second contact
@@ -283,6 +284,7 @@ export default function SupportScreen() {
               <Text style={[styles.meta, { marginTop: 6 }]}>{t(`support.faqA${i}`)}</Text>
             </Card>
           ))}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

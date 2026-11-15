@@ -24,6 +24,7 @@ import {
   premiumUpgradePrice,
 } from "../utils/premiumUpgrade";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1); // 1..24
 // Mirrors MAX_FULL_DAY_COUNT in arrivo-backend/services/fare.js — that's a
@@ -76,11 +77,11 @@ const DURATIONS = [
 
 const QUOTE_DEBOUNCE_MS = 400;
 
-export default function ChauffeurScreen({ navigation }) {
+export default function ChauffeurScreen({ navigation, route }) {
   const { t } = useTranslation();
   const { token } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
-  const [pickupAddress, setPickupAddress] = useState("");
+  const [pickupAddress, setPickupAddress] = useState(route?.params?.prefill?.pickup?.address || "");
   // Same "explicit ask, never on mount" pattern as RouteScreen's identical
   // feature — see the handler below for why.
   const [locatingPickup, setLocatingPickup] = useState(false);
@@ -543,6 +544,7 @@ export default function ChauffeurScreen({ navigation }) {
             trailingIcon
           />
         )}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

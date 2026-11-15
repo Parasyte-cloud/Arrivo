@@ -399,7 +399,7 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
   return { user: newUser, isNewAccount: true };
 }
 
-// GET /api/auth/oauth-status — is this server ready for Google and Apple sign-in?
+// GET /api/auth/oauth-status: is this server ready for Google and Apple sign-in?
 // No secrets: booleans and public client IDs only. A brand-new Apple account is
 // refused when revocationConfigured is false (see POST /apple), and Google tokens
 // are rejected unless the app's client ID is in google.clientIds.

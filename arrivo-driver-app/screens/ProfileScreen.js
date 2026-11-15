@@ -11,6 +11,7 @@ import ServicesCard from "../components/ServicesCard";
 import { getDriverProfile } from "../services/api";
 import { useT } from "../context/LanguageContext";
 import { LANGUAGES } from "../i18n/translations";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français" };
 
@@ -128,6 +129,7 @@ export default function ProfileScreen() {
 
         <ServicesCard lead={t("svcLead")} />
         <DeleteAccountSection />
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

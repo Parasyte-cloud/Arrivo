@@ -8,6 +8,7 @@ import { initializePayment, verifyPayment, createRide, getWallet, getMembership,
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -438,6 +439,7 @@ export default function CheckoutScreen({ route, navigation }) {
           disabled={isBusy}
           trailingIcon
         />
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

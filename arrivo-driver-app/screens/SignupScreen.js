@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons from "../components/OAuthButtons";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function SignupScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -179,6 +180,7 @@ export default function SignupScreen({ navigation }) {
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>Already have an account? Log in</Text>
         </Pressable>
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

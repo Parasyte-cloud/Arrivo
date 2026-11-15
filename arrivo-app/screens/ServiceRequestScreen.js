@@ -28,8 +28,9 @@ export default function ServiceRequestScreen({ navigation, route }) {
   const service = REQUEST_SERVICES.includes(raw) ? raw : "campus";
   const name = t(`services.${service}`);
 
-  const [pickup, setPickup] = useState("");
-  const [destination, setDestination] = useState("");
+  const prefill = route?.params?.prefill || {};
+  const [pickup, setPickup] = useState(prefill.pickup?.address || "");
+  const [destination, setDestination] = useState(prefill.destination?.address || "");
   const [when, setWhen] = useState("");
   const [passengers, setPassengers] = useState("");
   const [details, setDetails] = useState("");

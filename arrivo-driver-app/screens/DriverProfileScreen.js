@@ -6,6 +6,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { saveDriverProfile } from "../services/api";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -104,6 +105,7 @@ export default function DriverProfileScreen({ navigation, onComplete }) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {loading ? <ActivityIndicator color={colors.amber} /> : <Button label="Save & Continue" onPress={submit} />}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

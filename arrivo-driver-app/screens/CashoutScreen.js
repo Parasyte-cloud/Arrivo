@@ -13,6 +13,7 @@ import { TRANSLATIONS } from "../i18n/translations";
 import { formatNumber } from "../i18n/i18n";
 import { getCashout, getCashoutBanks, saveCashoutBank, withdrawCashout } from "../services/api";
 import { parseAmount, statusTone, errorKey, newIdempotencyKey, filterBanks } from "../utils/cashout";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Turn a wallet balance into money in the driver's own bank account.
 // Text comes from i18n/translations.js.
@@ -195,6 +196,7 @@ export default function CashoutScreen() {
             ))}
           </>
         ) : null}
+        <ParasyteSignature />
       </ScrollView>
 
       <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>

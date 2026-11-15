@@ -6,6 +6,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const VEHICLE_OPTIONS = [
   { value: null, label: "No preference" },
@@ -125,6 +126,7 @@ export default function RidePreferencesScreen() {
 
         <View style={{ height: spacing.lg }} />
         {saving ? <ActivityIndicator color={colors.amber} /> : <Button label={t("ridePreferences.savePreferences")} onPress={save} variant="primary" />}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
