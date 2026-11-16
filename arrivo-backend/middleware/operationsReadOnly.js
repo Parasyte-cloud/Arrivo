@@ -1,5 +1,6 @@
 const OPERATIONS_GET_RULES = [
   /^\/api\/auth\/me\/?$/,
+  /^\/api\/admin\/riders\/?$/,
   /^\/api\/admin\/drivers\/?$/,
   /^\/api\/admin\/rides\/?$/,
   /^\/api\/admin\/rides\/live\/?$/,
