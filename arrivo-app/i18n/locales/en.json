@@ -798,5 +798,25 @@
     "campusConfirm": "I am 18 or older and a student.",
     "pickupPlaceholder": "Pickup address",
     "destinationPlaceholder": "Where to?"
+  },
+  "mapSheet": {
+    "trips": "Trips",
+    "pickup": "PICKUP",
+    "destination": "DESTINATION",
+    "setPickup": "Set pickup",
+    "whereFrom": "Where from?",
+    "rideNow": "Ride now",
+    "schedule": "Schedule",
+    "campusTitle": "Ride to school, split the fare",
+    "goingToSchool": "Going to school",
+    "comingHome": "Coming home",
+    "tab_route": "Route",
+    "tab_fare": "Fare",
+    "tab_details": "Details",
+    "friends": "Friends riding (including you)",
+    "friendsBody": "Split one car with friends.",
+    "continue": "Continue",
+    "scheduleNeedsWhen": "Tell us when you want the ride.",
+    "schoolNotFound": "Couldn't find that school right now. Type the address instead."
   }
 }

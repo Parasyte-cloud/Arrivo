@@ -5,7 +5,7 @@ export const SERVICES = [
   { id: "ride", screen: "Route" },
   { id: "express", screen: "ArrivoExpress" },
   { id: "chauffeur", screen: "Chauffeur" },
-  { id: "campus", screen: "ServiceRequest", request: true },
+  { id: "campus", screen: "Campus", request: true },
   { id: "air", screen: "ServiceRequest", request: true },
   { id: "boat", screen: "ServiceRequest", request: true },
   { id: "removals", screen: "ServiceRequest", request: true },
@@ -45,7 +45,7 @@ export function openHubCard(navigation, card, where = {}) {
   const prefill = { pickup: p, destination: d };
   if (card.flow === "express") return navigation.navigate("ArrivoExpress", { prefill });
   if (card.flow === "chauffeur") return navigation.navigate("Chauffeur", { prefill });
-  if (card.flow === "request") return navigation.navigate("ServiceRequest", { service: card.service, prefill });
+  if (card.flow === "request") return navigation.navigate(card.service === "campus" ? "Campus" : "ServiceRequest", { service: card.service, prefill });
   const route = {
     presetPickupAddress: p ? p.address : undefined, presetPickupLat: p ? p.lat : undefined, presetPickupLng: p ? p.lng : undefined,
     presetDestinationAddress: d ? d.address : undefined, presetDestinationLat: d ? d.lat : undefined, presetDestinationLng: d ? d.lng : undefined,

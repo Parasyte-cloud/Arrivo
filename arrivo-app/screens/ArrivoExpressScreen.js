@@ -4,18 +4,14 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
   Pressable,
   Alert,
 } from "react-native";
-import ParasyteSignature from "../components/ParasyteSignature";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Card, Button, Tag } from "../components/UI";
-import { GradientBackground } from "../components/GradientBackground";
-import AddressAutocomplete from "../components/AddressAutocomplete";
-import { colors, spacing, radius } from "../theme/tokens";
+import { Button, Tag } from "../components/UI";
+import { MapFirst, RouteFields, Segmented, ChipRow, useMyLocation } from "../components/MapFirst";
+import { placeOf, swapPlaces, isResolved, routePresets } from "../utils/mapFirst";
+import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 import {
@@ -33,13 +29,6 @@ import {
 // the single most time-sensitive question in the whole ArrivoExpress flow.
 const SEARCH_POLL_MS = 4000;
 
-const TIER_ICONS = {
-  economy: "car-outline",
-  comfort: "car-sport-outline",
-  xl: "people-outline",
-  premium: "diamond-outline",
-};
-
 function requestStatusLabel(status, t) {
   if (status === "searching") return t("arrivoExpress.statusSearching");
   if (status === "offering") return t("arrivoExpress.statusOffering");
@@ -56,7 +45,6 @@ function requestStatusLabel(status, t) {
 // Tracking screen instead of building a second live-tracking experience.
 export default function ArrivoExpressScreen({ navigation, route }) {
   const pre = route?.params?.prefill || {};
-  const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatFare } = useCurrency(token);
   const { t } = useTranslation();
@@ -77,6 +65,7 @@ export default function ArrivoExpressScreen({ navigation, route }) {
   const [quoting, setQuoting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState(null);
+  const [rideMode, setRideMode] = useState("now");
 
   const [activeRequest, setActiveRequest] = useState(null);
   const [cancelling, setCancelling] = useState(false);
@@ -281,232 +270,155 @@ export default function ArrivoExpressScreen({ navigation, route }) {
     }
   };
 
-  const insetsStyle = {
-    paddingTop: insets.top + spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: 40,
+  // ---- The sheet over the map, the same as the web: Where to?, the route, Ride now or Schedule, See fare. ----
+  const onLocated = useCallback((p) => { setPickup(p.address); setPickupCoords({ lat: p.lat, lng: p.lng }); setQuote(null); }, []);
+  const { locate, locating, locationError } = useMyLocation(onLocated);
+  const pickupPlace = placeOf(pickup, pickupCoords);
+  const destPlace = placeOf(destination, destCoords);
+  const goBack = () => (navigation.canGoBack && navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home"));
+  const pts = (pl) => (isResolved(pl) ? { lat: pl.lat, lng: pl.lng } : null);
+
+  const swap = () => {
+    const s = swapPlaces(pickupPlace, destPlace);
+    setPickup(s.pickup ? s.pickup.address : "");
+    setPickupCoords(pts(s.pickup));
+    setDestination(s.destination ? s.destination.address : "");
+    setDestCoords(pts(s.destination));
   };
 
+  // Schedule is the booked-ahead flow, which is the Route screen. The trip typed so far goes with the rider.
+  const changeMode = (m) => {
+    if (m === "schedule") navigation.navigate("Route", routePresets(pickupPlace, destPlace));
+    else setRideMode("now");
+  };
+
+  const shell = (body, extra = {}) => (
+    <MapFirst title="ArrivoExpress" subtitle="RideArrivo" onBack={goBack} pickup={pts(pickupPlace)} destination={pts(destPlace)} {...extra}>
+      {body}
+    </MapFirst>
+  );
+
   if (phase === "loading") {
-    return (
-      <View style={styles.screen}>
-        <GradientBackground variant="dark" />
-        <View style={styles.centerFill}>
-          <ActivityIndicator color={colors.amber} />
-        </View>
-      </View>
-    );
+    return shell(<View style={styles.centerFill}><ActivityIndicator color={colors.amber} /></View>);
   }
 
   if (phase === "unavailable") {
-    return (
-      <View style={styles.screen}>
-        <GradientBackground variant="dark" />
-        <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
-          <Card tone="dark" style={{ marginTop: spacing.lg }}>
-            <Text style={styles.meta}>{t("arrivoExpress.unavailableBody")}</Text>
-          </Card>
-          <ParasyteSignature />
-        </ScrollView>
+    return shell(
+      <View>
+        <Text style={styles.heading}>{t("arrivoExpress.title")}</Text>
+        <Text style={styles.meta}>{t("arrivoExpress.unavailableBody")}</Text>
       </View>
     );
   }
 
   if (phase === "error") {
-    return (
-      <View style={styles.screen}>
-        <GradientBackground variant="dark" />
-        <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
-          <Card tone="dark" style={{ marginTop: spacing.lg }}>
-            <Text style={styles.errorText}>{loadError}</Text>
-            <Button
-              label={t("arrivoExpress.tryAgain")}
-              onPress={() => {
-                setPhase("loading");
-                setLoadError(null);
-              }}
-              style={{ marginTop: spacing.md }}
-            />
-          </Card>
-          <ParasyteSignature />
-        </ScrollView>
+    return shell(
+      <View>
+        <Text style={styles.heading}>{t("arrivoExpress.title")}</Text>
+        <Text style={styles.errorText}>{loadError}</Text>
+        <Button label={t("arrivoExpress.tryAgain")} onPress={() => { setPhase("loading"); setLoadError(null); }} style={{ marginTop: spacing.md }} />
       </View>
     );
   }
 
   if (phase === "searching") {
-    return (
-      <View style={styles.screen}>
-        <GradientBackground variant="dark" />
-        <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
-          <Card tone="dark" style={{ marginTop: spacing.lg, alignItems: "center", paddingVertical: spacing.lg }}>
-            <ActivityIndicator color={colors.amber} size="large" />
-            <Text style={[styles.successTitle, { marginTop: spacing.md }]}>
-              {requestStatusLabel(activeRequest?.status, t)}
-            </Text>
-            <Text style={[styles.meta, { textAlign: "center", marginTop: 6 }]}>
-              {activeRequest?.pickup_address} → {activeRequest?.destination_address}
-            </Text>
-            {activeRequest?.estimated_fare_naira ? (
-              <Text style={[styles.fareText, { marginTop: spacing.sm }]}>
-                {formatFare(activeRequest.estimated_fare_naira)}
-              </Text>
-            ) : null}
-          </Card>
-
-          {cancelling ? (
-            <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
-          ) : (
-            <Button
-              label={t("arrivoExpress.cancelRequest")}
-              variant="ghost"
-              tone="dark"
-              style={{ marginTop: spacing.lg }}
-              onPress={cancelSearch}
-            />
-          )}
-          <ParasyteSignature />
-        </ScrollView>
-      </View>
+    return shell(
+      <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
+        <ActivityIndicator color={colors.amber} size="large" />
+        <Text style={[styles.successTitle, { marginTop: spacing.md }]}>{requestStatusLabel(activeRequest?.status, t)}</Text>
+        <Text style={[styles.meta, { textAlign: "center", marginTop: 6 }]}>
+          {activeRequest?.pickup_address} → {activeRequest?.destination_address}
+        </Text>
+        {activeRequest?.estimated_fare_naira ? <Text style={[styles.fareText, { marginTop: spacing.sm }]}>{formatFare(activeRequest.estimated_fare_naira)}</Text> : null}
+        {cancelling ? (
+          <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
+        ) : (
+          <Button label={t("arrivoExpress.cancelRequest")} variant="ghost" tone="dark" style={{ marginTop: spacing.lg, alignSelf: "stretch" }} onPress={cancelSearch} />
+        )}
+      </View>,
+      { pickup: activeRequest?.pickup_lat != null ? { lat: Number(activeRequest.pickup_lat), lng: Number(activeRequest.pickup_lng) } : pts(pickupPlace),
+        destination: activeRequest?.destination_lat != null ? { lat: Number(activeRequest.destination_lat), lng: Number(activeRequest.destination_lng) } : pts(destPlace) }
     );
   }
 
   if (phase === "quoted" && quote) {
     const tierConfig = tiers.find((tr) => tr.key === selectedTier);
-    return (
-      <View style={styles.screen}>
-        <GradientBackground variant="dark" />
-        <ScrollView contentContainerStyle={insetsStyle}>
-          <Text style={styles.title}>{t("arrivoExpress.confirmTitle")}</Text>
-
-          <Card tone="dark" style={{ marginTop: spacing.lg }}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.cardLabel}>{tierConfig?.label || selectedTier}</Text>
-              {quote.zone === "yellow" ? <Tag label={t("arrivoExpress.highTrafficArea")} tone="amber" /> : null}
-            </View>
-            <Text style={styles.meta}>{pickup} → {destination}</Text>
-            <View style={[styles.rowBetween, { marginTop: spacing.md }]}>
-              <Text style={styles.meta}>{t("arrivoExpress.estimatedDistance")}</Text>
-              <Text style={styles.metaStrong}>{t("arrivoExpress.distanceKm", { distance: quote.distanceKm?.toFixed?.(1) })}</Text>
-            </View>
-            <View style={styles.rowBetween}>
-              <Text style={styles.meta}>{t("arrivoExpress.estimatedTime")}</Text>
-              <Text style={styles.metaStrong}>{t("arrivoExpress.durationMin", { duration: Math.round(quote.durationMin) })}</Text>
-            </View>
-            <View style={[styles.rowBetween, { marginTop: spacing.sm }]}>
-              <Text style={styles.cardLabel}>{t("arrivoExpress.totalFare")}</Text>
-              <Text style={styles.fareText}>{formatFare(quote.fareNaira)}</Text>
-            </View>
-            <Text style={styles.smallMeta}>{t("arrivoExpress.walletChargeNote")}</Text>
-          </Card>
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          {confirming ? (
-            <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
-          ) : (
-            <>
-              <Button label={t("arrivoExpress.confirmFindDriver")} onPress={confirmRide} style={{ marginTop: spacing.lg }} />
-              <Button
-                label={t("arrivoExpress.back")}
-                variant="ghost"
-                tone="dark"
-                style={{ marginTop: spacing.sm }}
-                onPress={() => {
-                  setQuote(null);
-                  setPhase("picker");
-                }}
-              />
-            </>
-          )}
-          <ParasyteSignature />
-        </ScrollView>
+    return shell(
+      <View>
+        <Text style={styles.heading}>{t("arrivoExpress.confirmTitle")}</Text>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardLabel}>{tierConfig?.label || selectedTier}</Text>
+          {quote.zone === "yellow" ? <Tag label={t("arrivoExpress.highTrafficArea")} tone="amber" /> : null}
+        </View>
+        <Text style={styles.meta}>{pickup} → {destination}</Text>
+        <View style={[styles.rowBetween, { marginTop: spacing.md }]}>
+          <Text style={styles.meta}>{t("arrivoExpress.estimatedDistance")}</Text>
+          <Text style={styles.metaStrong}>{t("arrivoExpress.distanceKm", { distance: quote.distanceKm?.toFixed?.(1) })}</Text>
+        </View>
+        <View style={styles.rowBetween}>
+          <Text style={styles.meta}>{t("arrivoExpress.estimatedTime")}</Text>
+          <Text style={styles.metaStrong}>{t("arrivoExpress.durationMin", { duration: Math.round(quote.durationMin) })}</Text>
+        </View>
+        <View style={[styles.rowBetween, { marginTop: spacing.sm }]}>
+          <Text style={styles.cardLabel}>{t("arrivoExpress.totalFare")}</Text>
+          <Text style={styles.fareText}>{formatFare(quote.fareNaira)}</Text>
+        </View>
+        <Text style={styles.smallMeta}>{t("arrivoExpress.walletChargeNote")}</Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {confirming ? (
+          <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
+        ) : (
+          <>
+            <Button label={t("arrivoExpress.confirmFindDriver")} onPress={confirmRide} style={{ marginTop: spacing.lg }} />
+            <Button label={t("arrivoExpress.back")} variant="ghost" tone="dark" style={{ marginTop: spacing.sm }} onPress={() => { setQuote(null); setPhase("picker"); }} />
+          </>
+        )}
       </View>
     );
   }
 
   // phase === "picker"
-  return (
-    <View style={styles.screen}>
-      <GradientBackground variant="dark" />
-      <ScrollView contentContainerStyle={insetsStyle} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{t("arrivoExpress.title")}</Text>
-        <Text style={styles.meta}>{t("arrivoExpress.tagline")}</Text>
-
-        <Card tone="dark" style={{ marginTop: spacing.lg }}>
-          <Text style={styles.cardLabel}>{t("arrivoExpress.chooseYourRide")}</Text>
-          {tiers.map((tier) => {
-            const active = tier.key === selectedTier;
-            return (
-              <Pressable
-                key={tier.key}
-                style={[styles.tierRow, active && styles.tierRowActive]}
-                onPress={() => setSelectedTier(tier.key)}
-              >
-                <Ionicons
-                  name={TIER_ICONS[tier.key] || "car-outline"}
-                  size={20}
-                  color={active ? colors.amber : colors.dark.text}
-                />
-                <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={styles.tierLabel}>{tier.label}</Text>
-                  <Text style={styles.tierDescription}>{tier.description}</Text>
-                </View>
-                {active ? <Ionicons name="checkmark-circle" size={20} color={colors.amber} /> : null}
-              </Pressable>
-            );
-          })}
-        </Card>
-
-        <Card tone="dark" style={{ marginTop: spacing.md }}>
-          <Text style={styles.cardLabel}>{t("arrivoExpress.whereTo")}</Text>
-          <AddressAutocomplete
-            style={{ marginBottom: spacing.sm }}
-            value={pickup}
-            onChangeText={(text) => {
-              setPickup(text);
-              setPickupCoords(null);
-            }}
-            onSelect={({ address, lat, lng }) => {
-              setPickup(address);
-              setPickupCoords({ lat, lng });
-            }}
-            placeholder={t("arrivoExpress.pickupPlaceholder")}
-          />
-          <AddressAutocomplete
-            value={destination}
-            onChangeText={(text) => {
-              setDestination(text);
-              setDestCoords(null);
-            }}
-            onSelect={({ address, lat, lng }) => {
-              setDestination(address);
-              setDestCoords({ lat, lng });
-            }}
-            placeholder={t("arrivoExpress.destinationPlaceholder")}
-          />
-        </Card>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        {quoting ? (
-          <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
-        ) : (
-          <Button label={t("arrivoExpress.seeFare")} onPress={getFare} style={{ marginTop: spacing.lg }} />
-        )}
-        <ParasyteSignature />
-      </ScrollView>
+  return shell(
+    <View>
+      <View style={styles.rowBetween}>
+        <Text style={styles.heading}>{t("arrivoExpress.whereTo")}</Text>
+        <Pressable onPress={() => navigation.navigate("Activity")} hitSlop={8} accessibilityRole="link">
+          <Text style={styles.link}>{t("mapSheet.trips")}</Text>
+        </Pressable>
+      </View>
+      <RouteFields
+        pickup={pickup}
+        destination={destination}
+        onPickupText={(v) => { setPickup(v); setPickupCoords(null); }}
+        onPickupSelect={(p) => { if (p) { setPickup(p.address); setPickupCoords({ lat: p.lat, lng: p.lng }); } }}
+        onDestinationText={(v) => { setDestination(v); setDestCoords(null); }}
+        onDestinationSelect={(p) => { if (p) { setDestination(p.address); setDestCoords({ lat: p.lat, lng: p.lng }); } }}
+        onSwap={swap}
+        onLocate={locate}
+        locating={locating}
+        pickupLabel={t("mapSheet.pickup")}
+        destinationLabel={t("mapSheet.destination")}
+        pickupPlaceholder={t("mapSheet.setPickup")}
+        destinationPlaceholder={t("arrivoExpress.whereTo")}
+      />
+      {locationError ? <Text style={styles.errorText}>{locationError}</Text> : null}
+      <Segmented options={[{ key: "now", label: t("mapSheet.rideNow") }, { key: "schedule", label: t("mapSheet.schedule") }]} value={rideMode} onChange={changeMode} />
+      {tiers.length > 1 ? <ChipRow chips={tiers.map((tr) => ({ key: tr.key, label: tr.label }))} activeKey={selectedTier} onPress={(c) => setSelectedTier(c.key)} /> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {quoting ? (
+        <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.lg }} />
+      ) : (
+        <Button label={t("arrivoExpress.seeFare")} onPress={getFare} style={{ marginTop: spacing.md }} />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.dark.bg0 },
-  centerFill: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 19, fontWeight: "700", color: colors.dark.text, marginBottom: spacing.sm },
+  centerFill: { alignItems: "center", justifyContent: "center", paddingVertical: 40 },
+  heading: { fontSize: 28, fontWeight: "800", color: colors.dark.text, marginBottom: spacing.sm },
+  link: { color: colors.primary, fontSize: 15, fontWeight: "800" },
   meta: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18 },
   smallMeta: { color: colors.dark.textMuted, fontSize: 11, marginTop: spacing.sm },
   metaStrong: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },
@@ -515,17 +427,4 @@ const styles = StyleSheet.create({
   errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   fareText: { color: colors.amber, fontSize: 20, fontWeight: "700" },
-  tierRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm + 2,
-    marginBottom: 6,
-  },
-  tierRowActive: {
-    backgroundColor: "rgba(244,163,0,0.14)",
-  },
-  tierLabel: { color: colors.dark.text, fontSize: 13.5, fontWeight: "700" },
-  tierDescription: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
 });

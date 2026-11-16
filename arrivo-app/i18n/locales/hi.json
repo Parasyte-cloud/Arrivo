@@ -798,5 +798,25 @@
     "campusConfirm": "मैं 18 वर्ष या उससे अधिक का हूँ और छात्र हूँ।",
     "pickupPlaceholder": "पिकअप का पता",
     "destinationPlaceholder": "कहाँ जाना है?"
+  },
+  "mapSheet": {
+    "trips": "यात्राएँ",
+    "pickup": "पिकअप",
+    "destination": "गंतव्य",
+    "setPickup": "पिकअप तय करें",
+    "whereFrom": "कहाँ से?",
+    "rideNow": "अभी राइड",
+    "schedule": "शेड्यूल करें",
+    "campusTitle": "स्कूल की राइड, किराया बाँटें",
+    "goingToSchool": "स्कूल जा रहे हैं",
+    "comingHome": "घर लौट रहे हैं",
+    "tab_route": "रूट",
+    "tab_fare": "किराया",
+    "tab_details": "विवरण",
+    "friends": "साथ चलने वाले (आप सहित)",
+    "friendsBody": "दोस्तों के साथ एक कार बाँटें।",
+    "continue": "आगे बढ़ें",
+    "scheduleNeedsWhen": "बताइए कि आप राइड कब चाहते हैं।",
+    "schoolNotFound": "अभी वह स्कूल नहीं मिला। कृपया पता खुद लिखें।"
   }
 }

@@ -798,5 +798,25 @@
     "campusConfirm": "J'ai 18 ans ou plus et je suis étudiant(e).",
     "pickupPlaceholder": "Adresse de prise en charge",
     "destinationPlaceholder": "Où allez-vous ?"
+  },
+  "mapSheet": {
+    "trips": "Trajets",
+    "pickup": "PRISE EN CHARGE",
+    "destination": "DESTINATION",
+    "setPickup": "Définir la prise en charge",
+    "whereFrom": "D'où partez-vous ?",
+    "rideNow": "Maintenant",
+    "schedule": "Planifier",
+    "campusTitle": "Allez à l'école, partagez le tarif",
+    "goingToSchool": "Aller à l'école",
+    "comingHome": "Rentrer",
+    "tab_route": "Trajet",
+    "tab_fare": "Tarif",
+    "tab_details": "Détails",
+    "friends": "Amis dans la voiture (vous compris)",
+    "friendsBody": "Partagez une voiture avec vos amis.",
+    "continue": "Continuer",
+    "scheduleNeedsWhen": "Dites-nous quand vous voulez partir.",
+    "schoolNotFound": "Impossible de trouver cette école. Saisissez plutôt l'adresse."
   }
 }

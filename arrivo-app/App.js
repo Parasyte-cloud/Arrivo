@@ -31,6 +31,7 @@ import TrackingScreen from "./screens/TrackingScreen";
 import ChauffeurScreen from "./screens/ChauffeurScreen";
 import OnTheGoScreen from "./screens/OnTheGoScreen";
 import ArrivoExpressScreen from "./screens/ArrivoExpressScreen";
+import CampusScreen from "./screens/CampusScreen";
 import ServiceRequestScreen from "./screens/ServiceRequestScreen";
 import OwnerScreen from "./screens/OwnerScreen";
 import MembershipScreen from "./screens/MembershipScreen";
@@ -106,7 +107,8 @@ function HomeStack() {
       <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: t("nav.chauffeurBooking") }} />
       <Stack.Screen name="ServiceRequest" component={ServiceRequestScreen} options={({ route }) => ({ title: t(`services.${route.params?.service || "campus"}`) })} />
       <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: t("nav.onTheGo") }} />
-      <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
+      <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Campus" component={CampusScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: t("nav.ownerDashboard") }} />
       <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: t("nav.membership") }} />
       <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: t("nav.familyPlan") }} />
