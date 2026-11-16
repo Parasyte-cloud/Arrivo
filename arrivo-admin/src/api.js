@@ -3,14 +3,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 async function request(path, token, options = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  // A request that never answers used to leave its button spinning for ever, which looked like a frozen page.
+  // Give up after 30 seconds with a plain message so the person can try again.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal: options.signal || ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") throw Object.assign(new Error("The server took too long to answer. It may still have gone through, so check the list before trying again."), { status: 0, timeout: true });
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // A 401 means the token is missing/expired/invalid — every page's own
@@ -50,7 +63,13 @@ export const getSupportTickets = (token, status) =>
 export const setSupportTicketStatus = (token, id, status) =>
   request(`/api/support/tickets/${id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
 
-export const getDrivers = (token) => request("/api/admin/drivers", token);
+export const getDrivers = (token, archived = false) => request(`/api/admin/drivers${archived ? "?archived=1" : ""}`, token);
+export const archiveDriver = (token, id, archived) =>
+  request(`/api/admin/drivers/${id}/archive`, token, { method: "PATCH", body: JSON.stringify({ archived }) });
+export const deleteDriver = (token, id) => request(`/api/admin/drivers/${id}`, token, { method: "DELETE" });
+export const setDriverTier = (token, id, tier) =>
+  request(`/api/admin/drivers/${id}/tier`, token, { method: "PATCH", body: JSON.stringify({ tier }) });
+export const completeDeskRide = (token, id) => request(`/api/staff/rides/${id}/complete`, token, { method: "POST", body: JSON.stringify({}) });
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
 
@@ -68,6 +87,8 @@ export const getRides = (token, { status, search, from, to } = {}) => {
 };
 export const updateRide = (token, id, payload) =>
   request(`/api/admin/rides/${id}`, token, { method: "PATCH", body: JSON.stringify(payload) });
+export const assignRideDriver = (token, id, driverId) =>
+  request(`/api/admin/rides/${id}/driver`, token, { method: "PATCH", body: JSON.stringify({ driverId }) });
 
 // GET /api/admin/rides/live — every in-progress ride with the driver's last
 // known position. This existed on the backend before any frontend used it
@@ -265,8 +286,23 @@ export const setSupportLead = (token, userId, isLead) =>
   request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
 export const getPeople = (token) => request("/api/staff/people", token);
 export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
-export const promotePerson = (token, email, role, note) =>
-  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const promotePerson = (
+  token,
+  email,
+  role,
+  note,
+  name = ""
+) =>
+request("/api/staff/people/promote", token, {
+  method: "POST",
+  body: JSON.stringify({
+    email,
+    role,
+    note,
+    ...(name.trim() ? { name: name.trim() } : {}),
+  }),
+});
+
 export const changePersonRole = (token, id, role, note) =>
   request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
 export const setCanManageStaff = (token, id, allowed) =>
@@ -282,3 +318,9 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+
+export const resendPersonSetup = (token, id) =>
+  request(`/api/staff/people/${id}/resend-setup`, {
+    method: "POST",
+    token,
+  });

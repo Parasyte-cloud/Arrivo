@@ -2019,3 +2019,41 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_permissions JSONB;
 -- When someone last signed in with a password, so the Team page can show
 -- accounts nobody is using any more.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Staff invitation lifecycle.
+-- Kept separately from reset_token because ordinary password resets and
+-- privileged staff invitations are different governance events.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_by INTEGER
+  REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_expires_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_activated_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_delivery_status TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+-- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
+-- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
+-- whole script ends, so touching drivers last keeps the lock order the same as the rest of
+-- the app and stops a start up from deadlocking with a request that is inserting rides.
+-- Nothing is archived automatically: existing drivers stay exactly as they are. Test or
+-- legacy accounts are archived on purpose from ArrivoOps (Drivers page, Archive button).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'tier') THEN
+    ALTER TABLE drivers ADD COLUMN tier TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
+    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
+  END IF;
+END $$;

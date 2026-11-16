@@ -6,6 +6,7 @@ import { formatDateTime, downloadCsv } from "../utils";
 import { CallButton } from "../components/CallButton";
 import { openInWindow } from "../lib/openWindow";
 import "../riders.css";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 const PAGE_SIZE = 50;
 
@@ -579,9 +580,9 @@ export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose
               <img className="rd-id-img" src={rider.id_document_url} alt={`${rider.name}'s submitted ID`} />
             </a>
           ) : (
-            <p className="rd-muted">No ID document submitted.</p>
+            <p className="rd-muted">No ID document submitted. You can still verify or reject manually — for example if identity was confirmed by phone, in person, or a photo sent outside the app.</p>
           )}
-          {!isReadOnly && rider.id_document_url ? (
+          {!isReadOnly ? (
             rejecting ? (
               <div className="rd-form">
                 <textarea
@@ -597,7 +598,20 @@ export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose
               </div>
             ) : (
               <div className="rd-form-row">
-                <button className="btn verify" disabled={busy} onClick={() => review("verified")}>{busy ? "…" : "Verify"}</button>
+                <button
+                  className="btn verify"
+                  disabled={busy}
+                  onClick={async () => {
+                    // No document to actually look at here — this is a manual
+                    // override (identity confirmed some other way), not a
+                    // review of what's on screen, so it gets its own
+                    // confirmation instead of behaving like a normal "Verify".
+                    if (!rider.id_document_url && !await confirmAction(`No ID document is on file for ${rider.name}. Mark them verified anyway?`)) return;
+                    review("verified");
+                  }}
+                >
+                  {busy ? "…" : "Verify"}
+                </button>
                 <button className="btn revoke" disabled={busy} onClick={() => setRejecting(true)}>Reject</button>
               </div>
             )
@@ -625,8 +639,8 @@ function exportWaitlistCsv(token) {
         { label: "signed_up_at", value: (w) => w.created_at },
       ]
     );
-  }).catch((e) => {
+  }).catch(async (e) => {
     console.error("Failed to export waitlist CSV:", e.message);
-    window.alert("Couldn't export the waitlist CSV: " + (e.message || "please try again."));
+    await notify("Couldn't export the waitlist CSV: " + (e.message || "please try again."));
   });
 }

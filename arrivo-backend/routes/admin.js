@@ -6,6 +6,9 @@ const { listConfig, setConfig } = require("../services/systemConfig");
 const { lookupFlightStatus } = require("./flights");
 const { phoneHint } = require("../services/rideTeam");
 const flightAware = require("../services/flightAware");
+const { sendPushNotification } = require("../services/pushNotifications");
+const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
+const { sendDriverAssignedEmail } = require("../services/email");
 
 const router = express.Router();
 
@@ -17,19 +20,78 @@ router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
+// Drivers who signed up through the new engine have ids like "engine:abc". They are managed in
+// Driver Verification, not here, so any change aimed at one is refused with a clear message.
+router.use("/drivers/:id", (req, res, next) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "This driver is managed in Driver Verification, not on this page." });
+  next();
+});
+
 router.get("/drivers", async (req, res) => {
   const result = await pool.query(
     `SELECT drivers.id, drivers.is_verified, drivers.is_online, drivers.rating,
             drivers.license_number, drivers.lasdri_number, drivers.spoken_languages, drivers.created_at,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            drivers.tier, drivers.archived_at,
             users.id as user_id, users.name, users.email, users.phone,
             vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
      FROM drivers
      JOIN users ON users.id = drivers.user_id
      LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+     WHERE ${req.query.archived === "1" ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
      ORDER BY drivers.is_verified ASC, drivers.created_at DESC`
   );
-  res.json({ drivers: result.rows });
+  const engine = req.query.archived === "1" ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
+  const merged = [...result.rows.map((r) => ({ ...r, source: "legacy" })), ...engine.drivers].sort(
+    (a, b) => Number(a.is_verified) - Number(b.is_verified) || new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+  res.json({ drivers: merged, engineStatus: engine.status });
+});
+
+const DRIVER_TIERS = ["ride", "express", "chauffeur", "air", "boat", "removals", "campus"];
+
+// Archive hides a driver and takes them off the road. It is reversible. Restoring leaves
+// them unverified so someone has to verify them again on purpose.
+router.patch("/drivers/:id/archive", requireRole("admin"), async (req, res) => {
+  const archived = req.body && req.body.archived !== false;
+  const r = archived
+    ? await pool.query("UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false WHERE id = $1 RETURNING id", [req.params.id])
+    : await pool.query("UPDATE drivers SET archived_at = NULL WHERE id = $1 RETURNING id", [req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, archived });
+});
+
+// Delete is for test accounts only: it refuses while the driver has any trip history.
+router.delete("/drivers/:id", requireRole("admin"), async (req, res) => {
+  const d = await pool.query("SELECT id, archived_at FROM drivers WHERE id = $1", [req.params.id]);
+  if (!d.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!d.rows[0].archived_at) return res.status(409).json({ error: "Archive the driver first, then delete." });
+  const trips = await pool.query("SELECT 1 FROM rides WHERE driver_id = $1 LIMIT 1", [req.params.id]);
+  if (trips.rows[0]) return res.status(409).json({ error: "This driver has trip history, so it stays archived instead of deleted." });
+  // The delete gets its own short time limit so a locked row answers with an error instead of hanging the page.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("DELETE FROM drivers WHERE id = $1", [req.params.id]);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (e.code === "23503") return res.status(409).json({ error: "This driver is still linked to other records, so it stays archived instead of deleted." });
+    if (e.code === "57014") return res.status(503).json({ error: "The database was busy, so nothing was deleted. Try again in a moment." });
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ id: Number(req.params.id), deleted: true });
+});
+
+router.patch("/drivers/:id/tier", requireRole("admin"), async (req, res) => {
+  const tier = req.body && req.body.tier;
+  if (tier !== null && !DRIVER_TIERS.includes(tier)) return res.status(400).json({ error: `tier must be one of: ${DRIVER_TIERS.join(", ")}` });
+  const r = await pool.query("UPDATE drivers SET tier = $1 WHERE id = $2 RETURNING id", [tier, req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, tier });
 });
 
 router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {
@@ -194,6 +256,123 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
     [adminNotes ?? ride.admin_notes, rideStatus || ride.ride_status, ride.id]
   );
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+});
+
+// PATCH /rides/:id/driver — manual driver assignment, for when a ride needs a
+// driver put on it (or taken off it) by hand instead of waiting for a driver
+// to self-accept from the available-rides list (see routes/rides.js GET
+// /available and PATCH /:id/accept). This is deliberately a thin, separate
+// route rather than folded into the generic PATCH /rides/:id above: it only
+// ever touches driver_id/ride_status, never money, so it carries none of
+// that route's completion guardrails and doesn't need to.
+router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
+  const { driverId } = req.body;
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  if (["completed", "cancelled"].includes(ride.ride_status)) {
+    return res.status(400).json({ error: `This ride is already ${ride.ride_status} — its driver can't be changed from here.` });
+  }
+
+  // driverId: null un-assigns and sends the ride back to "requested" (waiting
+  // for a driver), same as a driver cancelling an accepted ride.
+  if (driverId === null || driverId === undefined) {
+    const updated = await pool.query(
+      `UPDATE rides SET driver_id = NULL,
+              ride_status = CASE WHEN ride_status IN ('accepted', 'in_progress') THEN 'requested' ELSE ride_status END,
+              updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+    return res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+  }
+
+  const driver = await pool.query(
+    `SELECT drivers.id, drivers.is_verified, drivers.vehicle_id, users.name, users.push_token as driver_push_token
+     FROM drivers JOIN users ON users.id = drivers.user_id
+     WHERE drivers.id = $1`,
+    [driverId]
+  );
+  if (!driver.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!driver.rows[0].is_verified) {
+    return res.status(400).json({ error: `${driver.rows[0].name} isn't verified yet — verify them on the Drivers page first.` });
+  }
+
+  // Putting a driver on a "requested" ride is the same as them accepting
+  // it: move it to "accepted". A ride already "accepted" or "in_progress"
+  // just gets handed to the new driver instead — its status doesn't change
+  // (this is meant for correcting a wrong assignment, not re-dispatching
+  // mid-trip; the admin should confirm with both drivers before doing that).
+  //
+  // The "requested" case gets the exact same atomic guard as a driver's own
+  // POST /api/rides/:id/accept (routes/rides.js): WHERE ride_status =
+  // 'requested' AND driver_id IS NULL. Without it, an admin assigning a
+  // driver at the same moment a different driver self-accepts could silently
+  // overwrite that driver's acceptance — the admin's write would land second
+  // and just stomp on it with no error either way. The "already accepted/
+  // in_progress" reassignment path below doesn't need this: by definition no
+  // driver's self-accept can race it, since self-accept itself requires
+  // ride_status = 'requested'.
+  const wasRequested = ride.ride_status === "requested";
+  const updated = await pool.query(
+    wasRequested
+      ? `UPDATE rides SET driver_id = $1, ride_status = 'accepted', updated_at = now()
+         WHERE id = $2 AND ride_status = 'requested' AND driver_id IS NULL RETURNING *`
+      : `UPDATE rides SET driver_id = $1, updated_at = now()
+         WHERE id = $2 RETURNING *`,
+    [driverId, ride.id]
+  );
+
+  if (wasRequested && updated.rowCount === 0) {
+    return res.status(409).json({ error: "This ride was just accepted by another driver. Refresh and try again." });
+  }
+
+  const finalRide = updated.rows[0];
+
+  // Manual assignment skips the normal accept flow entirely, so neither
+  // side hears about it from the app on its own — unlike a driver
+  // self-accepting (routes/rides.js POST /:id/accept), which already
+  // notifies the rider. Same three rider channels as that route, plus a
+  // push to the driver, who otherwise has no way to know ops put this on
+  // their queue.
+  const riderContact = await pool.query(
+    "SELECT push_token as rider_push_token, whatsapp_number as rider_whatsapp_number, email as rider_email FROM users WHERE id = $1",
+    [finalRide.rider_id]
+  );
+  const vehicleInfo = driver.rows[0].vehicle_id
+    ? await pool.query("SELECT make_model, plate_number FROM vehicles WHERE id = $1", [driver.rows[0].vehicle_id])
+    : { rows: [] };
+  const vehicleLabel = vehicleInfo.rows[0]?.make_model
+    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
+    : null;
+  const driverName = driver.rows[0].name;
+  const rider = riderContact.rows[0] || {};
+
+  if (rider.rider_push_token) {
+    sendPushNotification(
+      rider.rider_push_token,
+      "Driver assigned",
+      `${driverName} has been assigned to your ride.`,
+      { rideId: finalRide.id, type: "ride_accepted" }
+    ).catch(() => {});
+  }
+  if (rider.rider_whatsapp_number) {
+    sendWhatsAppMessage(rider.rider_whatsapp_number, driverAssignedMessage(finalRide, driverName, vehicleLabel)).catch(() => {});
+  }
+  if (rider.rider_email) {
+    sendDriverAssignedEmail(rider.rider_email, finalRide, driverName, vehicleLabel).catch(() => {});
+  }
+  if (driver.rows[0].driver_push_token) {
+    sendPushNotification(
+      driver.rows[0].driver_push_token,
+      "New ride assigned",
+      `Ops assigned you ride #${finalRide.id} — ${finalRide.pickup_address}. Check the app for details.`,
+      { rideId: finalRide.id, type: "ride_assigned_manual" }
+    ).catch(() => {});
+  }
+
+  res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") } });
 });
 
 // ── Live tracking ────────────────────────────────────────────────────────
