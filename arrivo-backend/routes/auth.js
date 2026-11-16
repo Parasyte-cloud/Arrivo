@@ -12,6 +12,7 @@ const { hashResetToken, issueResetToken } = require("../services/passwordResetTo
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const conversions = require("../services/conversions");
 const { passwordProblem } = require("../services/passwordPolicy");
 const notifyPlatform = require("../services/notifyPlatform");
 
@@ -170,6 +171,18 @@ function publicUser(user) {
   return safe;
 }
 
+// Fire-and-forget: sends the signup to Meta and TikTok (server side) when the
+// website passed a consent-gated `marketing` block. Never delays or fails signup.
+function emitConversion(req, user) {
+  conversions.emitRegistration({
+    user,
+    marketing: req.body && req.body.marketing,
+    ip: req.ip,
+    userAgent: req.get("user-agent"),
+    gpc: req.get("sec-gpc") === "1",
+  }).catch(() => {});
+}
+
 // POST /api/auth/signup — full profile creation.
 // body: { firstName, lastName, email, passportNumber?, phone, password,
 //         confirmPassword, agreedToTerms, preferredLanguage?, role? }
@@ -256,6 +269,7 @@ router.post("/signup", signupLimiter, async (req, res) => {
   }
 
   setSessionCookie(res, token);
+  emitConversion(req, user);
   res.status(201).json({ token, user: publicUser(user) });
 });
 
@@ -443,6 +457,7 @@ router.post("/google", async (req, res) => {
 
     const token = signToken(user);
     setSessionCookie(res, token);
+    if (isNewAccount) emitConversion(req, user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Google." });
@@ -534,6 +549,7 @@ router.post("/apple", async (req, res) => {
 
     const token = signToken(user);
     setSessionCookie(res, token);
+    if (isNewAccount) emitConversion(req, user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Apple." });
