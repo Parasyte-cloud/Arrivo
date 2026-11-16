@@ -36,6 +36,9 @@ const AREAS = [
   { id: "wallet", label: "Wallet", rules: [
     { path: /^\/api\/admin\/riders\/\d+\/wallet-adjust\/?$/ },
     { path: /^\/api\/admin\/wallet-transactions(\/|$)/ },
+    // Flight credits are wallet money. Above the Rides area on purpose: anyone granted Rides manage must not
+    // be able to issue or move credit, and the list shows full email and phone.
+    { path: /^\/api\/admin\/(flight-credits|rides\/\d+\/flight-credit)(\/|$)/ },
   ] },
   { id: "riders", label: "Riders", rules: [{ path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ }] },
   { id: "drivers", label: "Drivers", rules: [{ path: /^\/api\/admin\/drivers(\/|$)/ }] },
