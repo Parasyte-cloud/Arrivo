@@ -121,6 +121,24 @@ export const getDriverQrImage = async (token, driverId) => {
 };
 
 export const getRiders = (token) => request("/api/admin/riders", token);
+
+// One rider's submitted ID photo. The riders list only says whether one exists
+// (has_id_document); the image itself is admin-only and comes from here, one
+// rider at a time, so the list stays light and no one else's photo is in it.
+// Same blob approach as the driver QR above: an <img src> cannot send the token.
+// A 403 is passed back with its status so the page can say "admins only"
+// instead of showing it as a fault.
+export const getRiderIdDocumentImage = async (token, riderId) => {
+  const res = await fetch(`${API_BASE_URL}/api/admin/riders/${riderId}/id-document`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(body.error || "Couldn't load this ID photo."), { status: res.status });
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
 export const verifyRiderId = (token, id, status, rejectionReason) =>
   request(`/api/admin/riders/${id}/verify-id`, token, {
     method: "PATCH",

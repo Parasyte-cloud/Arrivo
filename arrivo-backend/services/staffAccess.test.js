@@ -104,6 +104,22 @@ test("only differences from the preset are stored", () => {
   assert.deepStrictEqual(a.diffFromPreset("admin", a.PRESETS.admin), {});
 });
 
+test("a rider's ID photo needs manage on Riders, not just view", () => {
+  const path = "/api/admin/riders/5/id-document";
+  assert.deepStrictEqual(a.requirementFor("GET", path), { area: "riders", need: "manage" });
+  // Still the Riders list for everyone who may see it.
+  assert.deepStrictEqual(a.requirementFor("GET", "/api/admin/riders"), { area: "riders", need: "view" });
+  // Admin and the owner have manage. Support and Operations have view only, so they are refused.
+  assert.ok(a.check(admin, "GET", path).ok);
+  assert.ok(a.check(owner, "GET", path).ok);
+  assert.ok(!a.check(support, "GET", path).ok);
+  assert.ok(!a.check(ops, "GET", path).ok);
+  // The owner can still hand it to one person on purpose.
+  assert.ok(a.check({ ...support, staff_permissions: { riders: "manage" } }, "GET", path).ok);
+  // And taking Riders away from an admin takes the photo with it.
+  assert.ok(!a.check({ ...admin, staff_permissions: { riders: "view" } }, "GET", path).ok);
+});
+
 test("riders and drivers have no console permissions", () => {
   assert.strictEqual(a.effectivePermissions({ role: "rider" }), null);
   assert.strictEqual(a.effectivePermissions({ role: "driver" }), null);

@@ -134,6 +134,8 @@ const blockedOperationsRequests = [
   ["PATCH", "/api/admin/riders/5/wallet-adjust"],
   ["POST", "/api/admin/riders"],
   ["GET", "/api/admin/riders/5/wallet-adjust"],
+  // The ID photo is not part of the list Operations may read.
+  ["GET", "/api/admin/riders/5/id-document"],
   ["PATCH", "/api/admin/panics/123/resolve"],
   ["POST", "/api/admin/exports/riders"],
   ["DELETE", "/api/admin/exports/riders"],

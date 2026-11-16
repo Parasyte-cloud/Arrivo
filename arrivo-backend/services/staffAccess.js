@@ -24,6 +24,8 @@ const rank = (level) => Math.max(0, LEVELS.indexOf(level));
 // before rides).
 //   work: true  means a change that only needs "view" because it's part of
 //               doing the job, not managing the area (log a call, go on duty).
+//   need: "manage"  means even a read needs manage, for a view that is more
+//               sensitive than the page around it (a rider's ID photo).
 const AREAS = [
   { id: "ride-desk", label: "Ride Desk", rules: [
     { path: /^\/api\/staff\/(duty|rides\/\d+\/contact-log)\/?$/, work: true },
@@ -37,7 +39,12 @@ const AREAS = [
     { path: /^\/api\/admin\/riders\/\d+\/wallet-adjust\/?$/ },
     { path: /^\/api\/admin\/wallet-transactions(\/|$)/ },
   ] },
-  { id: "riders", label: "Riders", rules: [{ path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ }] },
+  { id: "riders", label: "Riders", rules: [
+    // The ID photo (passport or NIN) is more sensitive than the list around it, so reading it needs manage, not
+    // just view. Admin and the owner have manage; the support and operations presets only have view.
+    { path: /^\/api\/admin\/riders\/\d+\/id-document\/?$/, need: "manage" },
+    { path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ },
+  ] },
   { id: "drivers", label: "Drivers", rules: [{ path: /^\/api\/admin\/drivers(\/|$)/ }] },
   { id: "live-map", label: "Live Map", rules: [
     { path: /^\/api\/admin\/rides\/live\/?$/ },
@@ -139,7 +146,7 @@ function diffFromPreset(role, wanted) {
 function findRule(path) {
   for (const area of AREAS) {
     for (const rule of area.rules) {
-      if (rule.path.test(path)) return { area: area.id, work: !!rule.work };
+      if (rule.path.test(path)) return { area: area.id, work: !!rule.work, need: rule.need || null };
     }
   }
   return null;
@@ -152,7 +159,7 @@ const READS = new Set(["GET", "HEAD", "OPTIONS"]);
 function requirementFor(method, path) {
   const hit = findRule(path);
   if (!hit) return null;
-  const need = READS.has(String(method).toUpperCase()) || hit.work ? "view" : "manage";
+  const need = hit.need || (READS.has(String(method).toUpperCase()) || hit.work ? "view" : "manage");
   return { area: hit.area, need };
 }
 
