@@ -122,7 +122,9 @@ function publicInvoice(row) {
     createdAt: row.created_at,
     paidAt: row.paid_at || null,
     rideId: paid ? row.ride_id : null,
-    passengerName: row.rider_name || null,
+    // The name typed on the form wins: an existing account may carry a different
+    // name, and the invoice must say who the ride is for.
+    passengerName: r.contactName || row.rider_name || null,
     // The pay link is only handed back while it can still be used.
     payUrl: paid || row.payment_status !== "pending" ? null : row.payment_link_url,
     trip: {
@@ -143,8 +145,9 @@ function publicInvoice(row) {
 }
 
 // GET /api/public/easybook/options
-// What this page can book. Kept server side so the page and the rules cannot
-// drift: the page renders whatever this says is allowed.
+// What this page can book, for other clients and for checking the deployed rules.
+// The page itself ships the same list; the validator in services/easybookRequest.js
+// is what actually enforces it.
 router.get("/easybook/options", (req, res) => {
   res.json({ bookingTypes: BOOKING_TYPES, vehicleTypes: ["sedan", "suv", "truck", "pickup"], arrivoExpress: false });
 });
@@ -255,7 +258,7 @@ router.post("/easybook/requests", submitLimiter, async (req, res) => {
         requestFingerprint,
         // contactPhone rides along (out of the fingerprint) so
         // createRideFromAssistedBooking can put it on the account.
-        JSON.stringify({ ...trip, agreedCancellationPolicy: true, contactPhone: contact.phone }),
+        JSON.stringify({ ...trip, agreedCancellationPolicy: true, contactPhone: contact.phone, contactName: contact.name }),
         fareNaira,
         ngnPerUsd,
         quotedUsdAmount,

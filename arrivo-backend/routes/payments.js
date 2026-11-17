@@ -389,7 +389,7 @@ async function sendAssistedReceipt(booking, rider, ride, reference, paidNaira) {
     if (!claimed.rows[0]) return;
     const { sendReceiptEmail } = require("../services/email");
     const result = await sendReceiptEmail(rider.email, {
-      name: rider.name,
+      name: (booking.booking_request && booking.booking_request.contactName) || rider.name,
       invoiceNumber: booking.invoice_number || `RA-${ride.id}`,
       request: booking.booking_request || {},
       paidNaira,
