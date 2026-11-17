@@ -54,6 +54,7 @@ const supportRouter = require("./routes/support");
 const familyRouter = require("./routes/family");
 const partnerVenuesRouter = require("./routes/partnerVenues");
 const publicBookingRequestsRouter = require("./routes/publicBookingRequests");
+const easybookRouter = require("./routes/easybook");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -107,6 +108,10 @@ const ALLOWED_ORIGINS = [
   // deploy, so it needs its own origin here. Rename this if the subdomain
   // ends up called something other than easybook.
   "https://easybook.ridearrivo.com",
+  // The live host is easybookings (with an s). Without this entry the browser
+  // blocks every call from that page unless EXTRA_ALLOWED_ORIGINS happens to
+  // carry it, which is a quiet way to lose bookings.
+  "https://easybookings.ridearrivo.com",
   // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
   // posts to /api/auth/google and /api/auth/apple directly from the
   // browser, same as login.html/signup.html on the main site, so a
@@ -191,6 +196,7 @@ app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
 app.use("/api/public", publicBookingRequestsRouter);
+app.use("/api/public", easybookRouter);
 app.use("/api", require("./routes/errorLog"));
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
