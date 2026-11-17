@@ -430,6 +430,8 @@ async function runSweep() {
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.
   await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
   await require("./driverCashout").sweepCashouts().catch((err) => console.error("[scheduler] cash-out sweep crashed:", err.message));
+  await require("./walletReconciliation").runDaily().catch((err) => console.error("[scheduler] wallet daily check crashed:", err.message));
+  await require("./walletHolds").expireStale().catch((err) => console.error("[scheduler] wallet hold expiry crashed:", err.message));
   await require("./autoReprice").runDailyReprice().catch((err) => console.error("[scheduler] auto reprice crashed:", err.message));
 }
 

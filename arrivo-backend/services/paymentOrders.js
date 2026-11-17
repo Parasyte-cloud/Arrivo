@@ -43,16 +43,16 @@ function sanitiseRidePayload(payload) {
 
 // Called when a payment is started. The first writer wins: a reference is
 // created once, by Paystack, so a second insert for it is a replay.
-async function recordOrder(db, { reference, userId, email, purpose, amountNaira, payload }) {
+async function recordOrder(db, { reference, userId, email, purpose, amountNaira, payload, fundsRoute }) {
   const safePurpose = normalisePurpose(purpose);
   // A purpose that acts on a specific account needs a verified account.
   const effectivePurpose = userId ? safePurpose : "unknown";
   const storedPayload = userId && effectivePurpose === "ride" ? sanitiseRidePayload(payload) : null;
   await db.query(
-    `INSERT INTO payment_orders (reference, user_id, email, purpose, amount_naira, payload)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO payment_orders (reference, user_id, email, purpose, amount_naira, payload, funds_route)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (reference) DO NOTHING`,
-    [reference, userId || null, email || null, effectivePurpose, amountNaira, storedPayload ? JSON.stringify(storedPayload) : null]
+    [reference, userId || null, email || null, effectivePurpose, amountNaira, storedPayload ? JSON.stringify(storedPayload) : null, fundsRoute === "holding" ? "holding" : null]
   );
 }
 
