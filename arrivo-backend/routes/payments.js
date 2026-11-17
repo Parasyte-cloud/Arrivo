@@ -6,7 +6,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
-const { creditWalletTopup } = require("../services/walletTopup");
+const { creditWalletTopup, walletTopupSubaccount } = require("../services/walletTopup");
 const {
   normalisePurpose,
   recordOrder,
@@ -118,7 +118,7 @@ async function verifyPaystackTransaction(reference) {
 // verifyPaystackTransaction above being the one place that checks one.
 // Throws on a bad amount or a missing secret key; callers translate that
 // into their own error response shape.
-async function initializePaystackTransaction({ email, amountNaira }) {
+async function initializePaystackTransaction({ email, amountNaira, subaccount }) {
   if (!email || !Number.isFinite(amountNaira) || amountNaira <= 0) {
     throw new Error("email and a positive amountNaira are required");
   }
@@ -135,6 +135,9 @@ async function initializePaystackTransaction({ email, amountNaira }) {
       // say so explicitly instead of relying on the account default.
       currency: "NGN",
       callback_url: process.env.PAYSTACK_CALLBACK_URL,
+      // Wallet top-ups settle into the holding account (a Paystack subaccount created with 0% kept by the main
+      // account). The main account pays Paystack's fee, so a 20,000 top-up puts 20,000 in the holding account.
+      ...(subaccount ? { subaccount, bearer: "account" } : {}),
     },
     { headers: paystackHeaders(), timeout: 10000 }
   );
@@ -238,7 +241,9 @@ router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res)
   }
 
   try {
-    const result = await initializePaystackTransaction({ email, amountNaira });
+    const walletSubaccount = walletTopupSubaccount();
+    const toHolding = normalisePurpose(purpose) === "wallet_topup" && Boolean(walletSubaccount);
+    const result = await initializePaystackTransaction({ email, amountNaira, subaccount: toHolding ? walletSubaccount : undefined });
     // Remembering the order must never stop a payment that Paystack has
     // already started: the old flow (verify, then create the ride) does not
     // depend on it.
@@ -250,6 +255,7 @@ router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res)
         purpose,
         amountNaira,
         payload: booking,
+        fundsRoute: toHolding ? "holding" : null,
       });
     } catch (orderErr) {
       console.error("Could not record the pending payment order:", orderErr.message);
@@ -518,13 +524,13 @@ async function handleOrder(reference, { amountKobo, email }) {
     }
     await recordPaymentException(pool, {
       reference,
-      reason: "reference_already_used",
+      reason: credit.reason === "not_in_holding" ? "not_in_holding" : "reference_already_used",
       purpose: "wallet_topup",
       userId: order.user_id,
       amountNaira: amountKobo / KOBO,
       details: { orderId: order.id },
     });
-    return "reference_already_used";
+    return credit.reason === "not_in_holding" ? "not_in_holding" : "reference_already_used";
   }
 
   return createRideFromOrder(order, { reference, amountKobo });

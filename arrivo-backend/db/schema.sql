@@ -2103,6 +2103,37 @@ BEGIN
   END IF;
 END $$;
 
+-- ── Top-ups routed to the holding account, and the daily balance check ──
+-- funds_route says where Paystack settles a payment: 'holding' (the wallet funds
+-- account, customer money) or NULL/'direct' (the main account). wallet_transactions
+-- keeps the route a top-up was credited with, so finance can see any top-up whose
+-- money did not land in the holding account.
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS funds_route TEXT;
+ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS funding_route TEXT;
+
+-- One row per check. 'snapshot' is written by the daily job (once per Lagos day);
+-- 'bank' is written when finance types in the real holding-account balance, and
+-- keeps the difference between that and what the ledger says it should be.
+CREATE TABLE IF NOT EXISTS wallet_reconciliations (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('snapshot', 'bank')),
+  lagos_day DATE NOT NULL,
+  expected_naira NUMERIC(16,2) NOT NULL,
+  rider_balances_naira NUMERIC(16,2) NOT NULL,
+  held_naira NUMERIC(16,2) NOT NULL,
+  unsettled_naira NUMERIC(16,2) NOT NULL,
+  driver_wallets_naira NUMERIC(16,2) NOT NULL DEFAULT 0,
+  bank_balance_naira NUMERIC(16,2),
+  difference_naira NUMERIC(16,2),
+  status TEXT NOT NULL CHECK (status IN ('ok', 'attention', 'mismatch')),
+  findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+  recorded_by INTEGER REFERENCES users(id),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_recon_snapshot_day ON wallet_reconciliations(lagos_day) WHERE kind = 'snapshot';
+CREATE INDEX IF NOT EXISTS idx_wallet_recon_recent ON wallet_reconciliations(created_at DESC);
+
 -- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
 -- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
 -- whole script ends, so touching drivers last keeps the lock order the same as the rest of

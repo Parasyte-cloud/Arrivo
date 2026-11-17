@@ -75,6 +75,11 @@ router.post("/topup/verify", requireAuth, async (req, res) => {
       await client.query("ROLLBACK");
       return res.json({ success: true, balanceNaira: credit.balanceNaira, alreadyCredited: true });
     }
+    if (!credit.credited && credit.reason === "not_in_holding") {
+      await client.query("ROLLBACK");
+      console.error(`Wallet top-up ${reference} refused: it did not go to the holding account.`);
+      return res.status(409).json({ error: "Please update the app to top up your wallet. This payment was not credited; contact support with this reference: " + reference });
+    }
     if (!credit.credited) {
       // Spent on a ride payment, tip or overage charge already -- see
       // services/paymentReferences.js.
