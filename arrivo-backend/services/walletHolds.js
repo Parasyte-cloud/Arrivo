@@ -105,6 +105,15 @@ async function resolveRider(email) {
   return { userId: u.id, name: u.name, balanceNaira: Number(u.wallet_balance_naira) };
 }
 
+// Balance of a rider the calling service already knows by id (it learned the id
+// from a verified RideArrivo sign-in). Read only.
+async function balanceOf(userId) {
+  if (!Number.isInteger(userId) || userId <= 0) throw new WalletHoldError("A rider is required.", 400, "BAD_USER");
+  const r = await pool.query("SELECT wallet_balance_naira FROM users WHERE id = $1", [userId]);
+  if (!r.rows[0]) throw new WalletHoldError("No RideArrivo account for that rider.", 404, "NO_ACCOUNT");
+  return { userId, balanceNaira: Number(r.rows[0].wallet_balance_naira) };
+}
+
 async function findExisting(client, service, idempotencyKey, externalRef) {
   const r = await client.query(
     "SELECT * FROM wallet_holds WHERE service = $1 AND (idempotency_key = $2 OR external_ref = $3) FOR UPDATE",
@@ -272,4 +281,4 @@ async function expireStale(limit = 100) {
   return released;
 }
 
-module.exports = { WalletHoldError, resolveRider, placeHold, capture, release, getHold, expireStale };
+module.exports = { WalletHoldError, resolveRider, balanceOf, placeHold, capture, release, getHold, expireStale };

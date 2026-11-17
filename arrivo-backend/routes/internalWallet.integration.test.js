@@ -89,6 +89,14 @@ const balanceOf = async (id) => Number((await pool.query("SELECT wallet_balance_
     assert.strictEqual((await signed("POST", "/api/internal/wallet/resolve", { email: "nobody@example.test" })).status, 404);
   });
 
+  await test("balance by rider id works and unknown riders are a 404", async () => {
+    const b = await signed("POST", "/api/internal/wallet/balance", { riderUserId: rider.id });
+    assert.strictEqual(b.status, 200);
+    assert.strictEqual(b.body.balanceNaira, 10000);
+    assert.strictEqual((await signed("POST", "/api/internal/wallet/balance", { riderUserId: 999999999 })).status, 404);
+    assert.strictEqual((await signed("POST", "/api/internal/wallet/balance", { riderUserId: "abc" })).status, 400);
+  });
+
   await test("a hold debits at once, tags the ledger, and a retry does not hold twice", async () => {
     const a = await hold(1, 3000);
     assert.strictEqual(a.status, 200);

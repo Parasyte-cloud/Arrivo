@@ -3,6 +3,7 @@
 // one named in the body.
 //
 //   POST /api/internal/wallet/resolve              { email } -> rider + balance
+//   POST /api/internal/wallet/balance              { riderUserId } -> balance
 //   POST /api/internal/wallet/holds                { riderUserId, amountNaira, idempotencyKey, externalRef, ttlMinutes? }
 //   POST /api/internal/wallet/holds/:ref/capture   { amountNaira? }  keep the money (a smaller amount returns the rest)
 //   POST /api/internal/wallet/holds/:ref/release   give it all back
@@ -28,6 +29,8 @@ function handle(fn) {
 }
 
 router.post("/resolve", handle((req) => holds.resolveRider(req.body.email)));
+
+router.post("/balance", handle((req) => holds.balanceOf(Number(req.body.riderUserId))));
 
 router.post("/holds", handle(async (req) => {
   const { riderUserId, amountNaira, idempotencyKey, externalRef, ttlMinutes } = req.body;
