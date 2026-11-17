@@ -718,6 +718,22 @@ ON support_assisted_bookings(
   created_at
 );
 
+-- EasyBook invoicing (easybookings.ridearrivo.com). Every EasyBook request
+-- gets an invoice number and an unguessable token. The token is what the
+-- public invoice page and the emailed link use to look the invoice up, so
+-- nobody can read anyone else's invoice by counting ids. receipt_sent_at is
+-- claimed with an UPDATE ... WHERE receipt_sent_at IS NULL before the email
+-- goes out, so a repeated webhook delivery cannot send two receipts.
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_token TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_number
+ON support_assisted_bookings(invoice_number) WHERE invoice_number IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_token
+ON support_assisted_bookings(invoice_token) WHERE invoice_token IS NOT NULL;
+
 
 
 -- ── On-the-Go requests ──
