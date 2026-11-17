@@ -112,6 +112,8 @@ const ALLOWED_ORIGINS = [
   // blocks every call from that page unless EXTRA_ALLOWED_ORIGINS happens to
   // carry it, which is a quiet way to lose bookings.
   "https://easybookings.ridearrivo.com",
+  // The booking page's permanent address.
+  "https://book.ridearrivo.com",
   // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
   // posts to /api/auth/google and /api/auth/apple directly from the
   // browser, same as login.html/signup.html on the main site, so a

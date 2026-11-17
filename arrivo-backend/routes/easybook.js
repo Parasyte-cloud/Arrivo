@@ -57,7 +57,7 @@ const invoiceLimiter = ipLimiter(120, "Too many invoice lookups. Please try agai
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[0-9a-f]{48}$/;
 const MAX_PENDING_PER_EMAIL_PER_HOUR = Number(process.env.EASYBOOK_MAX_PER_EMAIL_PER_HOUR) || 4;
-const PUBLIC_URL = (process.env.EASYBOOK_PUBLIC_URL || "https://easybookings.ridearrivo.com").replace(/\/$/, "");
+const PUBLIC_URL = (process.env.EASYBOOK_PUBLIC_URL || "https://book.ridearrivo.com").replace(/\/$/, "");
 
 function invoiceUrlFor(token) {
   return `${PUBLIC_URL}/?invoice=${token}`;
