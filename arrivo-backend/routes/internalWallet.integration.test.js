@@ -162,6 +162,21 @@ const balanceOf = async (id) => Number((await pool.query("SELECT wallet_balance_
     assert.strictEqual((await signed("POST", `/api/internal/wallet/holds/${ref(5)}/capture`, {})).body.code, "ALREADY_RELEASED");
   });
 
+  await test("a service lists only its own holds, and the query string is part of the signature", async () => {
+    const l = await signed("GET", `/api/internal/wallet/holds?status=captured&since=${encodeURIComponent(new Date(Date.now() - 3600000).toISOString())}`);
+    assert.strictEqual(l.status, 200);
+    assert.ok(l.body.holds.length >= 1);
+    assert.ok(l.body.holds.every((h) => h.service === "express" && h.status === "captured"));
+    assert.strictEqual((await signed("GET", "/api/internal/wallet/holds?status=nope")).body.code, "BAD_STATUS");
+    // a signature made for one filter cannot be reused for another
+    const { port } = server.address();
+    const p1 = "/api/internal/wallet/holds?status=captured";
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sig = sign({ secret: SECRET, timestamp: ts, method: "GET", path: p1, rawBody: "" });
+    const r = await fetch(`http://127.0.0.1:${port}/api/internal/wallet/holds?status=released`, { headers: { "x-service": "express", "x-timestamp": ts, "x-signature": sig } });
+    assert.strictEqual(r.status, 401);
+  });
+
   await test("an unknown trip is a 404", async () => {
     assert.strictEqual((await signed("GET", `/api/internal/wallet/holds/${ref(77)}`)).status, 404);
   });

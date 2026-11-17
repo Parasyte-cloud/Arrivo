@@ -3,7 +3,7 @@
 // Another Arrivo service (ArrivoExpress first) proves who it is by signing every
 // request with a secret only that service and this API know. Nothing is sent
 // that could be replayed later: the signature covers the timestamp, the method,
-// the path and a hash of the body, and a request older than five minutes is
+// the full path with its query and a hash of the body, and a request older than five minutes is
 // refused.
 //
 //   X-Service:   the service name, for example "express"
@@ -58,7 +58,8 @@ function requireService(req, res, next) {
     if (!secret || !/^\d{9,12}$/.test(timestamp) || !signature) return deny();
     if (Math.abs(Date.now() / 1000 - Number(timestamp)) > MAX_SKEW_SECONDS) return deny();
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    const path = req.originalUrl.split("?")[0];
+    // The whole URL is signed, query string included, so a captured request cannot be replayed with a different filter.
+    const path = req.originalUrl;
     const expected = sign({ secret, timestamp, method: req.method, path, rawBody: raw });
     if (!safeEqualHex(expected, signature)) return deny();
     try {

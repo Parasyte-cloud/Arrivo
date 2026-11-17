@@ -258,6 +258,21 @@ async function getHold({ service, externalRef }) {
   return shape(r.rows[0], null);
 }
 
+// The calling service's own holds, for its end of day cross-check (does every charge have a matching driver credit).
+// Only this service's holds are ever returned.
+async function listHolds({ service, status = "captured", since, limit = 500 }) {
+  if (!["held", "captured", "released"].includes(status)) throw new WalletHoldError("Unknown status.", 400, "BAD_STATUS");
+  const from = since ? new Date(since) : new Date(Date.now() - 7 * 86400000);
+  if (Number.isNaN(from.getTime())) throw new WalletHoldError("since must be a date.", 400, "BAD_SINCE");
+  const cap = Math.min(Math.max(Math.floor(Number(limit)) || 500, 1), 1000);
+  const col = status === "captured" ? "captured_at" : status === "released" ? "released_at" : "created_at";
+  const r = await pool.query(
+    `SELECT * FROM wallet_holds WHERE service = $1 AND status = $2 AND ${col} >= $3 ORDER BY ${col} LIMIT $4`,
+    [service, status, from.toISOString(), cap]
+  );
+  return { holds: r.rows.map((row) => shape(row, null)), truncated: r.rows.length === cap };
+}
+
 // Releases holds still open past their expiry. SKIP LOCKED lets two instances
 // sweep side by side without waiting on each other.
 async function expireStale(limit = 100) {
@@ -281,4 +296,4 @@ async function expireStale(limit = 100) {
   return released;
 }
 
-module.exports = { WalletHoldError, resolveRider, balanceOf, placeHold, capture, release, getHold, expireStale };
+module.exports = { WalletHoldError, resolveRider, balanceOf, listHolds, placeHold, capture, release, getHold, expireStale };

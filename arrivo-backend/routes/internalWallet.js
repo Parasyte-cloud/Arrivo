@@ -7,6 +7,7 @@
 //   POST /api/internal/wallet/holds                { riderUserId, amountNaira, idempotencyKey, externalRef, ttlMinutes? }
 //   POST /api/internal/wallet/holds/:ref/capture   { amountNaira? }  keep the money (a smaller amount returns the rest)
 //   POST /api/internal/wallet/holds/:ref/release   give it all back
+//   GET  /api/internal/wallet/holds?status=captured&since=ISO   this service's holds, for its cross-check
 //   GET  /api/internal/wallet/holds/:ref           status
 
 const express = require("express");
@@ -41,6 +42,8 @@ router.post("/holds/:ref/capture", handle((req) =>
   holds.capture({ service: req.service, externalRef: req.params.ref, amountNaira: req.body.amountNaira })));
 
 router.post("/holds/:ref/release", handle((req) => holds.release({ service: req.service, externalRef: req.params.ref })));
+
+router.get("/holds", handle((req) => holds.listHolds({ service: req.service, status: req.query.status, since: req.query.since, limit: req.query.limit })));
 
 router.get("/holds/:ref", handle((req) => holds.getHold({ service: req.service, externalRef: req.params.ref })));
 
