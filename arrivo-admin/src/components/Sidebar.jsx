@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     items: [
       { id: "riders", label: "Riders", icon: "users" },
       { id: "drivers", label: "Drivers", icon: "car" },
+      { id: "driver-tiers", label: "Driver Tiers", icon: "shield" },
       { id: "rides", label: "Rides", icon: "layers" },
       { id: "support", label: "Support Tickets", icon: "message" },
       { id: "flight-issues", label: "Flight Issues", icon: "plane", badgeColor: "var(--amber)" },

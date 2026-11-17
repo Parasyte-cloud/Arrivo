@@ -30,6 +30,7 @@ const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ 
 const MembershipsPage = lazy(() => import("./pages/MembershipsPage").then((m) => ({ default: m.MembershipsPage })));
 const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })));
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
+const DriverTiersPage = lazy(() => import("./pages/DriverTiersPage").then((m) => ({ default: m.DriverTiersPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
@@ -45,14 +46,14 @@ const OpsOverviewPage = lazy(() => import("./pages/OpsOverviewPage").then((m) =>
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
+  "ride-desk", "panics", "riders", "drivers", "driver-tiers", "rides", "support", "flight-issues",
   "vehicles", "memberships", "wallet", "trip-tracker", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
 
 
 const PAGE_LABELS = {
-  overview: "Command Center", "ride-desk": "Ride Desk", panics: "Panic Alerts", riders: "Riders", drivers: "Drivers", rides: "Rides",
+  overview: "Command Center", "ride-desk": "Ride Desk", panics: "Panic Alerts", riders: "Riders", drivers: "Drivers", "driver-tiers": "Driver Tiers", rides: "Rides",
   support: "Support Tickets", "flight-issues": "Flight Issues", vehicles: "Vehicles", memberships: "Memberships", wallet: "Wallet",
   "trip-tracker": "Trip Tracker", "live-map": "Live Map", analytics: "Analytics", "arrivo-express": "Arrivo Express",
   "express-pricing": "Express Pricing", safety: "Trip Safety", exports: "Exports", team: "Team & Access",
@@ -245,6 +246,7 @@ function DashboardFor({ access }) {
             {page === "panics" && <PanicsPage />}
             {page === "riders" && <RidersPage />}
             {page === "drivers" && <DriversPage />}
+            {page === "driver-tiers" && <DriverTiersPage />}
             {page === "rides" && <RidesPage />}
             {page === "flight-issues" && <FlightIssuesPage />}
             {page === "vehicles" && <VehiclesPage />}

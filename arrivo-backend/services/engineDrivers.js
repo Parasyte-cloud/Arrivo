@@ -31,6 +31,7 @@ function mapDriver(row, now = Date.now()) {
     is_verified: d.status === "approved",
     is_online: online,
     tier: "express",
+    tiers: ["express"],
     archived_at: null,
     verification_stage: d.verificationStage || d.kycStatus || null,
   };

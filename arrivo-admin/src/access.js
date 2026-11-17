@@ -2,7 +2,7 @@
 // (arrivo-backend/services/staffAccess.js); this only shapes the screen.
 
 export const PAGE_IDS = [
-  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
+  "ride-desk", "panics", "riders", "drivers", "driver-tiers", "rides", "support", "flight-issues",
   "vehicles", "memberships", "wallet", "trip-tracker", "live-map", "analytics", "arrivo-express",
   "express-pricing", "safety", "exports",
 ];
@@ -16,7 +16,7 @@ const OPERATIONS_PAGES = ["ride-desk", "panics", "riders", "drivers", "rides", "
 export function legacyAccess(role) {
   const perms = {};
   for (const id of PAGE_IDS) {
-    if (role === "admin") perms[id] = "manage";
+    if (role === "admin") perms[id] = id === "driver-tiers" ? "none" : "manage";
     else if (role === "operations") perms[id] = OPERATIONS_PAGES.includes(id) ? "view" : "none";
     else if (role === "support") perms[id] = ["express-pricing", "safety"].includes(id) ? "none" : "view";
     else perms[id] = "none";

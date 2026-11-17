@@ -171,6 +171,7 @@ app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
+app.use("/api/admin/driver-tiers", require("./routes/adminDriverTiers"));
 app.use("/api/admin/express", adminExpressRouter);
 app.use("/api/admin/cashouts", adminCashoutsRouter);
 app.use("/api/admin/wallet-settlements", adminWalletSettlementRouter);

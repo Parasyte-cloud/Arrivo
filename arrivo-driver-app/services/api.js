@@ -159,6 +159,15 @@ export function getRideChatChannel(token, rideId) {
 // offer queue from the scheduled getAvailableRides() above, so an
 // unmatched ArrivoExpress request can never leak into the normal claim queue
 // (see arrivo-backend routes/instantRides.js).
+// This driver's own services: which are on, which they have asked for, which are off.
+export function getMyTiers(token) {
+  return request("/api/drivers/tiers", authed(token));
+}
+// Ask Ops for a service. Never switches anything on.
+export function requestTier(token, tier) {
+  return request("/api/drivers/tiers/request", authed(token, { method: "POST", body: JSON.stringify({ tier }) }));
+}
+
 export function getInstantStatus(token) {
   return request("/api/instant-rides/status", authed(token));
 }

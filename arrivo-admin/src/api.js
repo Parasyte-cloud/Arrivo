@@ -67,8 +67,6 @@ export const getDrivers = (token, archived = false) => request(`/api/admin/drive
 export const archiveDriver = (token, id, archived) =>
   request(`/api/admin/drivers/${id}/archive`, token, { method: "PATCH", body: JSON.stringify({ archived }) });
 export const deleteDriver = (token, id) => request(`/api/admin/drivers/${id}`, token, { method: "DELETE" });
-export const setDriverTier = (token, id, tier) =>
-  request(`/api/admin/drivers/${id}/tier`, token, { method: "PATCH", body: JSON.stringify({ tier }) });
 export const completeDeskRide = (token, id) => request(`/api/staff/rides/${id}/complete`, token, { method: "POST", body: JSON.stringify({}) });
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
@@ -157,6 +155,14 @@ export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
 export const getMemberships = (token) => request("/api/admin/memberships", token);
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+
+// ── Driver tiers (owner, and people the owner names) ──
+export const getDriverTiers = (token, q = "") => request(`/api/admin/driver-tiers${q ? `?q=${encodeURIComponent(q)}` : ""}`, token);
+export const grantDriverTier = (token, driverId, tier, note) =>
+  request("/api/admin/driver-tiers/grant", token, { method: "POST", body: JSON.stringify({ driverId, tier, note }) });
+export const revokeDriverTier = (token, driverId, tier, note) =>
+  request("/api/admin/driver-tiers/revoke", token, { method: "POST", body: JSON.stringify({ driverId, tier, note }) });
+export const getDriverTierEvents = (token, driverId) => request(`/api/admin/driver-tiers/events/${driverId}`, token);
 
 export const getVehicles = (token) => request("/api/admin/vehicles", token);
 

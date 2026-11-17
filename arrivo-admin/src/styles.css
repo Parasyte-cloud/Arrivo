@@ -1682,6 +1682,54 @@ body { padding-bottom: 36px; }
   background:rgba(255,120,105,.08);
 }
 
+/* ── Driver Tiers ── */
+.tiers-lede { margin: 6px 0 0; max-width: 56ch; color: var(--text-muted); font-size: 13.5px; line-height: 1.5; }
+.tiers-search { min-width: 260px; max-width: 100%; }
+.tiers-note { margin: 0 0 14px; padding: 11px 14px; border-radius: 12px; background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-muted); font-size: 13px; }
+.tiers-note-amber { color: var(--amber); border-color: var(--amber); background: var(--amber-tint); }
+.tiers-note-coral { color: var(--coral); border-color: var(--coral); background: var(--coral-tint); }
+.tiers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.tiers-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 18px; background: linear-gradient(160deg, var(--glass-strong), var(--glass)); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: 0 1px 0 var(--glass-highlight) inset, 0 12px 32px rgba(0, 0, 0, 0.22); }
+.tiers-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.tiers-who { min-width: 0; }
+.tiers-who strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.tiers-who small { color: var(--text-muted); font-size: 12px; }
+.tiers-head-right { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.tiers-history-btn { padding: 5px 10px; }
+.tiers-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tiers-chip { --ta: var(--amber); display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 13px 0 11px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.1s; }
+.tiers-chip i { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); opacity: 0.6; }
+.tiers-chip small { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.tiers-chip[data-state="active"] { color: var(--text); border-color: var(--ta); background: var(--glass-strong); }
+.tiers-chip[data-state="active"] i { background: var(--ta); opacity: 1; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1); }
+.tiers-chip[data-state="active"] small { color: var(--teal); }
+.tiers-chip[data-state="requested"] { border-color: var(--amber); color: var(--text); }
+.tiers-chip[data-state="requested"] i { background: var(--amber); opacity: 1; }
+.tiers-chip[data-state="requested"] small { color: var(--amber); }
+.tiers-chip[data-state="revoked"] small { color: var(--coral); }
+.tiers-chip:hover:not(:disabled) { border-color: var(--ta); }
+.tiers-chip:active:not(:disabled) { transform: scale(0.97); }
+.tiers-chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.tiers-chip:disabled { cursor: default; opacity: 0.75; }
+.tiers-dialog { width: min(480px, calc(100vw - 32px)); padding: 22px; display: grid; gap: 12px; }
+.tiers-dialog h2 { margin: 0; font-size: 18px; line-height: 1.3; }
+.tiers-dialog-body { margin: 0; color: var(--text-muted); font-size: 13.5px; line-height: 1.5; }
+.tiers-dialog-soft { font-size: 12.5px; }
+.tiers-label { display: grid; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+.tiers-label textarea { resize: vertical; min-height: 64px; font-size: 16px; }
+.tiers-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.tiers-events { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; max-height: 50vh; overflow: auto; }
+.tiers-events li { display: grid; gap: 2px; padding-left: 12px; border-left: 2px solid var(--glass-border); }
+.tiers-events small { color: var(--text-muted); font-size: 12px; }
+.tiers-events span { font-size: 13px; }
+.tier-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 520px) {
+  .tiers-grid { grid-template-columns: 1fr; }
+  .tiers-search { width: 100%; min-width: 0; }
+  .tiers-actions .btn { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .tiers-chip { transition: none; } .tiers-chip:active:not(:disabled) { transform: none; } }
+
 /* Phone fit: the page itself never scrolls (only .main does) and an expanded ride row stays
    inside the screen instead of running off the right edge of the horizontally scrolling table. */
 @media (max-width: 860px) {

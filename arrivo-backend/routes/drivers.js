@@ -5,6 +5,9 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { processTelemetry } = require("../services/telemetry/telemetryService");
 const { MapboxRoutingProvider } = require("../services/routing/MapboxRoutingProvider");
+const { createDriverTiers, TierError } = require("../services/driverTiers");
+
+const driverTiers = createDriverTiers(pool);
 
 // Lazily constructed so a missing MAPBOX_ACCESS_TOKEN doesn't crash
 // server startup — it only matters the moment a reroute is actually
@@ -101,6 +104,32 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
   res.status(201).json({ driver: await getDriverWithVehicle(req.user.id) });
 });
 
+// GET /api/drivers/tiers: this driver's own services: which are on, which
+// they have asked for, which are off. Only their own row set, never who decided.
+router.get("/tiers", requireAuth, requireRole("driver"), async (req, res) => {
+  const driver = await getDriverForUser(req.user.id);
+  if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
+  const list = await driverTiers.listForDriver(driver.id);
+  res.set("Cache-Control", "no-store");
+  res.json({
+    tiers: list.map(({ slug, name, tagline, accent, live, status, requestedAt }) => ({ slug, name, tagline, accent, live, status, requestedAt })),
+    active: list.filter((t) => t.status === "active").map((t) => t.slug),
+  });
+});
+
+// POST /api/drivers/tiers/request { tier }: ask Ops for a service. Never
+// switches it on: the owner, or someone the owner named, decides in the console.
+router.post("/tiers/request", requireAuth, requireRole("driver"), async (req, res) => {
+  const driver = await getDriverForUser(req.user.id);
+  if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
+  try {
+    res.json({ ok: true, ...(await driverTiers.request({ driverId: driver.id, tier: req.body?.tier })) });
+  } catch (e) {
+    if (e instanceof TierError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
+});
+
 // GET /api/drivers/me
 router.get("/me", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverWithVehicle(req.user.id);
@@ -170,6 +199,13 @@ router.patch("/status", requireAuth, requireRole("driver"), async (req, res) => 
 
   if (req.body.isOnline && !driver.is_verified) {
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can go online." });
+  }
+
+  if (req.body.isOnline && !(await driverTiers.activeSlugs(driver.id)).length) {
+    return res.status(403).json({
+      error: "No service is switched on for your account yet. Ask RideArrivo Ops to switch one on.",
+      code: "NO_TIER",
+    });
   }
 
   if (req.body.isOnline) {

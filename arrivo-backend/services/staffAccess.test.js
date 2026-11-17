@@ -19,9 +19,25 @@ test("every area has a level in every preset", () => {
   for (const role of a.STAFF_ROLES) for (const id of a.AREA_IDS) assert.ok(a.LEVELS.includes(a.PRESETS[role][id]), `${role}/${id}`);
 });
 
-test("admins keep everything they had", () => {
-  for (const id of a.AREA_IDS) assert.strictEqual(a.effectivePermissions(admin)[id], "manage");
+test("admins keep everything they had, except who decides driver tiers", () => {
+  for (const id of a.AREA_IDS) assert.strictEqual(a.effectivePermissions(admin)[id], id === "driver-tiers" ? "none" : "manage", id);
   assert.ok(a.check(admin, "PATCH", "/api/admin/riders/5/wallet-adjust").ok);
+});
+
+test("driver tiers belong to the owner and whoever the owner names", () => {
+  assert.deepStrictEqual(a.OWNER_ONLY_AREAS, ["driver-tiers"]);
+  assert.strictEqual(a.effectivePermissions({ role: "admin", is_owner: true })["driver-tiers"], "manage");
+  assert.strictEqual(a.check(admin, "GET", "/api/admin/driver-tiers").ok, false);
+  assert.strictEqual(a.check(admin, "POST", "/api/admin/driver-tiers/grant").ok, false);
+  assert.strictEqual(a.check(ops, "GET", "/api/admin/driver-tiers").ok, false);
+  // Named by the owner: view lets someone look, manage lets them change.
+  const named = (level) => ({ role: "support", staff_permissions: { "driver-tiers": level } });
+  assert.ok(a.check(named("view"), "GET", "/api/admin/driver-tiers").ok);
+  assert.strictEqual(a.check(named("view"), "POST", "/api/admin/driver-tiers/grant").ok, false);
+  assert.ok(a.check(named("manage"), "POST", "/api/admin/driver-tiers/grant").ok);
+  // The old drivers area does not reach it, in either direction.
+  assert.strictEqual(a.requirementFor("POST", "/api/admin/driver-tiers/grant").area, "driver-tiers");
+  assert.strictEqual(a.requirementFor("GET", "/api/admin/drivers").area, "drivers");
 });
 
 test("operations keep exactly the pages they had, read only", () => {

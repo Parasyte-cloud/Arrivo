@@ -37,6 +37,7 @@ const { isWithinRadiusKm } = require("../services/routeDeviation");
 // the same reason LUXURY_SURCHARGE_USD in services/fare.js is.
 const MIN_WALLET_BALANCE_USD = 100;
 
+const { RIDE_TIER_SQL, HOLDS_TIER_SQL, tierForRide } = require("../services/driverTiers");
 const router = express.Router();
 
 // A rider whose first POST succeeded but whose response was lost (dropped
@@ -1128,6 +1129,7 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
      LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.ride_status = 'requested' AND rides.driver_id IS NULL
        AND (rides.preferred_driver_id IS NULL OR rides.preferred_driver_id = $1)
+       AND ${HOLDS_TIER_SQL("$1", RIDE_TIER_SQL("rides"))}
        AND (
          rides.scheduled_pickup_at IS NULL
          OR rides.preferred_driver_id = $1
@@ -1172,6 +1174,20 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
   // driver had actually been approved by an admin.
   if (!driver.is_verified) {
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can accept rides." });
+  }
+
+  // The ride's service must be one this driver has switched on. GET /available
+  // already hides the others, this stops a direct call with an old ride id.
+  const target = (await pool.query("SELECT booking_type FROM rides WHERE id = $1", [req.params.id])).rows[0];
+  if (target) {
+    const need = tierForRide(target);
+    if (!(await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driver.id, need])).rowCount) {
+      return res.status(403).json({
+        error: "This service is not switched on for your account. Ask RideArrivo Ops.",
+        code: "TIER_NOT_GRANTED",
+        tier: need,
+      });
+    }
   }
 
   // Defense in depth — GET /available already hides a preferred-driver ride
