@@ -35,6 +35,8 @@ const adminExportsRouter = require("./routes/adminExports");
 const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const adminExpressRouter = require("./routes/adminExpress");
 const adminCashoutsRouter = require("./routes/adminCashouts");
+const internalWalletRouter = require("./routes/internalWallet");
+const adminWalletSettlementRouter = require("./routes/adminWalletSettlement");
 const safetyRouter = require("./routes/safety");
 const adminSafetyRouter = require("./routes/adminSafety");
 const driverCashoutRouter = require("./routes/driverCashout");
@@ -145,6 +147,8 @@ app.use(csrfOriginCheck(ALLOWED_ORIGINS));
 // handle raw parsing itself. Every other route gets normal JSON parsing.
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payments/webhook") return next();
+  // Signed service calls: the signature covers the raw body, so the wallet router reads it itself.
+  if (req.originalUrl.startsWith("/api/internal/wallet")) return next();
   // Bumped from the 100kb default — profile photos come in as base64 inside
   // the JSON body, which is roughly a third larger than the raw image bytes.
   express.json({ limit: "6mb" })(req, res, next);
@@ -162,6 +166,8 @@ app.use("/api/drivers", driversRouter);
 app.use("/api/admin/exports", adminExportsRouter);
 app.use("/api/admin/express", adminExpressRouter);
 app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/wallet-settlements", adminWalletSettlementRouter);
+app.use("/api/internal/wallet", internalWalletRouter);
 app.use("/api/admin/safety", adminSafetyRouter);
 app.use("/api/safety", safetyRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
