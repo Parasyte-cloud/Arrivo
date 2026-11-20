@@ -21,7 +21,11 @@ import ParasyteSignature from "../components/ParasyteSignature";
 // an incomplete profile.
 export default function CompleteProfileScreen() {
   const { t } = useTranslation();
-  const { updateProfile, logout } = useAuth();
+  const { user, updateProfile, logout } = useAuth();
+  // An account made on the website can already have a WhatsApp number or a country.
+  // Ask only for what is actually missing, and keep what is already there.
+  const hasWhatsapp = Boolean(user?.whatsapp_number);
+  const hasCountry = Boolean(user?.country_of_residence);
   const [whatsappDial, setWhatsappDial] = useState("+234");
   const [whatsappNational, setWhatsappNational] = useState("");
   const [country, setCountry] = useState("");
@@ -30,18 +34,25 @@ export default function CompleteProfileScreen() {
 
   const submit = async () => {
     setError(null);
-    const phoneResult = validatePhone(whatsappDial, whatsappNational);
-    if (!phoneResult.valid) {
-      setError(phoneResult.message);
-      return;
+    const update = {};
+    if (!hasWhatsapp) {
+      const phoneResult = validatePhone(whatsappDial, whatsappNational);
+      if (!phoneResult.valid) {
+        setError(phoneResult.message);
+        return;
+      }
+      update.whatsappNumber = phoneResult.full;
     }
-    if (!country.trim()) {
-      setError(t("signup.enterCountry"));
-      return;
+    if (!hasCountry) {
+      if (!country.trim()) {
+        setError(t("signup.enterCountry"));
+        return;
+      }
+      update.countryOfResidence = country.trim();
     }
     setLoading(true);
     try {
-      await updateProfile({ whatsappNumber: phoneResult.full, countryOfResidence: country.trim() });
+      await updateProfile(update);
       // App.js re-evaluates automatically once the user record updates —
       // no manual navigation needed, same mechanism signup/login already use.
     } catch (e) {
@@ -61,23 +72,31 @@ export default function CompleteProfileScreen() {
             {t("completeProfile.weNeedTheseToKeep")}
           </Text>
 
-          <Text style={styles.label}>{t("completeProfile.whatsappNumber")}</Text>
-          <PhoneInput
-            dial={whatsappDial}
-            national={whatsappNational}
-            onChangeDial={setWhatsappDial}
-            onChangeNational={setWhatsappNational}
-            placeholder={t("completeProfile.whatsappNumber")}
-          />
+          {!hasWhatsapp ? (
+            <>
+              <Text style={styles.label}>{t("completeProfile.whatsappNumber")}</Text>
+              <PhoneInput
+                dial={whatsappDial}
+                national={whatsappNational}
+                onChangeDial={setWhatsappDial}
+                onChangeNational={setWhatsappNational}
+                placeholder={t("completeProfile.whatsappNumber")}
+              />
+            </>
+          ) : null}
 
-          <Text style={styles.label}>{t("completeProfile.countryOfResidence")}</Text>
-          <TextInput
-            style={styles.input}
-            placeholder={t("completeProfile.countryOfResidence")}
-            placeholderTextColor={colors.textMuted}
-            value={country}
-            onChangeText={setCountry}
-          />
+          {!hasCountry ? (
+            <>
+              <Text style={styles.label}>{t("completeProfile.countryOfResidence")}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t("completeProfile.countryOfResidence")}
+                placeholderTextColor={colors.textMuted}
+                value={country}
+                onChangeText={setCountry}
+              />
+            </>
+          ) : null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 

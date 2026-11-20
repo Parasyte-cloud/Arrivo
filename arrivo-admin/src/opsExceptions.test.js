@@ -70,4 +70,46 @@ test("span reads naturally", () => {
   assert.equal(span(-125), "2 h 5 min");
 });
 
+test("an airport pickup booked for a later day is not flagged as waiting", () => {
+  const trip = { id: 20, ride_status: "requested", booking_type: "one_way", flight_number: "BA75", flight_date: "2026-10-27", created_at: at(-30) };
+  assert.equal(tripExceptions([trip], NOW).length, 0);
+  assert.equal(tripExceptions([{ ...trip, flight_date: "2026-10-25" }], NOW).length, 1, "today's flight still alerts");
+  assert.equal(tripExceptions([{ ...trip, flight_date: null }], NOW).length, 1, "older bookings without a date behave as before");
+});
+
+test("a cancelled or diverted flight is critical and ranks first", () => {
+  const [e] = tripExceptions([{ id: 21, ride_status: "accepted", driver_name: "Tunde", flight_number: "ET905", flight_tracking_state: "cancelled", rider_name: "Ada" }], NOW);
+  assert.equal(e.tone, "critical");
+  assert.match(e.title, /ET905 cancelled/);
+});
+
+test("a booking code with no flight number asks for the flight", () => {
+  const [e] = tripExceptions([{ id: 22, ride_status: "accepted", driver_name: "Tunde", flight_tracking_state: "pnr_only", rider_name: "Ada" }], NOW);
+  assert.match(e.title, /booking code but no flight number/);
+});
+
+test("an untracked flight only raises an alert once it is close, and says why", () => {
+  const base = { id: 23, ride_status: "accepted", driver_name: "Tunde", flight_number: "BA75", flight_tracking_state: "unknown", flight_tracking_reason: "pnr_suspected" };
+  assert.equal(tripExceptions([{ ...base, flight_date: "2026-10-30" }], NOW).length, 0);
+  const [e] = tripExceptions([{ ...base, flight_date: "2026-10-26" }], NOW);
+  assert.match(e.meta, /may be a booking code/);
+});
+
+test("tracked, delayed, landed and too-early flights are not exceptions", () => {
+  for (const state of ["tracked", "delayed", "landed", "not_yet", "no_flight"]) {
+    assert.equal(tripExceptions([{ id: 24, ride_status: "accepted", driver_name: "T", flight_number: "BA75", flight_tracking_state: state }], NOW).length, 0, state);
+  }
+});
+
+
+test("an arrival is ordered by the flight estimate, a drop-off by its pickup time", () => {
+  const out = upcomingAirport([
+    { id: 1, flight_number: "BA75", booking_type: "one_way", ride_status: "accepted", scheduled_pickup_at: at(30), flight_eta: at(200) },
+    { id: 2, flight_number: "ET905", booking_type: "one_way", ride_status: "accepted", scheduled_pickup_at: at(90), flight_eta: at(45) },
+    { id: 3, flight_number: "KQ", booking_type: "dropoff", ride_status: "accepted", scheduled_pickup_at: at(60), flight_eta: at(5) },
+  ], NOW);
+  assert.deepEqual(out.map((x) => x.trip.id).sort(), [2, 3].sort());
+  assert.equal(out[0].trip.id, 2);
+});
+
 console.log(`\n${passed} passed`);
