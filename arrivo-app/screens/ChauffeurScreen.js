@@ -209,7 +209,7 @@ export default function ChauffeurScreen({ navigation }) {
         setQuote(result);
       } catch (e) {
         if (requestIdRef.current !== requestId) return;
-        if (e.code === "PHONE_REQUIRED") { setPhoneNeeded(true); return; }
+        if (e.code === "PHONE_REQUIRED" || e.code === "PHONE_INVALID") { setPhoneNeeded(true); return; }
         setQuoteError(messageWithCode(e, "Couldn't calculate a price for this booking. Please try again."));
       } finally {
         if (requestIdRef.current === requestId) setQuoteLoading(false);
