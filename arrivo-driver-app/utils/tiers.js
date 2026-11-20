@@ -58,3 +58,11 @@ export function metaFor(slug, tiers) {
   const fromServer = (tiers || []).find((t) => t.slug === slug);
   return { ...(TIER_FALLBACK[slug] || { name: slug, tagline: "", accent: "#F4A300", live: false }), ...(fromServer || {}), slug };
 }
+
+// Translated tagline for a tier. Falls back to the server's or built-in English
+// text when there is no translation key for the slug.
+export function tagFor(t, slug, meta) {
+  const key = "tagline_" + slug;
+  const v = t(key);
+  return v === key ? (meta && meta.tagline) || "" : v;
+}

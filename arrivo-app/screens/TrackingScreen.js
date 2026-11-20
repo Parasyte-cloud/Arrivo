@@ -75,7 +75,7 @@ export default function TrackingScreen({ route, navigation }) {
   const [fleetCompanions, setFleetCompanions] = useState([]);
   const [offlineMode, setOfflineMode] = useState(!!offlinePending);
   const [offlineNotice, setOfflineNotice] = useState(
-    offlinePending ? "Confirming your ride automatically once you're connected. Airport WiFi works fine, no SIM data needed." : null
+    offlinePending ? t("tracking.offlineConfirming") : null
   );
   const flushingRef = useRef(false);
   // Bumped whenever flushPendingScan lands a confirmed ride — lets fetchRide
@@ -338,33 +338,33 @@ export default function TrackingScreen({ route, navigation }) {
         // An expiring link: it stops working a few hours after pickup or soon
         // after the trip ends, and "Stop sharing" kills it at any time.
         const shareResult = await createRideShareLink(token, ride.id).catch(() => getRideShareLink(token, ride.id));
-        if (shareResult?.shareUrl) linkPart = ` Track live: ${shareResult.shareUrl}`;
+        if (shareResult?.shareUrl) linkPart = ` ${t("tracking.trackLive")}: ${shareResult.shareUrl}`;
         if (shareResult?.expiresAt) setShareUntil(new Date(shareResult.expiresAt));
       } catch (e) {
         // ignore — share the text-only message below instead
       }
       await Share.share({
-        message: `I'm on a RideArrivo trip${driverPart}, heading to ${destinationPart}. Pickup was ${ride?.pickup_address || "an address not on file"}.${linkPart}`,
+        message: `${t("tracking.shareMessage", { driverPart, destinationPart, pickup: ride?.pickup_address || t("tracking.addressNotOnFile") })}${linkPart}`,
       });
     } catch (e) {
-      Alert.alert("Couldn't open share sheet", String(e?.message || e));
+      Alert.alert(t("tracking.couldnTOpenShareSheet"), String(e?.message || e));
     }
   };
 
   const confirmPanic = () => {
     Alert.alert(
-      "Trigger safety alert?",
-      "This immediately notifies RideArrivo's support team with your ride details and location. Only use this if you feel unsafe right now.",
+      t("tracking.panicTitle"),
+      t("tracking.panicBody"),
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Yes, alert support", style: "destructive", onPress: sendPanic },
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("tracking.panicConfirm"), style: "destructive", onPress: sendPanic },
       ]
     );
   };
 
   const sendPanic = async () => {
     if (!rideId) {
-      Alert.alert("Can't send alert", "No active ride found for this session.");
+      Alert.alert(t("tracking.canTSendAlert"), t("tracking.noActiveRideFoundFor"));
       return;
     }
     setPanicSending(true);
@@ -376,7 +376,7 @@ export default function TrackingScreen({ route, navigation }) {
         "Our team has been notified of your ride and location and will reach out. If you're in immediate danger, please also call local emergency services."
       );
     } catch (e) {
-      Alert.alert("Couldn't send alert", e.message || "Please try again, or call support directly.");
+      Alert.alert(t("tracking.couldnTSendAlert"), e.message || "Please try again, or call support directly.");
     } finally {
       setPanicSending(false);
     }
@@ -392,7 +392,7 @@ export default function TrackingScreen({ route, navigation }) {
       await activateListeningDevice(token, rideId);
       await fetchRide();
     } catch (e) {
-      Alert.alert("Couldn't activate", e.message || "Please try again.");
+      Alert.alert(t("tracking.couldnTActivate"), e.message || "Please try again.");
     } finally {
       setListeningSending(false);
     }
@@ -400,7 +400,7 @@ export default function TrackingScreen({ route, navigation }) {
 
   const submitRating = async () => {
     if (!starsSelected) {
-      setRatingError("Tap a star to rate your trip.");
+      setRatingError(t("tracking.tapAStarToRate"));
       return;
     }
     setSubmittingRating(true);
@@ -477,7 +477,7 @@ export default function TrackingScreen({ route, navigation }) {
       const verification = await verifyPayment(reference, token);
       if (!verification.success) {
         setTipStatus("error");
-        setTipMessage(`Tip payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        setTipMessage(t("tracking.tipPaymentStatus", { status: verification.status, reference }));
         return;
       }
       await tipRide(token, rideId, tipAmount, "card", reference);
@@ -495,7 +495,7 @@ export default function TrackingScreen({ route, navigation }) {
       const verification = await verifyPayment(reference, token);
       if (!verification.success) {
         setOverageStatus("error");
-        setOverageMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        setOverageMessage(t("checkout.paymentStatus", { status: verification.status, reference }));
         return;
       }
       await payRideOverage(token, rideId, "card", reference);
@@ -545,7 +545,7 @@ export default function TrackingScreen({ route, navigation }) {
   const submitTip = async () => {
     if (tipSubmittingRef.current) return;
     if (!(tipAmount > 0)) {
-      setTipMessage("Choose an amount to tip.");
+      setTipMessage(t("tracking.chooseAnAmountToTip"));
       setTipStatus("error");
       return;
     }
@@ -600,7 +600,7 @@ export default function TrackingScreen({ route, navigation }) {
   const isReassigning = ride?.ride_status === "requested" && !!ride?.previously_cancelled_at;
   const statusLabel = isReassigning
     ? "Finding you a new driver…"
-    : STATUS_LABEL[ride?.ride_status] || "Tracking your ride";
+    : (STATUS_LABEL[ride?.ride_status] ? t(`labels.status_${ride.ride_status}`) : t("tracking.trackingYourRide"));
   const hasDriver = !!ride?.driver_name;
   const hasVehicle = !!(ride?.make_model && ride?.plate_number);
 
@@ -623,7 +623,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {offlineMode ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>📡 Working offline</Text>
+            <Text style={styles.cardLabel}>{t("tracking.workingOffline")}</Text>
             <Text style={styles.meta}>{offlineNotice}</Text>
           </Card>
         ) : null}
@@ -636,17 +636,16 @@ export default function TrackingScreen({ route, navigation }) {
 
         {isReassigning ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>🛡️ Arrivo Ride Guarantee</Text>
+            <Text style={styles.cardLabel}>{t("tracking.arrivoRideGuarantee")}</Text>
             <Text style={styles.meta}>
-              Your driver had a last-minute issue and can't continue the trip. We're finding you a new driver right
-              now, no need to rebook, your pickup and destination are already set.
+              {t("tracking.yourDriverHadALast")}
             </Text>
           </Card>
         ) : null}
 
         {ride?.promo_code === "lucky_ride_winner" ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>🎉 You won today's Arrivo Lucky Ride!</Text>
+            <Text style={styles.cardLabel}>{t("tracking.youWonTodaySArrivo")}</Text>
             <Text style={styles.meta}>
               {formatFare(ride.fare_naira)} for this trip has been refunded to your wallet. Congratulations!
             </Text>
@@ -654,9 +653,9 @@ export default function TrackingScreen({ route, navigation }) {
         ) : ride?.promo_code === "early_bird" || ride?.promo_code === "morning_commuter" ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: "#8FD9C4", borderWidth: 1 }}>
             <Text style={styles.cardLabel}>
-              {ride.promo_code === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"}
+              {ride.promo_code === "early_bird" ? t("tracking.promoEarlyBird") : t("tracking.promoMorning")}
             </Text>
-            <Text style={styles.meta}>Discount applied, you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
+            <Text style={styles.meta}>{t("tracking.promoSaved", { amount: formatFare(ride.promo_discount_naira) })}</Text>
           </Card>
         ) : null}
 
@@ -671,16 +670,16 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.is_arrivo_share ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Arrivo Share</Text>
+            <Text style={styles.cardLabel}>{t("tracking.arrivoShare")}</Text>
             {(ride.shareParticipants || []).length === 0 ? (
-              <Text style={styles.meta}>No one else added yet.</Text>
+              <Text style={styles.meta}>{t("tracking.noOneElseAddedYet")}</Text>
             ) : (
               (ride.shareParticipants || []).map((p) => (
                 <View key={p.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xs }}>
                   <Text style={styles.meta}>{p.name}{p.phone ? ` · ${p.phone}` : ""}</Text>
                   {ride.rider_id === user?.id && ["requested", "accepted"].includes(ride.ride_status) ? (
                     <Pressable onPress={() => removeShareParticipant(p.id)} disabled={shareBusy} hitSlop={8}>
-                      <Text style={{ color: colors.coral, fontSize: 12.5, fontWeight: "600" }}>Remove</Text>
+                      <Text style={{ color: colors.coral, fontSize: 12.5, fontWeight: "600" }}>{t("tracking.remove")}</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -690,7 +689,7 @@ export default function TrackingScreen({ route, navigation }) {
               <View style={{ marginTop: spacing.sm }}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Add by phone or email"
+                  placeholder={t("tracking.addByPhoneOrEmail")}
                   placeholderTextColor={colors.dark.textMuted}
                   autoCapitalize="none"
                   value={shareInput}
@@ -710,12 +709,12 @@ export default function TrackingScreen({ route, navigation }) {
           </Card>
         ) : ride?.rider_id === user?.id && ["requested", "accepted"].includes(ride?.ride_status) && !ride?.partner_venue_id ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.cardLabel}>🧑‍🤝‍🧑 Riding with people you know?</Text>
-            <Text style={styles.meta}>Add them to this ride with Arrivo Share -- they'll be able to track it too.</Text>
+            <Text style={styles.cardLabel}>{t("tracking.ridingWithPeopleYouKnow")}</Text>
+            <Text style={styles.meta}>{t("tracking.addThemToThisRide")}</Text>
             <View style={{ marginTop: spacing.sm }}>
               <TextInput
                 style={styles.input}
-                placeholder="Add by phone or email"
+                placeholder={t("tracking.addByPhoneOrEmail")}
                 placeholderTextColor={colors.dark.textMuted}
                 autoCapitalize="none"
                 value={shareInput}
@@ -736,27 +735,24 @@ export default function TrackingScreen({ route, navigation }) {
 
         {hasFlightIssue ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-            <Text style={styles.cardLabel}>✈️ Flight {ride.flight_issue === "cancelled" ? "cancelled" : "rescheduled"}</Text>
+            <Text style={styles.cardLabel}>✈️ {ride.flight_issue === "cancelled" ? t("tracking.flightCancelled") : t("tracking.flightRescheduled")}</Text>
             <Text style={styles.meta}>
-              Your flight {ride.flight_number} was {ride.flight_issue}. We've refunded your original fare to your wallet.
-              Top up to at least{" "}
-              {flightIssueWalletMinimum ? formatFare(flightIssueWalletMinimum.minWalletBalanceNaira) : "$100"} to keep this
-              ride booked. You'll be charged the fare again at drop-off.
+              {t("tracking.flightIssueBody", { flight: ride.flight_number, issue: ride.flight_issue === "cancelled" ? t("tracking.wasCancelled") : t("tracking.wasRescheduled"), amount: flightIssueWalletMinimum ? formatFare(flightIssueWalletMinimum.minWalletBalanceNaira) : "$100" })}
             </Text>
             <View style={{ height: spacing.sm }} />
-            <Button label="Top up wallet" variant="ghost" tone="dark" onPress={() => navigation.navigate("Wallet")} />
+            <Button label={t("tracking.topUpWallet")} variant="ghost" tone="dark" onPress={() => navigation.navigate("Wallet")} />
           </Card>
         ) : null}
 
         {ride?.flight_number ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={styles.cardLabel}>✈️ Flight {ride.flight_number}</Text>
+              <Text style={styles.cardLabel}>{t("tracking.flight", { flight_number: ride.flight_number })}</Text>
               {flightLoading ? (
                 <ActivityIndicator size="small" color={colors.amber} />
               ) : (
                 <Pressable onPress={fetchFlightStatus} hitSlop={8}>
-                  <Text style={styles.flightRefresh}>Refresh</Text>
+                  <Text style={styles.flightRefresh}>{t("tracking.refresh")}</Text>
                 </Pressable>
               )}
             </View>
@@ -780,7 +776,7 @@ export default function TrackingScreen({ route, navigation }) {
             ) : flightError ? (
               <Text style={styles.warningText}>{flightError}</Text>
             ) : (
-              <Text style={styles.meta}>Looking up your flight…</Text>
+              <Text style={styles.meta}>{t("tracking.lookingUpYourFlight")}</Text>
             )}
           </Card>
         ) : null}
@@ -803,7 +799,7 @@ export default function TrackingScreen({ route, navigation }) {
                     {hasVehicle ? `Plate: ${ride.plate_number}` : "Vehicle will be assigned before pickup"}
                     {ride.driver_rating ? ` · ★ ${Number(ride.driver_rating).toFixed(1)}` : ""}
                   </Text>
-                  {ride.driver_is_verified ? <Tag label="ID Verified" tone="teal" /> : null}
+                  {ride.driver_is_verified ? <Tag label={t("tracking.idVerified")} tone="teal" /> : null}
                 </>
               ) : (
                 <Text style={styles.meta}>{statusLabel}</Text>
@@ -814,7 +810,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {fleetCompanions.length > 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.cardLabel}>Your fleet convoy</Text>
+            <Text style={styles.cardLabel}>{t("tracking.yourFleetConvoy")}</Text>
             {fleetCompanions.map((c) => (
               <View key={c.id} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}>
                 <Text style={styles.meta}>
@@ -831,7 +827,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.ride_status === "completed" && hasDriver ? (
           <Card tone="dark" tinted style={{ marginTop: spacing.md }}>
-            <Text style={styles.cardLabel}>Rate & Relax</Text>
+            <Text style={styles.cardLabel}>{t("tracking.rateRelax")}</Text>
             {ride.rider_rating ? (
               <Text style={styles.meta}>
                 You rated this trip {"★".repeat(ride.rider_rating)}{"☆".repeat(5 - ride.rider_rating)}
@@ -839,7 +835,7 @@ export default function TrackingScreen({ route, navigation }) {
               </Text>
             ) : (
               <>
-                <Text style={styles.meta}>How was your trip with {ride.driver_name}?</Text>
+                <Text style={styles.meta}>{t("tracking.howWasYourTripWith", { driver_name: ride.driver_name })}</Text>
                 <View style={styles.starRow}>
                   {[1, 2, 3, 4, 5].map((n) => (
                     <Pressable key={n} onPress={() => setStarsSelected(n)} hitSlop={6}>
@@ -851,24 +847,24 @@ export default function TrackingScreen({ route, navigation }) {
                   style={styles.input}
                   value={ratingComment}
                   onChangeText={setRatingComment}
-                  placeholder="Add a comment (optional)"
+                  placeholder={t("tracking.addACommentOptional")}
                   placeholderTextColor={colors.dark.textMuted}
                 />
                 {ride.booking_type === "one_way" ? (
                   <View style={{ marginTop: spacing.sm }}>
-                    <Text style={styles.meta}>Keep the same driver &amp; vehicle for your return trip?</Text>
+                    <Text style={styles.meta}>{t("tracking.keepSameDriver")}</Text>
                     <View style={[styles.bookingRow, { marginTop: 6 }]}>
                       <Pressable
                         onPress={() => setKeepSameDriver(true)}
                         style={[styles.bookingChip, keepSameDriver && styles.bookingChipActive]}
                       >
-                        <Text style={[styles.bookingChipText, keepSameDriver && styles.bookingChipTextActive]}>Yes, same driver</Text>
+                        <Text style={[styles.bookingChipText, keepSameDriver && styles.bookingChipTextActive]}>{t("tracking.yesSameDriver")}</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => setKeepSameDriver(false)}
                         style={[styles.bookingChip, !keepSameDriver && styles.bookingChipActive]}
                       >
-                        <Text style={[styles.bookingChipText, !keepSameDriver && styles.bookingChipTextActive]}>No, don't need to</Text>
+                        <Text style={[styles.bookingChipText, !keepSameDriver && styles.bookingChipTextActive]}>{t("tracking.noDonTNeedTo")}</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -878,7 +874,7 @@ export default function TrackingScreen({ route, navigation }) {
                 {submittingRating ? (
                   <ActivityIndicator color={colors.amber} />
                 ) : (
-                  <Button label="Submit rating" variant="ghost" tone="dark" onPress={submitRating} />
+                  <Button label={t("tracking.submitRating")} variant="ghost" tone="dark" onPress={submitRating} />
                 )}
               </>
             )}
@@ -888,20 +884,20 @@ export default function TrackingScreen({ route, navigation }) {
         {ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: ride.overage_payment_method ? 0 : 1 }}>
             <Text style={styles.cardLabel}>
-              {ride.overage_reason === "traffic_delay" ? "Arrivo Fair Fare: traffic delay" : "Extra time charge"}
+              {ride.overage_reason === "traffic_delay" ? t("tracking.fairFareTitle") : t("tracking.extraTimeCharge")}
             </Text>
             {ride.overage_payment_method ? (
               <Text style={styles.meta}>
                 {ride.overage_reason === "traffic_delay"
-                  ? `Traffic pushed this trip ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time. The first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of that was on us, the remaining ${ride.overage_breakdown?.billableMinutes ?? ""} min added ${formatFare(ride.overage_naira)}. Paid. Thanks.`
-                  : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h booked, so an extra ${formatFare(ride.overage_naira)} was charged. Paid. Thanks.`}
+                  ? t("tracking.overagePaidTraffic", { delay: ride.overage_breakdown?.delayMinutes ?? t("tracking.aFew"), free: ride.overage_breakdown?.freeAllowanceMinutes ?? "", billable: ride.overage_breakdown?.billableMinutes ?? "", amount: formatFare(ride.overage_naira) })
+                  : t("tracking.overagePaidHours", { hours: Number(ride.included_hours_per_day), amount: formatFare(ride.overage_naira) })}
               </Text>
             ) : (
               <>
                 <Text style={styles.meta}>
                   {ride.overage_reason === "traffic_delay"
-                    ? `Traffic shouldn't punish you twice, but this trip ran ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time, and only the first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of delay is free. That leaves ${ride.overage_breakdown?.billableMinutes ?? ""} min at ${ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : ""}/min, an extra ${formatFare(ride.overage_naira)} to settle.`
-                    : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h you booked, so there's an extra ${formatFare(ride.overage_naira)} to settle for the additional time.`}
+                    ? t("tracking.overageDueTraffic", { delay: ride.overage_breakdown?.delayMinutes ?? t("tracking.aFew"), free: ride.overage_breakdown?.freeAllowanceMinutes ?? "", billable: ride.overage_breakdown?.billableMinutes ?? "", rate: ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : "", amount: formatFare(ride.overage_naira) })
+                    : t("tracking.overageDueHours", { hours: Number(ride.included_hours_per_day), amount: formatFare(ride.overage_naira) })}
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>
@@ -917,12 +913,12 @@ export default function TrackingScreen({ route, navigation }) {
                     onPress={() => setOveragePaymentMethod("card")}
                     style={[styles.bookingChip, overagePaymentMethod === "card" && styles.bookingChipActive]}
                   >
-                    <Text style={[styles.bookingChipText, overagePaymentMethod === "card" && styles.bookingChipTextActive]}>Card</Text>
+                    <Text style={[styles.bookingChipText, overagePaymentMethod === "card" && styles.bookingChipTextActive]}>{t("tracking.card")}</Text>
                   </Pressable>
                 </View>
 
                 {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
-                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>Paid. Thank you.</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>{t("tracking.paidThankYou")}</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {overageStatus === "opening" || overageStatus === "verifying" ? (
@@ -942,13 +938,13 @@ export default function TrackingScreen({ route, navigation }) {
 
         {ride?.ride_status === "completed" && hasDriver ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.cardLabel}>Tip your driver</Text>
+            <Text style={styles.cardLabel}>{t("tracking.tipYourDriver")}</Text>
             {Number(ride.tip_naira) > 0 ? (
-              <Text style={styles.meta}>You tipped {formatFare(ride.tip_naira)}. Thank you!</Text>
+              <Text style={styles.meta}>{t("tracking.tipThanks", { amount: formatFare(ride.tip_naira) })}</Text>
             ) : (
               <>
                 <Text style={styles.meta}>
-                  Entirely optional: 100% of this goes to {ride.driver_name}. Never cash, same as your fare.
+                  {t("tracking.entirelyOptionalOfThisGoes", { driver_name: ride.driver_name })}
                 </Text>
                 <View style={{ height: spacing.sm }} />
                 <View style={styles.bookingRow}>
@@ -967,7 +963,7 @@ export default function TrackingScreen({ route, navigation }) {
                     onPress={() => setUseCustomTip(true)}
                     style={[styles.bookingChip, useCustomTip && styles.bookingChipActive]}
                   >
-                    <Text style={[styles.bookingChipText, useCustomTip && styles.bookingChipTextActive]}>Custom</Text>
+                    <Text style={[styles.bookingChipText, useCustomTip && styles.bookingChipTextActive]}>{t("tracking.custom")}</Text>
                   </Pressable>
                 </View>
                 {useCustomTip ? (
@@ -975,7 +971,7 @@ export default function TrackingScreen({ route, navigation }) {
                     style={styles.input}
                     value={customTipInput}
                     onChangeText={setCustomTipInput}
-                    placeholder="Amount (₦)"
+                    placeholder={t("tracking.amount")}
                     placeholderTextColor={colors.dark.textMuted}
                     keyboardType="number-pad"
                   />
@@ -995,12 +991,12 @@ export default function TrackingScreen({ route, navigation }) {
                     onPress={() => setTipPaymentMethod("card")}
                     style={[styles.bookingChip, tipPaymentMethod === "card" && styles.bookingChipActive]}
                   >
-                    <Text style={[styles.bookingChipText, tipPaymentMethod === "card" && styles.bookingChipTextActive]}>Card</Text>
+                    <Text style={[styles.bookingChipText, tipPaymentMethod === "card" && styles.bookingChipTextActive]}>{t("tracking.card")}</Text>
                   </Pressable>
                 </View>
 
                 {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
-                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>Tip sent. Thank you!</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>{t("tracking.tipSentThankYou")}</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {tipStatus === "opening" || tipStatus === "verifying" ? (
@@ -1033,11 +1029,11 @@ export default function TrackingScreen({ route, navigation }) {
             />
           </View>
         ) : null}
-        <Button label="📍 Share ride" variant="teal" onPress={shareRide} />
+        <Button label={t("tracking.shareRide")} variant="teal" onPress={shareRide} />
 
         {ride?.ride_status === "accepted" ? (
           <Button
-            label="📷 Scan driver's QR to start tracking"
+            label={t("tracking.scanDriverSQrTo")}
             onPress={() => navigation.navigate("Scan")}
             style={{ marginTop: spacing.md }}
             trailingIcon
@@ -1057,14 +1053,14 @@ export default function TrackingScreen({ route, navigation }) {
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <Text style={styles.shareNote}>
             {ride?.emergency_contact_name
-              ? <>Sharing live location with <Text style={{ fontWeight: "700" }}>{ride.emergency_contact_name}</Text></>
-              : "No emergency contact was added for this ride."}
+              ? <>{t("tracking.sharingWith")} <Text style={{ fontWeight: "700" }}>{ride.emergency_contact_name}</Text></>
+              : t("tracking.noEmergencyContact")}
           </Text>
         </Card>
 
         {panicActive ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
-            <Text style={styles.panicActiveText}>🚨 Support has been alerted about this ride.</Text>
+            <Text style={styles.panicActiveText}>{t("tracking.supportHasBeenAlertedAbout")}</Text>
           </Card>
         ) : (
           <Pressable
@@ -1075,7 +1071,7 @@ export default function TrackingScreen({ route, navigation }) {
             {panicSending ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.panicText}>🚨 I don't feel safe. Alert support</Text>
+              <Text style={styles.panicText}>{t("tracking.iDonTFeelSafe")}</Text>
             )}
           </Pressable>
         )}

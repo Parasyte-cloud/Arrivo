@@ -155,7 +155,7 @@ export default function EarningsScreen({ navigation }) {
               </View>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setOpenReceipt(openReceipt === ride.id ? null : ride.id)} style={{ marginTop: spacing.sm }}>
-              <Text style={styles.receiptLink}>{openReceipt === ride.id ? "Hide receipt" : "Receipt"}</Text>
+              <Text style={styles.receiptLink}>{openReceipt === ride.id ? t("rcptHide") : t("rcptShow")}</Text>
             </Pressable>
             {openReceipt === ride.id ? <DriverReceipt rideId={ride.id} /> : null}
           </Card>

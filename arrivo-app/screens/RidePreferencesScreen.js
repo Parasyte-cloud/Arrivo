@@ -5,6 +5,7 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation } from "react-i18next";
 
 const VEHICLE_OPTIONS = [
   { value: null, label: "No preference" },
@@ -26,6 +27,7 @@ const TEMPERATURE_OPTIONS = [
 // yet to auto-apply a default vehicle or pass the rest to the driver —
 // that's a natural next step once this ships.
 export default function RidePreferencesScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { user, updateProfile } = useAuth();
   const [preferredVehicleType, setPreferredVehicleType] = useState(user?.preferred_vehicle_type ?? null);
@@ -61,11 +63,11 @@ export default function RidePreferencesScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
-        <Text style={styles.title}>Ride-sharing preferences</Text>
-        <Text style={styles.meta}>Set your defaults once. You can always change anything for a specific trip when you book.</Text>
+        <Text style={styles.title}>{t("ridePreferences.rideSharingPreferences")}</Text>
+        <Text style={styles.meta}>{t("ridePreferences.setYourDefaultsOnceYou")}</Text>
 
         <Card tone="dark" style={{ marginTop: spacing.lg }}>
-          <Text style={styles.cardLabel}>Preferred vehicle</Text>
+          <Text style={styles.cardLabel}>{t("ridePreferences.preferredVehicle")}</Text>
           <View style={styles.chipRow}>
             {VEHICLE_OPTIONS.map((opt) => (
               <Pressable
@@ -80,7 +82,7 @@ export default function RidePreferencesScreen() {
         </Card>
 
         <Card tone="dark" style={{ marginTop: spacing.md }}>
-          <Text style={styles.cardLabel}>Cabin temperature</Text>
+          <Text style={styles.cardLabel}>{t("ridePreferences.cabinTemperature")}</Text>
           <View style={styles.chipRow}>
             {TEMPERATURE_OPTIONS.map((opt) => (
               <Pressable
@@ -97,32 +99,32 @@ export default function RidePreferencesScreen() {
         <Card tone="dark" style={{ marginTop: spacing.md }}>
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>Quiet ride</Text>
-              <Text style={styles.meta}>Your driver will keep conversation to a minimum.</Text>
+              <Text style={styles.rowLabel}>{t("ridePreferences.quietRide")}</Text>
+              <Text style={styles.meta}>{t("ridePreferences.yourDriverWillKeepConversation")}</Text>
             </View>
             <Switch value={quietRide} onValueChange={setQuietRide} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>Child seat required</Text>
-              <Text style={styles.meta}>We'll try to arrange one for every booking.</Text>
+              <Text style={styles.rowLabel}>{t("ridePreferences.childSeatRequired")}</Text>
+              <Text style={styles.meta}>{t("ridePreferences.weLlTryToArrange")}</Text>
             </View>
             <Switch value={childSeatRequired} onValueChange={setChildSeatRequired} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>Traveling with a pet</Text>
-              <Text style={styles.meta}>Lets your driver know ahead of time.</Text>
+              <Text style={styles.rowLabel}>{t("ridePreferences.travelingWithAPet")}</Text>
+              <Text style={styles.meta}>{t("ridePreferences.letsYourDriverKnowAhead")}</Text>
             </View>
             <Switch value={travelingWithPet} onValueChange={setTravelingWithPet} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
           </View>
         </Card>
 
         {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
-        {justSaved ? <Text style={styles.savedText}>Preferences saved ✓</Text> : null}
+        {justSaved ? <Text style={styles.savedText}>{t("ridePreferences.preferencesSaved")}</Text> : null}
 
         <View style={{ height: spacing.lg }} />
-        {saving ? <ActivityIndicator color={colors.amber} /> : <Button label="Save preferences" onPress={save} variant="primary" />}
+        {saving ? <ActivityIndicator color={colors.amber} /> : <Button label={t("ridePreferences.savePreferences")} onPress={save} variant="primary" />}
       </ScrollView>
     </View>
   );

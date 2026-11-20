@@ -4,6 +4,7 @@ import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps";
 import Constants from "expo-constants";
 import { colors, radius } from "../theme/tokens";
 import { MapPlaceholder } from "./MapPlaceholder";
+import { useTranslation } from "react-i18next";
 
 // Real map keys aren't configured until someone fills in app.json's
 // extra.googleMapsApiKey / ios.config.googleMapsApiKey /
@@ -21,6 +22,7 @@ function hasRealMapsKey() {
 // route polyline — that would need the Directions API wired up
 // separately, which isn't part of this version.
 export function LiveMap({ pickup, destination, driverLocation, height = 200, etaLabel, distanceLabel }) {
+  const { t } = useTranslation();
   const mapRef = useRef(null);
   const points = [pickup, destination, driverLocation].filter((p) => p && p.lat != null && p.lng != null);
 
@@ -57,13 +59,13 @@ export function LiveMap({ pickup, destination, driverLocation, height = 200, eta
       }}
     >
       {pickup?.lat != null ? (
-        <Marker coordinate={{ latitude: pickup.lat, longitude: pickup.lng }} title="Pickup" pinColor={colors.teal} />
+        <Marker coordinate={{ latitude: pickup.lat, longitude: pickup.lng }} title={t("liveMap.pickup")} pinColor={colors.teal} />
       ) : null}
       {destination?.lat != null ? (
-        <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} title="Destination" pinColor={colors.coral} />
+        <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} title={t("liveMap.destination")} pinColor={colors.coral} />
       ) : null}
       {driverLocation?.lat != null ? (
-        <Marker coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }} title="Your driver" pinColor={colors.amber} />
+        <Marker coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }} title={t("liveMap.yourDriver")} pinColor={colors.amber} />
       ) : null}
     </MapView>
   );

@@ -57,7 +57,7 @@ export default function OwnerScreen() {
 
   const submitVehicle = async () => {
     if (!makeModel.trim() || !plateNumber.trim()) {
-      setError("Add a make/model and plate number.");
+      setError(t("owner.addMakeModelPlate"));
       return;
     }
     setAdding(true);
@@ -182,13 +182,13 @@ export default function OwnerScreen() {
           />
           <View style={{ height: spacing.sm }} />
           <View style={styles.chipRow}>
-            {VEHICLE_TYPES.map((t) => (
+            {VEHICLE_TYPES.map((vt) => (
               <Pressable
-                key={t.id}
-                onPress={() => setVehicleType(t.id)}
-                style={[styles.chip, vehicleType === t.id && styles.chipActive]}
+                key={vt.id}
+                onPress={() => setVehicleType(vt.id)}
+                style={[styles.chip, vehicleType === vt.id && styles.chipActive]}
               >
-                <Text style={[styles.chipText, vehicleType === t.id && styles.chipTextActive]}>{t.label}</Text>
+                <Text style={[styles.chipText, vehicleType === vt.id && styles.chipTextActive]}>{t(`labels.vehicle_${vt.id}`)}</Text>
               </Pressable>
             ))}
           </View>

@@ -7,6 +7,7 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
 import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
+import LanguageChips from "../components/LanguageChips";
 
 export default function LoginScreen({ navigation }) {
   const { t } = useTranslation();
@@ -175,21 +176,21 @@ export default function LoginScreen({ navigation }) {
 
             {SHOW_SOCIAL_SIGN_IN ? (
               <>
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>{t("login.or")}</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-              <OAuthButtons
-                busy={oauthBusy}
-                onGoogleIdToken={handleGoogleIdToken}
-                onGoogleError={setError}
-                onAppleResult={handleAppleResult}
-              />
-              <Text style={styles.oauthNotice}>
-                By continuing with Google, you agree to RideArrivo's Data Protection & Privacy Policy.
-              </Text>
+            <OAuthButtons
+              busy={oauthBusy}
+              onGoogleIdToken={handleGoogleIdToken}
+              onGoogleError={setError}
+              onAppleResult={handleAppleResult}
+            />
+            <Text style={styles.oauthNotice}>
+              {t("login.byContinuingWithGoogleOr")}
+            </Text>
               </>
             ) : null}
 
@@ -198,6 +199,7 @@ export default function LoginScreen({ navigation }) {
             </Pressable>
           </>
         )}
+        <LanguageChips />
       </View>
     </KeyboardAvoidingView>
     </View>

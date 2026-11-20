@@ -5,16 +5,18 @@ import { colors, spacing } from "../theme/tokens";
 import { metaFor } from "../utils/tiers";
 import { useTiers } from "../context/TiersContext";
 import ServicesCard from "./ServicesCard";
+import { useT } from "../context/LanguageContext";
 
 // What the Dashboard shows for a service that has no jobs in the app yet, or
 // when the driver has no service switched on at all. Honest about what is next.
 export default function TierPane() {
   const { tiers, current } = useTiers();
+  const { t } = useT();
   if (!current) {
     return (
       <ServicesCard
-        title="No service is on yet"
-        lead="RideArrivo Ops switches services on for each driver. As soon as one is on for you, it appears here and you can start."
+        title={t("svcNoneTitle")}
+        lead={t("svcNoneLead")}
       />
     );
   }
@@ -25,9 +27,9 @@ export default function TierPane() {
         <View style={[styles.dot, { backgroundColor: m.accent }]} />
         <Text style={styles.kicker}>{m.name.toUpperCase()}</Text>
       </View>
-      <Text style={styles.title}>You are switched on for {m.name}</Text>
+      <Text style={styles.title}>{t("svcSwitchedOn", { name: m.name })}</Text>
       <Text style={styles.body}>
-        {m.name} work is quote first. RideArrivo Ops assigns each job to a driver, and when one is assigned to you it will appear here and you will get a message. Nothing from other services is shown in this space.
+        {t("svcQuoteFirst", { name: m.name })}
       </Text>
     </Card>
   );

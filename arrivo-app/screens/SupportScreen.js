@@ -18,6 +18,7 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { createSupportTicket, getRideHistory } from "../services/api";
 import { ACTIVE_STATUSES, pickBooking, describeRide } from "./supportBooking";
+import { useTranslation } from "react-i18next";
 import { getSupportContacts } from "../utils/supportContacts";
 
 // The email and phone number come from utils/supportContacts.js (the same ones
@@ -63,6 +64,7 @@ function openSafely(url) {
 }
 
 export default function SupportScreen() {
+  const { t } = useTranslation();
   const { email: SUPPORT_EMAIL, phone: SUPPORT_PHONE_DIAL, phoneDisplay: SUPPORT_PHONE_DISPLAY } = getSupportContacts();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
@@ -97,11 +99,11 @@ export default function SupportScreen() {
   const submit = async () => {
     setSendError(null);
     if (!subject.trim()) {
-      setSendError("Give your message a short subject.");
+      setSendError(t("support.giveYourMessageAShort"));
       return;
     }
     if (!description.trim()) {
-      setSendError("Tell us a bit more about what's going on.");
+      setSendError(t("support.tellUsABitMore"));
       return;
     }
     setSending(true);
@@ -139,21 +141,19 @@ export default function SupportScreen() {
           }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>Support</Text>
+          <Text style={styles.title}>{t("support.support")}</Text>
           <Text style={styles.meta}>
-            Send us a message and we'll come back to you, or reach us directly below. The answers
-            further down cover most questions.
+            {t("support.sendUsAMessageAnd")}
           </Text>
 
           {sentTicket ? (
             <Card tone="dark" style={{ marginTop: spacing.lg }}>
-              <Text style={styles.successTitle}>Thanks, we've got it</Text>
+              <Text style={styles.successTitle}>{t("support.thanksWeVeGotIt")}</Text>
               <Text style={[styles.meta, { marginTop: 6 }]}>
-                Your reference is #{sentTicket.id}. It's with our support team now. Quote that
-                number if you call or message us about it.
+                {t("support.yourReferenceIsItS", { id: sentTicket.id })}
               </Text>
               <Button
-                label="Send another message"
+                label={t("support.sendAnotherMessage")}
                 variant="ghost"
                 tone="dark"
                 style={{ marginTop: spacing.md }}
@@ -162,21 +162,21 @@ export default function SupportScreen() {
             </Card>
           ) : (
             <Card tone="dark" style={{ marginTop: spacing.lg }}>
-              <Text style={styles.cardLabel}>What's this about?</Text>
+              <Text style={styles.cardLabel}>{t("support.whatSThisAbout")}</Text>
               <View style={styles.typeRow}>
-                {TICKET_TYPES.map((t) => {
-                  const selected = type === t.value;
+                {TICKET_TYPES.map((tt) => {
+                  const selected = type === tt.value;
                   return (
                     <Pressable
-                      key={t.value}
+                      key={tt.value}
                       onPress={() => {
-                        setType(t.value);
+                        setType(tt.value);
                         setSendError(null);
                       }}
                       style={[styles.typeChip, selected && styles.typeChipOn]}
                     >
                       <Text style={[styles.typeChipText, selected && styles.typeChipTextOn]}>
-                        {t.label}
+                        {t(`support.type_${tt.value}`)}
                       </Text>
                     </Pressable>
                   );
@@ -189,12 +189,12 @@ export default function SupportScreen() {
               {type ? (
                 <View style={{ marginTop: spacing.md }}>
                   <Text style={styles.typeHint}>
-                    {TICKET_TYPES.find((t) => t.value === type).hint}
+                    {t(`support.typeHint_${type}`)}
                   </Text>
 
                   <TextInput
                     style={styles.input}
-                    placeholder="Subject"
+                    placeholder={t("support.subject")}
                     placeholderTextColor={colors.dark.textMuted}
                     value={subject}
                     onChangeText={setSubject}
@@ -202,7 +202,7 @@ export default function SupportScreen() {
                   />
                   <TextInput
                     style={[styles.input, styles.textArea]}
-                    placeholder="Tell us what happened, with as much detail as you can"
+                    placeholder={t("support.tellUsWhatHappenedWith")}
                     placeholderTextColor={colors.dark.textMuted}
                     value={description}
                     onChangeText={setDescription}
@@ -212,19 +212,19 @@ export default function SupportScreen() {
                   />
 
                   {attachedRide === undefined ? (
-                    <Text style={styles.attachNote}>Checking your recent bookings...</Text>
+                    <Text style={styles.attachNote}>{t("support.checkingYourRecentBookings")}</Text>
                   ) : attachedRide ? (
                     <View style={styles.attachBox}>
                       <Text style={styles.attachLabel}>
                         {ACTIVE_STATUSES.includes(attachedRide.ride_status)
-                          ? `Attaching your current booking (#${attachedRide.id})`
-                          : `Attaching your most recent booking (#${attachedRide.id})`}
+                          ? t("support.attachingCurrent", { id: attachedRide.id })
+                          : t("support.attachingRecent", { id: attachedRide.id })}
                       </Text>
                       <Text style={styles.meta}>{describeRide(attachedRide)}</Text>
                     </View>
                   ) : (
                     <Text style={styles.attachNote}>
-                      No bookings on your account yet, so there's nothing to attach.
+                      {t("support.noBookingsOnYourAccount")}
                     </Text>
                   )}
 
@@ -234,7 +234,7 @@ export default function SupportScreen() {
                     <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.sm }} />
                   ) : (
                     <Button
-                      label="Send message"
+                      label={t("support.sendMessage")}
                       variant="primary"
                       onPress={submit}
                       style={{ marginTop: spacing.sm }}
@@ -245,12 +245,12 @@ export default function SupportScreen() {
             </Card>
           )}
 
-          <Text style={styles.sectionTitle}>Reach us directly</Text>
+          <Text style={styles.sectionTitle}>{t("support.reachUsDirectly")}</Text>
           <Card tone="dark">
             <Pressable style={styles.contactRow} onPress={() => openSafely(`mailto:${SUPPORT_EMAIL}`)}>
               <Text style={styles.contactIcon}>✉️</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.contactLabel}>Email us</Text>
+                <Text style={styles.contactLabel}>{t("support.emailUs")}</Text>
                 <Text style={styles.meta}>{SUPPORT_EMAIL}</Text>
               </View>
             </Pressable>
@@ -258,7 +258,7 @@ export default function SupportScreen() {
             <Pressable style={styles.contactRow} onPress={() => openSafely(`tel:${SUPPORT_PHONE_DIAL}`)}>
               <Text style={styles.contactIcon}>📞</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.contactLabel}>Call us</Text>
+                <Text style={styles.contactLabel}>{t("support.callUs")}</Text>
                 <Text style={styles.meta}>{SUPPORT_PHONE_DISPLAY}</Text>
               </View>
             </Pressable>
@@ -269,17 +269,17 @@ export default function SupportScreen() {
             >
               <Text style={styles.contactIcon}>💬</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.contactLabel}>WhatsApp us</Text>
+                <Text style={styles.contactLabel}>{t("support.whatsappUs")}</Text>
                 <Text style={styles.meta}>{SUPPORT_PHONE_DISPLAY}</Text>
               </View>
             </Pressable>
           </Card>
 
-          <Text style={styles.sectionTitle}>Common questions</Text>
+          <Text style={styles.sectionTitle}>{t("support.commonQuestions")}</Text>
           {FAQS.map((item, i) => (
             <Card key={i} tone="dark" style={{ marginBottom: spacing.sm }}>
-              <Text style={styles.faqQ}>{item.q}</Text>
-              <Text style={[styles.meta, { marginTop: 6 }]}>{item.a}</Text>
+              <Text style={styles.faqQ}>{t(`support.faqQ${i}`)}</Text>
+              <Text style={[styles.meta, { marginTop: 6 }]}>{t(`support.faqA${i}`)}</Text>
             </Card>
           ))}
         </ScrollView>

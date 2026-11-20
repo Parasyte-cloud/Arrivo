@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } from "../services/api";
+import { useTranslation } from "react-i18next";
 
 // Real "Emergency contacts" — this used to be a label on Profile with
 // nothing behind it at all. A rider saves one or more contacts here once;
@@ -15,6 +16,7 @@ import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } fro
 // scratch on every single booking) now pre-fills from the first one saved
 // here, while staying editable per trip.
 export default function EmergencyContactsScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
   const [contacts, setContacts] = useState(null); // null = loading
@@ -45,7 +47,7 @@ export default function EmergencyContactsScreen() {
   const submit = async () => {
     setSaveError(null);
     if (!name.trim()) {
-      setSaveError("Please enter a name for this contact.");
+      setSaveError(t("emergencyContacts.pleaseEnterANameFor"));
       return;
     }
     // Phone errors come from validatePhone itself so they say what's
@@ -91,10 +93,9 @@ export default function EmergencyContactsScreen() {
       <GradientBackground variant="dark" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Emergency contacts</Text>
+        <Text style={styles.title}>{t("emergencyContacts.emergencyContacts")}</Text>
         <Text style={styles.meta}>
-          Save someone we can reach if we can't reach you during a ride. The first contact here fills in automatically
-          when you book. You can still edit or clear it per trip.
+          {t("emergencyContacts.saveSomeoneWeCanReach")}
         </Text>
 
         {contacts === null && !loadError ? (
@@ -102,7 +103,7 @@ export default function EmergencyContactsScreen() {
         ) : loadError ? (
           <Text style={styles.errorText}>{loadError}</Text>
         ) : contacts.length === 0 ? (
-          <Text style={[styles.meta, { marginTop: spacing.sm }]}>No emergency contacts saved yet.</Text>
+          <Text style={[styles.meta, { marginTop: spacing.sm }]}>{t("emergencyContacts.noEmergencyContactsSavedYet")}</Text>
         ) : (
           contacts.map((c) => (
             <Card key={c.id} tone="dark" style={{ marginTop: spacing.md }}>
@@ -115,14 +116,14 @@ export default function EmergencyContactsScreen() {
                       guess one for them, so say so plainly rather than
                       showing a number that may not dial from abroad. */}
                   {c.phone && !c.phone.trim().startsWith("+") ? (
-                    <Text style={styles.legacyHint}>Missing a country code. Remove and re-add this contact.</Text>
+                    <Text style={styles.legacyHint}>{t("emergencyContacts.missingACountryCodeRemove")}</Text>
                   ) : null}
                 </View>
                 <Pressable onPress={() => remove(c.id)} disabled={deletingId === c.id} hitSlop={8}>
                   {deletingId === c.id ? (
                     <ActivityIndicator color={colors.coral} size="small" />
                   ) : (
-                    <Text style={styles.removeLink}>Remove</Text>
+                    <Text style={styles.removeLink}>{t("emergencyContacts.remove")}</Text>
                   )}
                 </Pressable>
               </View>
@@ -131,10 +132,10 @@ export default function EmergencyContactsScreen() {
         )}
 
         <Card tone="dark" style={{ marginTop: spacing.lg }}>
-          <Text style={styles.cardLabel}>Add a contact</Text>
+          <Text style={styles.cardLabel}>{t("emergencyContacts.addAContact")}</Text>
           <TextInput
             style={styles.input}
-            placeholder="Contact name"
+            placeholder={t("emergencyContacts.contactName")}
             placeholderTextColor={colors.dark.textMuted}
             value={name}
             onChangeText={setName}
@@ -145,11 +146,11 @@ export default function EmergencyContactsScreen() {
             national={phoneNational}
             onChangeDial={setPhoneDial}
             onChangeNational={setPhoneNational}
-            placeholder="Phone number"
+            placeholder={t("emergencyContacts.phoneNumber")}
           />
           <TextInput
             style={styles.input}
-            placeholder="Relationship (optional)"
+            placeholder={t("emergencyContacts.relationshipOptional")}
             placeholderTextColor={colors.dark.textMuted}
             value={relationship}
             onChangeText={setRelationship}
@@ -158,7 +159,7 @@ export default function EmergencyContactsScreen() {
           {saving ? (
             <ActivityIndicator color={colors.amber} />
           ) : (
-            <Button label="Save contact" onPress={submit} variant="primary" />
+            <Button label={t("emergencyContacts.saveContact")} onPress={submit} variant="primary" />
           )}
         </Card>
       </ScrollView>

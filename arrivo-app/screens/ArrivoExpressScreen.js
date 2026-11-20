@@ -370,7 +370,7 @@ export default function ArrivoExpressScreen({ navigation }) {
   }
 
   if (phase === "quoted" && quote) {
-    const tierConfig = tiers.find((t) => t.key === selectedTier);
+    const tierConfig = tiers.find((tr) => tr.key === selectedTier);
     return (
       <View style={styles.screen}>
         <GradientBackground variant="dark" />

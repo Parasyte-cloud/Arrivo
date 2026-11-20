@@ -8,12 +8,14 @@ import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getMyFamilyPlan } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
+import { useTranslation } from "react-i18next";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
 }
 
 export default function CheckoutScreen({ route, navigation }) {
+  const { t } = useTranslation();
   const {
     amountNaira = 12500, label = "Airport Pickup", pickupAddress = "Murtala Muhammed Airport",
     stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
@@ -144,14 +146,13 @@ export default function CheckoutScreen({ route, navigation }) {
         } catch (createErr) {
           setStatus("error");
           setMessage(
-            `Your payment went through, but we couldn't finish booking your ride (${createErr.message || "please try again"}). ` +
-              `You were charged. Contact support with reference ${reference} and we'll sort it out.` +
+            t("checkout.paidButNotBooked", { reason: createErr.message || t("checkout.pleaseTryAgain"), reference }) +
               (errorCodeLine(createErr) ? `\n\n${errorCodeLine(createErr)}` : "")
           );
         }
       } else {
         setStatus("error");
-        setMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        setMessage(t("checkout.paymentStatus", { status: verification.status, reference }));
       }
     } catch (e) {
       setStatus("error");
@@ -251,12 +252,12 @@ export default function CheckoutScreen({ route, navigation }) {
 
   const pay = () => {
     if (!agreedCancellation) {
-      setMessage("Please agree to the Cancellation & Refund Policy before paying.");
+      setMessage(t("checkout.agreeCancellation"));
       setStatus("error");
       return;
     }
     if (!dashCamConsent) {
-      setMessage("Please agree to the dash cam recording notice before paying.");
+      setMessage(t("checkout.agreeDashCam"));
       setStatus("error");
       return;
     }
@@ -272,17 +273,17 @@ export default function CheckoutScreen({ route, navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, flexGrow: 1, justifyContent: "center" }}>
-          <Text style={[styles.title, { textAlign: "center" }]}>You're booked! ✓</Text>
+          <Text style={[styles.title, { textAlign: "center" }]}>{t("checkout.youReBooked")}</Text>
           <Card tone="dark" tinted style={{ marginTop: spacing.md, marginBottom: spacing.lg }}>
-            <Text style={styles.cardLabel}>Know when you're flying back?</Text>
+            <Text style={styles.cardLabel}>{t("checkout.knowWhenYouReFlying")}</Text>
             <Text style={styles.note}>
-              Book your airport drop-off now and we'll have it all set, or come back and book it any time under "Book a Ride" once you know your return date and time.
+              {t("checkout.bookDropoffNow")}
             </Text>
           </Card>
           <Button label="Add my return drop-off" onPress={bookReturnDropoff} trailingIcon />
           <View style={{ height: 10 }} />
           <Pressable onPress={goToTrackingNow} style={{ alignItems: "center", paddingVertical: 10 }}>
-            <Text style={styles.note}>Not yet, maybe later</Text>
+            <Text style={styles.note}>{t("checkout.notYetMaybeLater")}</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -317,10 +318,9 @@ export default function CheckoutScreen({ route, navigation }) {
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>How would you like to pay?</Text>
+          <Text style={styles.cardLabel}>{t("checkout.howWouldYouLikeTo")}</Text>
           <Text style={styles.note}>
-            Every ride is paid in full now, like a plane ticket: never cash, and never at the end of the trip. You
-            can still tip your driver afterwards if you'd like.
+            {t("checkout.everyRideIsPaidIn")}
           </Text>
           <View style={{ height: 8 }} />
           {loadingOptions ? (
@@ -342,7 +342,7 @@ export default function CheckoutScreen({ route, navigation }) {
                   {paymentMethod === "wallet" ? "● " : "○ "}Wallet{walletBalance != null ? ` (${formatNaira(walletBalance)})` : ""}
                 </Text>
                 {!walletSufficient && walletBalance != null ? (
-                  <Text style={styles.payOptionNote}>Not enough balance for this fare</Text>
+                  <Text style={styles.payOptionNote}>{t("checkout.notEnoughBalanceForThis")}</Text>
                 ) : null}
               </Pressable>
               {hasMembership ? (
@@ -363,7 +363,7 @@ export default function CheckoutScreen({ route, navigation }) {
                     {paymentMethod === "family_wallet" ? "● " : "○ "}Family Wallet ({formatNaira(familyPlan.walletBalanceNaira)})
                   </Text>
                   {!familyWalletSufficient ? (
-                    <Text style={styles.payOptionNote}>Your Family Wallet is empty. Top up to continue riding.</Text>
+                    <Text style={styles.payOptionNote}>{t("checkout.yourFamilyWalletIsEmpty")}</Text>
                   ) : null}
                 </Pressable>
               ) : null}
@@ -372,14 +372,14 @@ export default function CheckoutScreen({ route, navigation }) {
 
           {paymentMethod === "family_wallet" && familyPlan?.myRole === "admin" && familyMembers.length > 0 ? (
             <View style={{ marginTop: spacing.md }}>
-              <Text style={styles.note}>Who is this ride for?</Text>
+              <Text style={styles.note}>{t("checkout.whoIsThisRideFor")}</Text>
               <View style={[styles.bookingRow, { marginTop: spacing.sm }]}>
                 <Pressable
                   onPress={() => setFamilyMemberUserId(null)}
                   style={[styles.bookingChip, familyMemberUserId === null && styles.bookingChipActive]}
                 >
                   <Text style={[styles.bookingChipText, familyMemberUserId === null && styles.bookingChipTextActive]}>
-                    Me
+                    {t("checkout.me")}
                   </Text>
                 </Pressable>
                 {familyMembers
@@ -403,7 +403,7 @@ export default function CheckoutScreen({ route, navigation }) {
         {paymentMethod === "card" ? (
           <Card tone="dark" style={{ marginBottom: spacing.lg }}>
             <Text style={styles.note}>
-              Payment is handled by Paystack's secure checkout. RideArrivo never sees or stores your card details.
+              {t("checkout.paymentIsHandledByPaystack")}
             </Text>
           </Card>
         ) : null}
@@ -422,7 +422,7 @@ export default function CheckoutScreen({ route, navigation }) {
             {dashCamConsent ? <Text style={styles.checkmark}>✓</Text> : null}
           </View>
           <Text style={styles.agreeText}>
-            I agree that this ride may be recorded by an in-vehicle dash cam for safety, and that footage is stored for 30 days and then automatically deleted.
+            {t("checkout.iAgreeThatThisRide")}
           </Text>
         </Pressable>
 
@@ -435,7 +435,7 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {status === "success" ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>Confirmed ✓</Text> : null}
+        {status === "success" ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>{t("checkout.confirmed")}</Text> : null}
         {phoneNeeded ? <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setPhoneSaved(true); }} /> : null}
         {phoneSaved && !phoneNeeded ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>Your number is saved. Tap the button again to confirm your ride.</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
