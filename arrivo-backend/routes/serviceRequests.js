@@ -14,6 +14,13 @@ const router = express.Router();
 // quote_pending set: a driver can take it, Ops confirms the price with the rider,
 // and the trip cannot start until that price is on it.
 // body: { service, pickupAddress, destinationAddress, contactPhone, requestedPickupAt?, passengerCount?, details? }
+// GET /api/services: the home-screen catalogue (see services/catalogue.js).
+router.get("/catalogue", requireAuth, (req, res) => {
+  const { buildCatalogue } = require("../services/catalogue");
+  const { isArrivoNowEnabled } = require("./instantRides");
+  res.json({ services: buildCatalogue({ expressEnabled: isArrivoNowEnabled() }) });
+});
+
 router.post("/", requireAuth, async (req, res) => {
   const b = req.body || {};
   const service = String(b.service || "").toLowerCase();
@@ -21,6 +28,10 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: `service must be one of: ${SERVICE_JOB_TIERS.join(", ")}.` });
   }
   if (req.user.role !== "rider") return res.status(403).json({ error: "Only riders can order a service." });
+  // Campus is for students aged 16 and over; the rider confirms it before ordering.
+  if (service === "campus" && b.confirmAge16 !== true) {
+    return res.status(400).json({ error: "ArrivoCampus is for students aged 16 or over. Please confirm to continue.", code: "CAMPUS_AGE_CONFIRM" });
+  }
   const pickup = String(b.pickupAddress || "").trim();
   const destination = String(b.destinationAddress || "").trim();
   if (pickup.length < 3) return res.status(400).json({ error: "Add a pickup address." });

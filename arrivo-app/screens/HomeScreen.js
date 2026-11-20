@@ -7,8 +7,11 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { getFlightStatus, getInstantStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import ServiceSwitcher from "../components/ServiceSwitcher";
-import { goToService } from "../utils/services";
+import ParasyteSignature from "../components/ParasyteSignature";
+import useCatalogue from "../hooks/useCatalogue";
+import { HUB_GROUPS, openHubCard } from "../utils/services";
+
+const HUB_ICON = { express: "flash", transfer: "airplane", schedule: "calendar", campus: "school", removals: "cube", chauffeur: "person", air: "airplane", boat: "boat" };
 
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
@@ -17,23 +20,9 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [flight, setFlight] = useState(null);
-  const [arrivoExpressEnabled, setArrivoExpressEnabled] = useState(false);
-
-  // ArrivoExpress ships behind a rollout gate (see arrivo-backend routes/
-  // instantRides.js) — this tile only appears once it's actually switched
-  // on, so Home never shows a dead-end feature to riders.
-  React.useEffect(() => {
-    let cancelled = false;
-    if (!token) return undefined;
-    getInstantStatus(token)
-      .then((status) => {
-        if (!cancelled) setArrivoExpressEnabled(!!status.enabled);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const cards = useCatalogue(token);
+  const [group, setGroup] = useState("ride");
+  const [showFlight, setShowFlight] = useState(false);
 
   const trackFlight = async () => {
     if (!flightNumber.trim()) return;
@@ -85,25 +74,30 @@ export default function HomeScreen({ navigation }) {
           ) : null}
         </View>
 
-        {/* Every rider can order every service. Drivers are the ones limited to the
-            services Ops granted them, so nothing here is hidden per rider. */}
-        <Text style={styles.servicesLabel}>{t("services.title")}</Text>
-        <ServiceSwitcher current={null} expressEnabled={arrivoExpressEnabled} onSelect={(id) => goToService(navigation, id)} />
-        <View style={{ height: spacing.sm }} />
+        {/* Same three groups as ridearrivo.com. Every rider can use every card; only drivers
+            are limited by tier. At most four cards show at once so the screen stays calm. */}
+        <View style={styles.tabs} accessibilityRole="tablist">
+          {HUB_GROUPS.map((g) => (
+            <Pressable key={g} onPress={() => setGroup(g)} style={[styles.tab, group === g && styles.tabOn]} accessibilityRole="tab" accessibilityState={{ selected: group === g }}>
+              <Text style={[styles.tabText, group === g && styles.tabTextOn]}>{t(`hub.tab_${g}`)}</Text>
+            </Pressable>
+          ))}
+        </View>
 
-        {arrivoExpressEnabled ? (
-          <Pressable style={styles.arrivoExpressBanner} onPress={() => navigation.navigate("ArrivoExpress")}>
-            <IconBadge tone="amber" size={36}>
-              <Ionicons name="flash" size={18} color={colors.ink} />
+        {cards.filter((c) => c.group === group).map((c) => (
+          <Pressable key={c.id} style={[styles.hubCard, !c.enabled && { opacity: 0.55 }]} disabled={!c.enabled} onPress={() => openHubCard(navigation, c)} accessibilityRole="button" accessibilityLabel={t(`hub.${c.id}_t`)}>
+            <IconBadge tone="dark" size={40}>
+              <Ionicons name={HUB_ICON[c.id] || "ellipse"} size={19} color={colors.amber} />
             </IconBadge>
-            <View style={{ flex: 1, marginLeft: spacing.sm }}>
-              <Text style={styles.arrivoExpressTitle}>{t("arrivoExpress.homeBannerTitle")}</Text>
-              <Text style={styles.arrivoExpressSubtitle}>{t("arrivoExpress.homeBannerSubtitle")}</Text>
+            <View style={{ flex: 1, marginLeft: spacing.md }}>
+              <Text style={styles.hubTitle}>{t(`hub.${c.id}_t`)}</Text>
+              <Text style={styles.hubSub}>{t(`hub.${c.id}_s`)}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.dark.text} />
+            {c.enabled ? <Ionicons name="chevron-forward" size={18} color={colors.dark.textMuted} /> : <Tag label={t("hub.comingSoon")} tone="amber" />}
           </Pressable>
-        ) : null}
+        ))}
 
+        {showFlight ? (
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
           <View style={styles.row}>
             <IconBadge size={32} tone="dark">
@@ -147,45 +141,17 @@ export default function HomeScreen({ navigation }) {
           ) : null}
         </Card>
 
-        <View style={styles.grid2}>
-          <Pressable style={styles.tile} onPress={() => navigation.navigate("Route", flightNumber.trim() ? { flightNumber: flightNumber.trim().toUpperCase() } : undefined)}>
-            <IconBadge tone="dark">
-              <Ionicons name="car-sport" size={18} color={colors.dark.text} />
-            </IconBadge>
-            <Text style={styles.tileText}>{t("home.bookRide")}</Text>
+        ) : (
+          <Pressable style={styles.onTheGoRow} onPress={() => setShowFlight(true)}>
+            <Ionicons name="airplane-outline" size={15} color={colors.tealBright} />
+            <Text style={styles.onTheGoText}>{t("hub.trackFlight")}</Text>
           </Pressable>
-          <Pressable style={styles.tile} onPress={() => navigation.navigate("Chauffeur")}>
-            <IconBadge tone="dark">
-              <Ionicons name="person" size={18} color={colors.dark.text} />
-            </IconBadge>
-            <Text style={styles.tileText}>{t("home.chauffeurForDay")}</Text>
-          </Pressable>
-        </View>
-
-        <View style={{ height: spacing.lg }} />
-        <Button
-          label={t("home.bookAirportPickup")}
-          onPress={() => navigation.navigate("Route", flightNumber.trim() ? { flightNumber: flightNumber.trim().toUpperCase() } : undefined)}
-          trailingIcon
-        />
-        {/* Airport Drop-off was only reachable indirectly (switching the
-            booking-type chip inside "Book a ride") — not obvious it existed
-            at all from Home. Same weight as Airport Pickup's CTA above, just
-            ghost-styled to keep Pickup as the primary action. */}
-        <View style={{ height: spacing.sm }} />
-        <Button
-          label={t("home.bookAirportDropoff")}
-          onPress={() => navigation.navigate("Route", { presetBookingType: "dropoff" })}
-          variant="ghost"
-          tone="dark"
-          trailingIcon
-        />
-        {/* Deliberately last and quieter than the two above. Most people should
-            book the normal way, this is for when there isn't time. */}
+        )}
         <Pressable style={styles.onTheGoRow} onPress={() => navigation.navigate("OnTheGo")}>
           <Ionicons name="flash-outline" size={15} color={colors.tealBright} />
           <Text style={styles.onTheGoText}>{t("home.travellingInTheNextFew")}</Text>
         </Pressable>
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -197,6 +163,14 @@ const styles = StyleSheet.create({
   greet: { fontSize: 19, fontWeight: "700", color: colors.dark.text },
   sub: { fontSize: 12, color: colors.dark.textMuted, marginTop: 2 },
   servicesLabel: { color: colors.dark.textMuted, fontSize: 11.5, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
+  tabs: { flexDirection: "row", backgroundColor: "rgba(18,18,59,0.06)", borderRadius: radius.pill, padding: 4, marginBottom: spacing.md },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: radius.pill, alignItems: "center" },
+  tabOn: { backgroundColor: colors.ink },
+  tabText: { fontWeight: "700", fontSize: 13.5, color: colors.ink },
+  tabTextOn: { color: "#FFFFFF" },
+  hubCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.dark.surface, borderColor: colors.dark.surfaceBorder, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  hubTitle: { color: colors.dark.text, fontWeight: "700", fontSize: 15 },
+  hubSub: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 2 },
   pill: { backgroundColor: colors.amber, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   pillText: { fontSize: 10, fontWeight: "700", color: colors.ink },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },

@@ -771,5 +771,29 @@
     "sendFailed": "Não foi possível enviar. Tente de novo ou fale connosco no WhatsApp.",
     "pricePending": "Preço a confirmar",
     "pricePendingLong": "A RideArrivo confirmará o preço antes de a viagem começar."
+  },
+  "hub": {
+    "tab_ride": "Viagem",
+    "tab_move": "Mudança",
+    "tab_charter": "Fretamento",
+    "express_t": "Viagem agora",
+    "express_s": "Sob demanda, com ArrivoExpress",
+    "transfer_t": "Transferência de aeroporto",
+    "transfer_s": "Embarque acompanhando o seu voo",
+    "schedule_t": "Agendar uma viagem",
+    "schedule_s": "Reserve com antecedência a tarifa fixa",
+    "campus_t": "Viagem de estudante",
+    "campus_s": "ArrivoCampus. Divida um carro com amigos",
+    "removals_t": "Mudanças",
+    "removals_s": "ArrivoRemovals. Mudanças ou cargas pesadas",
+    "chauffeur_t": "Motorista",
+    "chauffeur_s": "Um motorista por dia ou por semana",
+    "air_t": "Transferências aéreas",
+    "air_s": "ArrivoAir. Fretamento e transferências aéreas",
+    "boat_t": "Transferências de barco",
+    "boat_s": "ArrivoBoat. Transferências de barco e cais",
+    "comingSoon": "Em breve",
+    "trackFlight": "Acompanhar um voo",
+    "campusConfirm": "Tenho 16 anos ou mais e sou estudante."
   }
 }

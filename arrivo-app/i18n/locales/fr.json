@@ -771,5 +771,29 @@
     "sendFailed": "Envoi impossible. Réessayez, ou écrivez-nous sur WhatsApp.",
     "pricePending": "Prix à confirmer",
     "pricePendingLong": "Le prix sera confirmé par RideArrivo avant le début de votre trajet."
+  },
+  "hub": {
+    "tab_ride": "Course",
+    "tab_move": "Déménager",
+    "tab_charter": "Location",
+    "express_t": "Course immédiate",
+    "express_s": "À la demande, avec ArrivoExpress",
+    "transfer_t": "Transfert aéroport",
+    "transfer_s": "Prise en charge suivie selon votre vol",
+    "schedule_t": "Réserver une course",
+    "schedule_s": "Réservez à l'avance à prix fixe",
+    "campus_t": "Course étudiante",
+    "campus_s": "ArrivoCampus. Partagez une voiture entre amis",
+    "removals_t": "Déménagement",
+    "removals_s": "ArrivoRemovals. Déménagement ou charges lourdes",
+    "chauffeur_t": "Chauffeur",
+    "chauffeur_s": "Un chauffeur à la journée ou à la semaine",
+    "air_t": "Transferts aériens",
+    "air_s": "ArrivoAir. Charters et transferts aériens",
+    "boat_t": "Transferts en bateau",
+    "boat_s": "ArrivoBoat. Transferts en bateau et pontons",
+    "comingSoon": "Bientôt disponible",
+    "trackFlight": "Suivre un vol",
+    "campusConfirm": "J'ai 16 ans ou plus et je suis étudiant(e)."
   }
 }

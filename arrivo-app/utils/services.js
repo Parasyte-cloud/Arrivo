@@ -22,3 +22,28 @@ export function goToService(navigation, id, { replace = false } = {}) {
   if (replace && navigation.replace) navigation.replace(s.screen, params);
   else navigation.navigate(s.screen, params);
 }
+
+// The home screen shows these in the same three groups as ridearrivo.com. This is the
+// fallback; the server's list (GET /api/service-requests/catalogue) wins when it loads,
+// so a card can be renamed, reordered or switched on without a store release.
+// There is no separate "RideArrivo" card: Chauffeur and Airport transfer cover it.
+export const HUB_GROUPS = ["ride", "move", "charter"];
+export const HUB_DEFAULT = [
+  { id: "express", group: "ride", flow: "express", enabled: true },
+  { id: "transfer", group: "ride", flow: "route", enabled: true },
+  { id: "schedule", group: "ride", flow: "route", enabled: true },
+  { id: "campus", group: "ride", flow: "request", service: "campus", enabled: true },
+  { id: "removals", group: "move", flow: "request", service: "removals", enabled: true },
+  { id: "chauffeur", group: "charter", flow: "chauffeur", enabled: true },
+  { id: "air", group: "charter", flow: "request", service: "air", enabled: true },
+  { id: "boat", group: "charter", flow: "request", service: "boat", enabled: true },
+];
+
+// Opens the booking flow a card points at.
+export function openHubCard(navigation, card) {
+  if (card.flow === "express") return navigation.navigate("ArrivoExpress");
+  if (card.flow === "chauffeur") return navigation.navigate("Chauffeur");
+  if (card.flow === "request") return navigation.navigate("ServiceRequest", { service: card.service });
+  if (card.id === "schedule") return navigation.navigate("Route", { presetBookingType: "one_way" });
+  return navigation.navigate("Route");
+}

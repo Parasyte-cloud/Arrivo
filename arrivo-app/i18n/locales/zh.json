@@ -771,5 +771,29 @@
     "sendFailed": "发送失败。请重试，或通过 WhatsApp 联系我们。",
     "pricePending": "价格待确认",
     "pricePendingLong": "行程开始前，RideArrivo 会确认价格。"
+  },
+  "hub": {
+    "tab_ride": "用车",
+    "tab_move": "搬运",
+    "tab_charter": "包车",
+    "express_t": "立即用车",
+    "express_s": "按需出行，由 ArrivoExpress 提供",
+    "transfer_t": "机场接送",
+    "transfer_s": "根据航班接机",
+    "schedule_t": "预约用车",
+    "schedule_s": "提前预订，固定价格",
+    "campus_t": "学生用车",
+    "campus_s": "ArrivoCampus。和朋友合乘一辆车",
+    "removals_t": "搬运",
+    "removals_s": "ArrivoRemovals。搬家或重物运输",
+    "chauffeur_t": "专车司机",
+    "chauffeur_s": "按天或按周配司机",
+    "air_t": "航空接送",
+    "air_s": "ArrivoAir。包机与航空接送",
+    "boat_t": "船只接送",
+    "boat_s": "ArrivoBoat。船只与码头接送",
+    "comingSoon": "即将推出",
+    "trackFlight": "追踪航班",
+    "campusConfirm": "我已年满 16 岁，并且是学生。"
   }
 }

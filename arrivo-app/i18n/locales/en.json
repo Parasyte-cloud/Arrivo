@@ -771,5 +771,29 @@
     "sendFailed": "Couldn't send that. Please try again, or reach us on WhatsApp.",
     "pricePending": "Price to be confirmed",
     "pricePendingLong": "Price to be confirmed by RideArrivo before your trip starts."
+  },
+  "hub": {
+    "tab_ride": "Ride",
+    "tab_move": "Move",
+    "tab_charter": "Charter",
+    "express_t": "Ride now",
+    "express_s": "On demand, with ArrivoExpress",
+    "transfer_t": "Airport transfer",
+    "transfer_s": "Flight-aware pickup",
+    "schedule_t": "Schedule a ride",
+    "schedule_s": "Book ahead at a fixed fare",
+    "campus_t": "Student ride",
+    "campus_s": "ArrivoCampus. Split one car with friends",
+    "removals_t": "Moving",
+    "removals_s": "ArrivoRemovals. Move house or heavy loads",
+    "chauffeur_t": "Chauffeur",
+    "chauffeur_s": "A driver by the day or week",
+    "air_t": "Air transfers",
+    "air_s": "ArrivoAir. Charter and air transfers",
+    "boat_t": "Boat transfers",
+    "boat_s": "ArrivoBoat. Boat and jetty transfers",
+    "comingSoon": "Coming soon",
+    "trackFlight": "Track a flight",
+    "campusConfirm": "I am 16 or older and a student."
   }
 }

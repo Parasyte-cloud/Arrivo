@@ -493,6 +493,10 @@ export function addMembershipProfileUser(token, profileUserEmail) {
 // rider had already entered when a booking turned out to be too close.
 // Orders Campus, Air, Boat or Removals. Drivers who hold that service are alerted;
 // RideArrivo confirms the price with the rider before the trip starts.
+export function getServiceCatalogue(token) {
+  return request("/api/service-requests/catalogue", { headers: { Authorization: `Bearer ${token}` } });
+}
+
 export function createServiceRequest(token, body) {
   return request("/api/service-requests", {
     method: "POST",
