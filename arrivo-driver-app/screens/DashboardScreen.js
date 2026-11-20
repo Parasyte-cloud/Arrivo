@@ -26,6 +26,7 @@ import { useTiers } from "../context/TiersContext";
 import { sectionsFor, queueFor, tierForRide, metaFor } from "../utils/tiers";
 import TierSwitcher from "../components/TierSwitcher";
 import TierPane from "../components/TierPane";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -470,6 +471,7 @@ export default function DashboardScreen({ navigation }) {
             <Text style={styles.offlineText}>Go online to start receiving ride requests.</Text>
           </Card>
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

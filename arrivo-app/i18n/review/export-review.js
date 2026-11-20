@@ -10,6 +10,7 @@ const flat = (o, p = "", out = {}) => { for (const k of Object.keys(o)) { const 
 const L = Object.fromEntries(langs.map((l) => [l, flat(JSON.parse(fs.readFileSync(path.join(__dirname, "..", "locales", l + ".json"), "utf8")))]));
 
 const GROUPS = [
+  ["New: service cards, request screen, Campus 16+ confirmation", [/^services\./, /^hub\./]],
   ["Legal: privacy, data and account deletion", [/^deleteAccountSection\./, /^privacyPolicyModal\./, /^login\.byContinuing/, /^signup\.(dataProtection|checkTheBox|mustAgree|tickBox)/, /^checkout\.(agreeDashCam|iAgreeThatThisRide|agreeCancellation)/, /^support\.faq(Q|A)0$/]],
   ["Safety: welfare check, alerts, emergency contacts", [/^welfareCheck\./, /^tracking\.(panic|supportHasBeenAlerted|iDonTFeelSafe|noEmergencyContact|canTSendAlert|couldnTSendAlert|noActiveRide)/, /^emergencyContacts\./, /^route\.(someoneWeCanReachIf|emergencyContactOptional)/]],
   ["Money: payment, refunds, extra charges, receipts", [/^checkout\.(everyRideIsPaidIn|paidButNotBooked|paymentStatus|paymentIsHandledByPaystack|notEnough|yourFamilyWalletIsEmpty)/, /^tracking\.(flightIssueBody|overage|fairFare|extraTimeCharge|tipPaymentStatus|entirelyOptional)/, /^receiptCard\./]],

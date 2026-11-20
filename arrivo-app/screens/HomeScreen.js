@@ -9,6 +9,7 @@ import { getFlightStatus, getInstantStatus } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import ParasyteSignature from "../components/ParasyteSignature";
 import useCatalogue from "../hooks/useCatalogue";
+import AddressAutocomplete from "../components/AddressAutocomplete";
 import { HUB_GROUPS, openHubCard } from "../utils/services";
 
 const HUB_ICON = { express: "flash", transfer: "airplane", schedule: "calendar", campus: "school", removals: "cube", chauffeur: "person", air: "airplane", boat: "boat" };
@@ -23,6 +24,15 @@ export default function HomeScreen({ navigation }) {
   const cards = useCatalogue(token);
   const [group, setGroup] = useState("ride");
   const [showFlight, setShowFlight] = useState(false);
+  // Typed once here, carried into whichever service the rider picks.
+  const [pickupText, setPickupText] = useState("");
+  const [pickup, setPickup] = useState(null);
+  const [destText, setDestText] = useState("");
+  const [dest, setDest] = useState(null);
+  const where = {
+    pickup: pickupText.trim() ? { address: pickup?.address || pickupText.trim(), lat: pickup?.lat, lng: pickup?.lng } : null,
+    destination: destText.trim() ? { address: dest?.address || destText.trim(), lat: dest?.lat, lng: dest?.lng } : null,
+  };
 
   const trackFlight = async () => {
     if (!flightNumber.trim()) return;
@@ -76,6 +86,11 @@ export default function HomeScreen({ navigation }) {
 
         {/* Same three groups as ridearrivo.com. Every rider can use every card; only drivers
             are limited by tier. At most four cards show at once so the screen stays calm. */}
+        <Card tone="dark" style={{ marginBottom: spacing.md }}>
+          <AddressAutocomplete style={{ marginBottom: spacing.sm }} value={pickupText} onChangeText={setPickupText} onSelect={setPickup} placeholder={t("hub.pickupPlaceholder")} />
+          <AddressAutocomplete value={destText} onChangeText={setDestText} onSelect={setDest} placeholder={t("hub.destinationPlaceholder")} />
+        </Card>
+
         <View style={styles.tabs} accessibilityRole="tablist">
           {HUB_GROUPS.map((g) => (
             <Pressable key={g} onPress={() => setGroup(g)} style={[styles.tab, group === g && styles.tabOn]} accessibilityRole="tab" accessibilityState={{ selected: group === g }}>
@@ -85,7 +100,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {cards.filter((c) => c.group === group).map((c) => (
-          <Pressable key={c.id} style={[styles.hubCard, !c.enabled && { opacity: 0.55 }]} disabled={!c.enabled} onPress={() => openHubCard(navigation, c)} accessibilityRole="button" accessibilityLabel={t(`hub.${c.id}_t`)}>
+          <Pressable key={c.id} style={[styles.hubCard, !c.enabled && { opacity: 0.55 }]} disabled={!c.enabled} onPress={() => openHubCard(navigation, c, where)} accessibilityRole="button" accessibilityLabel={t(`hub.${c.id}_t`)}>
             <IconBadge tone="dark" size={40}>
               <Ionicons name={HUB_ICON[c.id] || "ellipse"} size={19} color={colors.amber} />
             </IconBadge>

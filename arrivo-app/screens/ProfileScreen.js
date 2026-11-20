@@ -13,6 +13,7 @@ import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone } from "../utils/phoneValidation";
 import { supportedLanguages } from "../i18n";
 import { getRideHistory } from "../services/api";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français", zh: "中文", de: "Deutsch", hi: "हिन्दी", es: "Español", pt: "Português" };
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
@@ -349,6 +350,7 @@ export default function ProfileScreen({ navigation }) {
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
 
         <DeleteAccountSection />
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

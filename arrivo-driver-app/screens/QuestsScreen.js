@@ -10,6 +10,7 @@ import { getDriverQuests } from "../services/api";
 import { formatNumber } from "../i18n/i18n";
 import { useT } from "../context/LanguageContext";
 import { questState, questProgressPct, tripsLeft, timeLeftLabel, questRules, sortQuests } from "../utils/quests";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // ArrivoExpress quests: finish a number of real trips, earn a fixed reward.
 // Text comes from i18n/translations.js.
@@ -113,6 +114,7 @@ export default function QuestsScreen() {
         {(quests || []).map((q) => (
           <QuestCard key={q.id} quest={q} />
         ))}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

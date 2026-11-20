@@ -12,6 +12,7 @@ import { formatNumber } from "../i18n/i18n";
 import { Button } from "../components/UI";
 import DriverReceipt from "../components/DriverReceipt";
 import { tierForRide, metaFor } from "../utils/tiers";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // What kind of trip this was. Charters are Chauffeur, drop-offs are airport
 // drop-offs, and every other booking on the rides queue is an airport pickup.
@@ -162,6 +163,7 @@ export default function EarningsScreen({ navigation }) {
             {openReceipt === ride.id ? <DriverReceipt rideId={ride.id} /> : null}
           </Card>
         ))}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

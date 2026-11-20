@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import ParasyteSignature from "../components/ParasyteSignature";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
@@ -180,7 +181,8 @@ export default function LoginScreen({ navigation }) {
           </>
         )}
       </View>
-    </KeyboardAvoidingView>
+    <ParasyteSignature />
+</KeyboardAvoidingView>
     </View>
   );
 }

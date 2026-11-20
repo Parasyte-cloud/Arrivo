@@ -127,6 +127,27 @@ const SERVICES = ["campus", "air", "boat", "removals"];
     assert.equal((await call("GET", "/api/service-requests/catalogue", rt)).body.services[0].enabled, false);
   });
 
+  await test("one account cannot flood Ops: orders are rate limited per user", async () => {
+    const flooder = tokenFor(await makeUser("rider", "Flood Rider")); let last = 0;
+    for (let i = 0; i < 18; i++) { const r = await call("POST", "/api/service-requests", flooder, { ...good("air"), pickupAddress: "Flood pickup " + i }); if (r.body.ride) made.rides.push(r.body.ride.id); last = r.status; }
+    assert.equal(last, 429);
+  });
+
+  await test("Ops alert: skipped loudly when nobody is configured, formats and sends when they are", async () => {
+    const { sendServiceRequestAlert } = require("../services/serviceRequestAlert");
+    const r = await call("POST", "/api/service-requests", rt, good("boat")); made.rides.push(r.body.ride.id);
+    assert.deepStrictEqual(await sendServiceRequestAlert(pool, r.body.ride.id), { skipped: true });
+    const wa = require("../services/whatsapp"); const sent = []; const orig = wa.sendWhatsAppMessage;
+    wa.sendWhatsAppMessage = async (to, text) => { sent.push({ to, text }); return { ok: true }; };
+    process.env.OPS_ALERT_WHATSAPP = "+2348000000001";
+    delete require.cache[require.resolve("../services/serviceRequestAlert")];
+    const out = await require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, r.body.ride.id);
+    wa.sendWhatsAppMessage = orig; delete process.env.OPS_ALERT_WHATSAPP;
+    assert.equal(out.delivered, 1); assert.equal(sent[0].to, "+2348000000001");
+    assert.match(sent[0].text, /NEW BOAT REQUEST #\d+: set the price/); assert.match(sent[0].text, /Pickup boat/);
+    assert.equal(await require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, 99999999).then((x) => x.skipped), true);
+  });
+
   await test("a rider's order shows in their own ride history; other riders do not see it", async () => {
     const r = await call("POST", "/api/service-requests", rt, good("campus")); made.rides.push(r.body.ride.id);
     assert.ok((await call("GET", "/api/rides/mine", rt)).body.rides.some((x) => x.id === r.body.ride.id));

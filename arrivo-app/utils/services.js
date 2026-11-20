@@ -39,11 +39,17 @@ export const HUB_DEFAULT = [
   { id: "boat", group: "charter", flow: "request", service: "boat", enabled: true },
 ];
 
-// Opens the booking flow a card points at.
-export function openHubCard(navigation, card) {
-  if (card.flow === "express") return navigation.navigate("ArrivoExpress");
-  if (card.flow === "chauffeur") return navigation.navigate("Chauffeur");
-  if (card.flow === "request") return navigation.navigate("ServiceRequest", { service: card.service });
-  if (card.id === "schedule") return navigation.navigate("Route", { presetBookingType: "one_way" });
-  return navigation.navigate("Route");
+// Opens the booking flow a card points at. `where` is what the rider already typed on
+// Home ({ pickup, destination }, each { address, lat, lng } or null) so nobody types it twice.
+export function openHubCard(navigation, card, where = {}) {
+  const p = where.pickup || null, d = where.destination || null;
+  const prefill = { pickup: p, destination: d };
+  if (card.flow === "express") return navigation.navigate("ArrivoExpress", { prefill });
+  if (card.flow === "chauffeur") return navigation.navigate("Chauffeur", { prefill });
+  if (card.flow === "request") return navigation.navigate("ServiceRequest", { service: card.service, prefill });
+  const route = {
+    presetPickupAddress: p ? p.address : undefined, presetPickupLat: p ? p.lat : undefined, presetPickupLng: p ? p.lng : undefined,
+    presetDestinationAddress: d ? d.address : undefined, presetDestinationLat: d ? d.lat : undefined, presetDestinationLng: d ? d.lng : undefined,
+  };
+  return navigation.navigate("Route", route);
 }

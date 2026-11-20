@@ -9,6 +9,7 @@ import {
   Pressable,
   Alert,
 } from "react-native";
+import ParasyteSignature from "../components/ParasyteSignature";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button, Tag } from "../components/UI";
@@ -53,7 +54,8 @@ function requestStatusLabel(status, t) {
 // screen talks to. Once a driver is matched, the ride becomes a normal
 // RideArrivo `rides` row, so this hands off straight to the existing
 // Tracking screen instead of building a second live-tracking experience.
-export default function ArrivoExpressScreen({ navigation }) {
+export default function ArrivoExpressScreen({ navigation, route }) {
+  const pre = route?.params?.prefill || {};
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatFare } = useCurrency(token);
@@ -66,10 +68,10 @@ export default function ArrivoExpressScreen({ navigation }) {
   const [tiers, setTiers] = useState([]);
   const [selectedTier, setSelectedTier] = useState(null);
 
-  const [pickup, setPickup] = useState("");
-  const [pickupCoords, setPickupCoords] = useState(null);
-  const [destination, setDestination] = useState("");
-  const [destCoords, setDestCoords] = useState(null);
+  const [pickup, setPickup] = useState(pre.pickup?.address || "");
+  const [pickupCoords, setPickupCoords] = useState(pre.pickup && pre.pickup.lat != null ? { lat: pre.pickup.lat, lng: pre.pickup.lng } : null);
+  const [destination, setDestination] = useState(pre.destination?.address || "");
+  const [destCoords, setDestCoords] = useState(pre.destination && pre.destination.lat != null ? { lat: pre.destination.lat, lng: pre.destination.lng } : null);
 
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
@@ -305,6 +307,7 @@ export default function ArrivoExpressScreen({ navigation }) {
           <Card tone="dark" style={{ marginTop: spacing.lg }}>
             <Text style={styles.meta}>{t("arrivoExpress.unavailableBody")}</Text>
           </Card>
+          <ParasyteSignature />
         </ScrollView>
       </View>
     );
@@ -327,6 +330,7 @@ export default function ArrivoExpressScreen({ navigation }) {
               style={{ marginTop: spacing.md }}
             />
           </Card>
+          <ParasyteSignature />
         </ScrollView>
       </View>
     );
@@ -364,6 +368,7 @@ export default function ArrivoExpressScreen({ navigation }) {
               onPress={cancelSearch}
             />
           )}
+          <ParasyteSignature />
         </ScrollView>
       </View>
     );
@@ -417,6 +422,7 @@ export default function ArrivoExpressScreen({ navigation }) {
               />
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </View>
     );
@@ -491,6 +497,7 @@ export default function ArrivoExpressScreen({ navigation }) {
         ) : (
           <Button label={t("arrivoExpress.seeFare")} onPress={getFare} style={{ marginTop: spacing.lg }} />
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

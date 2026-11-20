@@ -27,6 +27,7 @@ import {
 } from "../utils/premiumUpgrade";
 import { AddonOptions } from "../components/AddonOptions";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // The upgrade only makes sense on Sedan/SUV. Executive is already the premium
 // tier and Pickup is a cargo vehicle. Wording and price live in
@@ -990,6 +991,7 @@ export default function RouteScreen({ navigation, route }) {
             onPress={confirm}
           />
         )}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

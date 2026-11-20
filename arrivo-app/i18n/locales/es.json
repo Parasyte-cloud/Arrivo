@@ -794,6 +794,8 @@
     "boat_s": "ArrivoBoat. Traslados en barco y embarcadero",
     "comingSoon": "Próximamente",
     "trackFlight": "Seguir un vuelo",
-    "campusConfirm": "Tengo 16 años o más y soy estudiante."
+    "campusConfirm": "Tengo 16 años o más y soy estudiante.",
+    "pickupPlaceholder": "Dirección de recogida",
+    "destinationPlaceholder": "¿A dónde vas?"
   }
 }

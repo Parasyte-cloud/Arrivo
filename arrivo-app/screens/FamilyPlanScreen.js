@@ -17,6 +17,7 @@ import {
   removeFamilyMember, verifyFamilyWalletTopup, initializePayment,
 } from "../services/api";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -283,6 +284,7 @@ export default function FamilyPlanScreen({ navigation }) {
               </Text>
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

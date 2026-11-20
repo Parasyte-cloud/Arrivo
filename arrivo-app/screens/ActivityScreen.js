@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { getRideHistory, getSharedWithMeRides } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function ActivityScreen({ navigation }) {
   const { t } = useTranslation();
@@ -104,6 +105,7 @@ export default function ActivityScreen({ navigation }) {
             ))}
           </>
         ) : null}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

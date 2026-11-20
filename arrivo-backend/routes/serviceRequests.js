@@ -5,7 +5,20 @@ const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const { SERVICE_JOB_TIERS } = require("../services/driverTiers");
 const { logSafetyEvent } = require("../services/safetyEvents");
 
+const rateLimit = require("express-rate-limit");
+
 const router = express.Router();
+
+// Each order pages Ops and shows to drivers, so one account cannot flood them.
+const orderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.SERVICE_REQUEST_RATE_LIMIT) || 15,
+  keyGenerator: (req) => `u${req.user && req.user.id}`,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
+  handler: (req, res) => res.status(429).json({ error: "Too many requests. Please wait a while, or message us on WhatsApp." }),
+});
 
 // POST /api/service-requests
 // Any rider can order any service. The ride is saved with its service, so the
@@ -21,7 +34,7 @@ router.get("/catalogue", requireAuth, (req, res) => {
   res.json({ services: buildCatalogue({ expressEnabled: isArrivoNowEnabled() }) });
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, orderLimiter, async (req, res) => {
   const b = req.body || {};
   const service = String(b.service || "").toLowerCase();
   if (!SERVICE_JOB_TIERS.includes(service)) {
@@ -63,6 +76,7 @@ router.post("/", requireAuth, async (req, res) => {
   );
   const ride = created.rows[0];
   await logSafetyEvent(pool, "service_request_created", { rideId: ride.id, userId: req.user.id, detail: { service } });
+  require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, ride.id); // fire and forget
   res.status(201).json({ ride: { ...ride, stops: JSON.parse(ride.stops || "[]") } });
 });
 

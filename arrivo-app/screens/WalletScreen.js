@@ -8,6 +8,7 @@ import { getWallet, initializePayment, verifyWalletTopup } from "../services/api
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -226,6 +227,7 @@ export default function WalletScreen({ navigation }) {
             );
           })
         )}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

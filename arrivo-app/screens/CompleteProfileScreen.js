@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone } from "../utils/phoneValidation";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Shown once, right after auth, for any rider whose account is missing a
 // WhatsApp number or country of residence — both required fields on the
@@ -105,6 +106,7 @@ export default function CompleteProfileScreen() {
           <Text style={styles.logoutLink} onPress={logout}>
             {t("completeProfile.logOut")}
           </Text>
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

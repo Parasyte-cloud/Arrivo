@@ -23,6 +23,7 @@ import { splitPhone, validatePhone } from "../utils/phoneValidation";
 import { createOnTheGoRequest } from "../services/api";
 import { formatLagos } from "../utils/lagosTime";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 import { whatsappUrl } from "../utils/supportContacts";
 
 // The short path for someone flying in within about 3 hours who hasn't got
@@ -208,6 +209,7 @@ export default function OnTheGoScreen({ navigation, route }) {
               </Pressable>
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

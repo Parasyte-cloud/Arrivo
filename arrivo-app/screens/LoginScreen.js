@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import ParasyteSignature from "../components/ParasyteSignature";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
@@ -201,7 +202,8 @@ export default function LoginScreen({ navigation }) {
         )}
         <LanguageChips />
       </View>
-    </KeyboardAvoidingView>
+    <ParasyteSignature />
+</KeyboardAvoidingView>
     </View>
   );
 }

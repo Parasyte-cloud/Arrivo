@@ -11,6 +11,7 @@ import { useT } from "../context/LanguageContext";
 import { TRANSLATIONS } from "../i18n/translations";
 import { getSelfieStatus, submitSelfie } from "../services/api";
 import { safetyErrorKey, selfieNotice } from "../utils/safety";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // The driver selfie check. Shows the code to hold up, opens the front camera,
 // sends the photo. A person at RideArrivo compares it with the profile photo.
@@ -108,6 +109,7 @@ export default function SelfieScreen({ navigation }) {
         ) : (
           <Button label={t("selfieTake")} onPress={take} disabled={!status} />
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );

@@ -12,6 +12,7 @@ import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
 import LanguageChips from "../components/LanguageChips";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -335,6 +336,7 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.link}>{t("auth.haveAccount")}</Text>
         </Pressable>
         <LanguageChips />
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

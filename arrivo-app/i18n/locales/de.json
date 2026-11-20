@@ -794,6 +794,8 @@
     "boat_s": "ArrivoBoat. Boots- und Anleger-Transfers",
     "comingSoon": "Demnächst",
     "trackFlight": "Flug verfolgen",
-    "campusConfirm": "Ich bin 16 oder älter und Student(in)."
+    "campusConfirm": "Ich bin 16 oder älter und Student(in).",
+    "pickupPlaceholder": "Abholadresse",
+    "destinationPlaceholder": "Wohin?"
   }
 }

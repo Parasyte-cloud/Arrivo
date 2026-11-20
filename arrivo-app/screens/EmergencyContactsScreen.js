@@ -9,6 +9,7 @@ import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getEmergencyContacts, addEmergencyContact, deleteEmergencyContact } from "../services/api";
 import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Real "Emergency contacts" — this used to be a label on Profile with
 // nothing behind it at all. A rider saves one or more contacts here once;
@@ -162,6 +163,7 @@ export default function EmergencyContactsScreen() {
             <Button label={t("emergencyContacts.saveContact")} onPress={submit} variant="primary" />
           )}
         </Card>
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
