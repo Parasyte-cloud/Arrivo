@@ -174,9 +174,14 @@ async function maybeSendAndMark(ride, hoursUntil) {
   for (const threshold of REMINDER_THRESHOLDS) {
     if (ride[threshold.column]) continue; // already sent
     if (hoursUntil > threshold.hours) continue; // not there yet
-    await sendReminder(ride, threshold.label, ride.driver_push_token);
-    await pool.query(`UPDATE rides SET ${threshold.column} = true WHERE id = $1`, [ride.id]);
-    ride[threshold.column] = true; // keep the in-memory row consistent in case a later threshold in this same pass also applies
+    // Claim first, send second, so two sweeps can't both send the same reminder.
+    const claimed = await pool.query(
+      `UPDATE rides SET ${threshold.column} = true WHERE id = $1 AND ${threshold.column} = false RETURNING id`,
+      [ride.id]
+    );
+    ride[threshold.column] = true;
+    if (claimed.rowCount === 0) continue; // another sweep already sent this one
+    await sendReminder(ride, threshold.label, ride.driver_push_token); // keep the in-memory row consistent in case a later threshold in this same pass also applies
   }
 }
 
@@ -231,6 +236,18 @@ async function flagFlightIssue(ride, issue) {
   try {
     await client.query("BEGIN");
 
+    // Claim the ride first. Only one sweep can flip flight_issue from NULL,
+    // so the refund below can't run twice for the same ride.
+    const claim = await client.query(
+      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = $3, updated_at = now()
+        WHERE id = $2 AND flight_issue IS NULL RETURNING id`,
+      [issue, ride.id, plan.nextPaymentStatus]
+    );
+    if (claim.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+
     // Refund the original fare to the wallet as compensation for the
     // upfront charge no longer matching a booking whose timing just
     // changed — credited to the wallet regardless of which rail originally
@@ -250,10 +267,6 @@ async function flagFlightIssue(ride, issue) {
       );
     }
 
-    await client.query(
-      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = $3, updated_at = now() WHERE id = $2`,
-      [issue, ride.id, plan.nextPaymentStatus]
-    );
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -306,10 +319,12 @@ async function sweepPreferredDriverExpiry() {
   for (const ride of expiring.rows) {
     try {
       const reason = "your regular driver wasn't available in time for this trip";
-      await pool.query(
-        "UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now() WHERE id = $2",
+      const cleared = await pool.query(
+        `UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now()
+          WHERE id = $2 AND preferred_driver_id IS NOT NULL AND ride_status = 'requested' RETURNING id`,
         [reason, ride.id]
       );
+      if (cleared.rowCount === 0) continue; // already opened up, or accepted meanwhile
       if (ride.rider_push_token) {
         sendPushNotification(
           ride.rider_push_token,
@@ -470,13 +485,44 @@ async function runSweep() {
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.
   await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
   await require("./driverCashout").sweepCashouts().catch((err) => console.error("[scheduler] cash-out sweep crashed:", err.message));
+  await require("./walletReconciliation").runDaily().catch((err) => console.error("[scheduler] wallet daily check crashed:", err.message));
+  await require("./walletHolds").expireStale().catch((err) => console.error("[scheduler] wallet hold expiry crashed:", err.message));
   await require("./autoReprice").runDailyReprice().catch((err) => console.error("[scheduler] auto reprice crashed:", err.message));
+}
+
+// One sweep at a time, across every running instance. setInterval doesn't wait
+// for the last sweep, and with two Render instances both would sweep. The lock
+// lives on its own connection and drops by itself if the process dies.
+const SWEEP_LOCK_KEY = 7710100;
+let sweeping = false;
+
+async function sweepIfFree({ db = pool, run = runSweep } = {}) {
+  if (sweeping) return "busy";
+  sweeping = true;
+  let client;
+  try {
+    client = await db.connect();
+    const got = await client.query("SELECT pg_try_advisory_lock($1) AS ok", [SWEEP_LOCK_KEY]);
+    if (!got.rows[0].ok) return "locked";
+    try {
+      await run();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [SWEEP_LOCK_KEY]).catch(() => {});
+    }
+    return "ran";
+  } catch (err) {
+    console.error("[scheduler] sweep skipped:", err.message);
+    return "error";
+  } finally {
+    if (client) client.release();
+    sweeping = false;
+  }
 }
 
 function startScheduler() {
   console.log(`[scheduler] starting — sweeping every ${SWEEP_INTERVAL_MS / 60000} minutes`);
-  runSweep(); // run once immediately on boot rather than waiting a full interval
-  setInterval(runSweep, SWEEP_INTERVAL_MS);
+  sweepIfFree(); // run once immediately on boot rather than waiting a full interval
+  setInterval(() => { sweepIfFree(); }, SWEEP_INTERVAL_MS);
 }
 
-module.exports = { startScheduler, runSweep, sweepUnmatchedPayments };
+module.exports = { startScheduler, runSweep, sweepIfFree, sweepUnmatchedPayments, maybeSendAndMark, flagFlightIssue, sweepPreferredDriverExpiry };
