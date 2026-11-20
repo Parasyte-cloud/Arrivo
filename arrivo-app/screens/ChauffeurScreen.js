@@ -501,7 +501,7 @@ export default function ChauffeurScreen({ navigation }) {
               <Switch
                 value={luxury}
                 onValueChange={setLuxury}
-                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
               />
             </View>
           ) : null}

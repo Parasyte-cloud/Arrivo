@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   textArea: { minHeight: 120, paddingTop: 12 },
   attachBox: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(18,18,59,0.05)",
     borderRadius: radius.sm + 2,
     padding: spacing.md,
     marginBottom: spacing.sm,

@@ -312,20 +312,21 @@ export default function SignupScreen({ navigation }) {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Disabled until the data-protection checkbox above is checked —
-              same rule the password path enforces in submit(), just applied
-              here too so nobody can create a profile via Google/Apple without
-              ever seeing the privacy notice. */}
-          <OAuthButtons
-            disabled={!agreedToTerms}
-            busy={oauthBusy}
-            onGoogleIdToken={handleGoogleIdToken}
-            onGoogleError={setError}
-            onAppleResult={handleAppleResult}
-          />
-          {!agreedToTerms ? (
-            <Text style={styles.oauthHint}>Check the box above to sign up with Google.</Text>
-          ) : null}
+        {/* Disabled until the data-protection checkbox above is checked —
+            same rule the password path enforces in submit(), just applied
+            here too so nobody can create a profile via Google/Apple without
+            ever seeing the privacy notice. */}
+        <OAuthButtons
+          disabled={!agreedToTerms}
+          onBlocked={() => setError("Tick the box above to agree first, then choose Google or Apple.")}
+          busy={oauthBusy}
+          onGoogleIdToken={handleGoogleIdToken}
+          onGoogleError={setError}
+          onAppleResult={handleAppleResult}
+        />
+        {!agreedToTerms ? (
+          <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+        ) : null}
           </>
         ) : null}
 

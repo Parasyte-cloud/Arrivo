@@ -113,7 +113,7 @@ export default function ProfileScreen() {
                 accessibilityState={{ selected: lang === l.code }}
                 style={{
                   color: lang === l.code ? colors.ink : colors.dark.text,
-                  backgroundColor: lang === l.code ? colors.amber : "rgba(255,255,255,0.1)",
+                  backgroundColor: lang === l.code ? colors.amber : "rgba(18,18,59,0.09)",
                   fontSize: 13, fontWeight: "600", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
                   marginRight: 8, marginBottom: 8, overflow: "hidden",
                 }}

@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
-import * as AuthSession from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { colors, spacing } from "../theme/tokens";
@@ -34,7 +33,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only). `disabled` gates these behind the data-protection checkbox on
 // the signup screen, exactly like "Create account" below them is gated.
-export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, disabled, busy }) {
+export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, onBlocked, disabled, busy }) {
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -47,7 +46,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // type validates via package name + signing certificate instead of a
     // redirect URI, so it doesn't need (or use) this.
     ...(Platform.OS === "ios" && GOOGLE_IOS_URL_SCHEME
-      ? { redirectUri: AuthSession.makeRedirectUri({ scheme: GOOGLE_IOS_URL_SCHEME }) }
+      ? { redirectUri: `${GOOGLE_IOS_URL_SCHEME}:/oauthredirect` }
       : {}),
   });
 
@@ -74,7 +73,16 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
 
+  // Never a dead button. A button that ignores taps reads as "broken" to a
+  // reviewer and to a driver alike, so a blocked tap says why instead.
+  const handleGoogle = () => {
+    if (disabled) { onBlocked && onBlocked(); return; }
+    if (!request) { onGoogleError && onGoogleError("Google sign-in is still getting ready. Try again in a moment."); return; }
+    promptAsync();
+  };
+
   const handleAppleSignIn = async () => {
+    if (disabled) { onBlocked && onBlocked(); return; }
     try {
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
@@ -106,9 +114,10 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
         <>
           {googleConfigured ? (
             <Pressable
-              disabled={disabled || !request}
-              onPress={() => promptAsync()}
-              style={[styles.button, styles.googleButton, (disabled || !request) && styles.buttonDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Google"
+              onPress={handleGoogle}
+              style={[styles.button, styles.googleButton, disabled && styles.buttonDisabled]}
             >
               <Text style={styles.googleG}>G</Text>
               <Text style={styles.buttonText}>Continue with Google</Text>
@@ -121,7 +130,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
               buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
               cornerRadius={12}
               style={[styles.appleButton, disabled && styles.buttonDisabled]}
-              onPress={disabled ? undefined : handleAppleSignIn}
+              onPress={handleAppleSignIn}
             />
           ) : null}
         </>
