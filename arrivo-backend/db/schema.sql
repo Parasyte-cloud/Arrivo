@@ -718,6 +718,22 @@ ON support_assisted_bookings(
   created_at
 );
 
+-- EasyBook invoicing (easybookings.ridearrivo.com). Every EasyBook request
+-- gets an invoice number and an unguessable token. The token is what the
+-- public invoice page and the emailed link use to look the invoice up, so
+-- nobody can read anyone else's invoice by counting ids. receipt_sent_at is
+-- claimed with an UPDATE ... WHERE receipt_sent_at IS NULL before the email
+-- goes out, so a repeated webhook delivery cannot send two receipts.
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_token TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_number
+ON support_assisted_bookings(invoice_number) WHERE invoice_number IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_token
+ON support_assisted_bookings(invoice_token) WHERE invoice_token IS NOT NULL;
+
 
 
 -- ── On-the-Go requests ──
@@ -2041,6 +2057,98 @@ ALTER TABLE users
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+-- ── One wallet across services: service tag, holds, settlements ──
+-- A rider has ONE wallet balance (users.wallet_balance_naira). Every movement is
+-- tagged with the service it was for, so finance can see what each service earned
+-- without the rider ever seeing six balances. The tag never changes a balance.
+ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS service TEXT NOT NULL DEFAULT 'ridearrivo';
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_service ON wallet_transactions(service, created_at);
+
+-- A hold sets money aside for one trip in another service (ArrivoExpress first).
+-- Placing it debits the wallet at once, so the balance every other flow sees is
+-- already "available" and held money can never be spent twice. Capture keeps the
+-- money (the unused part of the hold goes back); release returns all of it.
+-- (service, idempotency_key) and (service, external_ref) are UNIQUE so a retried
+-- call, or two calls for the same trip, can never hold twice.
+CREATE TABLE IF NOT EXISTS wallet_holds (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  service TEXT NOT NULL,
+  amount_naira NUMERIC(14,2) NOT NULL CHECK (amount_naira > 0),
+  status TEXT NOT NULL DEFAULT 'held' CHECK (status IN ('held', 'captured', 'released')),
+  idempotency_key TEXT NOT NULL,
+  external_ref TEXT NOT NULL,
+  hold_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  release_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  captured_amount_naira NUMERIC(14,2) CHECK (captured_amount_naira IS NULL OR captured_amount_naira >= 0),
+  settlement_id INTEGER,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  captured_at TIMESTAMPTZ,
+  released_at TIMESTAMPTZ,
+  UNIQUE (service, idempotency_key),
+  UNIQUE (service, external_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_holds_user ON wallet_holds(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_holds_open ON wallet_holds(status, expires_at) WHERE status = 'held';
+
+-- A settlement is the instruction "move this much from the wallet funds account to
+-- this service's account". It is built from captured holds that no earlier
+-- settlement has taken, and needs two different admins: one creates it, another
+-- approves it (maker and checker). Money is moved at the bank by a person; this
+-- table is the record and the guard against settling the same trip twice.
+CREATE TABLE IF NOT EXISTS wallet_settlements (
+  id SERIAL PRIMARY KEY,
+  service TEXT NOT NULL,
+  amount_naira NUMERIC(14,2) NOT NULL CHECK (amount_naira > 0),
+  hold_count INTEGER NOT NULL CHECK (hold_count > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'cancelled')),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  approved_by INTEGER REFERENCES users(id),
+  bank_reference TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  approved_at TIMESTAMPTZ,
+  CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wallet_holds_settlement_fk') THEN
+    ALTER TABLE wallet_holds ADD CONSTRAINT wallet_holds_settlement_fk
+      FOREIGN KEY (settlement_id) REFERENCES wallet_settlements(id);
+  END IF;
+END $$;
+
+-- ── Top-ups routed to the holding account, and the daily balance check ──
+-- funds_route says where Paystack settles a payment: 'holding' (the wallet funds
+-- account, customer money) or NULL/'direct' (the main account). wallet_transactions
+-- keeps the route a top-up was credited with, so finance can see any top-up whose
+-- money did not land in the holding account.
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS funds_route TEXT;
+ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS funding_route TEXT;
+
+-- One row per check. 'snapshot' is written by the daily job (once per Lagos day);
+-- 'bank' is written when finance types in the real holding-account balance, and
+-- keeps the difference between that and what the ledger says it should be.
+CREATE TABLE IF NOT EXISTS wallet_reconciliations (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('snapshot', 'bank')),
+  lagos_day DATE NOT NULL,
+  expected_naira NUMERIC(16,2) NOT NULL,
+  rider_balances_naira NUMERIC(16,2) NOT NULL,
+  held_naira NUMERIC(16,2) NOT NULL,
+  unsettled_naira NUMERIC(16,2) NOT NULL,
+  driver_wallets_naira NUMERIC(16,2) NOT NULL DEFAULT 0,
+  bank_balance_naira NUMERIC(16,2),
+  difference_naira NUMERIC(16,2),
+  status TEXT NOT NULL CHECK (status IN ('ok', 'attention', 'mismatch')),
+  findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+  recorded_by INTEGER REFERENCES users(id),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_recon_snapshot_day ON wallet_reconciliations(lagos_day) WHERE kind = 'snapshot';
+CREATE INDEX IF NOT EXISTS idx_wallet_recon_recent ON wallet_reconciliations(created_at DESC);
 
 -- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
 -- Kept at the very end of this file on purpose: every ALTER holds its table lock until the

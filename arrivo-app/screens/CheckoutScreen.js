@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linki
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
+import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getMyFamilyPlan } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
@@ -36,6 +37,10 @@ export default function CheckoutScreen({ route, navigation }) {
   const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership | family_wallet
 
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
+  // The server wants a phone number before it will create the ride. Ask for it here,
+  // save it, and let the rider tap pay again, rather than telling them to go to Profile.
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [phoneSaved, setPhoneSaved] = useState(false);
   const [message, setMessage] = useState(null);
   const [agreedCancellation, setAgreedCancellation] = useState(false);
   const [dashCamConsent, setDashCamConsent] = useState(false);
@@ -130,6 +135,7 @@ export default function CheckoutScreen({ route, navigation }) {
             pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
             paymentReference: reference, bookingType, durationDays,
             agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
+            riderPhone: user?.phone || user?.whatsapp_number || undefined,
             emergencyContactName, emergencyContactPhone, dashCamConsent,
             distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
             scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
@@ -219,6 +225,7 @@ export default function CheckoutScreen({ route, navigation }) {
         pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
         securityEscort, fleetSize, luxury, paymentMethod,
+        riderPhone: user?.phone || user?.whatsapp_number || undefined,
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
         scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
@@ -231,9 +238,15 @@ export default function CheckoutScreen({ route, navigation }) {
       setStatus("success");
       onRideCreated(ride);
     } catch (e) {
+      submittingRef.current = false;
+      if (e.code === "PHONE_REQUIRED" || e.code === "PHONE_INVALID") {
+        setPhoneNeeded(true);
+        setMessage(null);
+        setStatus("idle");
+        return;
+      }
       setStatus("error");
       setMessage(messageWithCode(e, "Something went wrong confirming your ride."));
-      submittingRef.current = false;
     }
   };
 
@@ -423,6 +436,8 @@ export default function CheckoutScreen({ route, navigation }) {
         ) : null}
 
         {status === "success" ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>{t("checkout.confirmed")}</Text> : null}
+        {phoneNeeded ? <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setPhoneSaved(true); }} /> : null}
+        {phoneSaved && !phoneNeeded ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>Your number is saved. Tap the button again to confirm your ride.</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
