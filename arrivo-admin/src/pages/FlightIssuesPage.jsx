@@ -3,6 +3,7 @@ import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { formatDateTime } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
+import { FlightCredits } from "./FlightCredits";
 
 // A "needs attention" queue, same shape as PanicsPage, for rides the
 // scheduler (services/scheduler.js) has flagged with a real flight
@@ -16,6 +17,7 @@ export function FlightIssuesPage() {
   const [flightIssues, setFlightIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("issues");
 
   const load = useCallback(async () => {
     try {
@@ -44,7 +46,14 @@ export function FlightIssuesPage() {
           <span className="eyebrow">Needs attention</span>
           <h1>Flight Issues</h1>
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className={`btn ${tab === "issues" ? "btn-primary" : "btn-ghost"}`} aria-pressed={tab === "issues"} onClick={() => setTab("issues")}>Open issues</button>
+          <button type="button" className={`btn ${tab === "credits" ? "btn-primary" : "btn-ghost"}`} aria-pressed={tab === "credits"} onClick={() => setTab("credits")}>Flight credits</button>
+        </div>
       </div>
+
+      {tab === "credits" ? <FlightCredits /> : null}
+      {tab === "credits" ? null : <>
 
       {error ? <div className="error-text">{error}</div> : null}
 
@@ -105,6 +114,7 @@ export function FlightIssuesPage() {
           ))}
         </div>
       )}
+      </>}
     </div>
   );
 }

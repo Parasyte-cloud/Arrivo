@@ -173,7 +173,110 @@ function sendDriverChangedEmail(to, ride, reason) {
   });
 }
 
+// ── EasyBook invoice and receipt ──
+// Sent for bookings made through easybookings.ridearrivo.com (and any other
+// assisted booking). The invoice carries the Paystack pay link; the receipt
+// goes out once the payment webhook has confirmed the money and created the
+// ride. Every user-supplied value goes through escapeHtml.
+const BOOKING_TYPE_LABELS = {
+  one_way: "Airport pickup",
+  dropoff: "Airport drop-off",
+  full_day: "Chauffeur by the day",
+  full_week: "Chauffeur for a week",
+  full_month: "Chauffeur for a month",
+};
+const VEHICLE_LABELS = { sedan: "Sedan", suv: "SUV", truck: "Executive", pickup: "Pickup truck" };
+
+function naira(amount) {
+  return "₦" + Number(amount || 0).toLocaleString("en-NG");
+}
+
+function whenLagos(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-GB", {
+    timeZone: "Africa/Lagos",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }) + " (Lagos time)";
+}
+
+function tripRows(request) {
+  const r = request || {};
+  const rows = [];
+  rows.push(["Trip", BOOKING_TYPE_LABELS[r.bookingType] || "Ride"]);
+  rows.push(["Vehicle", VEHICLE_LABELS[r.vehicleType] || r.vehicleType || ""]);
+  rows.push([r.bookingType === "one_way" || r.bookingType === "dropoff" ? "From" : "Meet at", r.pickupAddress]);
+  if (r.destinationAddress) rows.push(["To", r.destinationAddress]);
+  if (r.flightNumber) rows.push(["Flight", r.flightNumber + (r.flightDate ? " on " + r.flightDate : "")]);
+  const when = whenLagos(r.scheduledPickupAt);
+  if (when) rows.push([r.bookingType === "dropoff" ? "Pickup time" : "Starts", when]);
+  if (r.bookingType === "full_day" && Number(r.durationDays) > 1) rows.push(["Days", String(r.durationDays)]);
+  rows.push(["Passengers", String((Number(r.adults) || 1) + (Number(r.children) || 0))]);
+  if (r.securityEscort) rows.push(["Extras", "Security escort"]);
+  if (r.luxury) rows.push(["Extras", "Luxury upgrade"]);
+  if (r.notes) rows.push(["Notes", r.notes]);
+  return rows.filter(([, v]) => v);
+}
+
+function rowsHtml(rows) {
+  return rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;vertical-align:top;white-space:nowrap;">${escapeHtml(k)}</td><td style="padding:6px 0;font-size:14px;color:#12123B;">${escapeHtml(v)}</td></tr>`
+    )
+    .join("");
+}
+
+function sendInvoiceEmail(to, { name, invoiceNumber, request, fareNaira, payUrl, invoiceUrl }) {
+  return sendEmail({
+    to,
+    subject: `Invoice ${invoiceNumber} from RideArrivo: ${naira(fareNaira)} to confirm your ride`,
+    html: wrapper(`
+      <p>Hi ${escapeHtml(name || "there")},</p>
+      <p>Thank you for booking with RideArrivo. Here is your invoice. Your ride is confirmed as soon as it is paid.</p>
+      <table style="border-collapse:collapse;width:100%;margin:12px 0;">
+        <tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;">Invoice</td><td style="padding:6px 0;font-size:14px;font-weight:700;color:#12123B;">${escapeHtml(invoiceNumber)}</td></tr>
+        ${rowsHtml(tripRows(request))}
+        <tr><td style="padding:10px 12px 6px 0;color:#6b6b85;font-size:13px;border-top:1px solid #e6e6f0;">Total due</td><td style="padding:10px 0 6px 0;font-size:20px;font-weight:700;color:#12123B;border-top:1px solid #e6e6f0;">${naira(fareNaira)}</td></tr>
+      </table>
+      <p><a href="${escapeHtml(payUrl)}" style="background:#F4A300;color:#12123B;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Pay ${naira(fareNaira)} securely</a></p>
+      <p style="color:#6b6b85;font-size:13px;">Payment is handled by Paystack. We will email your receipt the moment it goes through. You can also view this invoice any time at <a href="${escapeHtml(invoiceUrl)}">${escapeHtml(invoiceUrl)}</a>.</p>
+      <p style="color:#6b6b85;font-size:13px;">Need to cancel or change your booking? Read our <a href="https://ridearrivo.com/terms.html#cancellation">Cancellation &amp; Refund Policy</a>. If you did not request this, please ignore this email.</p>
+    `),
+  });
+}
+
+function sendReceiptEmail(to, { name, invoiceNumber, request, paidNaira, reference, paidAt, rideId }) {
+  return sendEmail({
+    to,
+    subject: `Receipt for ${invoiceNumber}: payment received, your RideArrivo ride is booked`,
+    html: wrapper(`
+      <p>Hi ${escapeHtml(name || "there")},</p>
+      <p>Payment received. Thank you! Your RideArrivo ride is booked and our team has it.</p>
+      <table style="border-collapse:collapse;width:100%;margin:12px 0;">
+        <tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;">Receipt for</td><td style="padding:6px 0;font-size:14px;font-weight:700;color:#12123B;">${escapeHtml(invoiceNumber)}</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;">Ride</td><td style="padding:6px 0;font-size:14px;color:#12123B;">#${escapeHtml(rideId)}</td></tr>
+        ${rowsHtml(tripRows(request))}
+        <tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;">Paid on</td><td style="padding:6px 0;font-size:14px;color:#12123B;">${escapeHtml(whenLagos(paidAt) || "")}</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;color:#6b6b85;font-size:13px;">Payment reference</td><td style="padding:6px 0;font-size:14px;color:#12123B;">${escapeHtml(reference)}</td></tr>
+        <tr><td style="padding:10px 12px 6px 0;color:#6b6b85;font-size:13px;border-top:1px solid #e6e6f0;">Amount paid</td><td style="padding:10px 0 6px 0;font-size:20px;font-weight:700;color:#12123B;border-top:1px solid #e6e6f0;">${naira(paidNaira)}</td></tr>
+      </table>
+      <p style="color:#6b6b85;font-size:13px;">We will send your driver's details closer to pickup time. Track your ride at <a href="https://ridearrivo.com/track.html?ride=${escapeHtml(rideId)}">ridearrivo.com</a>. Keep this email as your proof of payment.</p>
+      <p style="color:#6b6b85;font-size:13px;">Need to cancel or change your booking? Read our <a href="https://ridearrivo.com/terms.html#cancellation">Cancellation &amp; Refund Policy</a> or reply to this email.</p>
+    `),
+  });
+}
+
 module.exports = {
+  sendInvoiceEmail,
+  sendReceiptEmail,
+  tripRows,
   sendEmail,
   escapeHtml,
   sendPasswordResetEmail,
