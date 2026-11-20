@@ -55,6 +55,11 @@ async function get(path, as) {
   assert.strictEqual(logged.rowCount, 1);
   console.log("  ok  taking the sheet is logged as a number view");
 
+  await get("/api/admin/trips/dispatch-sheet", adm);
+  const again = await pool.query("SELECT 1 FROM staff_contact_access WHERE staff_user_id=$1 AND ride_id=$2 AND action='view_number'", [adm.id, live]);
+  assert.strictEqual(again.rowCount, 1, "a refresh within 10 minutes does not bury the log");
+  console.log("  ok  the 10 minute dedupe still holds with the one-statement write");
+
   assert.strictEqual((await get("/api/admin/trips/dispatch-sheet", ops)).status, 200);
   console.log("  ok  operations can take it too (trip tracker access)");
 
