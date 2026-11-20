@@ -542,6 +542,30 @@ async function logNumberView(staffId, rideId, subjectUserId, subjectRole) {
   );
 }
 
+// One round trip for a whole sheet: every rider and driver number shown, deduped against the last 10 minutes.
+async function logNumberViews(staffId, trips) {
+  const rideIds = [], subjectIds = [], roles = [];
+  for (const t of trips) {
+    if (t.rider_id) { rideIds.push(t.id); subjectIds.push(t.rider_id); roles.push("rider"); }
+    if (t.driver_phone && t.driver_user_id) { rideIds.push(t.id); subjectIds.push(t.driver_user_id); roles.push("driver"); }
+  }
+  if (!rideIds.length) return;
+  try {
+    await pool.query(
+      `INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action)
+       SELECT $1, v.ride_id, v.subject_id, v.role, 'view_number'
+       FROM unnest($2::int[], $3::int[], $4::text[]) AS v(ride_id, subject_id, role)
+       WHERE v.subject_id IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM staff_contact_access s
+         WHERE s.staff_user_id = $1 AND s.ride_id = v.ride_id AND s.subject_user_id = v.subject_id
+           AND s.action = 'view_number' AND s.created_at > now() - interval '10 minutes')`,
+      [staffId, rideIds, subjectIds, roles]
+    );
+  } catch (err) {
+    console.error("dispatch-sheet audit write failed (sheet still served):", err.message);
+  }
+}
+
 // GET /api/admin/trips/active
 router.get("/trips/active", async (req, res) => {
   const result = await pool.query(
@@ -572,17 +596,10 @@ router.get("/trips/dispatch-sheet", async (req, res) => {
      LIMIT 200`
   );
   const trips = result.rows.map(shapeTrip);
-  // Record who saw which numbers, same trace as opening a ride. Best-effort and
-  // in parallel: this is the fallback for when the console or live map is down,
-  // so a slow or degraded audit table (the most likely thing to be failing then)
-  // must never stop the emergency page from rendering. Every number still gets a
-  // logging attempt; only the blocking and the fail-together are removed.
-  const auditWrites = [];
-  for (const trip of trips) {
-    auditWrites.push(logNumberView(req.user.id, trip.id, trip.rider_id, "rider"));
-    if (trip.driver_phone) auditWrites.push(logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver"));
-  }
-  await Promise.allSettled(auditWrites);
+  // Record who saw which numbers, same trace as opening a ride and with the same 10 minute dedupe. This is the fallback
+  // for when the console or live map is down, so the audit write is ONE statement on ONE connection (not up to 400
+  // parallel inserts that would take the whole pool) and a failure is logged, never allowed to stop the page.
+  await logNumberViews(req.user.id, trips);
   res.json({
     generatedAt: new Date().toISOString(),
     trips: trips.map((t) => ({
