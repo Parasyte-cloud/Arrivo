@@ -46,5 +46,5 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   name: { color: colors.dark.text, fontWeight: "700", fontSize: 15 },
   tag: { color: colors.dark.textMuted, fontSize: 12.5 },
-  state: { color: "#1F7A5C", fontSize: 11, fontWeight: "800", letterSpacing: 1.1 },
+  state: { color: colors.success, fontSize: 11, fontWeight: "800", letterSpacing: 1.1 },
 });

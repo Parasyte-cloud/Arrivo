@@ -744,7 +744,9 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         pickup={ride.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
         destination={ride.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
         etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"}
-        height={170}
+        heading={isInProgress ? "destination" : "pickup"}
+        live={isInProgress}
+        height={190}
       />
       <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>

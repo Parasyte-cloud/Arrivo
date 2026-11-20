@@ -765,3 +765,11 @@ export function requestCallSupport(token, sessionId, note) {
     body: JSON.stringify({ note }),
   });
 }
+
+// The road between two points for the live map. The backend answers 204 when
+// Google has no route, which comes back as an empty object, and the map then
+// draws a straight line instead.
+export function getRoute(token, from, to) {
+  const params = new URLSearchParams({ fromLat: String(from.lat), fromLng: String(from.lng), toLat: String(to.lat), toLng: String(to.lng) });
+  return request(`/api/places/route?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+}

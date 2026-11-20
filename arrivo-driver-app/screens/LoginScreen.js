@@ -3,7 +3,7 @@ import ParasyteSignature from "../components/ParasyteSignature";
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, tint } from "../theme/tokens";
+import { colors, spacing, tint, isDark } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { forgotPassword } from "../services/api";
 import OAuthButtons from "../components/OAuthButtons";
@@ -90,7 +90,7 @@ export default function LoginScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
-        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Image source={isDark ? require("../assets/wordmark-brand-dark.png") : require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
         <Text style={styles.subBrand}>DRIVER</Text>
         <View style={{ height: spacing.lg }} />
 

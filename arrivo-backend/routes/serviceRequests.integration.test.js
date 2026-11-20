@@ -118,7 +118,7 @@ const SERVICES = ["campus", "air", "boat", "removals"];
     assert.equal(yes.status, 201);
     const cat = await call("GET", "/api/service-requests/catalogue", rt);
     assert.equal(cat.status, 200);
-    assert.deepStrictEqual(cat.body.services.map((s) => s.id), ["express", "transfer", "schedule", "campus", "removals", "chauffeur", "air", "boat"]);
+    assert.deepStrictEqual(cat.body.services.map((s) => s.id), ["express", "transfer", "campus", "removals", "chauffeur", "air", "boat"]);
     assert.deepStrictEqual([...new Set(cat.body.services.map((s) => s.group))], ["ride", "move", "charter"]);
     assert.equal(cat.body.services.find((s) => s.id === "campus").minAge, 16);
     process.env.ARRIVO_NOW_ENABLED = "true";
