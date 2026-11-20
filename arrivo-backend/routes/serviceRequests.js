@@ -26,7 +26,7 @@ const orderLimiter = rateLimit({
 // There is no fixed price list for these services, so the ride starts with
 // quote_pending set: a driver can take it, Ops confirms the price with the rider,
 // and the trip cannot start until that price is on it.
-// body: { service, pickupAddress, destinationAddress, contactPhone, requestedPickupAt?, passengerCount?, details? }
+// body: { service, pickupAddress, destinationAddress, pickupLat?, pickupLng?, destinationLat?, destinationLng?, contactPhone, requestedPickupAt?, passengerCount?, details? }
 // GET /api/services: the home-screen catalogue (see services/catalogue.js).
 router.get("/catalogue", requireAuth, (req, res) => {
   const { buildCatalogue } = require("../services/catalogue");
@@ -61,6 +61,12 @@ router.post("/", requireAuth, orderLimiter, async (req, res) => {
     if (!Number.isInteger(passengers) || passengers < 1 || passengers > 50) return res.status(400).json({ error: "passengerCount must be a whole number from 1 to 50." });
   }
   // Two identical requests within a minute are a double tap, not two orders.
+  // Optional map points from the address picker. They put the job on the live map for the rider and the driver,
+  // exactly like an ArrivoExpress trip. Anything that is not a real coordinate is ignored, never an error.
+  const coord = (v, lim) => { if (v === undefined || v === null || v === "") return null; const n = Number(v); return Number.isFinite(n) && Math.abs(n) <= lim ? n : null; };
+  let pLat = coord(b.pickupLat, 90), pLng = coord(b.pickupLng, 180), dLat = coord(b.destinationLat, 90), dLng = coord(b.destinationLng, 180);
+  if (pLat === null || pLng === null) { pLat = null; pLng = null; }
+  if (dLat === null || dLng === null) { dLat = null; dLng = null; }
   const dup = await pool.query(
     `SELECT * FROM rides WHERE rider_id = $1 AND service = $2 AND pickup_address = $3 AND ride_status = 'requested'
        AND created_at > now() - interval '1 minute' LIMIT 1`, [req.user.id, service, pickup]);
@@ -69,10 +75,12 @@ router.post("/", requireAuth, orderLimiter, async (req, res) => {
   const created = await pool.query(
     `INSERT INTO rides (rider_id, pickup_address, stops, booking_type, service, fare_naira, payment_status,
                         ride_status, agreed_cancellation_policy, quote_pending, scheduled_pickup_at, rider_note,
-                        contact_phone, passenger_count)
-     VALUES ($1, $2, $3, 'service_job', $4, 0, 'pending', 'requested', true, true, $5, $6, $7, $8) RETURNING *`,
+                        contact_phone, passenger_count,
+                        pickup_lat, pickup_lng, destination_lat, destination_lng)
+     VALUES ($1, $2, $3, 'service_job', $4, 0, 'pending', 'requested', true, true, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [req.user.id, pickup, JSON.stringify([destination]), service, when,
-     b.details ? String(b.details).slice(0, 1000) : null, String(b.contactPhone).trim(), passengers]
+     b.details ? String(b.details).slice(0, 1000) : null, String(b.contactPhone).trim(), passengers,
+     pLat, pLng, dLat, dLng]
   );
   const ride = created.rows[0];
   await logSafetyEvent(pool, "service_request_created", { rideId: ride.id, userId: req.user.id, detail: { service } });

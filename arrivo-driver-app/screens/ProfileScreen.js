@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import ServicesCard from "../components/ServicesCard";
@@ -114,7 +114,7 @@ export default function ProfileScreen() {
                 accessibilityState={{ selected: lang === l.code }}
                 style={{
                   color: lang === l.code ? colors.ink : colors.dark.text,
-                  backgroundColor: lang === l.code ? colors.amber : "rgba(18,18,59,0.09)",
+                  backgroundColor: lang === l.code ? colors.amber : tint(0.09),
                   fontSize: 13, fontWeight: "600", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
                   marginRight: 8, marginBottom: 8, overflow: "hidden",
                 }}

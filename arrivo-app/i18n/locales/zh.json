@@ -279,7 +279,8 @@
   "liveMap": {
     "pickup": "上车点",
     "destination": "目的地",
-    "yourDriver": "您的司机"
+    "yourDriver": "您的司机",
+    "live": "实时"
   },
   "phoneInput": {
     "chooseACountryCode": "选择国家/地区区号",

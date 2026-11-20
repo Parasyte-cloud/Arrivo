@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import RideCallButton from "../components/RideCallButton";
 import {
@@ -372,7 +372,7 @@ export default function DashboardScreen({ navigation }) {
             value={isOnline}
             onValueChange={toggleOnline}
             disabled={!!activeRide}
-            trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+            trackColor={{ false: tint(0.15), true: colors.amber }}
             thumbColor="#fff"
           />
         </View>
@@ -395,7 +395,7 @@ export default function DashboardScreen({ navigation }) {
                 value={acceptsInstant}
                 onValueChange={toggleInstant}
                 disabled={!!activeRide || !instantVerified}
-                trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+                trackColor={{ false: tint(0.15), true: colors.amber }}
                 thumbColor="#fff"
               />
             </View>
@@ -933,10 +933,10 @@ const styles = StyleSheet.create({
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
   cancelPickerCard: {
-    backgroundColor: "rgba(18,18,59,0.05)",
+    backgroundColor: tint(0.05),
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.09)",
+    borderColor: tint(0.09),
     padding: spacing.md,
   },
   cancelPickerTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 6 },
@@ -944,7 +944,7 @@ const styles = StyleSheet.create({
   cancelReasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   cancelReasonChip: {
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.15)",
+    borderColor: tint(0.15),
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 14,

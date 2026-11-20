@@ -323,6 +323,19 @@ async function handleExistingRide(ride, { reference, amountKobo }) {
     await markOrderFinalized(pool, reference, ride.id);
     return "already_paid";
   }
+  // A ride that was cancelled (by the rider, or closed automatically after a cancelled flight) must not turn
+  // "paid" because a late Paystack payment lands. Money came in with nothing to pay for: Ops refunds it.
+  if (ride.ride_status === "cancelled") {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "paid_after_cancellation",
+      purpose: "ride",
+      userId: ride.rider_id,
+      amountNaira: amountKobo / KOBO,
+      details: { rideId: ride.id },
+    });
+    return "ride_cancelled";
+  }
   // Check the amount BEFORE writing anything: an underpaid or wrong-amount
   // transaction must never flip a ride to paid.
   const expectedKobo = Math.round(Number(ride.fare_naira) * KOBO);

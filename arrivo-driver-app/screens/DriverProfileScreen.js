@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Press
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { saveDriverProfile } from "../services/api";
 import ParasyteSignature from "../components/ParasyteSignature";
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.2)",
+    borderColor: tint(0.2),
   },
   chipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
   chipText: { color: colors.ink, fontSize: 12.5, fontWeight: "600" },

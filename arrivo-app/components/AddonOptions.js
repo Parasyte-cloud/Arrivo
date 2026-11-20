@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Switch } from "react-native";
 import { Card } from "./UI";
-import { colors, radius, spacing } from "../theme/tokens";
+import { colors, radius, spacing, tint } from "../theme/tokens";
 import {
   securityEscortDescription,
   fleetChipLabel,
@@ -41,7 +41,7 @@ export function AddonOptions({
           <Switch
             value={securityEscort}
             onValueChange={onSecurityEscortChange}
-            trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }}
+            trackColor={{ false: tint(0.15), true: colors.amber }}
           />
         </View>
       </Card>

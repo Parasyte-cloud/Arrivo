@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, Pressable, Text, StyleSheet } from "react-native";
 import { useTranslation } from "react-i18next";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { SERVICES } from "../utils/services";
 import { useAuth } from "../context/AuthContext";
 import { getInstantStatus } from "../services/api";
@@ -41,8 +41,8 @@ export default function ServiceSwitcher({ current, onSelect, expressEnabled }) {
 
 const styles = StyleSheet.create({
   row: { paddingVertical: spacing.sm, gap: 8 },
-  chip: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: "rgba(18,18,59,0.18)", backgroundColor: "#FFFFFF", marginRight: 8 },
-  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chip: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: tint(0.18), backgroundColor: colors.sheet, marginRight: 8 },
+  chipOn: { backgroundColor: colors.fill, borderColor: colors.fill },
   text: { fontSize: 13.5, fontWeight: "700", color: colors.ink },
   textOn: { color: "#FFFFFF" },
 });

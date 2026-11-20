@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   avatarPicker: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: colors.fieldBg,
     alignSelf: "center", alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(18,18,59,0.2)", borderStyle: "dashed", overflow: "hidden",
+    borderWidth: 1.5, borderColor: tint(0.2), borderStyle: "dashed", overflow: "hidden",
   },
   avatarImage: { width: "100%", height: "100%" },
   avatarPlus: { fontSize: 30, color: colors.textMuted },
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.sm },
   checkboxTouch: { paddingTop: 1 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: tint(0.35),
     alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerLine: { flex: 1, height: 1, backgroundColor: tint(0.15) },
   dividerText: { color: colors.textMuted, fontSize: 12 },
   oauthHint: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

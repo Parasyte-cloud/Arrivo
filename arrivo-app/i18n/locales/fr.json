@@ -279,7 +279,8 @@
   "liveMap": {
     "pickup": "Prise en charge",
     "destination": "Destination",
-    "yourDriver": "Votre chauffeur"
+    "yourDriver": "Votre chauffeur",
+    "live": "En direct"
   },
   "phoneInput": {
     "chooseACountryCode": "Choisir un indicatif de pays",

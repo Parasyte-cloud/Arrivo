@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Switch, ActivityIndicato
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import ParasyteSignature from "../components/ParasyteSignature";
@@ -103,21 +103,21 @@ export default function RidePreferencesScreen() {
               <Text style={styles.rowLabel}>{t("ridePreferences.quietRide")}</Text>
               <Text style={styles.meta}>{t("ridePreferences.yourDriverWillKeepConversation")}</Text>
             </View>
-            <Switch value={quietRide} onValueChange={setQuietRide} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
+            <Switch value={quietRide} onValueChange={setQuietRide} trackColor={{ false: tint(0.15), true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>{t("ridePreferences.childSeatRequired")}</Text>
               <Text style={styles.meta}>{t("ridePreferences.weLlTryToArrange")}</Text>
             </View>
-            <Switch value={childSeatRequired} onValueChange={setChildSeatRequired} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
+            <Switch value={childSeatRequired} onValueChange={setChildSeatRequired} trackColor={{ false: tint(0.15), true: colors.amber }} />
           </View>
           <View style={[styles.row, { marginTop: spacing.md }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>{t("ridePreferences.travelingWithAPet")}</Text>
               <Text style={styles.meta}>{t("ridePreferences.letsYourDriverKnowAhead")}</Text>
             </View>
-            <Switch value={travelingWithPet} onValueChange={setTravelingWithPet} trackColor={{ false: "rgba(18,18,59,0.15)", true: colors.amber }} />
+            <Switch value={travelingWithPet} onValueChange={setTravelingWithPet} trackColor={{ false: tint(0.15), true: colors.amber }} />
           </View>
         </Card>
 
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-    borderWidth: 1, borderColor: "rgba(18,18,59,0.15)",
+    borderWidth: 1, borderColor: tint(0.15),
   },
   chipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
   chipText: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },

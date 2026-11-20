@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useTranslation } from "react-i18next";
 import { supportedLanguages, setAppLanguage } from "../i18n";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 
 // Names are shown in their own language so a rider can always find theirs,
 // whatever language the screen is currently in.
@@ -35,8 +35,8 @@ export default function LanguageChips() {
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: spacing.md },
-  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: "rgba(18,18,59,0.25)", minHeight: 34, justifyContent: "center" },
-  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: tint(0.25), minHeight: 34, justifyContent: "center" },
+  chipActive: { backgroundColor: colors.fill, borderColor: colors.fill },
   text: { fontSize: 13, color: colors.ink, fontWeight: "600" },
   textActive: { color: "#FFFFFF" },
 });

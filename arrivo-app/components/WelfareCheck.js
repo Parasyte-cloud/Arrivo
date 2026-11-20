@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, Modal, StyleSheet } from "react-native";
 import * as Location from "expo-location";
 import { Button } from "./UI";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { sendWelfarePing, answerWelfare } from "../services/api";
 import { WELFARE_PING_MS, shouldWatch, secondsLeft, clock, pingBody } from "../utils/welfare";
@@ -98,8 +98,8 @@ export default function WelfareCheck({ rideId, rideStatus }) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(18,18,59,0.55)", justifyContent: "center", padding: spacing.lg },
-  sheet: { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.lg },
+  backdrop: { flex: 1, backgroundColor: tint(0.55), justifyContent: "center", padding: spacing.lg },
+  sheet: { backgroundColor: colors.sheet, borderRadius: radius.lg, padding: spacing.lg },
   title: { fontSize: 22, fontWeight: "800", color: colors.ink, textAlign: "center" },
   body: { fontSize: 14.5, lineHeight: 21, color: colors.textMuted, textAlign: "center", marginTop: spacing.sm, marginBottom: spacing.md },
   timer: { fontSize: 34, fontWeight: "800", color: colors.ink, textAlign: "center", marginBottom: spacing.md },

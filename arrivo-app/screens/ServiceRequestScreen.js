@@ -31,6 +31,9 @@ export default function ServiceRequestScreen({ navigation, route }) {
   const prefill = route?.params?.prefill || {};
   const [pickup, setPickup] = useState(prefill.pickup?.address || "");
   const [destination, setDestination] = useState(prefill.destination?.address || "");
+  // Map points from the address picker, so the job shows on the live map like an ArrivoExpress trip.
+  const [pickupPt, setPickupPt] = useState(prefill.pickup?.lat != null ? { lat: prefill.pickup.lat, lng: prefill.pickup.lng } : null);
+  const [destPt, setDestPt] = useState(prefill.destination?.lat != null ? { lat: prefill.destination.lat, lng: prefill.destination.lng } : null);
   const [when, setWhen] = useState("");
   const [passengers, setPassengers] = useState("");
   const [details, setDetails] = useState("");
@@ -60,6 +63,8 @@ export default function ServiceRequestScreen({ navigation, route }) {
         confirmAge16: service === "campus" ? true : undefined,
         pickupAddress: pickup.trim(),
         destinationAddress: destination.trim(),
+        pickupLat: pickupPt?.lat, pickupLng: pickupPt?.lng,
+        destinationLat: destPt?.lat, destinationLng: destPt?.lng,
         passengerCount: count,
         contactPhone: ph.full,
         details: noteParts.length ? noteParts.join("\n") : undefined,
@@ -93,8 +98,8 @@ export default function ServiceRequestScreen({ navigation, route }) {
             <>
               <Text style={[styles.meta, { marginTop: spacing.md }]}>{t("services.intro")}</Text>
               <Card tone="dark" style={{ marginTop: spacing.md }}>
-                <AddressAutocomplete style={{ marginBottom: spacing.sm }} value={pickup} onChangeText={setPickup} onSelect={() => {}} placeholder={t("services.pickup")} />
-                <AddressAutocomplete value={destination} onChangeText={setDestination} onSelect={() => {}} placeholder={t("services.destination")} />
+                <AddressAutocomplete style={{ marginBottom: spacing.sm }} value={pickup} onChangeText={setPickup} onSelect={(p) => setPickupPt(p && p.lat != null ? { lat: p.lat, lng: p.lng } : null)} placeholder={t("services.pickup")} />
+                <AddressAutocomplete value={destination} onChangeText={setDestination} onSelect={(p) => setDestPt(p && p.lat != null ? { lat: p.lat, lng: p.lng } : null)} placeholder={t("services.destination")} />
               </Card>
               <Card tone="dark" style={{ marginTop: spacing.md }}>
                 <TextInput style={styles.input} value={when} onChangeText={setWhen} placeholder={t("services.when")} placeholderTextColor={colors.dark.textMuted} maxLength={120} />

@@ -154,3 +154,13 @@ test("who may change someone's access", () => {
 });
 
 console.log(`\nstaffAccess: ${passed} passed`);
+
+test("flight credits need the Wallet area, not Rides: Rides manage alone cannot issue or find credit", () => {
+  const s = { ...support, staff_permissions: { rides: "manage", wallet: "none" } };
+  assert.ok(!a.check(s, "GET", "/api/admin/flight-credits").ok);
+  assert.ok(!a.check(s, "GET", "/api/admin/flight-credits/find-accounts").ok);
+  assert.ok(!a.check(s, "POST", "/api/admin/rides/12/flight-credit").ok);
+  const w = { ...support, staff_permissions: { wallet: "manage" } };
+  assert.ok(a.check(w, "POST", "/api/admin/rides/12/flight-credit").ok);
+  assert.strictEqual(a.requirementFor("GET", "/api/admin/flight-credits").area, "wallet");
+});
