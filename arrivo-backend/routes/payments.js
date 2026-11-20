@@ -6,7 +6,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const { pool } = require("../db/db");
 const { claimPaymentReference, isValidPaystackReference } = require("../services/paymentReferences");
-const { creditWalletTopup } = require("../services/walletTopup");
+const { creditWalletTopup, walletTopupSubaccount } = require("../services/walletTopup");
 const {
   normalisePurpose,
   recordOrder,
@@ -69,6 +69,19 @@ async function createRideFromAssistedBooking(dbClient, booking, reference, paidA
       Number(booking.quoted_usd_amount), Number(booking.quoted_ngn_per_usd), null, 0, null,
     ]
   );
+  // EasyBook details that have no ride column of their own go in admin_notes so
+  // the ops dashboard shows them: flight date, the customer's notes, who helped.
+  const noteParts = [];
+  if (booking.invoice_number) noteParts.push(`Invoice ${booking.invoice_number}`);
+  if (booking.submitted_via) noteParts.push(`Booked via ${booking.submitted_via}`);
+  if (req.flightDate) noteParts.push(`Flight date: ${req.flightDate}`);
+  if (req.notes) noteParts.push(`Customer notes: ${req.notes}`);
+  if (noteParts.length) {
+    await dbClient.query("UPDATE rides SET admin_notes = $2 WHERE id = $1", [
+      inserted.rows[0].id,
+      noteParts.join(" | ").slice(0, 1000),
+    ]);
+  }
   // Riders need a phone on file (services/riderPhone.js). The booking was made
   // with one, so give it to an account that has none. Never overwrites.
   if (isValidPhone(req.contactPhone)) {
@@ -118,7 +131,7 @@ async function verifyPaystackTransaction(reference) {
 // verifyPaystackTransaction above being the one place that checks one.
 // Throws on a bad amount or a missing secret key; callers translate that
 // into their own error response shape.
-async function initializePaystackTransaction({ email, amountNaira }) {
+async function initializePaystackTransaction({ email, amountNaira, subaccount }) {
   if (!email || !Number.isFinite(amountNaira) || amountNaira <= 0) {
     throw new Error("email and a positive amountNaira are required");
   }
@@ -135,6 +148,9 @@ async function initializePaystackTransaction({ email, amountNaira }) {
       // say so explicitly instead of relying on the account default.
       currency: "NGN",
       callback_url: process.env.PAYSTACK_CALLBACK_URL,
+      // Wallet top-ups settle into the holding account (a Paystack subaccount created with 0% kept by the main
+      // account). The main account pays Paystack's fee, so a 20,000 top-up puts 20,000 in the holding account.
+      ...(subaccount ? { subaccount, bearer: "account" } : {}),
     },
     { headers: paystackHeaders(), timeout: 10000 }
   );
@@ -238,7 +254,9 @@ router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res)
   }
 
   try {
-    const result = await initializePaystackTransaction({ email, amountNaira });
+    const walletSubaccount = walletTopupSubaccount();
+    const toHolding = normalisePurpose(purpose) === "wallet_topup" && Boolean(walletSubaccount);
+    const result = await initializePaystackTransaction({ email, amountNaira, subaccount: toHolding ? walletSubaccount : undefined });
     // Remembering the order must never stop a payment that Paystack has
     // already started: the old flow (verify, then create the ride) does not
     // depend on it.
@@ -250,6 +268,7 @@ router.post("/initialize", initializeLimiter, maybeRequireAuth, async (req, res)
         purpose,
         amountNaira,
         payload: booking,
+        fundsRoute: toHolding ? "holding" : null,
       });
     } catch (orderErr) {
       console.error("Could not record the pending payment order:", orderErr.message);
@@ -303,6 +322,19 @@ async function handleExistingRide(ride, { reference, amountKobo }) {
     // Already marked paid, for example by a previous delivery.
     await markOrderFinalized(pool, reference, ride.id);
     return "already_paid";
+  }
+  // A ride that was cancelled (by the rider, or closed automatically after a cancelled flight) must not turn
+  // "paid" because a late Paystack payment lands. Money came in with nothing to pay for: Ops refunds it.
+  if (ride.ride_status === "cancelled") {
+    await recordPaymentException(pool, {
+      reference,
+      reason: "paid_after_cancellation",
+      purpose: "ride",
+      userId: ride.rider_id,
+      amountNaira: amountKobo / KOBO,
+      details: { rideId: ride.id },
+    });
+    return "ride_cancelled";
   }
   // Check the amount BEFORE writing anything: an underpaid or wrong-amount
   // transaction must never flip a ride to paid.
@@ -361,6 +393,38 @@ async function handleExistingRide(ride, { reference, amountKobo }) {
 
 // A support-assisted booking's payment link (routes/support.js). Same
 // amount-then-claim-then-write sequence as a ride, against a different table.
+// Emails the receipt for a paid assisted booking. The UPDATE ... WHERE
+// receipt_sent_at IS NULL claims the send, so a repeated webhook delivery
+// (Paystack retries) cannot email two receipts. Failure here never undoes the
+// booking: the ride exists and is on the dashboard either way.
+async function sendAssistedReceipt(booking, rider, ride, reference, paidNaira) {
+  try {
+    if (!rider?.email) return;
+    const claimed = await pool.query(
+      `UPDATE support_assisted_bookings SET receipt_sent_at = now()
+       WHERE id = $1 AND receipt_sent_at IS NULL RETURNING paid_at`,
+      [booking.id]
+    );
+    if (!claimed.rows[0]) return;
+    const { sendReceiptEmail } = require("../services/email");
+    const result = await sendReceiptEmail(rider.email, {
+      name: (booking.booking_request && booking.booking_request.contactName) || rider.name,
+      invoiceNumber: booking.invoice_number || `RA-${ride.id}`,
+      request: booking.booking_request || {},
+      paidNaira,
+      reference,
+      paidAt: claimed.rows[0].paid_at || new Date(),
+      rideId: ride.id,
+    });
+    if (result && result.ok === false) {
+      // Un-claim so a later delivery or a staff resend can try again.
+      await pool.query("UPDATE support_assisted_bookings SET receipt_sent_at = NULL WHERE id = $1", [booking.id]);
+    }
+  } catch (err) {
+    console.error(`Receipt email for assisted booking #${booking.id} failed:`, err.message);
+  }
+}
+
 async function handleAssistedBooking(booking, { reference, amountKobo }) {
   if (booking.ride_id) {
     // Already turned into a ride by a previous delivery.
@@ -402,7 +466,7 @@ async function handleAssistedBooking(booking, { reference, amountKobo }) {
     }
     newRide = await createRideFromAssistedBooking(client, booking, reference, amountKobo / KOBO);
     await client.query(
-      `UPDATE support_assisted_bookings SET ride_id = $1, payment_status = 'paid', updated_at = now() WHERE id = $2`,
+      `UPDATE support_assisted_bookings SET ride_id = $1, payment_status = 'paid', paid_at = now(), updated_at = now() WHERE id = $2`,
       [newRide.id, booking.id]
     );
     await client.query(`UPDATE used_payment_references SET ride_id = $1 WHERE reference = $2`, [newRide.id, reference]);
@@ -416,7 +480,8 @@ async function handleAssistedBooking(booking, { reference, amountKobo }) {
   await markOrderFinalized(pool, reference, newRide.id);
   console.log(`Assisted booking #${booking.id} paid via webhook, ref ${reference} -- created ride #${newRide.id}.`);
 
-  const rider = await pool.query("SELECT phone, name FROM users WHERE id = $1", [booking.rider_id]);
+  const rider = await pool.query("SELECT phone, name, email FROM users WHERE id = $1", [booking.rider_id]);
+  await sendAssistedReceipt(booking, rider.rows[0], newRide, reference, amountKobo / KOBO);
   if (rider.rows[0]?.phone) {
     sendWhatsAppMessage(
       rider.rows[0].phone,
@@ -518,13 +583,13 @@ async function handleOrder(reference, { amountKobo, email }) {
     }
     await recordPaymentException(pool, {
       reference,
-      reason: "reference_already_used",
+      reason: credit.reason === "not_in_holding" ? "not_in_holding" : "reference_already_used",
       purpose: "wallet_topup",
       userId: order.user_id,
       amountNaira: amountKobo / KOBO,
       details: { orderId: order.id },
     });
-    return "reference_already_used";
+    return credit.reason === "not_in_holding" ? "not_in_holding" : "reference_already_used";
   }
 
   return createRideFromOrder(order, { reference, amountKobo });
