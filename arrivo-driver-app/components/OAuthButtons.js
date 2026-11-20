@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { colors, spacing } from "../theme/tokens";
+import { API_BASE_URL } from "../services/config";
 
 // Needed once, at module load, so the in-app browser sheet Google sign-in
 // opens actually closes itself and hands control back to the app when the
@@ -33,6 +34,23 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only). `disabled` gates these behind the data-protection checkbox on
 // the signup screen, exactly like "Create account" below them is gated.
+// A sign-in that fails on the phone never reaches our server, so nothing would
+// ever show up in the logs. Send the code Apple/Google gave to the same
+// client-errors log the rider app uses, and show a short Ref to read out.
+async function explain(stage, err, fallback) {
+  const code = err && err.code ? String(err.code) : "";
+  let ref = "";
+  try {
+    ref = "RA-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+    await fetch(`${API_BASE_URL}/api/client-errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Platform": `driver-${Platform.OS}` },
+      body: JSON.stringify({ ref, code: "OAUTH_" + stage, message: (err && err.message) || fallback, detail: code, screen: "oauth", platform: `driver-${Platform.OS}`, context: { nativeCode: code || "none" } }),
+    });
+  } catch (e) { /* reporting is best effort */ }
+  return `${fallback}${code || ref ? ` (${[code, ref && "Ref " + ref].filter(Boolean).join(", ")})` : ""}`;
+}
+
 export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, onBlocked, disabled, busy }) {
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
 
@@ -60,7 +78,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // how the Apple handler below ignores ERR_REQUEST_CANCELED — only a
     // genuine "error" type is worth surfacing.
     if (response.type === "error") {
-      onGoogleError && onGoogleError(response.error?.message || "Couldn't sign in with Google. Please try again.");
+      explain("GOOGLE_RESPONSE", response.error || { code: response.params?.error }, response.error?.message || "Couldn't sign in with Google. Please try again.").then((m) => onGoogleError && onGoogleError(m));
       return;
     }
     if (response.type !== "success") return;
@@ -68,7 +86,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     if (idToken) {
       onGoogleIdToken(idToken);
     } else {
-      onGoogleError && onGoogleError("Couldn't complete Google sign-in. Please try again.");
+      explain("GOOGLE_NO_TOKEN", { code: "no_id_token" }, "Couldn't complete Google sign-in. Please try again.").then((m) => onGoogleError && onGoogleError(m));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
@@ -78,12 +96,18 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
   const handleGoogle = () => {
     if (disabled) { onBlocked && onBlocked(); return; }
     if (!request) { onGoogleError && onGoogleError("Google sign-in is still getting ready. Try again in a moment."); return; }
-    promptAsync();
+    promptAsync().catch((e) => {
+      explain("GOOGLE_PROMPT", e, "Couldn't sign in with Google. Please try again.").then((m) => onGoogleError && onGoogleError(m));
+    });
   };
 
   const handleAppleSignIn = async () => {
     if (disabled) { onBlocked && onBlocked(); return; }
     try {
+      if (!(await AppleAuthentication.isAvailableAsync())) {
+        onAppleResult({ error: await explain("APPLE_UNAVAILABLE", { code: "unavailable" }, "Sign in with Apple isn't available on this device.") });
+        return;
+      }
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -93,6 +117,10 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       // authorizationCode is one-time and only useful right now: the backend
       // swaps it for a refresh token, which is the only thing that can revoke
       // this Apple authorization when the account is deleted.
+      if (!credential.identityToken) {
+        onAppleResult({ error: await explain("APPLE_NO_TOKEN", { code: "no_identity_token" }, "Apple sign-in failed. Please try again.") });
+        return;
+      }
       onAppleResult({
         identityToken: credential.identityToken,
         fullName: credential.fullName,
@@ -100,7 +128,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       });
     } catch (e) {
       if (e.code === "ERR_REQUEST_CANCELED") return;
-      onAppleResult({ error: e.message || "Apple sign-in failed. Please try again." });
+      onAppleResult({ error: await explain("APPLE_SIGNIN", e, "Apple sign-in failed. Please try again.") });
     }
   };
 

@@ -10,7 +10,7 @@ const { setSessionCookie, clearSessionCookie } = require("../middleware/sessionC
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { hashResetToken, issueResetToken } = require("../services/passwordResetToken");
 const { validateImageDataUrl } = require("../services/imageValidation");
-const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
+const { verifyGoogleIdToken, verifyAppleIdentityToken, oauthReadiness } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
 const conversions = require("../services/conversions");
 const { passwordProblem } = require("../services/passwordPolicy");
@@ -420,6 +420,24 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
     sendWelcomeEmail(newUser.email, newUser.name).catch((e) => console.error("Welcome email failed:", e.message));
   }
   return { user: newUser, isNewAccount: true };
+}
+
+// GET /api/auth/oauth-status — is this server ready for Google and Apple sign-in?
+// No secrets: booleans and public client IDs only. A brand-new Apple account is
+// refused when revocationConfigured is false (see POST /apple), and Google tokens
+// are rejected unless the app's client ID is in google.clientIds.
+router.get("/oauth-status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(oauthReadiness(isAppleRevocationConfigured()));
+});
+
+{
+  const r = oauthReadiness(isAppleRevocationConfigured());
+  console.log("[oauth] ready: google=%s (%d client ids), apple audiences=%s, apple revocation=%s",
+    r.google.configured, r.google.clientIds.length, r.apple.audiences.join(","), r.apple.revocationConfigured);
+  if (!r.apple.revocationConfigured) {
+    console.warn("[oauth] APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY are not all set: brand-new Sign in with Apple accounts will be refused until they are.");
+  }
 }
 
 // POST /api/auth/google — sign in (or sign up) with a Google ID token.

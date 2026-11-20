@@ -42,7 +42,8 @@
     "googleFailed": "Connexion avec Google impossible. Veuillez réessayer.",
     "googleIncomplete": "Impossible de terminer la connexion Google. Veuillez réessayer.",
     "googleNotReady": "La connexion Google se prépare encore. Réessayez dans un instant.",
-    "appleFailed": "Échec de la connexion avec Apple. Veuillez réessayer."
+    "appleFailed": "Échec de la connexion avec Apple. Veuillez réessayer.",
+    "appleUnavailable": "Se connecter avec Apple n'est pas disponible sur cet appareil."
   },
   "profile": {
     "title": "Profil",

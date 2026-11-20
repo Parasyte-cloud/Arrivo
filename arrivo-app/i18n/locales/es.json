@@ -42,7 +42,8 @@
     "googleFailed": "No se pudo iniciar sesión con Google. Inténtalo de nuevo.",
     "googleIncomplete": "No se pudo completar el inicio de sesión con Google. Inténtalo de nuevo.",
     "googleNotReady": "El inicio de sesión con Google aún se está preparando. Inténtalo de nuevo en un momento.",
-    "appleFailed": "Falló el inicio de sesión con Apple. Inténtalo de nuevo."
+    "appleFailed": "Falló el inicio de sesión con Apple. Inténtalo de nuevo.",
+    "appleUnavailable": "Iniciar sesión con Apple no está disponible en este dispositivo."
   },
   "profile": {
     "title": "Perfil",

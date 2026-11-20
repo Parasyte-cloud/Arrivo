@@ -42,7 +42,8 @@
     "googleFailed": "Não foi possível entrar com o Google. Tente novamente.",
     "googleIncomplete": "Não foi possível concluir o login com o Google. Tente novamente.",
     "googleNotReady": "O login com o Google ainda está a ser preparado. Tente novamente daqui a pouco.",
-    "appleFailed": "Falha no login com a Apple. Tente novamente."
+    "appleFailed": "Falha no login com a Apple. Tente novamente.",
+    "appleUnavailable": "Iniciar sessão com a Apple não está disponível neste dispositivo."
   },
   "profile": {
     "title": "Perfil",

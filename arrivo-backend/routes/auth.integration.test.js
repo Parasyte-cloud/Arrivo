@@ -130,6 +130,23 @@ await test("google login succeeds and does not 500", async () => {
 });
 
 console.log("");
+console.log("The server can say whether sign-in is set up:");
+
+await test("oauth-status reports readiness with no secrets in it", async () => {
+  process.env.GOOGLE_OAUTH_CLIENT_IDS = "a.apps.googleusercontent.com, b.apps.googleusercontent.com";
+  const r = await call("/api/auth/oauth-status");
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.google.configured, true);
+  assert.deepStrictEqual(r.body.google.clientIds, ["a.apps.googleusercontent.com", "b.apps.googleusercontent.com"]);
+  assert.ok(r.body.apple.audiences.includes("com.ridearrivo.rider") && r.body.apple.audiences.includes("com.ridearrivo.driver"));
+  assert.strictEqual(r.body.apple.revocationConfigured, true, "the test sets the three Apple vars");
+  assert.ok(!JSON.stringify(r.body).includes("BEGIN"), "never the private key");
+  delete process.env.GOOGLE_OAUTH_CLIENT_IDS;
+  const none = await call("/api/auth/oauth-status");
+  assert.strictEqual(none.body.google.configured, false);
+});
+
+console.log("");
 console.log("Apple sign-in stores a refresh token against the right client:");
 
 for (const [label, aud] of [["rider", RIDER_AUD], ["driver", DRIVER_AUD]]) {
