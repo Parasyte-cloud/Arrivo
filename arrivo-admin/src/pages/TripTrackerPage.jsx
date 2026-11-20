@@ -7,6 +7,7 @@ import { TripMap, tripColor } from "../components/TripMap";
 import { FlightMap } from "../components/FlightMap";
 import { openInWindow } from "../lib/openWindow";
 import { formatDateTime } from "../utils";
+import { DispatchPanel } from "../components/DispatchPanel";
 import { downloadDispatchSheet } from "../dispatchSheet";
 import "../tracker.css";
 
@@ -474,6 +475,8 @@ export function TripTrackerPage({ focus = null }) {
                 ) : null}
               </div>
             ) : null}
+
+            <DispatchPanel trip={trip} onChanged={load} />
 
             <div className="tt-block">
               <h3>People</h3>

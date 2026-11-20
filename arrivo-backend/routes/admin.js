@@ -340,104 +340,19 @@ router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
     return res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
   }
 
-  const driver = await pool.query(
-    `SELECT drivers.id, drivers.is_verified, drivers.vehicle_id, users.name, users.push_token as driver_push_token
-     FROM drivers JOIN users ON users.id = drivers.user_id
-     WHERE drivers.id = $1`,
-    [driverId]
-  );
-  if (!driver.rows[0]) return res.status(404).json({ error: "Driver not found" });
-  if (!driver.rows[0].is_verified) {
-    return res.status(400).json({ error: `${driver.rows[0].name} isn't verified yet — verify them on the Drivers page first.` });
+  // One implementation for "ops puts a driver on a ride": services/dispatch.js assignDriver. It locks the
+  // ride row (so a self-accept at the same moment cannot be overwritten), logs the dispatch event, notes
+  // a driver who does not hold the service (never blocks staff), and tells the driver and the rider.
+  // POST /api/admin/trips/:id/assign-driver is the same call.
+  const dispatch = require("../services/dispatch");
+  try {
+    const out = await dispatch.assignDriver({ rideId: ride.id, driverId: Number(driverId), actorId: req.user.id, note: req.body.note });
+    const finalRide = (await pool.query("SELECT * FROM rides WHERE id = $1", [ride.id])).rows[0];
+    res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") }, tierNote: out.tierNote });
+  } catch (e) {
+    if (e instanceof dispatch.DispatchError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
   }
-
-  // Putting a driver on a "requested" ride is the same as them accepting
-  // it: move it to "accepted". A ride already "accepted" or "in_progress"
-  // just gets handed to the new driver instead — its status doesn't change
-  // (this is meant for correcting a wrong assignment, not re-dispatching
-  // mid-trip; the admin should confirm with both drivers before doing that).
-  //
-  // The "requested" case gets the exact same atomic guard as a driver's own
-  // POST /api/rides/:id/accept (routes/rides.js): WHERE ride_status =
-  // 'requested' AND driver_id IS NULL. Without it, an admin assigning a
-  // driver at the same moment a different driver self-accepts could silently
-  // overwrite that driver's acceptance — the admin's write would land second
-  // and just stomp on it with no error either way. The "already accepted/
-  // in_progress" reassignment path below doesn't need this: by definition no
-  // driver's self-accept can race it, since self-accept itself requires
-  // ride_status = 'requested'.
-  const wasRequested = ride.ride_status === "requested";
-  const updated = await pool.query(
-    wasRequested
-      ? `UPDATE rides SET driver_id = $1, ride_status = 'accepted', updated_at = now()
-         WHERE id = $2 AND ride_status = 'requested' AND driver_id IS NULL RETURNING *`
-      : `UPDATE rides SET driver_id = $1, updated_at = now()
-         WHERE id = $2 RETURNING *`,
-    [driverId, ride.id]
-  );
-
-  if (wasRequested && updated.rowCount === 0) {
-    return res.status(409).json({ error: "This ride was just accepted by another driver. Refresh and try again." });
-  }
-
-  const finalRide = updated.rows[0];
-
-  // Staff may put ANY verified driver on ANY ride, on purpose: ops sometimes has
-  // to cover a gap. It is never blocked, but when the driver does not hold the
-  // service this ride belongs to, that is written to the audit trail and the
-  // response says so, so the console can show a note and nobody is surprised.
-  const rideTier = require("../services/driverTiers").tierForRide(finalRide);
-  const isExpress = (await pool.query("SELECT 1 FROM instant_ride_requests WHERE ride_id = $1", [finalRide.id])).rowCount > 0;
-  const tier = isExpress ? "express" : rideTier;
-  const holds = (await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driverId, tier])).rowCount > 0;
-  const tierNote = holds ? null : `${driver.rows[0].name} does not hold the ${tier} service. Assigned by staff anyway.`;
-  if (!holds) {
-    await logSafetyEvent(pool, "manual_assignment_without_tier", { rideId: finalRide.id, userId: req.user.id, driverId: Number(driverId), detail: { tier } });
-  }
-
-  // Manual assignment skips the normal accept flow entirely, so neither
-  // side hears about it from the app on its own — unlike a driver
-  // self-accepting (routes/rides.js POST /:id/accept), which already
-  // notifies the rider. Same three rider channels as that route, plus a
-  // push to the driver, who otherwise has no way to know ops put this on
-  // their queue.
-  const riderContact = await pool.query(
-    "SELECT push_token as rider_push_token, whatsapp_number as rider_whatsapp_number, email as rider_email FROM users WHERE id = $1",
-    [finalRide.rider_id]
-  );
-  const vehicleInfo = driver.rows[0].vehicle_id
-    ? await pool.query("SELECT make_model, plate_number FROM vehicles WHERE id = $1", [driver.rows[0].vehicle_id])
-    : { rows: [] };
-  const vehicleLabel = vehicleInfo.rows[0]?.make_model
-    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
-    : null;
-  const driverName = driver.rows[0].name;
-  const rider = riderContact.rows[0] || {};
-
-  if (rider.rider_push_token) {
-    sendPushNotification(
-      rider.rider_push_token,
-      "Driver assigned",
-      `${driverName} has been assigned to your ride.`,
-      { rideId: finalRide.id, type: "ride_accepted" }
-    ).catch(() => {});
-  }
-  if (rider.rider_whatsapp_number) {
-    sendWhatsAppMessage(rider.rider_whatsapp_number, driverAssignedMessage(finalRide, driverName, vehicleLabel)).catch(() => {});
-  }
-  if (rider.rider_email) {
-    sendDriverAssignedEmail(rider.rider_email, finalRide, driverName, vehicleLabel).catch(() => {});
-  }
-  if (driver.rows[0].driver_push_token) {
-    sendPushNotification(
-      driver.rows[0].driver_push_token,
-      "New ride assigned",
-      `Ops assigned you ride #${finalRide.id} — ${finalRide.pickup_address}. Check the app for details.`,
-      { rideId: finalRide.id, type: "ride_assigned_manual" }
-    ).catch(() => {});
-  }
-
-  res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") }, tierNote });
 });
 
 // ── Live tracking ────────────────────────────────────────────────────────
@@ -610,6 +525,50 @@ async function cachedFlight(trip) {
     checkedAt: new Date().toISOString(),
   };
 }
+
+// ── Dispatch (services/dispatch.js) ────────────────────────────────────────
+// GET  /trips/:id/drivers        approved drivers to pick from, best first
+// GET  /trips/:id/dispatch       who was alerted, who took it, who changed it
+// POST /trips/:id/assign-driver  { driverId, note? }  put a driver on the ride, or swap one
+// POST /trips/:id/alert-drivers  push "New ride" to online drivers again
+const dispatch = require("../services/dispatch");
+const rideIdOf = (req) => (/^\d+$/.test(req.params.id) ? Number(req.params.id) : null);
+
+router.get("/trips/:id/drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const drivers = await dispatch.driverOptions(id);
+  if (!drivers) return res.status(404).json({ error: "Ride not found" });
+  res.json({ drivers });
+});
+
+router.get("/trips/:id/dispatch", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  res.json({ events: await dispatch.dispatchHistory(id) });
+});
+
+router.post("/trips/:id/assign-driver", async (req, res) => {
+  const id = rideIdOf(req);
+  const driverId = Number(req.body && req.body.driverId);
+  if (!id || !Number.isInteger(driverId) || driverId < 1) return res.status(400).json({ error: "Need a ride and a driver." });
+  try {
+    const out = await dispatch.assignDriver({ rideId: id, driverId, actorId: req.user.id, note: req.body.note });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    if (e instanceof dispatch.DispatchError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
+});
+
+router.post("/trips/:id/alert-drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const ride = (await pool.query("SELECT ride_status, driver_id FROM rides WHERE id = $1", [id])).rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status !== "requested" || ride.driver_id) return res.status(409).json({ error: "This ride already has a driver." });
+  res.json(await dispatch.alertDrivers(id, "alerted"));
+});
 
 // GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
 router.get("/trips/:id", async (req, res) => {

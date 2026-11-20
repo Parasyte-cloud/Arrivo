@@ -362,3 +362,9 @@ export const resendPersonSetup = (token, id) =>
     method: "POST",
     token,
   });
+// Dispatch (arrivo-backend/services/dispatch.js).
+export const getTripDrivers = (token, id) => request(`/api/admin/trips/${id}/drivers`, token);
+export const getTripDispatch = (token, id) => request(`/api/admin/trips/${id}/dispatch`, token);
+export const assignTripDriver = (token, id, driverId, note) =>
+  request(`/api/admin/trips/${id}/assign-driver`, token, { method: "POST", body: JSON.stringify({ driverId, note }) });
+export const alertTripDrivers = (token, id) => request(`/api/admin/trips/${id}/alert-drivers`, token, { method: "POST" });
