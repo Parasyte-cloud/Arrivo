@@ -124,6 +124,24 @@ export const getDriverQrImage = async (token, driverId) => {
 };
 
 export const getRiders = (token) => request("/api/admin/riders", token);
+
+// One rider's submitted ID photo. The riders list only says whether one exists
+// (has_id_document); the image itself is admin-only and comes from here, one
+// rider at a time, so the list stays light and no one else's photo is in it.
+// Same blob approach as the driver QR above: an <img src> cannot send the token.
+// A 403 is passed back with its status so the page can say "admins only"
+// instead of showing it as a fault.
+export const getRiderIdDocumentImage = async (token, riderId) => {
+  const res = await fetch(`${API_BASE_URL}/api/admin/riders/${riderId}/id-document`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(body.error || "Couldn't load this ID photo."), { status: res.status });
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
 export const verifyRiderId = (token, id, status, rejectionReason) =>
   request(`/api/admin/riders/${id}/verify-id`, token, {
     method: "PATCH",
@@ -142,6 +160,12 @@ export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
 export const getMemberships = (token) => request("/api/admin/memberships", token);
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+export const getFlightCredits = (token, q = "") => request(`/api/admin/flight-credits?q=${encodeURIComponent(q)}`, token);
+export const findCreditAccounts = (token, q) => request(`/api/admin/flight-credits/find-accounts?q=${encodeURIComponent(q)}`, token);
+export const moveFlightCredit = (token, id, toUserId, note) =>
+  request(`/api/admin/flight-credits/${id}/move`, token, { method: "POST", body: JSON.stringify({ toUserId, note }) });
+export const applyFlightCredit = (token, rideId) =>
+  request(`/api/admin/rides/${rideId}/flight-credit`, token, { method: "POST" });
 
 // ── Driver tiers (owner, and people the owner names) ──
 export const getDriverTiers = (token, q = "") => request(`/api/admin/driver-tiers${q ? `?q=${encodeURIComponent(q)}` : ""}`, token);
@@ -329,6 +353,8 @@ export const setPersonPermissions = (token, id, permissions) =>
 // the last two hours), and one ride with its live flight status.
 export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
 export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+// The booking code (PNR) is encrypted at rest and never in a list. Each reveal is recorded against the staff member.
+export const revealTripPnr = (token, id) => request(`/api/admin/trips/${id}/pnr`, token, { method: "POST" });
 
 export const resendPersonSetup = (token, id) =>
   request(`/api/staff/people/${id}/resend-setup`, {

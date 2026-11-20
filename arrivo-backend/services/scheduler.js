@@ -27,8 +27,22 @@
 const { pool } = require("../db/db");
 const { sendPushNotification } = require("./pushNotifications");
 const { sendWhatsAppMessage, flightIssueMessage, driverChangedMessage } = require("./whatsapp");
-const { sendFlightIssueEmail, sendDriverChangedEmail } = require("./email");
-const { lookupFlightStatus } = require("../routes/flights");
+const { sendFlightIssueEmail, sendDriverChangedEmail, sendEmail, escapeHtml } = require("./email");
+const { lookupFlight } = require("./flightLookup");
+const flightCredit = require("./flightCredit");
+
+// Keeps what Ops sees in step with what the provider says, without a write on every sweep:
+// only when the state or reason changes, or the last check is more than 15 minutes old.
+async function recordTracking(ride, looked) {
+  const same = ride.flight_tracking_state === looked.state && (ride.flight_tracking_reason || null) === (looked.reason || null);
+  const fresh = ride.flight_checked_at && Date.now() - new Date(ride.flight_checked_at).getTime() < 15 * 60 * 1000;
+  if (same && fresh) return;
+  const eta = looked.flight?.arrival?.estimated || looked.flight?.arrival?.scheduled || null;
+  await pool.query(
+    "UPDATE rides SET flight_tracking_state = $2, flight_tracking_reason = $3, flight_checked_at = now(), flight_eta = COALESCE($4::timestamptz, flight_eta) WHERE id = $1",
+    [ride.id, looked.state, looked.reason || null, eta]
+  ).catch((err) => console.error(`[scheduler] could not record flight state for ride #${ride.id}:`, err.message));
+}
 const { lagosMinutesOfDay, lagosDateString, LUCKY_RIDE_END_MIN } = require("./fare");
 const { getConfigBool } = require("./systemConfig");
 const { recordPaymentException } = require("./paymentOrders");
@@ -105,7 +119,9 @@ async function sweepReminders() {
   }
 
   const oneWayRides = await pool.query(
-    `SELECT rides.*, users.push_token as rider_push_token, driver_users.push_token as driver_push_token
+    `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
+            users.push_token as rider_push_token, driver_users.push_token as driver_push_token,
+            users.whatsapp_number as rider_whatsapp_number, users.email as rider_email
      FROM rides
      JOIN users ON users.id = rides.rider_id
      LEFT JOIN drivers ON drivers.id = rides.driver_id
@@ -118,9 +134,18 @@ async function sweepReminders() {
 
   for (const ride of oneWayRides.rows) {
     try {
-      const flightInfo = await lookupFlightStatus(ride.flight_number);
-      const anchor = flightInfo?.arrival?.estimated || flightInfo?.arrival?.scheduled;
-      if (!anchor) continue; // can't compute a reminder window without a real ETA
+      const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null });
+      await recordTracking(ride, looked);
+      // Cancelled arrival: keep the fare as wallet credit (off unless FLIGHT_CANCEL_CREDIT=on).
+      const decision = flightCredit.decideCredit(ride, looked).action;
+      if (decision === "credit" || decision === "close") {
+        await creditCancelledArrival(ride);
+        continue;
+      }
+      // Too early to track, or no real ETA: no reminder can be timed, and Ops can see why from the
+      // recorded state. Nothing is guessed.
+      const anchor = looked.flight?.arrival?.estimated || looked.flight?.arrival?.scheduled;
+      if (!anchor) continue;
       const hoursUntil = (new Date(anchor).getTime() - Date.now()) / (60 * 60 * 1000);
       await maybeSendAndMark(ride, hoursUntil);
     } catch (err) {
@@ -129,13 +154,34 @@ async function sweepReminders() {
   }
 }
 
+async function creditCancelledArrival(ride) {
+  const result = await flightCredit.applyCredit(ride.id, { source: "scheduler" });
+  if (!result.done) return;
+  const text = flightCredit.creditMessage(ride, result.amount);
+  if (ride.rider_push_token) sendPushNotification(ride.rider_push_token, "Flight cancelled", text, { rideId: ride.id, type: "flight_credit" }).catch(() => {});
+  if (ride.driver_push_token) sendPushNotification(ride.driver_push_token, "Trip cancelled", `The flight for pickup #${ride.id} was cancelled. You do not need to go.`, { rideId: ride.id, type: "ride_cancelled" }).catch(() => {});
+  if (ride.rider_whatsapp_number) sendWhatsAppMessage(ride.rider_whatsapp_number, text).catch(() => {});
+  if (ride.rider_email) {
+    sendEmail({
+      to: ride.rider_email,
+      subject: `Your flight ${ride.flight_number} was cancelled`,
+      html: `<p>${escapeHtml(text)}</p><p>RideArrivo</p>`,
+    }).catch(() => {});
+  }
+}
+
 async function maybeSendAndMark(ride, hoursUntil) {
   for (const threshold of REMINDER_THRESHOLDS) {
     if (ride[threshold.column]) continue; // already sent
     if (hoursUntil > threshold.hours) continue; // not there yet
-    await sendReminder(ride, threshold.label, ride.driver_push_token);
-    await pool.query(`UPDATE rides SET ${threshold.column} = true WHERE id = $1`, [ride.id]);
-    ride[threshold.column] = true; // keep the in-memory row consistent in case a later threshold in this same pass also applies
+    // Claim first, send second, so two sweeps can't both send the same reminder.
+    const claimed = await pool.query(
+      `UPDATE rides SET ${threshold.column} = true WHERE id = $1 AND ${threshold.column} = false RETURNING id`,
+      [ride.id]
+    );
+    ride[threshold.column] = true;
+    if (claimed.rowCount === 0) continue; // another sweep already sent this one
+    await sendReminder(ride, threshold.label, ride.driver_push_token); // keep the in-memory row consistent in case a later threshold in this same pass also applies
   }
 }
 
@@ -147,7 +193,8 @@ const RESCHEDULE_DRIFT_MS = 60 * 60 * 1000; // 1 hour
 
 async function sweepFlightIssues() {
   const candidates = await pool.query(
-    `SELECT rides.*, users.push_token as rider_push_token, users.email as rider_email,
+    `SELECT rides.*, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date_str,
+            users.push_token as rider_push_token, users.email as rider_email,
             users.whatsapp_number as rider_whatsapp_number
      FROM rides JOIN users ON users.id = rides.rider_id
      WHERE rides.booking_type = 'dropoff'
@@ -158,8 +205,12 @@ async function sweepFlightIssues() {
 
   for (const ride of candidates.rows) {
     try {
-      const flightInfo = await lookupFlightStatus(ride.flight_number);
-      if (!flightInfo) continue; // not configured / not found this pass — try again next sweep
+      // A drop-off flight leaves the airport, so it is looked up by departure airport. The old call
+      // filtered by arrival airport, which never matched a departing flight on AviationStack.
+      const looked = await lookupFlight({ flightNumber: ride.flight_number, date: ride.flight_date_str || null, direction: "departure" });
+      await recordTracking(ride, looked);
+      const flightInfo = looked.flight;
+      if (!flightInfo) continue; // not configured / not found this pass, try again next sweep
 
       let issue = null;
       if (flightInfo.status === "cancelled") {
@@ -180,9 +231,22 @@ async function sweepFlightIssues() {
 }
 
 async function flagFlightIssue(ride, issue) {
+  const plan = flightCredit.dropoffIssuePlan(ride);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Claim the ride first. Only one sweep can flip flight_issue from NULL,
+    // so the refund below can't run twice for the same ride.
+    const claim = await client.query(
+      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = $3, updated_at = now()
+        WHERE id = $2 AND flight_issue IS NULL RETURNING id`,
+      [issue, ride.id, plan.nextPaymentStatus]
+    );
+    if (claim.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
 
     // Refund the original fare to the wallet as compensation for the
     // upfront charge no longer matching a booking whose timing just
@@ -190,7 +254,7 @@ async function flagFlightIssue(ride, issue) {
     // collected it (card/wallet/membership), rather than trying to reverse
     // a live Paystack charge here. See routes/rides.js PATCH /:id/status
     // for where the fare gets re-collected, from the wallet, at drop-off.
-    if (ride.payment_status === "paid") {
+    if (plan.refund) {
       const newBalanceResult = await client.query(
         "UPDATE users SET wallet_balance_naira = wallet_balance_naira + $1 WHERE id = $2 RETURNING wallet_balance_naira",
         [ride.fare_naira, ride.rider_id]
@@ -203,10 +267,6 @@ async function flagFlightIssue(ride, issue) {
       );
     }
 
-    await client.query(
-      `UPDATE rides SET flight_issue = $1, flight_issue_notified_at = now(), payment_status = 'pending_reconfirmation', updated_at = now() WHERE id = $2`,
-      [issue, ride.id]
-    );
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -214,6 +274,14 @@ async function flagFlightIssue(ride, issue) {
     return;
   } finally {
     client.release();
+  }
+
+  if (plan.notify === "ops_will_contact") {
+    // No refund and no new charge for this ride, so the usual "refunded to your wallet" copy would be false.
+    const text = `Your flight ${ride.flight_number} was ${issue}. Nothing changes on what you paid. Our team will contact you about your trip.`;
+    if (ride.rider_push_token) sendPushNotification(ride.rider_push_token, "Flight change detected", text, { rideId: ride.id, type: "flight_issue" }).catch(() => {});
+    if (ride.rider_whatsapp_number) sendWhatsAppMessage(ride.rider_whatsapp_number, `\u2708\ufe0f *RideArrivo*: heads up about your flight\n\n${text}`).catch(() => {});
+    return;
   }
 
   if (ride.rider_push_token) {
@@ -251,10 +319,12 @@ async function sweepPreferredDriverExpiry() {
   for (const ride of expiring.rows) {
     try {
       const reason = "your regular driver wasn't available in time for this trip";
-      await pool.query(
-        "UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now() WHERE id = $2",
+      const cleared = await pool.query(
+        `UPDATE rides SET preferred_driver_id = NULL, driver_change_reason = $1, updated_at = now()
+          WHERE id = $2 AND preferred_driver_id IS NOT NULL AND ride_status = 'requested' RETURNING id`,
         [reason, ride.id]
       );
+      if (cleared.rowCount === 0) continue; // already opened up, or accepted meanwhile
       // Now any driver can take it, so tell them (services/dispatch.js).
       require("./dispatch").alertDrivers(ride.id, "preferred_released");
       if (ride.rider_push_token) {
@@ -419,13 +489,44 @@ async function runSweep() {
   // ArrivoExpress automation. Both are no-ops until an admin turns them on.
   await require("./questPayout").autoPayOwed().catch((err) => console.error("[scheduler] auto payout crashed:", err.message));
   await require("./driverCashout").sweepCashouts().catch((err) => console.error("[scheduler] cash-out sweep crashed:", err.message));
+  await require("./walletReconciliation").runDaily().catch((err) => console.error("[scheduler] wallet daily check crashed:", err.message));
+  await require("./walletHolds").expireStale().catch((err) => console.error("[scheduler] wallet hold expiry crashed:", err.message));
   await require("./autoReprice").runDailyReprice().catch((err) => console.error("[scheduler] auto reprice crashed:", err.message));
+}
+
+// One sweep at a time, across every running instance. setInterval doesn't wait
+// for the last sweep, and with two Render instances both would sweep. The lock
+// lives on its own connection and drops by itself if the process dies.
+const SWEEP_LOCK_KEY = 7710100;
+let sweeping = false;
+
+async function sweepIfFree({ db = pool, run = runSweep } = {}) {
+  if (sweeping) return "busy";
+  sweeping = true;
+  let client;
+  try {
+    client = await db.connect();
+    const got = await client.query("SELECT pg_try_advisory_lock($1) AS ok", [SWEEP_LOCK_KEY]);
+    if (!got.rows[0].ok) return "locked";
+    try {
+      await run();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [SWEEP_LOCK_KEY]).catch(() => {});
+    }
+    return "ran";
+  } catch (err) {
+    console.error("[scheduler] sweep skipped:", err.message);
+    return "error";
+  } finally {
+    if (client) client.release();
+    sweeping = false;
+  }
 }
 
 function startScheduler() {
   console.log(`[scheduler] starting — sweeping every ${SWEEP_INTERVAL_MS / 60000} minutes`);
-  runSweep(); // run once immediately on boot rather than waiting a full interval
-  setInterval(runSweep, SWEEP_INTERVAL_MS);
+  sweepIfFree(); // run once immediately on boot rather than waiting a full interval
+  setInterval(() => { sweepIfFree(); }, SWEEP_INTERVAL_MS);
 }
 
-module.exports = { startScheduler, runSweep, sweepUnmatchedPayments };
+module.exports = { startScheduler, runSweep, sweepIfFree, sweepUnmatchedPayments, maybeSendAndMark, flagFlightIssue, sweepPreferredDriverExpiry };
