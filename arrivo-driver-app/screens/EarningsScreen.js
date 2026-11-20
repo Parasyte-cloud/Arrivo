@@ -17,7 +17,9 @@ import { tierForRide, metaFor } from "../utils/tiers";
 // drop-offs, and every other booking on the rides queue is an airport pickup.
 // (This used to call everything that was not a drop-off or one-way "Chauffeur".)
 function tripTypeLabel(ride) {
-  if (tierForRide(ride) === "chauffeur") return metaFor("chauffeur").name.replace(/^Arrivo/, "");
+  const tier = tierForRide(ride);
+  if (["campus", "air", "boat", "removals"].includes(tier)) return metaFor(tier).name;
+  if (tier === "chauffeur") return metaFor("chauffeur").name.replace(/^Arrivo/, "");
   return ride.booking_type === "dropoff" ? "Airport Drop-off" : "Airport Pickup";
 }
 function scheduledLabel(ride) {

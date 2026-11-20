@@ -53,8 +53,69 @@ function exportRidesCsv(rides) {
   );
 }
 
+const SERVICE_OPTIONS = [
+  { id: "campus", label: "ArrivoCampus" },
+  { id: "air", label: "ArrivoAir" },
+  { id: "boat", label: "ArrivoBoat" },
+  { id: "removals", label: "ArrivoRemovals" },
+];
+
+// New job for a quote-first service. The price is agreed with the customer
+// first; the job then shows up for any driver who holds that service, or Ops can
+// assign one from the table below. Safety check and receipt work on it like any trip.
+function ServiceJobForm({ token, onCreated }) {
+  const empty = { service: "boat", riderEmail: "", pickup: "", destination: "", quoteNaira: "", paid: false, notes: "" };
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState(empty);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const out = await api.createServiceJob(token, { ...f, quoteNaira: Number(f.quoteNaira) });
+      setMsg({ ok: true, text: `Job #${out.ride.id} created. Drivers who hold this service can now see it.` });
+      setF(empty);
+      onCreated && onCreated();
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) return <button className="btn ghost" style={{ marginBottom: 12 }} onClick={() => setOpen(true)}>New service job</button>;
+  return (
+    <form onSubmit={submit} className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10, maxWidth: 560 }}>
+      <strong>New service job</strong>
+      <label>Service
+        <select className="field" value={f.service} onChange={set("service")}>
+          {SERVICE_OPTIONS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+      </label>
+      <label>Rider email (they must have a rider account)
+        <input className="field" type="email" required value={f.riderEmail} onChange={set("riderEmail")} />
+      </label>
+      <label>Pickup<input className="field" required minLength={3} value={f.pickup} onChange={set("pickup")} /></label>
+      <label>Destination<input className="field" required minLength={3} value={f.destination} onChange={set("destination")} /></label>
+      <label>Agreed price (naira)
+        <input className="field" type="number" min="0" step="1" required value={f.quoteNaira} onChange={set("quoteNaira")} />
+      </label>
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input type="checkbox" checked={f.paid} onChange={set("paid")} /> Already paid (invoice or transfer settled)
+      </label>
+      <label>Notes for Ops<input className="field" value={f.notes} onChange={set("notes")} /></label>
+      {msg ? <div className={msg.ok ? "" : "error-text"}>{msg.text}</div> : null}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn" type="submit" disabled={busy}>{busy ? "Creating…" : "Create job"}</button>
+        <button className="btn ghost" type="button" onClick={() => setOpen(false)}>Close</button>
+      </div>
+    </form>
+  );
+}
+
 export function RidesPage() {
-  const { token, isReadOnly } = useAuth();
+  const { token, user, isReadOnly } = useAuth();
   const [rides, setRides] = useState([]);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -222,6 +283,8 @@ export function RidesPage() {
         <button className="btn ghost" onClick={() => exportRidesCsv(rides)}>Export CSV</button>
       </div>
 
+      {!isReadOnly && user?.role === "admin" ? <ServiceJobForm token={token} onCreated={() => load()} /> : null}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((f) => (
           <button
@@ -288,7 +351,7 @@ export function RidesPage() {
                       <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.rider_email}</div>
                     </td>
                     <td>
-                      <div>{r.pickup_address}</div>
+                      <div>{r.service ? `${r.service.toUpperCase()}: ` : ""}{r.pickup_address}</div>
                       {r.flight_number ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Flight {r.flight_number}</div> : null}
                     </td>
                     <td>{r.driver_name || <span style={{ color: "var(--text-muted)" }}>Unassigned</span>}</td>

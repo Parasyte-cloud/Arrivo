@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 8000;
 // default 20s) so they're polled on their own, quicker cadence below.
 const INSTANT_POLL_INTERVAL_MS = 4000;
 import { useTiers } from "../context/TiersContext";
-import { sectionsFor, queueFor } from "../utils/tiers";
+import { sectionsFor, queueFor, tierForRide, metaFor } from "../utils/tiers";
 import TierSwitcher from "../components/TierSwitcher";
 import TierPane from "../components/TierPane";
 
@@ -480,7 +480,10 @@ export default function DashboardScreen({ navigation }) {
 // the airport) — surfaced here so a driver can immediately tell which
 // direction a request runs, since the pickup_address/stops alone don't
 // make that obvious at a glance.
-function tripTypeLabel(bookingType) {
+function tripTypeLabel(ride) {
+  const tier = tierForRide(ride);
+  if (["campus", "air", "boat", "removals"].includes(tier)) return metaFor(tier).name;
+  const bookingType = ride.booking_type;
   if (bookingType === "dropoff") return "Airport Drop-off";
   if (bookingType === "one_way") return "Airport Pickup";
   return "Chauffeur";
@@ -514,7 +517,7 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
   return (
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
-        <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+        <Tag label={tripTypeLabel(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         {/* A fleet-companion row is always fare_naira = 0 — the rider
             already paid for the whole convoy as one line item on their
             primary ride (see FLEET_PRICE_NAIRA in services/fare.js and
@@ -747,7 +750,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
         <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
-          <Tag label={tripTypeLabel(ride.booking_type)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+          <Tag label={tripTypeLabel(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         </View>
         {scheduledLabel(ride) ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduledLabel(ride)}</Text> : null}
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}

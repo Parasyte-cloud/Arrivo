@@ -2244,3 +2244,14 @@ CREATE TABLE IF NOT EXISTS ride_welfare (
   raised_at TIMESTAMPTZ,
   raised_reason TEXT
 );
+
+
+-- ── Service jobs (Campus, Air, Boat, Removals) ──────────────────────────────
+-- These services are quote first: Ops agrees the price, creates the job, and
+-- assigns a driver who holds the service. The job is an ordinary row on rides,
+-- tagged with its service, so the safety check, the receipt, the driver queue,
+-- tier access and manual assignment all work for it without a second pipeline.
+-- NULL means a normal ride (RideArrivo, Express or Chauffeur, told apart by
+-- booking_type and the instant request link as before).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS service TEXT
+  CHECK (service IS NULL OR service IN ('campus', 'air', 'boat', 'removals'));
