@@ -6,6 +6,8 @@ const { SERVICE_JOB_TIERS } = require("../services/driverTiers");
 const { logSafetyEvent } = require("../services/safetyEvents");
 
 const rateLimit = require("express-rate-limit");
+const { pool: limitPool } = require("../db/db");
+const { PgRateLimitStore } = require("../services/pgRateLimitStore");
 
 const router = express.Router();
 
@@ -13,6 +15,7 @@ const router = express.Router();
 const orderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: Number(process.env.SERVICE_REQUEST_RATE_LIMIT) || 15,
+  store: new PgRateLimitStore({ pool: limitPool, name: "service-requests" }),
   keyGenerator: (req) => `u${req.user && req.user.id}`,
   standardHeaders: "draft-7",
   legacyHeaders: false,
@@ -41,9 +44,9 @@ router.post("/", requireAuth, orderLimiter, async (req, res) => {
     return res.status(400).json({ error: `service must be one of: ${SERVICE_JOB_TIERS.join(", ")}.` });
   }
   if (req.user.role !== "rider") return res.status(403).json({ error: "Only riders can order a service." });
-  // Campus is for students aged 16 and over; the rider confirms it before ordering.
-  if (service === "campus" && b.confirmAge16 !== true) {
-    return res.status(400).json({ error: "ArrivoCampus is for students aged 16 or over. Please confirm to continue.", code: "CAMPUS_AGE_CONFIRM" });
+  // Campus is for students aged 18 and over (counsel's advice, 5 Nov 2026; under 18s only through the Family Package, not built yet); the rider confirms it before ordering.
+  if (service === "campus" && b.confirmAge18 !== true) {
+    return res.status(400).json({ error: "ArrivoCampus is for students aged 18 or over. Please confirm to continue.", code: "CAMPUS_AGE_CONFIRM" });
   }
   const pickup = String(b.pickupAddress || "").trim();
   const destination = String(b.destinationAddress || "").trim();

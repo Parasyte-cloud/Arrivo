@@ -15,6 +15,7 @@ import {
   cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
+import { useOwnPosition } from "../hooks/useOwnPosition";
 import { useT } from "../context/LanguageContext";
 import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
 
@@ -721,6 +722,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
     activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
   };
 
+  const ownPosition = useOwnPosition(true);
   useEffect(() => {
     if (countdown === 0 && panicState === "counting") setPanicState("active");
   }, [countdown, panicState]);
@@ -744,6 +746,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         pickup={ride.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
         destination={ride.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
         etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"}
+        driverLocation={ownPosition}
         heading={isInProgress ? "destination" : "pickup"}
         live={isInProgress}
         height={190}
