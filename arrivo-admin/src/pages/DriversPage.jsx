@@ -48,6 +48,8 @@ export function DriversPage() {
   const [engineStatus, setEngineStatus] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [tierFilter, setTierFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | pending | verified | incomplete
   const [qrModal, setQrModal] = useState(null); // { driverName, imageUrl } | null
   const [qrLoadingId, setQrLoadingId] = useState(null);
 
@@ -86,8 +88,21 @@ export function DriversPage() {
   const archive = (d, on) => act(d, () => api.archiveDriver(token, d.id, on), on ? `Archive ${d.name}? They go offline and are hidden. You can restore them later.` : null);
   const remove = (d) => act(d, () => api.deleteDriver(token, d.id), `Delete ${d.name} for good? This only works for test drivers with no trips, and cannot be undone.`);
 
-  const shown = drivers.filter((d) => tierFilter === "all" || (d.tiers || []).includes(tierFilter));
-  const pendingCount = drivers.filter((d) => !d.is_verified).length;
+  // Ops find people by name, phone, email or plate. Phone digits are compared without spaces, dashes or the leading 0 / +234.
+  const q = search.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, "").replace(/^(234|0)/, "");
+  const matchesSearch = (d) =>
+    !q ||
+    [d.name, d.email, d.plate_number, d.make_model, d.license_number].some((v) => String(v || "").toLowerCase().includes(q)) ||
+    (qDigits.length >= 4 && String(d.phone || "").replace(/\D/g, "").replace(/^(234|0)/, "").includes(qDigits));
+  const matchesStatus = (d) =>
+    statusFilter === "all" ||
+    (statusFilter === "incomplete" && d.profile_incomplete) ||
+    (statusFilter === "verified" && d.is_verified) ||
+    (statusFilter === "pending" && !d.is_verified && !d.profile_incomplete);
+  const shown = drivers.filter((d) => (tierFilter === "all" || (d.tiers || []).includes(tierFilter)) && matchesSearch(d) && matchesStatus(d));
+  const pendingCount = drivers.filter((d) => !d.is_verified && !d.profile_incomplete).length;
+  const incompleteCount = drivers.filter((d) => d.profile_incomplete).length;
 
   const viewPlacard = async (driver) => {
     setQrLoadingId(driver.id);
@@ -114,7 +129,22 @@ export function DriversPage() {
           <span className="eyebrow">Driver management</span>
           <h1>Drivers</h1>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            className="field"
+            type="search"
+            placeholder="Search name, phone, email or plate"
+            aria-label="Search drivers"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ minWidth: 240 }}
+          />
+          <select className="field" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="pending">Awaiting verification</option>
+            <option value="incomplete">Profile not completed</option>
+            <option value="verified">Verified</option>
+          </select>
           <select className="field" value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} aria-label="Filter by tier">
             <option value="all">All tiers</option>
             {TIERS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -128,6 +158,10 @@ export function DriversPage() {
         <div className="stat-card">
           <div className="stat-num" style={{ color: "var(--coral)" }}>{pendingCount}</div>
           <div className="stat-label">Awaiting verification</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--amber, var(--coral))" }}>{incompleteCount}</div>
+          <div className="stat-label">Profile not completed</div>
         </div>
         <div className="stat-card">
           <div className="stat-num">{drivers.length}</div>
@@ -153,7 +187,7 @@ export function DriversPage() {
         {loading ? (
           <div className="empty-state">Loading drivers…</div>
         ) : shown.length === 0 ? (
-          <div className="empty-state">{showArchived ? "No archived drivers." : "No drivers to show."}</div>
+          <div className="empty-state">{showArchived ? "No archived drivers." : drivers.length ? "No driver matches your search or filters." : "No drivers to show."}</div>
         ) : (
           <table>
             <thead>
@@ -212,13 +246,15 @@ export function DriversPage() {
                     {d.created_at ? formatDateTime(d.created_at) : "—"}
                   </td>
                   <td>
-                    <StatusPill label={d.is_verified ? "Verified" : d.verification_stage ? String(d.verification_stage).replace(/_/g, " ") : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
+                    <StatusPill label={d.profile_incomplete ? "Profile not completed" : d.is_verified ? "Verified" : d.verification_stage ? String(d.verification_stage).replace(/_/g, " ") : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
                   </td>
                   <td>
                     <StatusPill label={d.is_online ? "Online" : "Offline"} tone={d.is_online ? "teal" : "muted"} />
                   </td>
                   <td>
-                    {d.source === "engine" ? (
+                    {d.profile_incomplete ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Signed up, has not finished the driver profile. Contact them to complete it in the driver app.</span>
+                    ) : d.source === "engine" ? (
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Managed in Driver Verification</span>
                     ) : isReadOnly ? (
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>View only</span>
@@ -231,7 +267,7 @@ export function DriversPage() {
                         {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
                       </button>
                     )}
-                    {!isReadOnly && d.source !== "engine" && (
+                    {!isReadOnly && d.source !== "engine" && !d.profile_incomplete && (
                       showArchived ? (
                         <>
                           <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, false)}>Restore</button>
@@ -241,7 +277,7 @@ export function DriversPage() {
                         <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, true)}>Archive</button>
                       )
                     )}
-                    {d.is_verified && d.source !== "engine" && (
+                    {d.is_verified && d.source !== "engine" && !d.profile_incomplete && (
                       <button
                         className="btn"
                         style={{ marginLeft: 8 }}

@@ -25,27 +25,36 @@ router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 // Drivers who signed up through the new engine have ids like "engine:abc". They are managed in
 // Driver Verification, not here, so any change aimed at one is refused with a clear message.
 router.use("/drivers/:id", (req, res, next) => {
+  if (/^user:\d+$/.test(req.params.id)) return res.status(409).json({ error: "This person has not finished their driver profile yet, so there is nothing to change. Ask them to open the driver app and complete it." });
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "This driver is managed in Driver Verification, not on this page." });
   next();
 });
 
 router.get("/drivers", async (req, res) => {
+  // The list starts from driver ACCOUNTS (users with role "driver"), not from driver profiles. Signup is two steps:
+  // an account, then a profile (POST /api/drivers/profile). Starting from the profile table hid everyone who stopped
+  // after step 1, so Ops could not find people who had registered. Those rows come back with profile_incomplete = true.
+  const archivedView = req.query.archived === "1";
   const result = await pool.query(
-    `SELECT drivers.id, drivers.is_verified, drivers.is_online, drivers.rating,
-            drivers.license_number, drivers.lasdri_number, drivers.spoken_languages, drivers.created_at,
+    `SELECT drivers.id, COALESCE(drivers.is_verified, false) AS is_verified, COALESCE(drivers.is_online, false) AS is_online, drivers.rating,
+            drivers.license_number, drivers.lasdri_number, drivers.spoken_languages,
+            COALESCE(drivers.created_at, users.created_at) AS created_at,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
             drivers.tier, drivers.archived_at,
             COALESCE((SELECT array_agg(a.tier ORDER BY a.tier) FROM driver_tier_access a WHERE a.driver_id = drivers.id AND a.status = 'active'), '{}') AS tiers,
             users.id as user_id, users.name, users.email, users.phone,
-            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
-     FROM drivers
-     JOIN users ON users.id = drivers.user_id
+            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type,
+            (drivers.id IS NULL) AS profile_incomplete
+     FROM users
+     LEFT JOIN drivers ON drivers.user_id = users.id
      LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
-     WHERE ${req.query.archived === "1" ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
-     ORDER BY drivers.is_verified ASC, drivers.created_at DESC`
+     WHERE (users.role = 'driver' OR drivers.id IS NOT NULL)
+       AND ${archivedView ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
+     ORDER BY COALESCE(drivers.is_verified, false) ASC, COALESCE(drivers.created_at, users.created_at) DESC`
   );
-  const engine = req.query.archived === "1" ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
-  const merged = [...result.rows.map((r) => ({ ...r, source: "legacy" })), ...engine.drivers].sort(
+  const engine = archivedView ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
+  const legacy = result.rows.map((r) => (r.profile_incomplete ? { ...r, id: `user:${r.user_id}`, source: "legacy", verification_stage: "profile not completed" } : { ...r, source: "legacy" }));
+  const merged = [...legacy, ...engine.drivers].sort(
     (a, b) => Number(a.is_verified) - Number(b.is_verified) || new Date(b.created_at || 0) - new Date(a.created_at || 0)
   );
   res.json({ drivers: merged, engineStatus: engine.status });
