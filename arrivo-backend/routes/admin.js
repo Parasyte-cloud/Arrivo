@@ -738,10 +738,18 @@ router.get("/waitlist", async (req, res) => {
 // last activity. This is what makes a "signed up but never booked" person
 // visible — before this, that data existed only as a row in the database
 // with no page to see it.
+//
+// The ID photo is NOT in this list. users.id_document_url holds the whole image
+// as a data URL (up to 6MB), so selecting it here put up to 200 riders' passport
+// and NIN photos into one response, readable by every role that may open this
+// list (including Operations, which is read only). The list carries a
+// has_id_document flag instead; the image is fetched one rider at a time from
+// GET /riders/:id/id-document below, which only admins can call.
 router.get("/riders", async (req, res) => {
   const result = await pool.query(
     `SELECT users.id, users.name, users.email, users.phone, users.whatsapp_number, users.preferred_language, users.created_at,
-            users.id_document_url, users.id_verification_status, users.id_verification_submitted_at,
+            (users.id_document_url IS NOT NULL AND users.id_document_url <> '') AS has_id_document,
+            users.id_verification_status, users.id_verification_submitted_at,
             users.id_verification_reviewed_at, users.id_verification_rejection_reason,
             users.wallet_balance_naira,
             COUNT(rides.id) as ride_count,
@@ -762,6 +770,36 @@ router.get("/riders", async (req, res) => {
       wallet_balance_naira: Number(r.wallet_balance_naira),
     })),
   });
+});
+
+// GET /api/admin/riders/:id/id-document — the one rider's submitted ID photo,
+// as an image. Admin only: it is the passport or NIN picture, so it is not
+// something support or Operations can pull (Operations is also refused by the
+// read-only allowlist, which only lets the exact /riders list path through).
+// The console fetches it with its login token and shows it from a blob URL,
+// because an <img src> cannot send an Authorization header.
+//
+// Only PNG, JPEG and WEBP are ever served, with the type fixed by us and
+// nosniff, so a bad value in the column can never be handed to a browser as
+// HTML or SVG. no-store keeps the photo out of any shared or browser cache.
+router.get("/riders/:id/id-document", requireRole("admin"), async (req, res) => {
+  if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ error: "Invalid rider id" });
+  const result = await pool.query(
+    "SELECT id_document_url FROM users WHERE id = $1 AND role = 'rider' AND deleted_at IS NULL",
+    [req.params.id]
+  );
+  const stored = result.rows[0]?.id_document_url;
+  if (!stored) return res.status(404).json({ error: "No ID document on file for this rider" });
+  const match = /^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(stored);
+  if (!match) return res.status(422).json({ error: "The stored ID document is not a readable image" });
+  const type = match[1] === "png" ? "image/png" : match[1] === "webp" ? "image/webp" : "image/jpeg";
+  res.set({
+    "Content-Type": type,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+    "Content-Disposition": "inline",
+  });
+  res.send(Buffer.from(match[2], "base64"));
 });
 
 // ── Wallet ledger ────────────────────────────────────────────────────────
