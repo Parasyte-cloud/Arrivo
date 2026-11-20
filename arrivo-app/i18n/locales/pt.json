@@ -798,5 +798,25 @@
     "campusConfirm": "Tenho 18 anos ou mais e sou estudante.",
     "pickupPlaceholder": "Endereço de embarque",
     "destinationPlaceholder": "Para onde?"
+  },
+  "mapSheet": {
+    "trips": "Viagens",
+    "pickup": "EMBARQUE",
+    "destination": "DESTINO",
+    "setPickup": "Definir embarque",
+    "whereFrom": "De onde?",
+    "rideNow": "Viajar agora",
+    "schedule": "Agendar",
+    "campusTitle": "Vá para a escola, divida a tarifa",
+    "goingToSchool": "Indo para a escola",
+    "comingHome": "Voltando para casa",
+    "tab_route": "Rota",
+    "tab_fare": "Tarifa",
+    "tab_details": "Detalhes",
+    "friends": "Amigos na viagem (incluindo você)",
+    "friendsBody": "Divida um carro com seus amigos.",
+    "continue": "Continuar",
+    "scheduleNeedsWhen": "Diga quando você quer a viagem.",
+    "schoolNotFound": "Não encontramos essa escola agora. Digite o endereço."
   }
 }

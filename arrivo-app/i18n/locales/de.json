@@ -798,5 +798,25 @@
     "campusConfirm": "Ich bin 18 oder älter und Student(in).",
     "pickupPlaceholder": "Abholadresse",
     "destinationPlaceholder": "Wohin?"
+  },
+  "mapSheet": {
+    "trips": "Fahrten",
+    "pickup": "ABHOLORT",
+    "destination": "ZIEL",
+    "setPickup": "Abholort festlegen",
+    "whereFrom": "Woher?",
+    "rideNow": "Jetzt fahren",
+    "schedule": "Planen",
+    "campusTitle": "Zur Schule fahren, Fahrpreis teilen",
+    "goingToSchool": "Zur Schule",
+    "comingHome": "Nach Hause",
+    "tab_route": "Route",
+    "tab_fare": "Preis",
+    "tab_details": "Details",
+    "friends": "Mitfahrende (einschließlich dir)",
+    "friendsBody": "Teile ein Auto mit Freunden.",
+    "continue": "Weiter",
+    "scheduleNeedsWhen": "Sag uns, wann du fahren möchtest.",
+    "schoolNotFound": "Diese Schule wurde gerade nicht gefunden. Gib stattdessen die Adresse ein."
   }
 }

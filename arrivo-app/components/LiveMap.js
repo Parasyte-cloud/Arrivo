@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { StyleSheet, View, Text } from "react-native";
+import { StyleSheet, View, Text, useWindowDimensions } from "react-native";
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from "react-native-maps";
 import Constants from "expo-constants";
 import { colors, radius, isDark } from "../theme/tokens";
@@ -79,7 +79,14 @@ function useRoad(a, b, token, minGapMs = 0) {
   return road;
 }
 
-export function LiveMap({ pickup, destination, driverLocation, height = 200, etaLabel, distanceLabel, heading = "pickup", live = false, tierLabel }) {
+// Lagos, where the map opens before the rider has chosen anything (same as the web map).
+const LAGOS = { lat: 6.5244, lng: 3.3792 };
+
+// `fill` makes the map the whole screen, with no rounded corners, so a sheet can sit over it (the map-first screens).
+// `bottomInset` is how much of the bottom the sheet covers, so pins and the route are framed in what is still visible.
+export function LiveMap({ pickup, destination, driverLocation, height = 200, etaLabel, distanceLabel, heading = "pickup", live = false, tierLabel, fill = false, bottomInset = 0, topInset = 0 }) {
+  const win = useWindowDimensions();
+  if (fill) height = win.height;
   const { t } = useTranslation();
   const { token } = useAuth();
   const mapRef = useRef(null);
@@ -95,25 +102,27 @@ export function LiveMap({ pickup, destination, driverLocation, height = 200, eta
   useEffect(() => {
     if (!mapRef.current || points.length === 0) return;
     if (points.length === 1) {
-      mapRef.current.animateToRegion({ latitude: points[0].lat, longitude: points[0].lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 400);
+      // Centre a little below the point so it sits in the part of the map the sheet is not covering.
+      const shift = bottomInset ? (bottomInset / 2 / Math.max(height, 1)) * 0.04 : 0;
+      mapRef.current.animateToRegion({ latitude: points[0].lat - shift, longitude: points[0].lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 400);
     } else {
       const all = road ? road.path.concat(points) : points;
-      mapRef.current.fitToCoordinates(all.map(toCoord), { edgePadding: { top: 60, right: 40, bottom: 56, left: 40 }, animated: true });
+      mapRef.current.fitToCoordinates(all.map(toCoord), { edgePadding: { top: 60 + topInset, right: 40, bottom: 56 + bottomInset, left: 40 }, animated: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitKey]);
+  }, [fitKey, bottomInset]);
 
-  const chips = (
+  const chips = fill ? null : (
     <View pointerEvents="none" style={styles.chipRow}>
       {live ? <View style={styles.liveChip}><View style={styles.liveDot} /><Text style={styles.liveText}>{t("liveMap.live")}</Text></View> : null}
       {tierLabel ? <View style={styles.tierChip}><Text style={styles.tierText}>{tierLabel}</Text></View> : null}
     </View>
   );
-  const pill = pillText ? (
+  const pill = pillText && !fill ? (
     <View pointerEvents="none" style={styles.pill}><Text style={styles.pillText}>{pillText}</Text></View>
   ) : null;
 
-  if (!hasRealMapsKey() || points.length === 0) {
+  if (!hasRealMapsKey() || (points.length === 0 && !fill)) {
     return (
       <View>
         <MapPlaceholder etaLabel={etaLabel} distanceLabel={distanceLabel} height={height} hasRoute={Boolean(p && d)} />
@@ -130,11 +139,11 @@ export function LiveMap({ pickup, destination, driverLocation, height = 200, eta
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
-        style={[styles.map, { height }]}
+        style={[styles.map, { height }, fill && styles.mapFill]}
         customMapStyle={isDark ? MAP_STYLE_DARK : MAP_STYLE_LIGHT}
         toolbarEnabled={false}
         showsCompass={false}
-        initialRegion={{ latitude: points[0].lat, longitude: points[0].lng, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+        initialRegion={{ latitude: (points[0] || LAGOS).lat, longitude: (points[0] || LAGOS).lng, latitudeDelta: points[0] ? 0.05 : 0.2, longitudeDelta: points[0] ? 0.05 : 0.2 }}
       >
         {line ? <Polyline coordinates={line} strokeColor={ROUTE_COLOR} strokeColors={undefined} strokeWidth={5} lineCap="round" lineJoin="round" /> : null}
         {leadLine ? <Polyline coordinates={leadLine} strokeColor={colors.amber} strokeWidth={4} lineDashPattern={[10, 8]} /> : null}
@@ -163,6 +172,7 @@ export function LiveMap({ pickup, destination, driverLocation, height = 200, eta
 const ink = "#0B1B2B";
 const styles = StyleSheet.create({
   map: { width: "100%", borderRadius: radius.md, overflow: "hidden" },
+  mapFill: { borderRadius: 0 },
   chipRow: { position: "absolute", top: 10, left: 10, right: 10, flexDirection: "row", gap: 8, alignItems: "center" },
   liveChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.86)", borderWidth: 1, borderColor: "rgba(255,255,255,0.9)" },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#E5484D" },
