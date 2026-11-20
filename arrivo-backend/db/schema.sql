@@ -2059,7 +2059,7 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
 
 
--- =====================================================
+-- ============================================================
 -- AIRPORT_FLIGHT_TRACKING_V1
 --
 -- A flight is tracked by flight number and date. A PNR is an airline reservation record that no
@@ -2107,7 +2107,7 @@ CREATE TABLE IF NOT EXISTS flight_credit_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_eta TIMESTAMPTZ; -- latest estimated landing from the provider, for Ops ordering
-=======
+
 -- ── One wallet across services: service tag, holds, settlements ──
 -- A rider has ONE wallet balance (users.wallet_balance_naira). Every movement is
 -- tagged with the service it was for, so finance can see what each service earned
