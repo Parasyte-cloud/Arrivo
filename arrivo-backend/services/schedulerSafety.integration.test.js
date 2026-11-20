@@ -64,8 +64,8 @@ async function makeUser(role, extra = {}) {
     reset();
     const rider = await makeUser("rider", { pushToken: "ExponentPushToken[rider-flight]", whatsapp: "+2348000000001" });
     const ride = (await pool.query(
-      `INSERT INTO rides (rider_id, pickup_address, fare_naira, ride_status, payment_status, booking_type, flight_number, scheduled_pickup_at)
-       VALUES ($1, 'Murtala Muhammed Airport', 20000, 'accepted', 'paid', 'dropoff', 'BA75', now() + interval '1 day') RETURNING *`,
+      `INSERT INTO rides (rider_id, pickup_address, fare_naira, ride_status, payment_status, payment_method, booking_type, flight_number, scheduled_pickup_at)
+       VALUES ($1, 'Murtala Muhammed Airport', 20000, 'accepted', 'paid', 'card', 'dropoff', 'BA75', now() + interval '1 day') RETURNING *`,
       [rider.id]
     )).rows[0];
     const row = { ...ride, rider_push_token: rider.push_token, rider_whatsapp_number: rider.whatsapp_number, rider_email: rider.email };
