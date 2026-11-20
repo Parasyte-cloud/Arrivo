@@ -469,7 +469,7 @@ export default function RouteScreen({ navigation, route }) {
         setQuote(result);
       } catch (e) {
         if (quoteRequestIdRef.current !== requestId) return;
-        if (e.code === "PHONE_REQUIRED") { setPhoneNeeded(true); return; }
+        if (e.code === "PHONE_REQUIRED" || e.code === "PHONE_INVALID") { setPhoneNeeded(true); return; }
         setQuoteError(messageWithCode(e, "Couldn't calculate a fare for this trip. Please try again."));
       } finally {
         if (quoteRequestIdRef.current === requestId) setQuoteLoading(false);

@@ -74,6 +74,7 @@ async function requestFor(role, method, originalUrl) {
 
 const allowedOperationsGets = [
   "/api/auth/me",
+  "/api/admin/riders",
   "/api/admin/drivers",
   "/api/admin/rides",
   "/api/admin/rides?status=in_progress",
@@ -106,7 +107,6 @@ test("operations may access approved read-only GET views", async () => {
 });
 
 const blockedOperationsRequests = [
-  ["GET", "/api/admin/riders"],
   ["GET", "/api/admin/wallet-transactions"],
   ["GET", "/api/admin/memberships"],
   ["GET", "/api/admin/waitlist"],
@@ -129,6 +129,13 @@ const blockedOperationsRequests = [
   ["PATCH", "/api/auth/me"],
   ["PATCH", "/api/admin/rides/123"],
   ["PATCH", "/api/admin/drivers/123/verify"],
+  // Riders are readable (list only); changing a rider or a wallet is still refused.
+  ["PATCH", "/api/admin/riders/5/verify-id"],
+  ["PATCH", "/api/admin/riders/5/wallet-adjust"],
+  ["POST", "/api/admin/riders"],
+  ["GET", "/api/admin/riders/5/wallet-adjust"],
+  // The ID photo is not part of the list Operations may read.
+  ["GET", "/api/admin/riders/5/id-document"],
   ["PATCH", "/api/admin/panics/123/resolve"],
   ["POST", "/api/admin/exports/riders"],
   ["DELETE", "/api/admin/exports/riders"],

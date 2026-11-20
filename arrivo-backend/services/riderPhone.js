@@ -13,7 +13,7 @@
 const { isValidPhone, phoneErrorMessage } = require("./phone");
 
 const PHONE_REQUIRED = {
-  error: "Please add your phone number so your driver and our team can reach you, then try again. You can also add it under Profile.",
+  error: "Please add your phone number so your driver and our team can reach you, then try again.",
   code: "PHONE_REQUIRED",
 };
 
