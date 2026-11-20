@@ -29,7 +29,7 @@ function RouteStrip() {
 }
 
 function statusStyle(status) {
-  if (status === "completed") return { color: "#1F7A5C" };
+  if (status === "completed") return { color: colors.success };
   if (status === "cancelled") return { color: "#C2362B" };
   return { color: colors.dark.textMuted };
 }
@@ -39,7 +39,7 @@ function statusStyle(status) {
 // real id_verification_status (see routes/auth.js submit-id-verification +
 // routes/admin.js verify-id) to a short label + color for that row.
 function idVerificationBadge(status, t) {
-  if (status === "verified") return { label: `${t("profile.verified")} ✓`, color: "#1F7A5C" };
+  if (status === "verified") return { label: `${t("profile.verified")} ✓`, color: colors.success };
   if (status === "pending") return { label: t("profile.pendingReview"), color: colors.amber };
   if (status === "rejected") return { label: t("profile.rejectedResubmit"), color: colors.coral };
   return { label: t("profile.notVerified"), color: colors.dark.textMuted };
@@ -49,7 +49,7 @@ function idVerificationBadge(status, t) {
 // tracked on every account (set the moment someone clicks the link in
 // their signup email), just never actually shown anywhere in the app.
 function emailVerifiedBadge(verified, t) {
-  return verified ? { label: `${t("profile.verified")} ✓`, color: "#1F7A5C" } : { label: t("profile.notVerified"), color: colors.dark.textMuted };
+  return verified ? { label: `${t("profile.verified")} ✓`, color: colors.success } : { label: t("profile.notVerified"), color: colors.dark.textMuted };
 }
 
 export default function ProfileScreen({ navigation }) {

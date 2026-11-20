@@ -70,7 +70,7 @@ const SERVICES = ["campus", "air", "boat", "removals"];
   const rider = await makeUser("rider", "Ada Rider"), rider2 = await makeUser("rider", "Bayo Rider"), admin = await makeUser("admin", "Ops Admin");
   const holder = await makeDriver("Holder Driver"), other = await makeDriver("Other Driver");
   const rt = tokenFor(rider), at = tokenFor(admin);
-  const good = (service) => ({ confirmAge16: true, service, pickupAddress: "Pickup " + service, destinationAddress: "Dest " + service, contactPhone: "+2348012345678", passengerCount: 2, details: "two boxes" });
+  const good = (service) => ({ confirmAge18: true, service, pickupAddress: "Pickup " + service, destinationAddress: "Dest " + service, contactPhone: "+2348012345678", passengerCount: 2, details: "two boxes" });
 
   await test("validation: real service, real addresses, dialable phone, future time, riders only", async () => {
     assert.equal((await call("POST", "/api/service-requests", null, good("boat"))).status, 401);
@@ -111,16 +111,18 @@ const SERVICES = ["campus", "air", "boat", "removals"];
     });
   }
 
-  await test("Campus needs the 16+ confirmation; the catalogue lists every service", async () => {
-    const no = await call("POST", "/api/service-requests", rt, { ...good("campus"), confirmAge16: false });
+  await test("Campus needs the 18+ confirmation (the old 16+ field no longer counts); the catalogue lists every service", async () => {
+    const no = await call("POST", "/api/service-requests", rt, { ...good("campus"), confirmAge18: false });
     assert.equal(no.status, 400); assert.equal(no.body.code, "CAMPUS_AGE_CONFIRM");
+    const old16 = await call("POST", "/api/service-requests", rt, { ...good("campus"), confirmAge18: undefined, confirmAge16: true });
+    assert.equal(old16.status, 400); assert.equal(old16.body.code, "CAMPUS_AGE_CONFIRM");
     const yes = await call("POST", "/api/service-requests", rt, good("campus")); made.rides.push(yes.body.ride.id);
     assert.equal(yes.status, 201);
     const cat = await call("GET", "/api/service-requests/catalogue", rt);
     assert.equal(cat.status, 200);
-    assert.deepStrictEqual(cat.body.services.map((s) => s.id), ["express", "transfer", "schedule", "campus", "removals", "chauffeur", "air", "boat"]);
+    assert.deepStrictEqual(cat.body.services.map((s) => s.id), ["express", "transfer", "campus", "removals", "chauffeur", "air", "boat"]);
     assert.deepStrictEqual([...new Set(cat.body.services.map((s) => s.group))], ["ride", "move", "charter"]);
-    assert.equal(cat.body.services.find((s) => s.id === "campus").minAge, 16);
+    assert.equal(cat.body.services.find((s) => s.id === "campus").minAge, 18);
     process.env.ARRIVO_NOW_ENABLED = "true";
     assert.equal((await call("GET", "/api/service-requests/catalogue", rt)).body.services[0].enabled, true);
     delete process.env.ARRIVO_NOW_ENABLED;

@@ -2329,3 +2329,15 @@ CREATE TABLE IF NOT EXISTS ride_dispatch_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ride_dispatch_events_ride ON ride_dispatch_events(ride_id, id DESC);
+
+-- Request counters shared by every backend instance (services/pgRateLimitStore.js).
+-- With two or more servers an in-memory limit would let a user make the limit
+-- once per server. Rows are tiny and expire; a cleanup removes the old ones.
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  store TEXT NOT NULL,
+  key TEXT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  reset_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (store, key)
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);

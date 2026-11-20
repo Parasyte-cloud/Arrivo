@@ -148,5 +148,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   rowLabel: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600", marginBottom: 2 },
   errorText: { color: "#C2362B", fontSize: 12, marginTop: spacing.md, textAlign: "center" },
-  savedText: { color: "#1F7A5C", fontSize: 12.5, fontWeight: "600", marginTop: spacing.md, textAlign: "center" },
+  savedText: { color: colors.success, fontSize: 12.5, fontWeight: "600", marginTop: spacing.md, textAlign: "center" },
 });

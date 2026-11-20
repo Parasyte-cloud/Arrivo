@@ -1,6 +1,7 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("../db/db");
+const { PgRateLimitStore } = require("../services/pgRateLimitStore");
 const { ensureRiderPhone } = require("../services/riderPhone");
 const {
   requireAuth,
@@ -200,8 +201,10 @@ router.get(
 // Per-rider limits (not per-IP, so a shared carrier NAT cannot lock out real
 // riders). /quote calls Google Distance Matrix on every hit, so it is the
 // route most worth protecting from a runaway client or a script.
-function riderLimiter({ windowMs, limit, message }) {
+function riderLimiter({ name, windowMs, limit, message }) {
   return rateLimit({
+    // Shared by every backend instance, so two servers do not double the limit.
+    store: new PgRateLimitStore({ pool, name }),
     windowMs,
     limit,
     standardHeaders: "draft-7",
@@ -212,12 +215,14 @@ function riderLimiter({ windowMs, limit, message }) {
 }
 
 const quoteLimiter = riderLimiter({
+  name: "instant-quote",
   windowMs: 10 * 60 * 1000,
   limit: Number(process.env.INSTANT_QUOTE_RATE_LIMIT) || 40,
   message: "Too many fare checks. Please wait a few minutes and try again.",
 });
 
 const createLimiter = riderLimiter({
+  name: "instant-create",
   windowMs: 10 * 60 * 1000,
   limit: Number(process.env.INSTANT_CREATE_RATE_LIMIT) || 15,
   message: "Too many ride requests. Please wait a few minutes and try again.",

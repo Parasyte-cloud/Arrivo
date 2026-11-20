@@ -60,7 +60,7 @@ export default function ServiceRequestScreen({ navigation, route }) {
       const noteParts = [when.trim() ? `${t("services.when")}: ${when.trim()}` : null, details.trim() || null].filter(Boolean);
       const data = await createServiceRequest(token, {
         service,
-        confirmAge16: service === "campus" ? true : undefined,
+        confirmAge18: service === "campus" ? true : undefined,
         pickupAddress: pickup.trim(),
         destinationAddress: destination.trim(),
         pickupLat: pickupPt?.lat, pickupLng: pickupPt?.lng,

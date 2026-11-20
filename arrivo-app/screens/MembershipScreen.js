@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 2, lineHeight: 17 },
   warningText: { color: "#C2362B", fontSize: 11, marginTop: 6 },
   errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  successText: { color: "#1F7A5C", fontSize: 12, marginTop: 8, textAlign: "center" },
+  successText: { color: colors.success, fontSize: 12, marginTop: 8, textAlign: "center" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,
