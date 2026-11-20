@@ -46,6 +46,7 @@ const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const staffRidesRouter = require("./routes/staffRides");
 const { startRideTeamSweep } = require("./services/rideTeam");
+const { startWelfareSweep } = require("./services/welfareRuntime");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
 const instantRidesRouter = require("./routes/instantRides");
@@ -236,4 +237,7 @@ ready.then(() => {
   // Keeps every open ride staffed: fills gaps and moves rides off anyone who
   // has gone off duty. See services/rideTeam.js.
   startRideTeamSweep();
+  // Raises a welfare alert when "Are you safe?" went unanswered and the
+  // phone has gone quiet. See services/welfareCheck.js.
+  startWelfareSweep();
 });

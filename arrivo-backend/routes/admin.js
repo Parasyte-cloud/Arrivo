@@ -1,4 +1,5 @@
 const express = require("express");
+const { logSafetyEvent } = require("../services/safetyEvents");
 const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
@@ -331,6 +332,19 @@ router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
 
   const finalRide = updated.rows[0];
 
+  // Staff may put ANY verified driver on ANY ride, on purpose: ops sometimes has
+  // to cover a gap. It is never blocked, but when the driver does not hold the
+  // service this ride belongs to, that is written to the audit trail and the
+  // response says so, so the console can show a note and nobody is surprised.
+  const rideTier = finalRide.booking_type && ["full_day", "full_week", "full_month"].includes(finalRide.booking_type) ? "chauffeur" : "ride";
+  const isExpress = (await pool.query("SELECT 1 FROM instant_ride_requests WHERE ride_id = $1", [finalRide.id])).rowCount > 0;
+  const tier = isExpress ? "express" : rideTier;
+  const holds = (await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driverId, tier])).rowCount > 0;
+  const tierNote = holds ? null : `${driver.rows[0].name} does not hold the ${tier} service. Assigned by staff anyway.`;
+  if (!holds) {
+    await logSafetyEvent(pool, "manual_assignment_without_tier", { rideId: finalRide.id, userId: req.user.id, driverId: Number(driverId), detail: { tier } });
+  }
+
   // Manual assignment skips the normal accept flow entirely, so neither
   // side hears about it from the app on its own — unlike a driver
   // self-accepting (routes/rides.js POST /:id/accept), which already
@@ -373,7 +387,7 @@ router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
     ).catch(() => {});
   }
 
-  res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") } });
+  res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") }, tierNote });
 });
 
 // ── Live tracking ────────────────────────────────────────────────────────

@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   },
   attachLabel: { color: colors.dark.text, fontSize: 12, fontWeight: "700", marginBottom: 4 },
   attachNote: { color: colors.dark.textMuted, fontSize: 11.5, marginBottom: spacing.sm },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   contactRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: 4 },
   contactIcon: { fontSize: 20 },
   contactLabel: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },

@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   tileText: { color: colors.dark.text, fontWeight: "700", fontSize: 12, textAlign: "center" },
   onTheGoRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.md },
   onTheGoText: { color: colors.tealBright, fontSize: 12.5, fontWeight: "600" },
-  linkText: { color: "#9FBBEF", fontSize: 11, fontWeight: "600", marginTop: 8 },
+  linkText: { color: "#2E4C8C", fontSize: 11, fontWeight: "600", marginTop: 8 },
   flightRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   trackBtnText: { color: colors.ink, fontWeight: "700", fontSize: 12 },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 8 },
   flightResult: {
     marginTop: 10,
     paddingTop: 10,

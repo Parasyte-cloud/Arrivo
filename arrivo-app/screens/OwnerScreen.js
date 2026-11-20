@@ -6,6 +6,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getOwnerDashboard, addVehicle, updateVehicleAvailability } from "../services/api";
+import { useTranslation } from "react-i18next";
 
 const VEHICLE_TYPES = [
   { id: "sedan", label: "Sedan" },
@@ -19,6 +20,7 @@ function formatNaira(amount) {
 }
 
 export default function OwnerScreen() {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +108,7 @@ export default function OwnerScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Your vehicles</Text>
+        <Text style={styles.title}>{t("owner.yourVehicles")}</Text>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         {hasVehicles ? (
@@ -114,11 +116,11 @@ export default function OwnerScreen() {
             <View style={styles.statsRow}>
               <View>
                 <Text style={[styles.statNum, { color: colors.amber }]}>{formatNaira(data.fareThisMonthNaira)}</Text>
-                <Text style={styles.statLabel}>Trip volume this month</Text>
+                <Text style={styles.statLabel}>{t("owner.tripVolumeThisMonth")}</Text>
               </View>
               <View>
                 <Text style={styles.statNum}>{data.tripsThisMonth}</Text>
-                <Text style={styles.statLabel}>Trips this month</Text>
+                <Text style={styles.statLabel}>{t("owner.tripsThisMonth")}</Text>
               </View>
             </View>
             <Text style={styles.noteText}>
@@ -135,38 +137,38 @@ export default function OwnerScreen() {
                   <Text style={styles.vehicleName}>{v.make_model}</Text>
                   <Text style={styles.sub}>{v.plate_number} · {v.vehicle_type?.toUpperCase()}</Text>
                 </View>
-                <Tag label="Listed" tone="teal" />
+                <Tag label={t("owner.listed")} tone="teal" />
               </View>
               <View style={{ height: spacing.sm }} />
-              <Text style={styles.cardLabel}>Availability</Text>
+              <Text style={styles.cardLabel}>{t("owner.availability")}</Text>
               <TextInput
                 style={styles.input}
                 value={availabilityDrafts[v.id] ?? ""}
                 onChangeText={(text) => setAvailabilityDrafts((prev) => ({ ...prev, [v.id]: text }))}
-                placeholder="e.g. Mon–Fri 6am–9pm, weekends blackout"
+                placeholder={t("owner.eGMonFriAm")}
                 placeholderTextColor={colors.dark.textMuted}
               />
               <View style={{ height: spacing.sm }} />
               {savingAvailabilityId === v.id ? (
                 <ActivityIndicator color={colors.amber} />
               ) : (
-                <Button label="Save availability" variant="ghost" tone="dark" onPress={() => saveAvailability(v.id)} />
+                <Button label={t("owner.saveAvailability")} variant="ghost" tone="dark" onPress={() => saveAvailability(v.id)} />
               )}
             </Card>
           ))
         ) : (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.noteText}>You haven't listed a vehicle yet. Add one below to get started.</Text>
+            <Text style={styles.noteText}>{t("owner.youHavenTListedA")}</Text>
           </Card>
         )}
 
         <Card tone="dark">
-          <Text style={styles.cardLabel}>List a vehicle</Text>
+          <Text style={styles.cardLabel}>{t("owner.listAVehicle")}</Text>
           <TextInput
             style={styles.input}
             value={makeModel}
             onChangeText={setMakeModel}
-            placeholder="Make & model, e.g. Honda CR-V"
+            placeholder={t("owner.makeModelEGHonda")}
             placeholderTextColor={colors.dark.textMuted}
           />
           <View style={{ height: spacing.sm }} />
@@ -174,7 +176,7 @@ export default function OwnerScreen() {
             style={styles.input}
             value={plateNumber}
             onChangeText={setPlateNumber}
-            placeholder="Plate number"
+            placeholder={t("owner.plateNumber")}
             placeholderTextColor={colors.dark.textMuted}
             autoCapitalize="characters"
           />
@@ -191,7 +193,7 @@ export default function OwnerScreen() {
             ))}
           </View>
           <View style={{ height: spacing.md }} />
-          {adding ? <ActivityIndicator color={colors.amber} /> : <Button label="List this vehicle" onPress={submitVehicle} trailingIcon />}
+          {adding ? <ActivityIndicator color={colors.amber} /> : <Button label={t("owner.listThisVehicle")} onPress={submitVehicle} trailingIcon />}
         </Card>
       </ScrollView>
       </KeyboardAvoidingView>
@@ -210,7 +212,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10.5, color: colors.dark.textMuted, marginTop: 2 },
   noteText: { fontSize: 11.5, color: colors.dark.textMuted, marginTop: spacing.sm, lineHeight: 16 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

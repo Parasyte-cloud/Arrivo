@@ -305,13 +305,13 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
           {appliedPromo && appliedPromoDiscountNaira > 0 ? (
             <Text style={styles.promoAppliedText}>
-              {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied — you
+              {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied, you
               saved {formatFare(appliedPromoDiscountNaira)}
             </Text>
           ) : null}
           {partnerVenueId ? (
             <Text style={styles.promoAppliedText}>
-              🍸 {partnerVenueName} x RideArrivo — reserved pickup{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
+              🍸 {partnerVenueName} x RideArrivo: reserved pickup{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
             </Text>
           ) : null}
         </Card>
@@ -435,9 +435,9 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {status === "success" ? <Text style={[styles.statusText, { color: "#8FD9C4" }]}>Confirmed ✓</Text> : null}
+        {status === "success" ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>Confirmed ✓</Text> : null}
         {phoneNeeded ? <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setPhoneSaved(true); }} /> : null}
-        {phoneSaved && !phoneNeeded ? <Text style={[styles.statusText, { color: "#8FD9C4" }]}>Your number is saved. Tap the button again to confirm your ride.</Text> : null}
+        {phoneSaved && !phoneNeeded ? <Text style={[styles.statusText, { color: "#1F7A5C" }]}>Your number is saved. Tap the button again to confirm your ride.</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
@@ -469,7 +469,7 @@ const styles = StyleSheet.create({
   label: { color: colors.dark.text, fontSize: 14, fontWeight: "600", flexShrink: 1, flexBasis: "60%", paddingRight: 8 },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700", flexShrink: 0 },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
-  promoAppliedText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 8 },
+  promoAppliedText: { color: "#1F7A5C", fontSize: 12.5, fontWeight: "600", marginTop: 8 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
   },
   payOptionActive: { borderColor: colors.amber, backgroundColor: "rgba(244,163,0,0.12)" },
   payOptionLabel: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
-  payOptionNote: { color: "#FF9B8A", fontSize: 10.5, marginTop: 4, marginLeft: 14 },
+  payOptionNote: { color: "#C2362B", fontSize: 10.5, marginTop: 4, marginLeft: 14 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.lg },
   checkbox: {
     width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.dark.surfaceBorder,
@@ -498,6 +498,6 @@ const styles = StyleSheet.create({
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   agreeText: { color: colors.dark.textMuted, fontSize: 12, flex: 1 },
   statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  warningText: { color: "#FF9B8A", fontSize: 12, lineHeight: 17 },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 12, lineHeight: 17 },
 });

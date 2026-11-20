@@ -15,6 +15,8 @@ import {
 } from "../services/api";
 import { useTranslation } from "react-i18next";
 import { PickupPinCard, ReportDriverCard } from "../components/SafetyCards";
+import WelfareCheck from "../components/WelfareCheck";
+import ReceiptCard from "../components/ReceiptCard";
 import { cacheActiveRide, clearCachedActiveRide, getPendingScan, clearPendingScan } from "../services/rideCache";
 
 // Preset tip percentages, applied against the ride's fare — plus a custom
@@ -637,7 +639,7 @@ export default function TrackingScreen({ route, navigation }) {
             <Text style={styles.cardLabel}>🛡️ Arrivo Ride Guarantee</Text>
             <Text style={styles.meta}>
               Your driver had a last-minute issue and can't continue the trip. We're finding you a new driver right
-              now — no need to rebook, your pickup and destination are already set.
+              now, no need to rebook, your pickup and destination are already set.
             </Text>
           </Card>
         ) : null}
@@ -654,7 +656,7 @@ export default function TrackingScreen({ route, navigation }) {
             <Text style={styles.cardLabel}>
               {ride.promo_code === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"}
             </Text>
-            <Text style={styles.meta}>Discount applied — you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
+            <Text style={styles.meta}>Discount applied, you saved {formatFare(ride.promo_discount_naira)} on this trip.</Text>
           </Card>
         ) : null}
 
@@ -886,19 +888,19 @@ export default function TrackingScreen({ route, navigation }) {
         {ride?.ride_status === "completed" && Number(ride?.overage_naira) > 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md, borderColor: colors.coral, borderWidth: ride.overage_payment_method ? 0 : 1 }}>
             <Text style={styles.cardLabel}>
-              {ride.overage_reason === "traffic_delay" ? "Arrivo Fair Fare — traffic delay" : "Extra time charge"}
+              {ride.overage_reason === "traffic_delay" ? "Arrivo Fair Fare: traffic delay" : "Extra time charge"}
             </Text>
             {ride.overage_payment_method ? (
               <Text style={styles.meta}>
                 {ride.overage_reason === "traffic_delay"
-                  ? `Traffic pushed this trip ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time. The first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of that was on us — the remaining ${ride.overage_breakdown?.billableMinutes ?? ""} min added ${formatFare(ride.overage_naira)}. Paid. Thanks.`
+                  ? `Traffic pushed this trip ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time. The first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of that was on us, the remaining ${ride.overage_breakdown?.billableMinutes ?? ""} min added ${formatFare(ride.overage_naira)}. Paid. Thanks.`
                   : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h booked, so an extra ${formatFare(ride.overage_naira)} was charged. Paid. Thanks.`}
               </Text>
             ) : (
               <>
                 <Text style={styles.meta}>
                   {ride.overage_reason === "traffic_delay"
-                    ? `Traffic shouldn't punish you twice — but this trip ran ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time, and only the first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of delay is free. That leaves ${ride.overage_breakdown?.billableMinutes ?? ""} min at ${ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : ""}/min — an extra ${formatFare(ride.overage_naira)} to settle.`
+                    ? `Traffic shouldn't punish you twice, but this trip ran ${ride.overage_breakdown?.delayMinutes ?? "a few"} min past the quoted time, and only the first ${ride.overage_breakdown?.freeAllowanceMinutes ?? ""} min of delay is free. That leaves ${ride.overage_breakdown?.billableMinutes ?? ""} min at ${ride.overage_breakdown?.perMinuteNaira != null ? formatFare(ride.overage_breakdown.perMinuteNaira) : ""}/min, an extra ${formatFare(ride.overage_naira)} to settle.`
                     : `This trip ran longer than the ${Number(ride.included_hours_per_day)}h you booked, so there's an extra ${formatFare(ride.overage_naira)} to settle for the additional time.`}
                 </Text>
                 <View style={{ height: spacing.sm }} />
@@ -920,7 +922,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {overageMessage ? <Text style={styles.warningText}>{overageMessage}</Text> : null}
-                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Paid. Thank you.</Text> : null}
+                {overageStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>Paid. Thank you.</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {overageStatus === "opening" || overageStatus === "verifying" ? (
@@ -998,7 +1000,7 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
 
                 {tipMessage ? <Text style={styles.warningText}>{tipMessage}</Text> : null}
-                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#8FD9C4" }]}>Tip sent. Thank you!</Text> : null}
+                {tipStatus === "success" ? <Text style={[styles.meta, { color: "#1F7A5C" }]}>Tip sent. Thank you!</Text> : null}
 
                 <View style={{ height: spacing.sm }} />
                 {tipStatus === "opening" || tipStatus === "verifying" ? (
@@ -1017,6 +1019,8 @@ export default function TrackingScreen({ route, navigation }) {
         ) : null}
 
         {ride?.driver_user_id ? <PickupPinCard rideId={rideId} rideStatus={ride?.ride_status} /> : null}
+        {ride?.rider_id === user?.id ? <WelfareCheck rideId={rideId} rideStatus={ride?.ride_status} /> : null}
+        {ride?.rider_id === user?.id ? <ReceiptCard rideId={rideId} rideStatus={ride?.ride_status} /> : null}
 
         {ride?.driver_user_id ? (
           <View style={{ marginBottom: spacing.sm }}>
@@ -1140,7 +1144,7 @@ const styles = StyleSheet.create({
   },
   grid2: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   shareNote: { color: colors.dark.textMuted, fontSize: 11.5, textAlign: "center" },
-  warningText: { color: "#FF9B8A", fontSize: 12, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 12, textAlign: "center" },
   panicBtn: {
     marginTop: spacing.lg,
     backgroundColor: colors.coral,
@@ -1149,7 +1153,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   panicText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
-  panicActiveText: { color: "#FF9B8A", fontWeight: "700", fontSize: 13, textAlign: "center" },
+  panicActiveText: { color: "#C2362B", fontWeight: "700", fontSize: 13, textAlign: "center" },
   listeningBtn: {
     marginTop: spacing.sm,
     backgroundColor: colors.dark.fieldBg,

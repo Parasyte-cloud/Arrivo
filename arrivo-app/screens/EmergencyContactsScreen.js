@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   contactName: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
   removeLink: { color: colors.coral, fontSize: 12.5, fontWeight: "600" },
   legacyHint: { color: colors.amber, fontSize: 11, marginTop: 3 },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

@@ -58,14 +58,3 @@ export function metaFor(slug, tiers) {
   const fromServer = (tiers || []).find((t) => t.slug === slug);
   return { ...(TIER_FALLBACK[slug] || { name: slug, tagline: "", accent: "#F4A300", live: false }), ...(fromServer || {}), slug };
 }
-
-// The button on a tier row in "Your services".
-//   on          nothing to do
-//   requested   waiting for Ops
-//   off, revoked  can ask
-export function rowAction(status) {
-  if (status === "active") return { kind: "none", label: "On" };
-  if (status === "requested") return { kind: "none", label: "Asked" };
-  if (status === "revoked") return { kind: "ask", label: "Ask again" };
-  return { kind: "ask", label: "Ask for access" };
-}

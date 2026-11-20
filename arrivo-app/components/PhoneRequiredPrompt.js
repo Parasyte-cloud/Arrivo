@@ -53,5 +53,5 @@ const styles = StyleSheet.create({
   box: { marginTop: 10, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: "#D9A86C", backgroundColor: "rgba(244,163,0,0.08)" },
   title: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 4 },
   body: { color: colors.dark.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 10 },
-  error: { color: "#FF9B8A", fontSize: 12, marginTop: 6, lineHeight: 16 },
+  error: { color: "#C2362B", fontSize: 12, marginTop: 6, lineHeight: 16 },
 });

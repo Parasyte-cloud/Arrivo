@@ -2227,3 +2227,20 @@ BEGIN
     ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- Rider welfare check: where the rider was last seen during a trip, and
+-- whether we have asked "Are you safe?". One row per ride. Kept in the
+-- database, not in memory, so it survives a restart and works across
+-- several server instances.
+CREATE TABLE IF NOT EXISTS ride_welfare (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id) ON DELETE CASCADE,
+  anchor_lat DOUBLE PRECISION NOT NULL,
+  anchor_lng DOUBLE PRECISION NOT NULL,
+  anchor_at TIMESTAMPTZ NOT NULL,
+  last_ping_at TIMESTAMPTZ NOT NULL,
+  multiplier INTEGER NOT NULL DEFAULT 1,
+  asked_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'asking', 'raised')),
+  raised_at TIMESTAMPTZ,
+  raised_reason TEXT
+);

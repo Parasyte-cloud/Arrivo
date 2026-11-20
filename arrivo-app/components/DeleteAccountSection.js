@@ -132,7 +132,7 @@ export function DeleteAccountSection() {
 
 const styles = StyleSheet.create({
   wrap: { marginTop: spacing.lg },
-  dangerLink: { color: "#FF6B57", fontSize: 14, fontWeight: "700" },
+  dangerLink: { color: "#C2362B", fontSize: 14, fontWeight: "700" },
   note: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4, lineHeight: 17 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   card: {

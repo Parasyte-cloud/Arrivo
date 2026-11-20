@@ -28,8 +28,8 @@ function RouteStrip() {
 }
 
 function statusStyle(status) {
-  if (status === "completed") return { color: "#8FD9C4" };
-  if (status === "cancelled") return { color: "#FF9B8A" };
+  if (status === "completed") return { color: "#1F7A5C" };
+  if (status === "cancelled") return { color: "#C2362B" };
   return { color: colors.dark.textMuted };
 }
 
@@ -38,7 +38,7 @@ function statusStyle(status) {
 // real id_verification_status (see routes/auth.js submit-id-verification +
 // routes/admin.js verify-id) to a short label + color for that row.
 function idVerificationBadge(status) {
-  if (status === "verified") return { label: "Verified ✓", color: "#8FD9C4" };
+  if (status === "verified") return { label: "Verified ✓", color: "#1F7A5C" };
   if (status === "pending") return { label: "Pending review", color: colors.amber };
   if (status === "rejected") return { label: "Rejected: resubmit", color: colors.coral };
   return { label: "Not verified", color: colors.dark.textMuted };
@@ -48,7 +48,7 @@ function idVerificationBadge(status) {
 // tracked on every account (set the moment someone clicks the link in
 // their signup email), just never actually shown anywhere in the app.
 function emailVerifiedBadge(verified) {
-  return verified ? { label: "Verified ✓", color: "#8FD9C4" } : { label: "Not verified", color: colors.dark.textMuted };
+  return verified ? { label: "Verified ✓", color: "#1F7A5C" } : { label: "Not verified", color: colors.dark.textMuted };
 }
 
 export default function ProfileScreen({ navigation }) {
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: colors.dark.bg0,
   },
   avatarEditBadgeText: { fontSize: 9, color: colors.ink },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md },
   tripLabel: { color: colors.dark.textMuted, fontSize: 9.5, letterSpacing: 0.5 },
   tripAddr: { color: colors.dark.text, fontSize: 12.5 },
   tripMetaRow: {

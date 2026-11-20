@@ -60,7 +60,7 @@ export default function PartnerVenuesScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
         <Text style={styles.title}>Reserved pickups</Text>
         <Text style={styles.subtitle}>
-          Book ahead from a partner club or restaurant — tell us when you're leaving, and a driver will be there.
+          Book ahead from a partner club or restaurant. Tell us when you're leaving and a driver will be there.
         </Text>
 
         {loading ? (
@@ -71,7 +71,7 @@ export default function PartnerVenuesScreen({ navigation }) {
           </Card>
         ) : venues.length === 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.emptyText}>No partner venues yet — check back soon.</Text>
+            <Text style={styles.emptyText}>No partner venues yet. Check back soon.</Text>
           </Card>
         ) : (
           venues.map((venue) => (
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   venueName: { color: colors.dark.text, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
   venueBrandSuffix: { color: colors.dark.textMuted, fontSize: 13, fontWeight: "500" },
   venueAddress: { color: colors.dark.textMuted, fontSize: 13, lineHeight: 18 },
-  venuePerk: { color: "#8FD9C4", fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
+  venuePerk: { color: "#1F7A5C", fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
   errorText: { color: colors.coral, fontSize: 14 },
   emptyText: { color: colors.dark.textMuted, fontSize: 14 },
 });

@@ -820,7 +820,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
           <Text style={styles.cancelPickerTitle}>Why are you cancelling?</Text>
           <Text style={styles.cancelPickerBody}>
             Under Arrivo Ride Guarantee, an accepted trip can only be cancelled for one of these reasons. We'll find
-            the rider a new driver right away — they won't need to rebook.
+            the rider a new driver right away, they won't need to rebook.
           </Text>
           <View style={styles.cancelReasonRow}>
             {CANCEL_REASONS.map((r) => (
@@ -912,17 +912,17 @@ const styles = StyleSheet.create({
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
   scheduledText: { color: colors.amber, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
-  error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   cardTitleLight: { color: colors.dark.text, fontWeight: "700", fontSize: 13.5 },
   countdownText: { color: colors.dark.textMuted, fontSize: 11, marginTop: 6, fontWeight: "600" },
-  countdownUrgent: { color: "#FF9B8A", fontSize: 11, marginTop: 6, fontWeight: "700" },
+  countdownUrgent: { color: "#C2362B", fontSize: 11, marginTop: 6, fontWeight: "700" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
   panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },
-  panicCountingText: { color: "#FF9B8A", fontSize: 13, fontWeight: "700" },
+  panicCountingText: { color: "#C2362B", fontSize: 13, fontWeight: "700" },
   panicActiveCard: { backgroundColor: "rgba(225,82,61,0.22)", borderColor: colors.coral, borderWidth: 1 },
-  panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  panicActiveTitle: { color: "#C2362B", fontSize: 14, fontWeight: "700", marginBottom: 4 },
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
-  panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
+  panicErrorText: { color: "#C2362B", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
   cancelPickerCard: {
@@ -945,5 +945,5 @@ const styles = StyleSheet.create({
   cancelReasonChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
   cancelReasonChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
   cancelReasonChipTextActive: { color: colors.ink },
-  cancelPickerError: { color: "#FF9B8A", fontSize: 12, fontWeight: "600", marginTop: 8 },
+  cancelPickerError: { color: "#C2362B", fontSize: 12, fontWeight: "600", marginTop: 8 },
 });

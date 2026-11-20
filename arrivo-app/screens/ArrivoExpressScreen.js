@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   metaStrong: { color: colors.dark.text, fontSize: 12.5, fontWeight: "600" },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   successTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700" },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   fareText: { color: colors.amber, fontSize: 20, fontWeight: "700" },
   tierRow: {

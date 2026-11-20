@@ -5,8 +5,8 @@ const path = require("path");
 
 const src = fs.readFileSync(path.join(__dirname, "tiers.js"), "utf8");
 assert.ok(!/^\s*import\s/m.test(src), "tiers.js has to stay import-free for this test to load it");
-const names = "TIER_ORDER, TIER_FALLBACK, tierForRide, pickTier, sectionsFor, queueFor, metaFor, rowAction";
-const { TIER_ORDER, TIER_FALLBACK, tierForRide, pickTier, sectionsFor, queueFor, metaFor, rowAction } = new Function(
+const names = "TIER_ORDER, TIER_FALLBACK, tierForRide, pickTier, sectionsFor, queueFor, metaFor";
+const { TIER_ORDER, TIER_FALLBACK, tierForRide, pickTier, sectionsFor, queueFor, metaFor } = new Function(
   src.replace(/^export (const|function) /gm, "$1 ") + `\nreturn { ${names} };`
 )();
 
@@ -66,11 +66,8 @@ test("tier details come from the server when it sends them", () => {
   assert.strictEqual(metaFor("zzz", []).name, "zzz");
 });
 
-test("a driver can ask only when a service is off or was withdrawn", () => {
-  assert.strictEqual(rowAction("active").kind, "none");
-  assert.strictEqual(rowAction("requested").kind, "none");
-  assert.strictEqual(rowAction("off").kind, "ask");
-  assert.strictEqual(rowAction("revoked").kind, "ask");
+test("there is no way to ask for a service from the app", () => {
+  assert.strictEqual(typeof globalThis.rowAction, "undefined");
 });
 
 console.log(`\ntiers: ${passed} passed`);
