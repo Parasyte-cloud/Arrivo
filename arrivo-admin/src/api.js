@@ -88,6 +88,8 @@ export const updateRide = (token, id, payload) =>
 // Ops creates a job for a quote-first service (campus, air, boat, removals).
 export const createServiceJob = (token, payload) =>
   request("/api/admin/service-jobs", token, { method: "POST", body: JSON.stringify(payload) });
+export const quoteServiceJob = (token, id, payload) =>
+  request(`/api/admin/service-jobs/${id}/quote`, token, { method: "PATCH", body: JSON.stringify(payload) });
 export const assignRideDriver = (token, id, driverId) =>
   request(`/api/admin/rides/${id}/driver`, token, { method: "PATCH", body: JSON.stringify({ driverId }) });
 

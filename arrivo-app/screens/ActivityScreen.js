@@ -76,7 +76,7 @@ export default function ActivityScreen({ navigation }) {
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
                   </Text>
                 </View>
-                <Text style={styles.tripPrice}>{formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
+                <Text style={styles.tripPrice}>{ride.quote_pending ? t("services.pricePending") : formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
               </View>
             </Card>
           </Pressable>

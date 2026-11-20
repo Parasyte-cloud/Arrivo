@@ -10,6 +10,8 @@ import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import ServiceSwitcher from "../components/ServiceSwitcher";
+import { goToService } from "../utils/services";
 import { getFareQuote, getReverseGeocode } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
@@ -251,6 +253,7 @@ export default function ChauffeurScreen({ navigation }) {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        <ServiceSwitcher current="chauffeur" onSelect={(id) => goToService(navigation, id, { replace: true })} />
         <Text style={styles.title}>{t("chauffeur.chauffeur")}</Text>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>

@@ -524,7 +524,7 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
             createFleetCompanions in routes/rides.js). Showing a bare "₦0"
             here would read as a broken/free ride rather than what it
             actually is: already paid, just billed elsewhere. */}
-        <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
+        <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : ride.quote_pending ? "Price set by RideArrivo" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
       </View>
       {/* is_preferred_for_you comes from GET /available — set when this
           rider asked to keep the same driver for their return trip and this
@@ -541,6 +541,8 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+      {ride.passenger_count && ride.service ? <Text style={styles.meta}>Passengers: {ride.passenger_count}</Text> : null}
+      {ride.rider_note && ride.service ? <Text style={styles.meta}>Note: {ride.rider_note}</Text> : null}
       {/* Arrivo Express Phase 3 -- the Partner Venues program: this reserved
           pickup came from a partner venue, not the rider's own address. */}
       {ride.partner_venue_id ? (
@@ -745,7 +747,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
       <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>
           <Tag label={ride.ride_status.replace("_", " ").toUpperCase()} tone={isInProgress ? "teal" : "amber"} />
-          <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
+          <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : ride.quote_pending ? "Price set by RideArrivo" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
         </View>
         {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>

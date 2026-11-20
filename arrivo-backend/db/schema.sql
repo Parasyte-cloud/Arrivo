@@ -2255,3 +2255,11 @@ CREATE TABLE IF NOT EXISTS ride_welfare (
 -- booking_type and the instant request link as before).
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS service TEXT
   CHECK (service IS NULL OR service IN ('campus', 'air', 'boat', 'removals'));
+
+-- A rider-ordered service job (Campus, Air, Boat, Removals) has no fixed price
+-- until Ops confirms one. While true, drivers who hold the tier can see and
+-- accept the job, but cannot start it, so nobody drives an unpriced trip.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS quote_pending BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS rider_note TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_count INTEGER;
