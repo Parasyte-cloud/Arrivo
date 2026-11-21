@@ -2,10 +2,11 @@
 // "has this driver paid for today?" so every gate asks the same question.
 const { pool } = require("../db/db");
 
-// Set DRIVER_SUBSCRIPTION_ENFORCED=false to switch the gate off (staging,
-// emergencies). On by default.
+// OFF by default, so deploying this cannot stop drivers on old app builds from
+// getting orders. Set DRIVER_SUBSCRIPTION_ENFORCED=true once the new driver
+// build is out and drivers can pay from it.
 function isEnforced() {
-  return String(process.env.DRIVER_SUBSCRIPTION_ENFORCED || "true").toLowerCase() !== "false";
+  return String(process.env.DRIVER_SUBSCRIPTION_ENFORCED || "false").toLowerCase() === "true";
 }
 
 // The Lagos day, worked out by the database so it cannot drift from the clock

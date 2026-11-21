@@ -5,12 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint, isDark } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
-import OAuthButtons from "../components/OAuthButtons";
+import OAuthButtons, { SHOW_SOCIAL_SIGN_IN } from "../components/OAuthButtons";
+import LanguageChips from "../components/LanguageChips";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -58,7 +60,7 @@ export default function SignupScreen({ navigation }) {
     setAvatarError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setAvatarError("Please allow photo access to add a profile picture.");
+      setAvatarError(t("signup.pleaseAllowPhotoAccessTo"));
       return;
     }
 
@@ -74,11 +76,11 @@ export default function SignupScreen({ navigation }) {
     const asset = result.assets[0];
 
     if (asset.fileSize && asset.fileSize > MAX_AVATAR_BYTES) {
-      setAvatarError("Please choose an image smaller than 4MB.");
+      setAvatarError(t("signup.pleaseChooseAnImageSmaller"));
       return;
     }
     if (!asset.base64) {
-      setAvatarError("Couldn't read that photo. Please try another.");
+      setAvatarError(t("signup.couldnTReadThatPhoto"));
       return;
     }
 
@@ -90,11 +92,11 @@ export default function SignupScreen({ navigation }) {
   const submit = async () => {
     setError(null);
     if (!firstName || !lastName || !email || !password) {
-      setError("First name, last name, email, and password are required.");
+      setError(t("signup.requiredFields"));
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("signup.passwordsDoNotMatch"));
       return;
     }
     const whatsappResult = validatePhone(whatsappDial, whatsappNational);
@@ -108,11 +110,11 @@ export default function SignupScreen({ navigation }) {
       return;
     }
     if (!country.trim()) {
-      setError("Please enter your country of residence.");
+      setError(t("signup.enterCountry"));
       return;
     }
     if (!agreedToTerms) {
-      setError("You must agree to the data protection and privacy terms to continue.");
+      setError(t("signup.mustAgree"));
       return;
     }
     setLoading(true);
@@ -170,7 +172,7 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}>
-        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Image source={isDark ? require("../assets/wordmark-brand-dark.png") : require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
 
         <Pressable onPress={pickAvatar} style={styles.avatarPicker}>
           {avatarUri ? (
@@ -179,11 +181,11 @@ export default function SignupScreen({ navigation }) {
             <Text style={styles.avatarPlus}>＋</Text>
           )}
         </Pressable>
-        <Text style={styles.avatarLabel}>Add profile photo</Text>
+        <Text style={styles.avatarLabel}>{t("signup.addProfilePhoto")}</Text>
         {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
 
-        <TextInput style={styles.input} placeholder="First name" placeholderTextColor={colors.textMuted} value={firstName} onChangeText={setFirstName} />
-        <TextInput style={styles.input} placeholder="Last name" placeholderTextColor={colors.textMuted} value={lastName} onChangeText={setLastName} />
+        <TextInput style={styles.input} placeholder={t("signup.firstName")} placeholderTextColor={colors.textMuted} value={firstName} onChangeText={setFirstName} />
+        <TextInput style={styles.input} placeholder={t("signup.lastName")} placeholderTextColor={colors.textMuted} value={lastName} onChangeText={setLastName} />
         <TextInput
           style={styles.input}
           placeholder={t("auth.email")}
@@ -195,12 +197,12 @@ export default function SignupScreen({ navigation }) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Identification number (optional)"
+          placeholder={t("signup.identificationNumberOptional")}
           placeholderTextColor={colors.textMuted}
           value={passportNumber}
           onChangeText={setPassportNumber}
         />
-        <Text style={styles.helperText}>Any government-licensed ID: passport, NIN, etc.</Text>
+        <Text style={styles.helperText}>{t("signup.anyGovernmentLicensedIdPassport")}</Text>
         <Text style={styles.label}>{t("auth.phone")}</Text>
         <PhoneInput
           dial={phoneDial}
@@ -210,18 +212,18 @@ export default function SignupScreen({ navigation }) {
           placeholder={t("auth.phone")}
         />
 
-        <Text style={styles.label}>WhatsApp number</Text>
+        <Text style={styles.label}>{t("signup.whatsappNumber")}</Text>
         <PhoneInput
           dial={whatsappDial}
           national={whatsappNational}
           onChangeDial={setWhatsappDial}
           onChangeNational={setWhatsappNational}
-          placeholder="WhatsApp number"
+          placeholder={t("signup.whatsappNumber")}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Country of residence"
+          placeholder={t("signup.countryOfResidence")}
           placeholderTextColor={colors.textMuted}
           value={country}
           onChangeText={setCountry}
@@ -237,7 +239,7 @@ export default function SignupScreen({ navigation }) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Confirm password"
+          placeholder={t("signup.confirmPassword")}
           placeholderTextColor={colors.textMuted}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
@@ -280,7 +282,7 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.agreeText}>
             I agree to RideArrivo's{" "}
             <Text style={styles.agreeLink} onPress={() => setPrivacyModalVisible(true)}>
-              data protection and privacy policy
+              {t("signup.dataProtectionAndPrivacyPolicy")}
             </Text>
             .
           </Text>
@@ -304,9 +306,11 @@ export default function SignupScreen({ navigation }) {
           <Button label={t("auth.createAccount")} onPress={submit} />
         )}
 
+        {SHOW_SOCIAL_SIGN_IN ? (
+          <>
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
+          <Text style={styles.dividerText}>{t("signup.or")}</Text>
           <View style={styles.dividerLine} />
         </View>
 
@@ -316,18 +320,23 @@ export default function SignupScreen({ navigation }) {
             ever seeing the privacy notice. */}
         <OAuthButtons
           disabled={!agreedToTerms}
+          onBlocked={() => setError(t("signup.tickBoxFirst"))}
           busy={oauthBusy}
           onGoogleIdToken={handleGoogleIdToken}
           onGoogleError={setError}
           onAppleResult={handleAppleResult}
         />
         {!agreedToTerms ? (
-          <Text style={styles.oauthHint}>Check the box above to sign up with Google or Apple.</Text>
+          <Text style={styles.oauthHint}>{t("signup.checkTheBoxAboveTo")}</Text>
+        ) : null}
+          </>
         ) : null}
 
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>{t("auth.haveAccount")}</Text>
         </Pressable>
+        <LanguageChips />
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -342,7 +351,7 @@ const styles = StyleSheet.create({
   avatarPicker: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: colors.fieldBg,
     alignSelf: "center", alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(18,18,59,0.2)", borderStyle: "dashed", overflow: "hidden",
+    borderWidth: 1.5, borderColor: tint(0.2), borderStyle: "dashed", overflow: "hidden",
   },
   avatarImage: { width: "100%", height: "100%" },
   avatarPlus: { fontSize: 30, color: colors.textMuted },
@@ -383,7 +392,7 @@ const styles = StyleSheet.create({
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.sm },
   checkboxTouch: { paddingTop: 1 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: tint(0.35),
     alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },
@@ -393,7 +402,7 @@ const styles = StyleSheet.create({
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerLine: { flex: 1, height: 1, backgroundColor: tint(0.15) },
   dividerText: { color: colors.textMuted, fontSize: 12 },
   oauthHint: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

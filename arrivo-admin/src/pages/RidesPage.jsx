@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
+import { openInWindow } from "../lib/openWindow";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 const STATUS_FILTERS = [
   { id: "", label: "All" },
@@ -12,6 +14,12 @@ const STATUS_FILTERS = [
   { id: "completed", label: "Completed" },
   { id: "cancelled", label: "Cancelled" },
 ];
+
+// Manual override list for Change status below -- the backend (PATCH
+// /api/admin/rides/:id) accepts any of these; it only refuses "completed"
+// when the ride still owes money the normal completion flow would have
+// charged (flight-issue fare, fleet-escort payout).
+const EDITABLE_STATUSES = ["requested", "accepted", "in_progress", "completed", "cancelled"];
 
 // Debounces the search box so every keystroke doesn't fire its own request —
 // the date/status filters below are discrete clicks so they don't need this.
@@ -45,8 +53,92 @@ function exportRidesCsv(rides) {
   );
 }
 
+const SERVICE_OPTIONS = [
+  { id: "campus", label: "ArrivoCampus" },
+  { id: "air", label: "ArrivoAir" },
+  { id: "boat", label: "ArrivoBoat" },
+  { id: "removals", label: "ArrivoRemovals" },
+];
+
+// New job for a quote-first service. The price is agreed with the customer
+// first; the job then shows up for any driver who holds that service, or Ops can
+// assign one from the table below. Safety check and receipt work on it like any trip.
+// A rider-ordered service job has no price until Ops agrees one with the rider.
+// Until then the driver can accept it but cannot start the trip.
+function PriceSetter({ token, ride, onDone }) {
+  const [price, setPrice] = React.useState("");
+  const [paid, setPaid] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try { await api.quoteServiceJob(token, ride.id, { quoteNaira: Number(price), paid }); onDone(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{ minWidth: 150 }}>
+      <div style={{ color: "var(--coral)", fontWeight: 600, fontSize: 12 }}>Awaiting price</div>
+      <input type="number" min="1" placeholder="Agreed price (naira)" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+      <label style={{ fontSize: 12 }}><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> already paid</label>
+      <button className="btn" disabled={busy || !price} onClick={save} style={{ marginTop: 4 }}>{busy ? "Saving" : "Set price"}</button>
+      {err ? <div style={{ color: "var(--coral)", fontSize: 12 }}>{err}</div> : null}
+    </div>
+  );
+}
+
+function ServiceJobForm({ token, onCreated }) {
+  const empty = { service: "boat", riderEmail: "", pickup: "", destination: "", quoteNaira: "", paid: false, notes: "" };
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState(empty);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const out = await api.createServiceJob(token, { ...f, quoteNaira: Number(f.quoteNaira) });
+      setMsg({ ok: true, text: `Job #${out.ride.id} created. Drivers who hold this service can now see it.` });
+      setF(empty);
+      onCreated && onCreated();
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) return <button className="btn ghost" style={{ marginBottom: 12 }} onClick={() => setOpen(true)}>New service job</button>;
+  return (
+    <form onSubmit={submit} className="card" style={{ padding: 16, marginBottom: 16, display: "grid", gap: 10, maxWidth: 560 }}>
+      <strong>New service job</strong>
+      <label>Service
+        <select className="field" value={f.service} onChange={set("service")}>
+          {SERVICE_OPTIONS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+      </label>
+      <label>Rider email (they must have a rider account)
+        <input className="field" type="email" required value={f.riderEmail} onChange={set("riderEmail")} />
+      </label>
+      <label>Pickup<input className="field" required minLength={3} value={f.pickup} onChange={set("pickup")} /></label>
+      <label>Destination<input className="field" required minLength={3} value={f.destination} onChange={set("destination")} /></label>
+      <label>Agreed price (naira)
+        <input className="field" type="number" min="0" step="1" required value={f.quoteNaira} onChange={set("quoteNaira")} />
+      </label>
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input type="checkbox" checked={f.paid} onChange={set("paid")} /> Already paid (invoice or transfer settled)
+      </label>
+      <label>Notes for Ops<input className="field" value={f.notes} onChange={set("notes")} /></label>
+      {msg ? <div className={msg.ok ? "" : "error-text"}>{msg.text}</div> : null}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn" type="submit" disabled={busy}>{busy ? "Creating…" : "Create job"}</button>
+        <button className="btn ghost" type="button" onClick={() => setOpen(false)}>Close</button>
+      </div>
+    </form>
+  );
+}
+
 export function RidesPage() {
-  const { token, isReadOnly } = useAuth();
+  const { token, user, isReadOnly } = useAuth();
   const [rides, setRides] = useState([]);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -68,11 +160,27 @@ export function RidesPage() {
   // request resolving first, flashing "No escort vehicles loaded yet." before
   // C's own response actually arrived.
   const [fleetLoadingIds, setFleetLoadingIds] = useState(() => new Set());
+  // Manual driver assignment + status override -- loaded once, not per row.
+  const [drivers, setDrivers] = useState([]);
+  // Saved notice shown next to the buttons, per ride, instead of a silent reload.
+  const [notice, setNotice] = useState(null); // { id, text }
+  const noticeTimer = useRef(null);
+  const flash = (id, text) => {
+    setNotice({ id, text });
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3500);
+  };
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  // Swap the saved ride into the list at once so the UI never shows stale data.
+  const patchRide = (saved) => setRides((prev) => prev.map((x) => (x.id === saved.id ? { ...x, ...saved } : x)));
+  const [rowBusy, setRowBusy] = useState(() => new Set());
 
   const debouncedSearch = useDebounced(search, 350);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent=true refreshes the list in the background: no "Loading rides" screen,
+  // so an open row, its scroll position and the typed note survive a save.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { rides } = await api.getRides(token, {
         status: filter || undefined,
@@ -90,6 +198,48 @@ export function RidesPage() {
   }, [token, filter, debouncedSearch, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.getDrivers(token).then((d) => setDrivers(d.drivers || [])).catch(() => {});
+  }, [token]);
+
+  const setBusy = (id, on) => setRowBusy((prev) => {
+    const next = new Set(prev);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
+
+  const assignDriver = async (ride, driverId) => {
+    const label = driverId ? drivers.find((d) => d.id === Number(driverId))?.name || "this driver" : "no driver (unassign)";
+    if (!await confirmAction(`Set ${label} on ride #${ride.id}?`)) return;
+    setBusy(ride.id, true);
+    try {
+      const out = await api.assignRideDriver(token, ride.id, driverId ? Number(driverId) : null);
+      if (out?.ride) patchRide(out.ride);
+      flash(ride.id, "Driver updated");
+      load(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(ride.id, false);
+    }
+  };
+
+  const changeStatus = async (ride, rideStatus) => {
+    if (rideStatus === ride.ride_status) return;
+    if (!await confirmAction(`Manually set ride #${ride.id} to "${rideStatus.replace("_", " ")}"? This bypasses the normal flow -- only do this when you know the real state of the trip.`)) return;
+    setBusy(ride.id, true);
+    try {
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { rideStatus });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, ride_status: rideStatus });
+      flash(ride.id, `Status set to ${rideStatus.replace("_", " ")}`);
+      load(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(ride.id, false);
+    }
+  };
 
   const openRow = (ride) => {
     if (expandedId === ride.id) {
@@ -114,8 +264,11 @@ export function RidesPage() {
   const saveNote = async (ride) => {
     setSaving(true);
     try {
-      await api.updateRide(token, ride.id, { adminNotes: noteDraft });
-      await load();
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { adminNotes: noteDraft });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, admin_notes: noteDraft });
+      flash(ride.id, "Note saved");
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -126,13 +279,16 @@ export function RidesPage() {
   const forceCancel = async (ride) => {
     // Force-cancel had no confirmation step -- a misclick immediately
     // cancelled a real, possibly in-progress ride with no undo.
-    if (!window.confirm(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
+    if (!await confirmAction(`Force-cancel ride #${ride.id}? This can't be undone.`)) {
       return;
     }
     setSaving(true);
     try {
-      await api.updateRide(token, ride.id, { rideStatus: "cancelled", adminNotes: noteDraft || ride.admin_notes });
-      await load();
+      setError(null);
+      const out = await api.updateRide(token, ride.id, { rideStatus: "cancelled", adminNotes: noteDraft || ride.admin_notes });
+      if (out?.ride) patchRide(out.ride); else patchRide({ id: ride.id, ride_status: "cancelled" });
+      flash(ride.id, "Ride cancelled");
+      load(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -149,6 +305,8 @@ export function RidesPage() {
         </div>
         <button className="btn ghost" onClick={() => exportRidesCsv(rides)}>Export CSV</button>
       </div>
+
+      {!isReadOnly && user?.role === "admin" ? <ServiceJobForm token={token} onCreated={() => load()} /> : null}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((f) => (
@@ -186,7 +344,7 @@ export function RidesPage() {
         ) : null}
       </div>
 
-      {error ? <div className="error-text">{error}</div> : null}
+      {error ? <div className="error-text" role="alert">{error} <button className="btn ghost" style={{ padding: "2px 8px" }} onClick={() => setError(null)}>Dismiss</button></div> : null}
 
       <div className="table-wrap">
         {loading ? (
@@ -216,11 +374,14 @@ export function RidesPage() {
                       <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{r.rider_email}</div>
                     </td>
                     <td>
-                      <div>{r.pickup_address}</div>
+                      <div>{r.service ? `${r.service.toUpperCase()}: ` : ""}{r.pickup_address}</div>
                       {r.flight_number ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Flight {r.flight_number}</div> : null}
                     </td>
                     <td>{r.driver_name || <span style={{ color: "var(--text-muted)" }}>Unassigned</span>}</td>
-                    <td>₦{r.fare_naira?.toLocaleString()}</td>
+                    <td>{r.quote_pending && !isReadOnly && user?.role === "admin"
+                      ? <PriceSetter token={token} ride={r} onDone={() => load()} />
+                      : r.quote_pending ? <span style={{ color: "var(--coral)", fontWeight: 600 }}>Awaiting price</span>
+                      : <>₦{r.fare_naira?.toLocaleString()}</>}</td>
                     <td><StatusPill label={r.payment_status} tone={r.payment_status === "paid" ? "teal" : "muted"} /></td>
                     <td><StatusPill label={r.ride_status.replace("_", " ")} tone={rideStatusTone(r.ride_status)} /></td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -247,7 +408,12 @@ export function RidesPage() {
                   {expandedId === r.id ? (
                     <tr>
                       <td colSpan={8} style={{ background: "rgba(255,255,255,0.03)" }}>
-                        <div style={{ padding: "8px 4px" }}>
+                        <div className="ride-expand" style={{ padding: "8px 4px" }}>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                            <button className="btn ghost" onClick={() => openInWindow(`ride/${r.id}`, `Ride #${r.id}`)}>⤢ Ride in window</button>
+                            <button className="btn ghost" onClick={() => openInWindow(`track/${r.id}`, `Track #${r.id}`)}>⤢ Live tracking</button>
+                            {r.rider_id ? <button className="btn ghost" onClick={() => openInWindow(`rider/${r.rider_id}`, r.rider_name)}>⤢ Rider in window</button> : null}
+                          </div>
                           {r.emergency_contact_name || r.emergency_contact_phone ? (
                             <div style={{ marginBottom: 14, fontSize: 12.5 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase" }}>
@@ -278,6 +444,39 @@ export function RidesPage() {
                               )}
                             </div>
                           ) : null}
+                          {!isReadOnly ? (
+                            <div style={{ marginBottom: 14, display: "flex", gap: 20, flexWrap: "wrap" }}>
+                              <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Driver</span>
+                                <select
+                                  className="field"
+                                  value={r.driver_id || ""}
+                                  disabled={rowBusy.has(r.id) || r.ride_status === "completed" || r.ride_status === "cancelled"}
+                                  onChange={(e) => assignDriver(r, e.target.value || null)}
+                                  style={{ minWidth: 220 }}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {drivers.filter((d) => d.is_verified && d.source !== "engine").map((d) => (
+                                    <option key={d.id} value={d.id}>{d.name}{d.plate_number ? ` · ${d.plate_number}` : ""}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label style={{ fontSize: 12.5, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Trip status (manual)</span>
+                                <select
+                                  className="field"
+                                  value={r.ride_status}
+                                  disabled={rowBusy.has(r.id)}
+                                  onChange={(e) => changeStatus(r, e.target.value)}
+                                  style={{ minWidth: 180 }}
+                                >
+                                  {EDITABLE_STATUSES.map((st) => (
+                                    <option key={st} value={st}>{st.replace("_", " ")}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                          ) : null}
                           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
                             Admin notes / dispute log
                           </div>
@@ -295,7 +494,7 @@ export function RidesPage() {
                             </p>
                           ) : (
                             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                              <button className="btn primary" disabled={saving} onClick={() => saveNote(r)}>
+                              <button className="btn primary" disabled={saving || noteDraft === (r.admin_notes || "")} onClick={() => saveNote(r)}>
                                 {saving ? "Saving…" : "Save note"}
                               </button>
                               {r.ride_status !== "cancelled" && r.ride_status !== "completed" ? (
@@ -303,6 +502,9 @@ export function RidesPage() {
                                   Force-cancel ride
                                 </button>
                               ) : null}
+                              <span role="status" aria-live="polite" style={{ alignSelf: "center", fontSize: 12.5, fontWeight: 600, color: "var(--teal)" }}>
+                                {notice && notice.id === r.id ? `✓ ${notice.text}` : ""}
+                              </span>
                             </div>
                           )}
                         </div>

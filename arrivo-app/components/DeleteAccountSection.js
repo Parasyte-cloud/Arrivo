@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Modal,
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { deleteAccount } from "../services/api";
+import { useTranslation } from "react-i18next";
 
 // Deleting your account, from inside the app. Both stores require this: an app
 // that lets you sign up but only lets you leave by emailing somebody does not
@@ -13,6 +14,7 @@ import { deleteAccount } from "../services/api";
 // Asking those users for a password would lock them out of their own deletion.
 
 export function DeleteAccountSection() {
+  const { t } = useTranslation();
   const { user, token, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -41,11 +43,9 @@ export function DeleteAccountSection() {
       // instead of letting them think it is all dealt with.
       if (result?.appleManualRevocationRequired) {
         Alert.alert(
-          "One last step",
-          "Your account is deleted. Apple still lists RideArrivo under your Apple ID, and only you can remove it." +
-            "\n\n" +
-            "On your iPhone: Settings, tap your name, then Sign in with Apple. Tap RideArrivo and choose Stop using Apple ID.",
-          [{ text: "Got it", onPress: logout }],
+          t("deleteAccountSection.lastStep"),
+          t("deleteAccountSection.appleRevokeBody"),
+          [{ text: t("deleteAccountSection.gotIt"), onPress: logout }],
           { cancelable: false }
         );
         return;
@@ -64,29 +64,25 @@ export function DeleteAccountSection() {
   return (
     <View style={styles.wrap}>
       <Pressable onPress={() => setOpen(true)} accessibilityRole="button">
-        <Text style={styles.dangerLink}>Delete my account</Text>
+        <Text style={styles.dangerLink}>{t("deleteAccountSection.deleteMyAccount")}</Text>
       </Pressable>
       <Text style={styles.note}>
-        Removes your details from RideArrivo for good. This can't be undone.
+        {t("deleteAccountSection.removesYourDetailsFromRidearrivo")}
       </Text>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={close}>
         <View style={styles.overlay}>
           <View style={styles.card}>
-            <Text style={styles.title}>Delete your account?</Text>
+            <Text style={styles.title}>{t("deleteAccountSection.deleteYourAccount")}</Text>
 
             <Text style={styles.body}>
-              Your name, contact details, any ID you uploaded, your saved emergency contacts and
-              anything you wrote to support are removed, and you won't be able to sign in again.
+              {t("deleteAccountSection.yourNameContactDetailsAny")}
             </Text>
             <Text style={[styles.body, { marginTop: 10 }]}>
-              Past trips stay on file for 7 years because we're required to keep billing records:
-              the date, the fare, and the pickup and destination addresses. The exact map
-              coordinates, your rating comments and your emergency contact details are removed from
-              those too.
+              {t("deleteAccountSection.pastTripsStayOnFile")}
             </Text>
 
-            <Text style={styles.label}>Type {accountEmail} to confirm</Text>
+            <Text style={styles.label}>{t("deleteAccountSection.typeToConfirm", { accountEmail })}</Text>
             <TextInput
               style={styles.input}
               value={typed}
@@ -115,11 +111,11 @@ export function DeleteAccountSection() {
                   accessibilityRole="button"
                 >
                   <Text style={[styles.deleteBtnText, !matches && styles.deleteBtnTextOff]}>
-                    Delete my account
+                    {t("deleteAccountSection.deleteMyAccount")}
                   </Text>
                 </Pressable>
                 <Pressable onPress={close} style={styles.cancelBtn} accessibilityRole="button">
-                  <Text style={styles.cancelText}>Keep my account</Text>
+                  <Text style={styles.cancelText}>{t("deleteAccountSection.keepMyAccount")}</Text>
                 </Pressable>
               </View>
             )}
@@ -132,7 +128,7 @@ export function DeleteAccountSection() {
 
 const styles = StyleSheet.create({
   wrap: { marginTop: spacing.lg },
-  dangerLink: { color: "#FF6B57", fontSize: 14, fontWeight: "700" },
+  dangerLink: { color: "#C2362B", fontSize: 14, fontWeight: "700" },
   note: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4, lineHeight: 17 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   card: {

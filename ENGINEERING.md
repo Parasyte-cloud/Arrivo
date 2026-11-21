@@ -92,6 +92,21 @@ Node/Express + PostgreSQL via `pg`, connection pooling in `db/db.js`. Schema liv
 
 ---
 
+---
+
+## 5a. Driver tiers (who can work what)
+
+A driver can work more than one service (tier), and work from one tier never reaches a driver who does not hold it. Tiers: `ride` (RideArrivo airport pickups and drop-offs), `express`, `chauffeur`, `campus`, `air`, `boat`, `removals`. Only `ride`, `express` and `chauffeur` have jobs in this backend today (`live: true` in `services/driverTiers.js`); the rest can be granted already and their work arrives in later releases.
+
+- **Who decides:** the console area `driver-tiers` (`services/staffAccess.js`). The owner has it. An admin does not get it by default. The owner names other people on Team & Access (view lets them look, manage lets them change). Only the owner can change that area for anyone (`OWNER_ONLY_AREAS`, enforced in `PUT /api/staff/people/:id/permissions`).
+- **Data:** `driver_tier_access` (one row per driver and tier, status `requested`, `active` or `revoked`) and `driver_tier_events` (the history: who, when, why). Withdrawing needs a reason.
+- **Rollout:** drivers that exist when the schema first runs are given `ride`, `express`, `chauffeur` plus any tier they were tagged with, once, guarded by the `driver_tier_backfill_done` row in `system_config`. A driver who signs up later starts with nothing until the owner switches a tier on. The old `drivers.tier` column is only a label now and decides nothing.
+- **Enforcement:** `GET /api/rides/available` and `POST /api/rides/:id/accept` (ride vs chauffeur by `booking_type`, see `tierForRide`), ArrivoExpress dispatch (`findEligibleDrivers`), the rider-facing nearby estimate, driver offers, offer accept and the Express opt-in all require the tier. Going online with no tier on is refused (`NO_TIER`). Staff can still assign a driver by hand from the console, that is a deliberate override.
+- **Driver app:** `GET /api/drivers/tiers` (own services only, no decider) and `POST /api/drivers/tiers/request`. The Dashboard shows one service at a time, with a "Working on" switcher when two or more are on. Leaving Express switches the Express opt-in off. An older backend without these routes makes the app fall back to the single screen.
+- **Console:** `Driver Tiers` page, `GET/POST /api/admin/driver-tiers`.
+
+---
+
 ## 6. Admin dashboard (`arrivo-admin`)
 
 React + Vite, pages: Panic Alerts (default landing page — safety-critical, shown first on login), Riders, Drivers, Rides, Live Map, Analytics. Live Map uses Leaflet + OpenStreetMap (not Google Maps — deliberately, to avoid a second API key/billing setup after the trouble getting the website's Google Maps key working).

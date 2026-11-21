@@ -17,6 +17,7 @@ require("express-async-errors");
 const { pool, ready } = require("../db/db");
 const callsRouter = require("./calls");
 const staffRouter = require("./staffRides");
+const adminRouter = require("./admin");
 
 let passed = 0;
 async function test(name, fn) {
@@ -40,6 +41,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/calls", callsRouter);
 app.use("/api/staff", staffRouter);
+app.use("/api/admin", adminRouter);
 app.use((err, req, res, next) => res.status(500).json({ error: "server error", detail: err.message }));
 const server = http.createServer(app);
 
@@ -392,6 +394,52 @@ await test("when a rider's call fails, 'Talk to Support' lands on that ride's ow
 // cleanup
 await pool.query("UPDATE staff_duty SET on_duty=false WHERE user_id = ANY($1)", [made]);
 await pool.query("DELETE FROM staff_contact_access WHERE staff_user_id = ANY($1) OR subject_user_id = ANY($1)", [made]);
+
+console.log("ride desk complete, driver archive:");
+await test("staff with Ride Desk manage access can complete a paid ride, not an unpaid one, and not a cancelled one", async () => {
+  const ops = await mkUser("operations");
+  const viewer = await mkUser("operations");
+  await pool.query("UPDATE users SET staff_permissions = $1 WHERE id = $2", [{ "ride-desk": "manage" }, ops.id]);
+  const paid = await mkRide("in_progress");
+  assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: viewer, body: {} })).status, 403, "view-only staff cannot complete"); const unpaid = await mkRide("in_progress"); const dead = await mkRide("cancelled"); const early = await mkRide("requested"); const accepted = await mkRide("accepted");
+  await pool.query("UPDATE rides SET payment_status='paid' WHERE id = ANY($1)", [[paid.id, dead.id, early.id, accepted.id]]);
+  assert.strictEqual((await api(`/api/staff/rides/${early.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409, "requested ride cannot be closed");
+  assert.strictEqual((await api(`/api/staff/rides/${accepted.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409, "accepted ride cannot be closed");
+  assert.strictEqual((await api(`/api/staff/rides/${unpaid.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409);
+  assert.strictEqual((await api(`/api/staff/rides/${dead.id}/complete`, { method: "POST", as: ops, body: {} })).status, 409);
+  assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: ops, body: {} })).status, 200);
+  const done = (await pool.query("SELECT ride_status, completed_at FROM rides WHERE id=$1", [paid.id])).rows[0];
+  assert.strictEqual(done.ride_status, "completed"); assert.ok(done.completed_at, "completed_at is set like the normal flow");
+  assert.strictEqual((await api(`/api/staff/rides/${paid.id}/complete`, { method: "POST", as: ops, body: {} })).body.already, true);
+});
+await test("archive hides a driver, restore brings them back unverified, delete only for archived drivers with no trips", async () => {
+  const adm = await mkUser("admin"); const ops = await mkUser("operations");
+  const d = await mkDriver(); const did = (await pool.query("SELECT id FROM drivers WHERE user_id=$1", [d.id])).rows[0].id;
+  assert.strictEqual((await api(`/api/admin/drivers/${did}/archive`, { method: "PATCH", as: ops, body: {} })).status, 403);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}`, { method: "DELETE", as: adm })).status, 409);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}/tier`, { method: "PATCH", as: adm, body: { tier: "nope" } })).status, 400);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}/tier`, { method: "PATCH", as: adm, body: { tier: "air" } })).status, 200);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}/archive`, { method: "PATCH", as: adm, body: {} })).status, 200);
+  const active = (await api("/api/admin/drivers", { as: ops })).body.drivers;
+  assert.ok(!active.some((x) => x.id === did));
+  const arch = (await api("/api/admin/drivers?archived=1", { as: ops })).body.drivers.find((x) => x.id === did);
+  assert.ok(arch && arch.tier === "air" && arch.is_verified === false);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}/archive`, { method: "PATCH", as: adm, body: { archived: false } })).status, 200);
+  assert.ok((await api("/api/admin/drivers", { as: ops })).body.drivers.some((x) => x.id === did));
+  await api(`/api/admin/drivers/${did}/archive`, { method: "PATCH", as: adm, body: {} });
+  const ride = await mkRide("completed", { driverUserId: d.id });
+  assert.strictEqual((await api(`/api/admin/drivers/${did}`, { method: "DELETE", as: adm })).status, 409);
+  await pool.query("DELETE FROM rides WHERE id=$1", [ride.id]);
+  assert.strictEqual((await api(`/api/admin/drivers/${did}`, { method: "DELETE", as: adm })).status, 200);
+});
+await test("changes aimed at a new-engine driver are refused clearly, and the list says why engine drivers are missing", async () => {
+  const adm = await mkUser("admin");
+  const r = await api("/api/admin/drivers/engine:abc/archive", { method: "PATCH", as: adm, body: {} });
+  assert.strictEqual(r.status, 400); assert.match(r.body.error, /Driver Verification/);
+  delete process.env.ARRIVO_ENGINE_URL;
+  const list = await api("/api/admin/drivers", { as: adm });
+  assert.strictEqual(list.body.engineStatus, "not_configured");
+});
 await pool.query("DELETE FROM support_tickets WHERE user_id = ANY($1)", [made]);
 await pool.query("DELETE FROM rides WHERE rider_id = ANY($1)", [made]);
 await pool.query("DELETE FROM drivers WHERE user_id = ANY($1)", [made]);

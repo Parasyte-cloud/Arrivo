@@ -29,7 +29,7 @@ export function CallButton({ calleeUserId, calleeName }) {
   const startCall = async () => {
     if (!calleeUserId) return;
     if (!client) {
-      setError(clientError || "Calling isn't ready yet — try again in a moment.");
+      setError(clientError || "Calling isn't ready yet, try again in a moment.");
       return;
     }
     setStarting(true);

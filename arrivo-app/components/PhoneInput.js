@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, Modal, FlatList, StyleSheet } from "react-native";
 import { colors, spacing } from "../theme/tokens";
 import { COUNTRY_CODES } from "../utils/phoneValidation";
+import { useTranslation } from "react-i18next";
 
 // The single phone-entry control for the whole app. Every field that takes
 // a phone number uses this so a country code is never optional and never
@@ -11,6 +12,7 @@ import { COUNTRY_CODES } from "../utils/phoneValidation";
 // contacts, Route); the default light tone is for Login/Signup, which stay
 // on the cream background.
 export default function PhoneInput({ dial, national, onChangeDial, onChangeNational, placeholder, tone = "light" }) {
+  const { t } = useTranslation();
   const [pickerVisible, setPickerVisible] = useState(false);
   const selected = COUNTRY_CODES.find((c) => c.dial === dial) || COUNTRY_CODES[0];
   const dark = tone === "dark";
@@ -32,7 +34,7 @@ export default function PhoneInput({ dial, national, onChangeDial, onChangeNatio
       <Modal visible={pickerVisible} animationType="slide" transparent onRequestClose={() => setPickerVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Choose a country code</Text>
+            <Text style={styles.modalTitle}>{t("phoneInput.chooseACountryCode")}</Text>
             <FlatList
               data={COUNTRY_CODES}
               keyExtractor={(item) => item.code}
@@ -51,7 +53,7 @@ export default function PhoneInput({ dial, national, onChangeDial, onChangeNatio
               style={{ maxHeight: 360 }}
             />
             <Pressable style={styles.closeBtn} onPress={() => setPickerVisible(false)}>
-              <Text style={styles.closeBtnText}>Cancel</Text>
+              <Text style={styles.closeBtnText}>{t("phoneInput.cancel")}</Text>
             </Pressable>
           </View>
         </View>

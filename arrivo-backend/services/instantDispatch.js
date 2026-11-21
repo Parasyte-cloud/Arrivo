@@ -1,3 +1,4 @@
+const { HOLDS_TIER_SQL } = require("./driverTiers");
 const { pool } = require("../db/db");
 const { sendPushNotification } = require("./pushNotifications");
 const {
@@ -152,6 +153,7 @@ async function findEligibleDrivers(
           WHERE sub.driver_id = d.id
             AND sub.day = (now() AT TIME ZONE 'Africa/Lagos')::date
        ))
+       AND ${HOLDS_TIER_SQL("d.id", "'express'")}
        AND d.current_lat IS NOT NULL
        AND d.current_lng IS NOT NULL
        AND d.location_updated_at IS NOT NULL

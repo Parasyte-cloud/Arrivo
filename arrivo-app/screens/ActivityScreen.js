@@ -6,13 +6,13 @@ import { Card } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
-import { getRideHistory, getSharedWithMeRides, getServiceRequests } from "../services/api";
-import ParasyteSignature from "../components/ParasyteSignature";
-import { REQUEST_TIERS, statusInfo } from "../tiers/requestTiers";
-import { formatLagos } from "../utils/lagosTime";
+import { getRideHistory, getSharedWithMeRides } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function ActivityScreen({ navigation }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatRideFare } = useCurrency(token);
@@ -22,10 +22,6 @@ export default function ActivityScreen({ navigation }) {
   // POST /:id/share-participants) -- shown separately since you can track
   // these but didn't book or pay for them.
   const [sharedRides, setSharedRides] = useState([]);
-  // ArrivoAir, ArrivoBoat and ArrivoRemovals requests. Kept separate from rides
-  // because they are confirmed by our team first. A failure to load them never
-  // hides the rides list.
-  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -35,12 +31,6 @@ export default function ActivityScreen({ navigation }) {
       setRides(data.rides || []);
       setSharedRides(sharedData.rides || []);
       setError(null);
-      try {
-        const reqData = await getServiceRequests(token);
-        setRequests(reqData.requests || []);
-      } catch (_) {
-        // Requests are secondary here, leave whatever was already shown.
-      }
     } catch (e) {
       setError(e.message || "Couldn't load your ride history.");
     } finally {
@@ -62,35 +52,12 @@ export default function ActivityScreen({ navigation }) {
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
-        <Text style={styles.title}>Activity</Text>
+        <Text style={styles.title}>{t("activity.activity")}</Text>
 
         {loading && rides.length === 0 ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {!loading && !error && rides.length === 0 && requests.length === 0 ? (
-          <Text style={styles.empty}>No rides yet. Book your first airport pickup from Home.</Text>
-        ) : null}
-
-        {requests.length > 0 ? (
-          <>
-            <Text style={styles.sectionTitle}>Requests</Text>
-            {requests.map((r) => (
-              <Pressable
-                key={`req-${r.id}`}
-                onPress={() => navigation.navigate("Home", { screen: "RequestStatus", params: { requestId: r.id } })}
-                accessibilityRole="button"
-              >
-                <Card tone="dark" style={{ marginBottom: spacing.sm }}>
-                  <View style={styles.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.tripTitle}>{REQUEST_TIERS[r.tier] ? REQUEST_TIERS[r.tier].label : "Request"}: {r.pickupAddress}</Text>
-                      <Text style={styles.tripDate}>{formatLagos(r.requestedAt)} {"\u00B7"} {statusInfo(r.status).label}</Text>
-                    </View>
-                  </View>
-                </Card>
-              </Pressable>
-            ))}
-            {rides.length > 0 ? <Text style={styles.sectionTitle}>Rides</Text> : null}
-          </>
+        {!loading && !error && rides.length === 0 ? (
+          <Text style={styles.empty}>{t("activity.noRidesYetBookYour")}</Text>
         ) : null}
 
         {rides.map((ride) => (
@@ -110,7 +77,7 @@ export default function ActivityScreen({ navigation }) {
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
                   </Text>
                 </View>
-                <Text style={styles.tripPrice}>{formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
+                <Text style={styles.tripPrice}>{ride.quote_pending ? t("services.pricePending") : formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
               </View>
             </Card>
           </Pressable>
@@ -118,7 +85,7 @@ export default function ActivityScreen({ navigation }) {
 
         {sharedRides.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>Rides you're sharing</Text>
+            <Text style={styles.sectionTitle}>{t("activity.ridesYouReSharing")}</Text>
             {sharedRides.map((ride) => (
               <Pressable
                 key={`shared-${ride.id}`}
@@ -138,7 +105,6 @@ export default function ActivityScreen({ navigation }) {
             ))}
           </>
         ) : null}
-
         <ParasyteSignature />
       </ScrollView>
     </View>
@@ -153,6 +119,6 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
 });

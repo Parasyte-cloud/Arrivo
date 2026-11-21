@@ -1,15 +1,20 @@
 import { Platform } from "react-native";
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "./config";
+import { clientHeaders, appVersion } from "./clientInfo";
+import { noteResponse } from "../utils/updateRequired";
+import { buildPaymentInit, paymentInitHeaders } from "../utils/paymentIntent";
 import { newRef, pushReport, shortStack } from "../utils/errorRef";
+
 
 // Sent on every call so a failure on the server can be matched to this phone
 // and app version. X-App-Build also tells the server we show the ref ourselves.
-const APP_VERSION = String(Constants.expoConfig?.version || "unknown");
+// clientHeaders() (clientInfo.js) adds the app name, platform and version the
+// minimum-version check reads; these add the request ref the error log keys on.
+const APP_VERSION = appVersion() || "unknown";
 const PLATFORM = `${Platform.OS} ${Platform.Version}`;
-function clientHeaders(ref) {
-  return { "X-Request-Id": ref, "X-App-Version": APP_VERSION, "X-App-Build": APP_VERSION, "X-Platform": PLATFORM };
+function traceHeaders(ref) {
+  return { ...clientHeaders(), "X-Request-Id": ref, "X-App-Build": APP_VERSION, "X-Platform": PLATFORM };
 }
 
 // Errors the server never saw (no signal, a crash) are queued here and sent to
@@ -54,7 +59,7 @@ export async function flushErrorReports() {
       const r = queue[0];
       const res = await fetch(`${API_BASE_URL}/api/client-errors`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...clientHeaders(newRef()) },
+        headers: { "Content-Type": "application/json", ...traceHeaders(newRef()) },
         body: JSON.stringify({ ...r, context: { ...(r.context || {}), happenedAt: r.at } }),
       });
       // 4xx means the report itself is bad, so drop it rather than retry forever.
@@ -113,7 +118,7 @@ async function request(path, options = {}) {
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", ...clientHeaders(ref), ...options.headers },
+      headers: { "Content-Type": "application/json", ...traceHeaders(ref), ...options.headers },
     });
   } catch (e) {
     // Never reached the server, so it has no record of this. Report it once
@@ -124,13 +129,16 @@ async function request(path, options = {}) {
     throw e;
   }
   const data = await res.json().catch(() => ({}));
+  // A 426 means this build is below the backend's minimum. Record it so the
+  // app can swap to the update screen.
+  noteResponse(res.status, data);
   if (!res.ok) {
     notifyUnauthorized(res.status, options.headers);
     const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
     err.code = data.code;
     err.support = data.support; // company support details, never a rider's or driver's number
     err.sessionId = data.sessionId;
-    err.status = res.status;
     // The server logged this under the same ref (or its own, if it had to make one).
     err.ref = data.requestId || res.headers.get("X-Request-Id") || ref;
     err.errorCode = data.errorCode || `HTTP_${res.status}`;
@@ -168,14 +176,19 @@ export function forgotPassword(email) {
   return request("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 }
 
-// The token is sent so the backend can require a signed-in rider on these two
-// routes (PAYMENT_ROUTES_REQUIRE_AUTH). Builds that predate this change send
-// none, which is why the backend keeps that switch off until they have aged out.
-export function initializePayment(email, amountNaira, token) {
+// Booking rules, support contacts and the minimum app version. Public.
+export function getBookingConfig() {
+  return request("/api/config/booking");
+}
+
+// Phase 1: sends the login token and a purpose. The backend does not require
+// either yet (see docs/PAYMENT-TOKEN-ROLLOUT.md), so a missing token must never
+// stop a payment from starting.
+export function initializePayment(token, { email, amountNaira, purpose, refId }) {
   return request("/api/payments/initialize", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: JSON.stringify({ email, amountNaira }),
+    headers: paymentInitHeaders(token),
+    body: JSON.stringify(buildPaymentInit({ email, amountNaira, purpose, refId })),
   });
 }
 
@@ -478,6 +491,20 @@ export function addMembershipProfileUser(token, profileUserEmail) {
 // driver and takes payment then. See arrivo-backend/routes/onTheGo.js.
 // requestedPickupAt (ISO), details and service are optional and carry what the
 // rider had already entered when a booking turned out to be too close.
+// Orders Campus, Air, Boat or Removals. Drivers who hold that service are alerted;
+// RideArrivo confirms the price with the rider before the trip starts.
+export function getServiceCatalogue(token) {
+  return request("/api/service-requests/catalogue", { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function createServiceRequest(token, body) {
+  return request("/api/service-requests", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
 export function createOnTheGoRequest(
   token,
   { pickupAddress, destinationAddress, flightNumber, passengerCount, contactPhone, requestedPickupAt, details, service }
@@ -686,6 +713,16 @@ export function getPartnerVenues(token) {
 export function getPickupPin(token, rideId) {
   return request(`/api/safety/rides/${rideId}/pin`, { headers: { Authorization: `Bearer ${token}` } });
 }
+// Welfare check: send where the rider is, and answer "Are you safe?".
+export function sendWelfarePing(token, rideId, { lat, lng, accuracy }) {
+  return request(`/api/safety/rides/${rideId}/welfare/ping`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ lat, lng, accuracy }) });
+}
+export function answerWelfare(token, rideId, safe) {
+  return request(`/api/safety/rides/${rideId}/welfare/answer`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ safe }) });
+}
+export function getRideReceipt(token, rideId) {
+  return request(`/api/rides/${rideId}/receipt`, { headers: { Authorization: `Bearer ${token}` } });
+}
 // A new expiring link each time. The link is only shown now, so share it right away.
 export function createRideShareLink(token, rideId) {
   return request(`/api/safety/rides/${rideId}/share`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
@@ -729,29 +766,10 @@ export function requestCallSupport(token, sessionId, note) {
   });
 }
 
-// ArrivoAir, ArrivoBoat and ArrivoRemovals. One short request, our team
-// confirms the price and the driver, then it runs like any other trip.
-// See arrivo-backend/routes/serviceRequests.js. idempotencyKey makes a double
-// tap or a retry after a dropped connection return the same request.
-export function createServiceRequest(token, payload) {
-  return request("/api/service-requests", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-}
-
-export function getServiceRequests(token) {
-  return request("/api/service-requests", { headers: { Authorization: `Bearer ${token}` } });
-}
-
-export function getServiceRequest(token, id) {
-  return request(`/api/service-requests/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-}
-
-export function cancelServiceRequest(token, id) {
-  return request(`/api/service-requests/${id}/cancel`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
+// The road between two points for the live map. The backend answers 204 when
+// Google has no route, which comes back as an empty object, and the map then
+// draws a straight line instead.
+export function getRoute(token, from, to) {
+  const params = new URLSearchParams({ fromLat: String(from.lat), fromLng: String(from.lng), toLat: String(to.lat), toLng: String(to.lng) });
+  return request(`/api/places/route?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
 }

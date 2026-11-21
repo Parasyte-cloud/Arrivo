@@ -60,8 +60,11 @@ export function login(payload) {
 export function loginWithGoogle({ idToken, agreedToTerms }) {
   return request("/api/auth/google", { method: "POST", body: JSON.stringify({ idToken, role: "driver", agreedToTerms }) });
 }
-export function loginWithApple({ identityToken, fullName, agreedToTerms }) {
-  return request("/api/auth/apple", { method: "POST", body: JSON.stringify({ identityToken, fullName, role: "driver", agreedToTerms }) });
+// authorizationCode must travel with the identity token. The backend swaps it
+// for the refresh token it needs to revoke Apple access on account deletion,
+// and refuses a brand-new Apple sign-up that arrives without one.
+export function loginWithApple({ identityToken, fullName, agreedToTerms, authorizationCode }) {
+  return request("/api/auth/apple", { method: "POST", body: JSON.stringify({ identityToken, fullName, role: "driver", agreedToTerms, authorizationCode }) });
 }
 // Always responds the same generic message whether or not the email has an
 // account (see the backend route) — this call succeeding just means the
@@ -126,6 +129,9 @@ export function updateRideStatus(token, rideId, status) {
 export function cancelRideWithReason(token, rideId, reason) {
   return request(`/api/rides/${rideId}/cancel-request`, authed(token, { method: "POST", body: JSON.stringify({ reason }) }));
 }
+export function getRideReceipt(token, rideId) {
+  return request(`/api/rides/${rideId}/receipt`, { headers: { Authorization: `Bearer ${token}` } });
+}
 export function getMyDriverRides(token) {
   return request("/api/rides/driver/mine", authed(token));
 }
@@ -159,6 +165,12 @@ export function getRideChatChannel(token, rideId) {
 // offer queue from the scheduled getAvailableRides() above, so an
 // unmatched ArrivoExpress request can never leak into the normal claim queue
 // (see arrivo-backend routes/instantRides.js).
+// This driver's own services: only the ones Ops has switched on.
+export function getMyTiers(token) {
+  return request("/api/drivers/tiers", authed(token));
+}
+// Ask Ops for a service. Never switches anything on.
+
 export function getInstantStatus(token) {
   return request("/api/instant-rides/status", authed(token));
 }
@@ -234,10 +246,21 @@ export function verifySubscriptionPayment(token, reference) {
   return request("/api/driver-subscription/verify", authed(token, { method: "POST", body: JSON.stringify({ reference }) }));
 }
 
-// ArrivoAir, ArrivoBoat and ArrivoRemovals jobs our team assigned to this driver.
-export function getServiceJobs(token) {
-  return request("/api/service-requests/driver/jobs", authed(token));
+
+// Lets the backend push "New ride" and "Ride assigned to you" to this phone
+// (arrivo-backend/services/dispatch.js). Same endpoint the rider app uses.
+export function registerPushToken(token, pushToken) {
+  return request("/api/auth/push-token", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ pushToken }),
+  });
 }
-export function updateServiceJobStatus(token, id, status) {
-  return request(`/api/service-requests/${id}/status`, authed(token, { method: "PATCH", body: JSON.stringify({ status }) }));
+
+// The road between two points for the live map. The backend answers 204 when
+// Google has no route, which comes back as an empty object, and the map then
+// draws a straight line instead.
+export function getRoute(token, from, to) {
+  const params = new URLSearchParams({ fromLat: String(from.lat), fromLng: String(from.lng), toLat: String(to.lat), toLng: String(to.lng) });
+  return request(`/api/places/route?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
 }

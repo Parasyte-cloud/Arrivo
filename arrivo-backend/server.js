@@ -35,6 +35,8 @@ const adminExportsRouter = require("./routes/adminExports");
 const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const adminExpressRouter = require("./routes/adminExpress");
 const adminCashoutsRouter = require("./routes/adminCashouts");
+const internalWalletRouter = require("./routes/internalWallet");
+const adminWalletSettlementRouter = require("./routes/adminWalletSettlement");
 const safetyRouter = require("./routes/safety");
 const adminSafetyRouter = require("./routes/adminSafety");
 const driverCashoutRouter = require("./routes/driverCashout");
@@ -44,6 +46,7 @@ const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const staffRidesRouter = require("./routes/staffRides");
 const { startRideTeamSweep } = require("./services/rideTeam");
+const { startWelfareSweep } = require("./services/welfareRuntime");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
 const serviceRequestsRouter = require("./routes/serviceRequests");
@@ -56,6 +59,7 @@ const supportRouter = require("./routes/support");
 const familyRouter = require("./routes/family");
 const partnerVenuesRouter = require("./routes/partnerVenues");
 const publicBookingRequestsRouter = require("./routes/publicBookingRequests");
+const easybookRouter = require("./routes/easybook");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -109,6 +113,12 @@ const ALLOWED_ORIGINS = [
   // deploy, so it needs its own origin here. Rename this if the subdomain
   // ends up called something other than easybook.
   "https://easybook.ridearrivo.com",
+  // The live host is easybookings (with an s). Without this entry the browser
+  // blocks every call from that page unless EXTRA_ALLOWED_ORIGINS happens to
+  // carry it, which is a quiet way to lose bookings.
+  "https://easybookings.ridearrivo.com",
+  // The booking page's permanent address.
+  "https://book.ridearrivo.com",
   // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
   // posts to /api/auth/google and /api/auth/apple directly from the
   // browser, same as login.html/signup.html on the main site, so a
@@ -147,6 +157,8 @@ app.use(csrfOriginCheck(ALLOWED_ORIGINS));
 // handle raw parsing itself. Every other route gets normal JSON parsing.
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payments/webhook") return next();
+  // Signed service calls: the signature covers the raw body, so the wallet router reads it itself.
+  if (req.originalUrl.startsWith("/api/internal/wallet")) return next();
   // Bumped from the 100kb default — profile photos come in as base64 inside
   // the JSON body, which is roughly a third larger than the raw image bytes.
   express.json({ limit: "6mb" })(req, res, next);
@@ -162,8 +174,11 @@ app.use("/api/drivers", driversRouter);
 // Before the general admin router: exports are admin and operations only,
 // and the router applies that itself.
 app.use("/api/admin/exports", adminExportsRouter);
+app.use("/api/admin/driver-tiers", require("./routes/adminDriverTiers"));
 app.use("/api/admin/express", adminExpressRouter);
 app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/wallet-settlements", adminWalletSettlementRouter);
+app.use("/api/internal/wallet", internalWalletRouter);
 app.use("/api/admin/safety", adminSafetyRouter);
 app.use("/api/safety", safetyRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
@@ -181,10 +196,11 @@ app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/staff/people", require("./routes/staffPeople"));
+app.use("/api/staff/access", require("./routes/staffAccessRoutes"));
 app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
-app.use("/api/service-requests", maskCounterpartyPhones, serviceRequestsRouter);
+app.use("/api/service-requests", serviceRequestsRouter);
 app.use("/api/driver-subscription", driverSubscriptionRouter);
 app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
@@ -194,6 +210,7 @@ app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
 app.use("/api/public", publicBookingRequestsRouter);
+app.use("/api/public", easybookRouter);
 app.use("/api", require("./routes/errorLog"));
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
@@ -213,6 +230,9 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 
 ready.then(() => {
+  if (!require("./services/pnrVault").available()) {
+    console.warn("[flight] FLIGHT_PNR_KEY is not set: booking codes (PNR) cannot be stored. Riders who give one are flagged on the ride for Ops.");
+  }
   app.listen(PORT, () => {
     console.log(`Arrivo backend running on http://localhost:${PORT}`);
   });
@@ -224,4 +244,7 @@ ready.then(() => {
   // Keeps every open ride staffed: fills gaps and moves rides off anyone who
   // has gone off duty. See services/rideTeam.js.
   startRideTeamSweep();
+  // Raises a welfare alert when "Are you safe?" went unanswered and the
+  // phone has gone quiet. See services/welfareCheck.js.
+  startWelfareSweep();
 });

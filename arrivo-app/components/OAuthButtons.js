@@ -2,10 +2,11 @@ import React, { useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
-import * as AuthSession from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { colors, spacing } from "../theme/tokens";
+import { useTranslation } from "react-i18next";
+import { colors, spacing, tint } from "../theme/tokens";
+import { reportClientError } from "../services/api";
 
 // Needed once, at module load, so the in-app browser sheet Google sign-in
 // opens actually closes itself and hands control back to the app when the
@@ -32,13 +33,36 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
   ? `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.replace(".apps.googleusercontent.com", "")}`
   : undefined;
 
+// Google and Apple sign-in are off on iOS for now while we sort out App Review.
+// Apple won't take Google without Apple next to it, so both go. Android keeps Google.
+export const SHOW_SOCIAL_SIGN_IN = Platform.OS !== "ios";
+
 // Renders "Continue with Google" (both platforms) and "Sign in with Apple"
 // (iOS only, per Apple's own button — Android has no Apple button at all).
 // `disabled` is how the signup screen gates these behind the data-protection
 // checkbox, exactly like the "Create account" button below it is gated by
 // the same flag — nobody creates a RideArrivo profile any way, including via
 // Google/Apple, without agreeing to the same terms.
-export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, disabled, busy }) {
+// A sign-in that fails on the phone never reaches our server, so nothing would
+// ever show up in the logs. Report it (the code Apple/Google gave, the screen,
+// the build) and show the person a short Ref they can read out to support.
+async function explain(stage, err, fallback) {
+  const code = err && err.code ? String(err.code) : "";
+  let ref = "";
+  try {
+    ref = await reportClientError({
+      code: "OAUTH_" + stage,
+      message: (err && err.message) || fallback,
+      detail: code,
+      screen: "oauth",
+      context: { os: Platform.OS, nativeCode: code || "none" },
+    });
+  } catch (e) { /* reporting is best effort */ }
+  return `${fallback}${code || ref ? ` (${[code, ref && "Ref " + ref].filter(Boolean).join(", ")})` : ""}`;
+}
+
+export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleResult, onBlocked, disabled, busy }) {
+  const { t } = useTranslation();
   const googleConfigured = !!(GOOGLE_IOS_CLIENT_ID || GOOGLE_ANDROID_CLIENT_ID || GOOGLE_WEB_CLIENT_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -53,7 +77,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // type validates via package name + signing certificate instead of a
     // redirect URI, so it doesn't need (or use) this.
     ...(Platform.OS === "ios" && GOOGLE_IOS_URL_SCHEME
-      ? { redirectUri: AuthSession.makeRedirectUri({ scheme: GOOGLE_IOS_URL_SCHEME }) }
+      ? { redirectUri: `${GOOGLE_IOS_URL_SCHEME}:/oauthredirect` }
       : {}),
   });
 
@@ -67,7 +91,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     // how the Apple handler below ignores ERR_REQUEST_CANCELED — only a
     // genuine "error" type is worth surfacing.
     if (response.type === "error") {
-      onGoogleError && onGoogleError(response.error?.message || "Couldn't sign in with Google. Please try again.");
+      explain("GOOGLE_RESPONSE", response.error || { code: response.params?.error }, response.error?.message || t("auth.googleFailed")).then((m) => onGoogleError && onGoogleError(m));
       return;
     }
     if (response.type !== "success") return;
@@ -78,13 +102,29 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
     if (idToken) {
       onGoogleIdToken(idToken);
     } else {
-      onGoogleError && onGoogleError("Couldn't complete Google sign-in. Please try again.");
+      explain("GOOGLE_NO_TOKEN", { code: "no_id_token" }, t("auth.googleIncomplete")).then((m) => onGoogleError && onGoogleError(m));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
 
+  // Never a dead button. A button that ignores taps reads as "broken" to a
+  // reviewer and to a driver alike, so a blocked tap says why instead.
+  const handleGoogle = () => {
+    if (disabled) { onBlocked && onBlocked(); return; }
+    if (!googleConfigured) { onGoogleError && onGoogleError(t("auth.googleNotReady")); return; }
+    if (!request) { onGoogleError && onGoogleError(t("auth.googleNotReady")); return; }
+    promptAsync().catch((e) => {
+      explain("GOOGLE_PROMPT", e, t("auth.googleFailed")).then((m) => onGoogleError && onGoogleError(m));
+    });
+  };
+
   const handleAppleSignIn = async () => {
+    if (disabled) { onBlocked && onBlocked(); return; }
     try {
+      if (!(await AppleAuthentication.isAvailableAsync())) {
+        onAppleResult({ error: await explain("APPLE_UNAVAILABLE", { code: "unavailable" }, t("auth.appleUnavailable")) });
+        return;
+      }
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -97,6 +137,10 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       // authorizationCode is one-time and only useful right now: the backend
       // swaps it for a refresh token, which is the only thing that can revoke
       // this Apple authorization when the account is deleted.
+      if (!credential.identityToken) {
+        onAppleResult({ error: await explain("APPLE_NO_TOKEN", { code: "no_identity_token" }, t("auth.appleFailed")) });
+        return;
+      }
       onAppleResult({
         identityToken: credential.identityToken,
         fullName: credential.fullName,
@@ -104,7 +148,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
       });
     } catch (e) {
       if (e.code === "ERR_REQUEST_CANCELED") return; // person just backed out — not an error
-      onAppleResult({ error: e.message || "Apple sign-in failed. Please try again." });
+      onAppleResult({ error: await explain("APPLE_SIGNIN", e, t("auth.appleFailed")) });
     }
   };
 
@@ -116,16 +160,18 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
         </View>
       ) : (
         <>
-          {googleConfigured ? (
+          {/* Always shown: a hidden button looks like a missing feature. If the keys are not in this build, a tap says so. */}
+          {(
             <Pressable
-              disabled={disabled || !request}
-              onPress={() => promptAsync()}
-              style={[styles.button, styles.googleButton, (disabled || !request) && styles.buttonDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel={t("auth.continueWithGoogle")}
+              onPress={handleGoogle}
+              style={[styles.button, styles.googleButton, disabled && styles.buttonDisabled]}
             >
               <Text style={styles.googleG}>G</Text>
-              <Text style={styles.buttonText}>Continue with Google</Text>
+              <Text style={styles.buttonText}>{t("auth.continueWithGoogle")}</Text>
             </Pressable>
-          ) : null}
+          )}
 
           {Platform.OS === "ios" ? (
             <AppleAuthentication.AppleAuthenticationButton
@@ -133,7 +179,7 @@ export default function OAuthButtons({ onGoogleIdToken, onGoogleError, onAppleRe
               buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
               cornerRadius={12}
               style={[styles.appleButton, disabled && styles.buttonDisabled]}
-              onPress={disabled ? undefined : handleAppleSignIn}
+              onPress={handleAppleSignIn}
             />
           ) : null}
         </>
@@ -155,7 +201,7 @@ const styles = StyleSheet.create({
   googleButton: {
     backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "rgba(18,18,59,0.15)",
+    borderColor: tint(0.15),
   },
   googleG: { fontSize: 16, fontWeight: "700", color: "#4285F4" },
   buttonText: { fontSize: 14, fontWeight: "600", color: "#12123B" },

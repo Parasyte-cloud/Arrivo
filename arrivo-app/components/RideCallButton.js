@@ -84,7 +84,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
     dispatch({ type: "TAP" });
     setSupportMsg(null);
     try {
-      if (!client) throw Object.assign(new Error("Calling isn't ready yet. Give it a moment."), { status: 503, code: "calling_unavailable" });
+      if (!client) throw Object.assign(new Error(t("call.notReady")), { status: 503, code: "calling_unavailable" });
       dispatch({ type: "STARTING" });
       const res = await startRideCall(token, rideId, media);
       sessionRef.current = res.session.id;
@@ -128,7 +128,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
   // told clearly, rather than hearing ringing forever.
   useEffect(() => {
     if (state.phase !== PHASE.RINGING) return undefined;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       const left = ringRemaining(startedAt.current, Date.now(), state.ringTimeoutSeconds);
       setRemaining(left);
       if (left <= 0) {
@@ -138,7 +138,7 @@ export default function RideCallButton({ rideId, role, counterpart, navigation, 
         inFlight.current = false;
       }
     }, 500);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [state.phase, state.ringTimeoutSeconds, leaveQuietly, report]);
 
   const cancel = async () => {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   link: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, paddingHorizontal: 8, minHeight: 44 },
   linkText: { color: colors.dark.text, fontSize: 14, fontWeight: "600" },
   scrim: { flex: 1, backgroundColor: "rgba(8,8,30,0.72)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: colors.ink, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg, paddingBottom: 36, alignItems: "center", gap: spacing.sm },
+  sheet: { backgroundColor: colors.fill, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg, paddingBottom: 36, alignItems: "center", gap: spacing.sm },
   ringIcon: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.amber, alignItems: "center", justifyContent: "center", marginBottom: spacing.xs },
   sheetTitle: { color: "#fff", fontSize: 22, fontWeight: "800" },
   sheetBody: { color: "rgba(255,255,255,0.75)", fontSize: 15, lineHeight: 21 },

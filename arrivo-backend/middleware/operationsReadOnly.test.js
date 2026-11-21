@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 
 // requireAuth now checks the account still exists on every request. This
 // suite is about the operations gate, so the lookup always finds a live one.
+// staffPermissions lets a test give the account per-area console permissions
+// (services/staffAccess.js).
+let staffPermissions = null;
 const dbPath = require.resolve("../db/db");
 require.cache[dbPath] = {
   id: dbPath,
@@ -12,7 +15,7 @@ require.cache[dbPath] = {
   exports: {
     pool: {
       async query() {
-        return { rows: [{ deleted_at: null, deletion_started_at: null }] };
+        return { rows: [{ deleted_at: null, deletion_started_at: null, staff_permissions: staffPermissions }] };
       },
     },
   },
@@ -71,6 +74,7 @@ async function requestFor(role, method, originalUrl) {
 
 const allowedOperationsGets = [
   "/api/auth/me",
+  "/api/admin/riders",
   "/api/admin/drivers",
   "/api/admin/rides",
   "/api/admin/rides?status=in_progress",
@@ -103,7 +107,6 @@ test("operations may access approved read-only GET views", async () => {
 });
 
 const blockedOperationsRequests = [
-  ["GET", "/api/admin/riders"],
   ["GET", "/api/admin/wallet-transactions"],
   ["GET", "/api/admin/memberships"],
   ["GET", "/api/admin/waitlist"],
@@ -126,6 +129,13 @@ const blockedOperationsRequests = [
   ["PATCH", "/api/auth/me"],
   ["PATCH", "/api/admin/rides/123"],
   ["PATCH", "/api/admin/drivers/123/verify"],
+  // Riders are readable (list only); changing a rider or a wallet is still refused.
+  ["PATCH", "/api/admin/riders/5/verify-id"],
+  ["PATCH", "/api/admin/riders/5/wallet-adjust"],
+  ["POST", "/api/admin/riders"],
+  ["GET", "/api/admin/riders/5/wallet-adjust"],
+  // The ID photo is not part of the list Operations may read.
+  ["GET", "/api/admin/riders/5/id-document"],
   ["PATCH", "/api/admin/panics/123/resolve"],
   ["POST", "/api/admin/exports/riders"],
   ["DELETE", "/api/admin/exports/riders"],
@@ -177,15 +187,58 @@ test("admin behavior is unchanged by the operations gate", async () => {
   assert.equal(result.statusCode, 200);
 });
 
-test("support behavior is unchanged by the operations gate", async () => {
-  const result = await requestFor(
-    "support",
-    "GET",
-    "/api/admin/wallet-transactions"
-  );
+// Support used to see every page. They now start with what the job needs and
+// the owner grants the rest per person (services/staffAccess.js).
+test("operations can read their own console permissions", async () => {
+  for (const url of ["/api/staff/access/me", "/api/staff/access/catalog"]) {
+    const result = await requestFor("operations", "GET", url);
+    assert.equal(result.nextCalled, true, `expected GET ${url} to pass`);
+  }
+});
 
-  assert.equal(result.nextCalled, true);
-  assert.equal(result.statusCode, 200);
+test("operations can read the Trip Tracker but not change anything", async () => {
+  for (const url of ["/api/admin/trips/active", "/api/admin/trips/42"]) {
+    const result = await requestFor("operations", "GET", url);
+    assert.equal(result.nextCalled, true, `expected GET ${url} to pass`);
+  }
+  const write = await requestFor("operations", "POST", "/api/admin/trips/42");
+  assert.equal(write.nextCalled, false);
+  assert.equal(write.statusCode, 403);
+});
+
+test("support doesn't see the wallet unless it's granted", async () => {
+  const result = await requestFor("support", "GET", "/api/admin/wallet-transactions");
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.responseBody?.code, "NO_ACCESS");
+});
+
+test("an upper-case path doesn't skip the console permission check", async () => {
+  const result = await requestFor("support", "GET", "/API/Admin/Wallet-Transactions");
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.responseBody?.code, "NO_ACCESS");
+});
+
+// Express routes /api/admin//wallet-transactions to the wallet route, so the
+// permission check has to see it as the same path.
+test("a doubled slash doesn't get past the permission check", async () => {
+  for (const url of ["/api/admin//wallet-transactions", "/api/admin///wallet-transactions/", "/API/Admin//Wallet-Transactions"]) {
+    const result = await requestFor("support", "GET", url);
+    assert.equal(result.nextCalled, false, `expected ${url} to be refused`);
+    assert.equal(result.responseBody?.code, "NO_ACCESS", url);
+  }
+});
+
+test("support sees the wallet once it's granted", async () => {
+  staffPermissions = { wallet: "view" };
+  try {
+    const result = await requestFor("support", "GET", "/api/admin/wallet-transactions");
+    assert.equal(result.nextCalled, true);
+    assert.equal(result.statusCode, 200);
+  } finally {
+    staffPermissions = null;
+  }
 });
 
 test.after(() => {

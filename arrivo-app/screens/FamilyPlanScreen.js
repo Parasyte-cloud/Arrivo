@@ -10,12 +10,14 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Press
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import {
   getFamilyPlanPricing, getMyFamilyPlan, createFamilyPlan, addFamilyMember,
   removeFamilyMember, verifyFamilyWalletTopup, initializePayment,
 } from "../services/api";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
@@ -24,6 +26,7 @@ function formatNaira(amount) {
 const PLAN_TITLES = { lite: "Family Lite", plus: "Family Plus", max: "Family Max" };
 
 export default function FamilyPlanScreen({ navigation }) {
+  const { t } = useTranslation();
   const { user, token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [pricing, setPricing] = useState([]);
@@ -96,12 +99,12 @@ export default function FamilyPlanScreen({ navigation }) {
     const amount = Number(amountInput);
     setTopUpError(null);
     if (!amount || amount < 100) {
-      setTopUpError("Enter an amount of at least ₦100.");
+      setTopUpError(t("familyPlan.enterAnAmountOfAt"));
       return;
     }
     setTopUpStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amount, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: amount, purpose: "family_topup" });
       pendingTopUpRef.current = reference;
       await Linking.openURL(authorizationUrl);
     } catch (e) {
@@ -170,8 +173,8 @@ export default function FamilyPlanScreen({ navigation }) {
       <GradientBackground variant="dark" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Family Plan</Text>
-          <Text style={styles.subtitle}>One account. Your whole family. One less thing to worry about.</Text>
+          <Text style={styles.title}>{t("familyPlan.familyPlan")}</Text>
+          <Text style={styles.subtitle}>{t("familyPlan.oneAccountYourWholeFamily")}</Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -183,7 +186,7 @@ export default function FamilyPlanScreen({ navigation }) {
                     <Text style={styles.planName}>{PLAN_TITLES[tier.planType]}</Text>
                     <Text style={styles.price}>{formatNaira(tier.priceNaira)}/mo</Text>
                   </View>
-                  <Text style={styles.meta}>Up to {tier.maxMembers} members, including you.</Text>
+                  <Text style={styles.meta}>{t("familyPlan.upToMembersIncludingYou", { maxMembers: tier.maxMembers })}</Text>
                   <View style={{ height: spacing.sm }} />
                   {busy ? (
                     <ActivityIndicator color={colors.amber} />
@@ -200,23 +203,23 @@ export default function FamilyPlanScreen({ navigation }) {
                   <Text style={styles.planName}>{PLAN_TITLES[plan.planType]}</Text>
                   <Tag label={isAdmin ? "Administrator" : "Member"} tone="teal" />
                 </View>
-                <Text style={styles.meta}>{members.length} / {plan.maxMembers} members</Text>
+                <Text style={styles.meta}>{t("familyPlan.members", { length: members.length, maxMembers: plan.maxMembers })}</Text>
               </Card>
 
               <Card tone="dark" style={{ marginBottom: spacing.md }}>
-                <Text style={styles.cardLabel}>Family Wallet</Text>
+                <Text style={styles.cardLabel}>{t("familyPlan.familyWallet")}</Text>
                 <Text style={styles.balance}>{formatNaira(plan.walletBalanceNaira)}</Text>
                 {plan.walletBalanceNaira <= 0 ? (
-                  <Text style={styles.warningText}>Your Family Wallet is empty. Top up to continue riding.</Text>
+                  <Text style={styles.warningText}>{t("familyPlan.yourFamilyWalletIsEmpty")}</Text>
                 ) : null}
                 {isAdmin ? (
                   !showTopUp ? (
-                    <Button label="Top Up Family Wallet" variant="ghost" tone="dark" onPress={() => setShowTopUp(true)} style={{ marginTop: spacing.sm }} trailingIcon />
+                    <Button label={t("familyPlan.topUpFamilyWallet")} variant="ghost" tone="dark" onPress={() => setShowTopUp(true)} style={{ marginTop: spacing.sm }} trailingIcon />
                   ) : (
                     <View style={{ marginTop: spacing.sm }}>
                       <TextInput
                         style={styles.input}
-                        placeholder="Amount (₦)"
+                        placeholder={t("familyPlan.amount")}
                         placeholderTextColor={colors.dark.textMuted}
                         keyboardType="number-pad"
                         value={amountInput}
@@ -228,17 +231,17 @@ export default function FamilyPlanScreen({ navigation }) {
                       {topUpStatus === "opening" || topUpStatus === "verifying" ? (
                         <ActivityIndicator color={colors.amber} />
                       ) : (
-                        <Button label="Continue to payment" onPress={topUp} trailingIcon />
+                        <Button label={t("familyPlan.continueToPayment")} onPress={topUp} trailingIcon />
                       )}
                     </View>
                   )
                 ) : (
-                  <Text style={styles.meta}>Only your family administrator can top up this wallet.</Text>
+                  <Text style={styles.meta}>{t("familyPlan.onlyYourFamilyAdministratorCan")}</Text>
                 )}
               </Card>
 
               <Card tone="dark" style={{ marginBottom: spacing.md }}>
-                <Text style={styles.cardLabel}>Members</Text>
+                <Text style={styles.cardLabel}>{t("familyPlan.members2")}</Text>
                 {members.map((m) => (
                   <View key={m.id} style={styles.memberRow}>
                     <View>
@@ -247,7 +250,7 @@ export default function FamilyPlanScreen({ navigation }) {
                     </View>
                     {isAdmin && m.member_role !== "admin" ? (
                       <Pressable onPress={() => removeMember(m.id)}>
-                        <Text style={styles.removeLink}>Remove</Text>
+                        <Text style={styles.removeLink}>{t("familyPlan.remove")}</Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -255,11 +258,11 @@ export default function FamilyPlanScreen({ navigation }) {
 
                 {isAdmin && members.length < plan.maxMembers ? (
                   <View style={{ marginTop: spacing.sm }}>
-                    <Text style={styles.meta}>Add a member by the phone or email they used to sign up.</Text>
+                    <Text style={styles.meta}>{t("familyPlan.addAMemberByThe")}</Text>
                     <View style={{ height: 8 }} />
                     <TextInput
                       style={styles.input}
-                      placeholder="Phone or email"
+                      placeholder={t("familyPlan.phoneOrEmail")}
                       placeholderTextColor={colors.dark.textMuted}
                       value={addValue}
                       onChangeText={setAddValue}
@@ -269,18 +272,19 @@ export default function FamilyPlanScreen({ navigation }) {
                     {addStatus === "busy" ? (
                       <ActivityIndicator color={colors.amber} />
                     ) : (
-                      <Button label="Add member" variant="ghost" tone="dark" onPress={addMember} />
+                      <Button label={t("familyPlan.addMember")} variant="ghost" tone="dark" onPress={addMember} />
                     )}
-                    {addStatus === "success" ? <Text style={styles.successText}>Member added ✓</Text> : null}
+                    {addStatus === "success" ? <Text style={styles.successText}>{t("familyPlan.memberAdded")}</Text> : null}
                   </View>
                 ) : null}
               </Card>
 
               <Text style={styles.walletNote}>
-                Book a ride and choose "Family Wallet" at checkout — any member can do this for themselves,{isAdmin ? " or you can book on their behalf from the ride booking screen." : "."}
+                Book a ride and choose "Family Wallet" at checkout, any member can do this for themselves,{isAdmin ? " or you can book on their behalf from the ride booking screen." : "."}
               </Text>
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -297,12 +301,12 @@ const styles = StyleSheet.create({
   price: { color: colors.amber, fontSize: 16, fontWeight: "700" },
   balance: { color: colors.amber, fontSize: 22, fontWeight: "700", marginTop: 4 },
   meta: { color: colors.dark.textMuted, fontSize: 12, marginTop: 2, lineHeight: 17 },
-  warningText: { color: "#FF9B8A", fontSize: 11, marginTop: 6 },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  successText: { color: "#8FD9C4", fontSize: 12, marginTop: 8, textAlign: "center" },
-  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || "rgba(255,255,255,0.08)" },
+  warningText: { color: "#C2362B", fontSize: 11, marginTop: 6 },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  successText: { color: colors.success, fontSize: 12, marginTop: 8, textAlign: "center" },
+  memberRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.dark.divider || tint(0.07) },
   memberName: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
-  removeLink: { color: "#FF9B8A", fontSize: 12, fontWeight: "600" },
+  removeLink: { color: "#C2362B", fontSize: 12, fontWeight: "600" },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

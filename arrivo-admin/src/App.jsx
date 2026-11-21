@@ -5,76 +5,114 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoginPage } from "./pages/LoginPage";
 import { Sidebar } from "./components/Sidebar";
 import wordmarkLight from "./assets/wordmark-light.png";
+import { OpsIcon } from "./components/OpsIcon";
+import { CommandPalette } from "./components/CommandPalette";
+import { ParasyteSignature } from "./components/ParasyteSignature";
+import { ConfirmHost } from "./components/ConfirmDialog";
+import { openInWindow } from "./lib/openWindow";
 
-// Lazy-loaded per page instead of one ~1MB upfront bundle — Leaflet
+// Lazy-loaded per page instead of one ~1MB upfront bundle - Leaflet
 // (LiveMapPage) and the Stream Video SDK (pulled in by RidersPage/
 // DriversPage's CallButton) are the two biggest contributors, and most
 // admin sessions only ever touch a handful of these pages. Splitting
 // means the first paint only downloads whichever page is actually
 // opened, not all ten. LoginPage stays a normal import since it's the
-// very first thing an unauthenticated visitor needs — no point deferring
+// very first thing an unauthenticated visitor needs - no point deferring
 // something that's needed immediately anyway.
 const PanicsPage = lazy(() => import("./pages/PanicsPage").then((m) => ({ default: m.PanicsPage })));
 const RidersPage = lazy(() => import("./pages/RidersPage").then((m) => ({ default: m.RidersPage })));
 const DriversPage = lazy(() => import("./pages/DriversPage").then((m) => ({ default: m.DriversPage })));
+const RiderViewPage = lazy(() => import("./pages/RiderViewPage").then((m) => ({ default: m.RiderViewPage })));
 const RidesPage = lazy(() => import("./pages/RidesPage").then((m) => ({ default: m.RidesPage })));
 const LiveMapPage = lazy(() => import("./pages/LiveMapPage").then((m) => ({ default: m.LiveMapPage })));
+const TripTrackerPage = lazy(() => import("./pages/TripTrackerPage").then((m) => ({ default: m.TripTrackerPage })));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const MembershipsPage = lazy(() => import("./pages/MembershipsPage").then((m) => ({ default: m.MembershipsPage })));
 const WalletPage = lazy(() => import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })));
 const FlightIssuesPage = lazy(() => import("./pages/FlightIssuesPage").then((m) => ({ default: m.FlightIssuesPage })));
+const DriverTiersPage = lazy(() => import("./pages/DriverTiersPage").then((m) => ({ default: m.DriverTiersPage })));
 const VehiclesPage = lazy(() => import("./pages/VehiclesPage").then((m) => ({ default: m.VehiclesPage })));
 const SupportPage = lazy(() => import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 const ExportsPage = lazy(() => import("./pages/ExportsPage").then((m) => ({ default: m.ExportsPage })));
 const ExpressPricingPage = lazy(() => import("./pages/ExpressPricingPage").then((m) => ({ default: m.ExpressPricingPage })));
+const TeamPage = lazy(() => import("./pages/TeamPage").then((m) => ({ default: m.TeamPage })));
 const SafetyPage = lazy(() => import("./pages/SafetyPage").then((m) => ({ default: m.SafetyPage })));
 const RideDeskPage = lazy(() => import("./pages/RideDeskPage").then((m) => ({ default: m.RideDeskPage })));
 const ArrivoExpressPage = lazy(() => import("./pages/ArrivoExpressPage").then((m) => ({ default: m.ArrivoExpressPage })));
+const OpsOverviewPage = lazy(() => import("./pages/OpsOverviewPage").then((m) => ({ default: m.OpsOverviewPage })));
 
-// Every page key Dashboard actually knows how to render — used both to
+// Every page key Dashboard actually knows how to render - used both to
 // validate an incoming URL hash (so a stale/garbage/mistyped link can
 // never leave the app on a blank page) and as the single source of truth
 // for what "a valid page" means.
 const PAGES = [
-  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues",
-  "vehicles", "memberships", "wallet", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
+  "ride-desk", "panics", "riders", "drivers", "driver-tiers", "rides", "support", "flight-issues",
+  "vehicles", "memberships", "wallet", "trip-tracker", "live-map", "analytics", "arrivo-express", "express-pricing", "safety", "exports",
 ];
 
-const OPERATIONS_PAGES = [
-  "ride-desk",
-  "panics",
-  "drivers",
-  "rides",
-  "flight-issues",
-  "vehicles",
-  "live-map",
-  "analytics",
-  "exports",
-];
 
+
+const PAGE_LABELS = {
+  overview: "Command Center", "ride-desk": "Ride Desk", panics: "Panic Alerts", riders: "Riders", drivers: "Drivers", "driver-tiers": "Driver Tiers", rides: "Rides",
+  support: "Support Tickets", "flight-issues": "Flight Issues", vehicles: "Vehicles", memberships: "Memberships", wallet: "Wallet",
+  "trip-tracker": "Trip Tracker", "live-map": "Live Map", analytics: "Analytics", "arrivo-express": "Arrivo Express",
+  "express-pricing": "Express Pricing", safety: "Trip Safety", exports: "Exports", team: "Team & Access",
+};
 
 function pageFromHash(allowedPages = PAGES) {
-  const hash = window.location.hash.replace(/^#\/?/, "");
-  return allowedPages.includes(hash) ? hash : "panics";
+  const hash = window.location.hash.replace(/^#\/?/, "").split("/")[0];
+  if (allowedPages.includes(hash)) return hash;
+  // The command center is the default operating picture; deep links still win.
+  return allowedPages.includes("overview") ? "overview" : allowedPages.includes("panics") ? "panics" : allowedPages[0] || "panics";
+}
+
+// Big single-item views: #/rider/<id>, #/ride/<id>, #/track/<ride id or flight number>.
+// They render without the sidebar so each fits cleanly in its own RA-workspace window.
+const FOCUS_KINDS = { rider: "riders", ride: "rides", track: "trip-tracker" };
+
+function focusFromHash(allowedPages = PAGES) {
+  const [kind, ...rest] = window.location.hash.replace(/^#\/?/, "").split("/");
+  const ref = decodeURIComponent(rest.join("/") || "").trim();
+  if (!FOCUS_KINDS[kind] || !ref || !allowedPages.includes(FOCUS_KINDS[kind])) return null;
+  return { kind, ref };
 }
 
 function Dashboard() {
-  const { isOperations } = useAuth();
+  const { access } = useAuth();
+  // Wait for this person's permissions before drawing any page.
+  if (!access) return <div className="empty-state">Loading…</div>;
+  return <DashboardFor access={access} />;
+}
+
+function DashboardFor({ access }) {
+  const { can, setCurrentPage } = useAuth();
+  // Pages come from the person's permissions (access.js), plus Team & Access
+  // for the owner, admins and the head of support.
   const allowedPages = useMemo(
-    () => (isOperations ? OPERATIONS_PAGES : PAGES),
-    [isOperations]
+    () => [...PAGES.filter((p) => can(p, "view")), ...(access.canSeeTeam ? ["team"] : [])],
+    [access, can]
   );
 
-  // Default to Panic Alerts on login — the safety-critical view should be
+  // Default to Panic Alerts on login - the safety-critical view should be
   // the first thing an ops person sees, not something they have to
   // remember to check. Reading from the URL hash first (falling back to
   // "panics") means a refresh, a bookmark, or a link shared with a
   // teammate all land on the actual page intended, not always the
-  // default — and the hash sync below keeps the two in sync from here on.
-  const [page, setPageState] = useState(() => pageFromHash(allowedPages));
+  // default - and the hash sync below keeps the two in sync from here on.
+  const pageChoices = useMemo(() => ["overview", ...allowedPages], [allowedPages]);
+  const [page, setPageState] = useState(() => pageFromHash(pageChoices));
+  // Losing access to the page on screen (changed on the Team page) moves them off it.
+  useEffect(() => {
+    if (pageChoices.length && !pageChoices.includes(page)) setPageState(pageFromHash(pageChoices));
+  }, [pageChoices, page]);
+  const [focus, setFocus] = useState(() => focusFromHash(allowedPages));
+  // View-only buttons follow the area of the page on screen, including big single views.
+  useEffect(() => {
+    setCurrentPage(focus ? FOCUS_KINDS[focus.kind] : (page === "team" || page === "overview") ? null : page);
+  }, [focus, page, setCurrentPage]);
 
   const setPage = useCallback((next) => {
-    if (!allowedPages.includes(next)) return;
+    if (!pageChoices.includes(next)) return;
 
     setPageState(next);
 
@@ -84,10 +122,10 @@ function Dashboard() {
     ) {
       window.location.hash = `/${next}`;
     }
-  }, [allowedPages]);
+  }, [pageChoices]);
 
   // Browser back/forward changes the hash without touching React state on
-  // its own — this is what makes those buttons actually navigate between
+  // its own - this is what makes those buttons actually navigate between
   // admin pages instead of doing nothing (or leaving the visible page out
   // of sync with the URL).
   useEffect(() => {
@@ -95,14 +133,18 @@ function Dashboard() {
       const raw =
         window.location.hash.replace(/^#\/?/, "");
 
+      const nextFocus = focusFromHash(allowedPages);
+      setFocus(nextFocus);
+      if (nextFocus) return;
+
       const next =
-        pageFromHash(allowedPages);
+        pageFromHash(pageChoices);
 
       setPageState(next);
 
       if (
         raw
-        && !allowedPages.includes(raw)
+        && !pageChoices.includes(raw)
       ) {
         window.location.hash = `/${next}`;
       }
@@ -118,7 +160,7 @@ function Dashboard() {
         "hashchange",
         onHashChange
       );
-  }, [allowedPages]);
+  }, [allowedPages, pageChoices]);
 
   // First render: if there was no hash at all (a fresh login, not a
   // deep link), write one so the address bar reflects reality from the
@@ -127,38 +169,90 @@ function Dashboard() {
     const raw =
       window.location.hash.replace(/^#\/?/, "");
 
+    if (focusFromHash(allowedPages)) return;
     if (
       !raw
-      || !allowedPages.includes(raw)
+      || !pageChoices.includes(raw)
     ) {
       window.location.hash = `/${page}`;
     }
-  }, [allowedPages, page]);
+  }, [pageChoices, page]);
   // Sidebar is always visible on desktop; on narrow (phone) screens it
-  // becomes an off-canvas drawer toggled by the hamburger button below —
+  // becomes an off-canvas drawer toggled by the hamburger button below -
   // see the .sidebar / .mobile-topbar rules in styles.css for the
   // breakpoint (860px) that switches between the two layouts.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("arrivoops_sidebar_collapsed") === "1");
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [clock, setClock] = useState(new Date());
+
+  useEffect(() => {
+    localStorage.setItem("arrivoops_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 30000);
+    const onKey = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { clearInterval(timer); window.removeEventListener("keydown", onKey); };
+  }, []);
+
+  if (focus) {
+    return (
+      <div className="focus-shell">
+        <ErrorBoundary resetKey={`${focus.kind}/${focus.ref}`}>
+          <Suspense fallback={<div className="empty-state">Loading…</div>}>
+            {focus.kind === "rider" && <RiderViewPage riderId={focus.ref} />}
+            {focus.kind !== "rider" && <TripTrackerPage focus={focus} />}
+          </Suspense>
+        </ErrorBoundary>
+      </div>
+    );
+  }
+
+  const pageLabel = PAGE_LABELS[page] || "ArrivoOps";
+
+  const commandItems = ["overview", ...allowedPages].map((id) => ({
+    id, label: PAGE_LABELS[id] || id, popOut: id !== "overview" && id !== "team",
+  }));
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "nav-collapsed" : ""}`}>
       <div className="mobile-topbar">
         <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
         <img src={wordmarkLight} alt="RideArrivo" className="mobile-brand-logo" />
+        <button className="mobile-command" onClick={() => setCommandOpen(true)} aria-label="Open command menu"><OpsIcon name="search" /></button>
       </div>
-      <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className="main">
-        <ErrorBoundary resetKey={page}>
-          <Suspense fallback={<div className="empty-state">Loading…</div>}>
-            {page === "ride-desk" && <RideDeskPage />}
+      <Sidebar page={page} setPage={setPage} open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
+      <div className="workspace-shell">
+        <header className="ops-topbar">
+          <div className="ops-breadcrumb"><span>ArrivoOps</span><strong>{pageLabel}</strong></div>
+          <div className="ops-topbar-actions">
+            <button type="button" className="ops-command-trigger" onClick={() => setCommandOpen(true)}><OpsIcon name="search" size={16} /><span>Find a surface or action</span><kbd>⌘K</kbd></button>
+            <div className="ops-clock"><OpsIcon name="clock" size={15} /><span>{clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+            {page !== "overview" && page !== "team" ? <button type="button" className="ops-top-action" onClick={() => openInWindow(page, pageLabel)} title="Open this surface in another workspace window"><OpsIcon name="external" size={16} /> <span>Pop out</span></button> : null}
+          </div>
+        </header>
+        <main className="main">
+          <ErrorBoundary resetKey={page}>
+            <Suspense fallback={<div className="empty-state">Loading…</div>}>
+              {page === "overview" && <OpsOverviewPage setPage={setPage} />}
+              {page === "ride-desk" && <RideDeskPage />}
             {page === "panics" && <PanicsPage />}
             {page === "riders" && <RidersPage />}
             {page === "drivers" && <DriversPage />}
+            {page === "driver-tiers" && <DriverTiersPage />}
             {page === "rides" && <RidesPage />}
             {page === "flight-issues" && <FlightIssuesPage />}
             {page === "vehicles" && <VehiclesPage />}
             {page === "memberships" && <MembershipsPage />}
             {page === "wallet" && <WalletPage />}
+            {page === "trip-tracker" && <TripTrackerPage />}
             {page === "live-map" && <LiveMapPage />}
             {page === "support" && <SupportPage />}
             {page === "analytics" && <AnalyticsPage />}
@@ -166,9 +260,20 @@ function Dashboard() {
             {page === "express-pricing" && <ExpressPricingPage />}
             {page === "safety" && <SafetyPage />}
             {page === "exports" && <ExportsPage />}
-          </Suspense>
-        </ErrorBoundary>
-      </main>
+              {page === "team" && <TeamPage />}
+            </Suspense>
+          </ErrorBoundary>
+        </main>
+      </div>
+
+      {commandOpen ? (
+        <CommandPalette
+          items={commandItems}
+          onOpen={setPage}
+          onPopOut={(id, label) => openInWindow(id, label)}
+          onClose={() => setCommandOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -204,6 +309,8 @@ export default function App() {
   return (
     <AuthProvider>
       <Root />
+      <ConfirmHost />
+      <ParasyteSignature />
     </AuthProvider>
   );
 }

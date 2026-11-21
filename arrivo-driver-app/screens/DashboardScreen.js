@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { LiveMap } from "../components/LiveMap";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import RideCallButton from "../components/RideCallButton";
 import {
@@ -15,23 +15,29 @@ import {
   cancelRideWithReason,
 } from "../services/api";
 import { useLocationReporting } from "../hooks/useLocationReporting";
+import { useOwnPosition } from "../hooks/useOwnPosition";
 import { useT } from "../context/LanguageContext";
 import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
 import ParasyteSignature from "../components/ParasyteSignature";
-import { InspectionBanner, ProfileStatsCard, ServiceJobCard, SubscriptionCard } from "../components/DashboardPanels";
+import { InspectionBanner, ProfileStatsCard, SubscriptionCard } from "../components/DashboardPanels";
 import { useSubscription } from "../hooks/useSubscription";
-import { useServiceJobs } from "../hooks/useServiceJobs";
 import { canReceiveOrders } from "../tiers/dashboard";
-import { busyOnServiceJob, rideBadge } from "../tiers/jobs";
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
 // default 20s) so they're polled on their own, quicker cadence below.
 const INSTANT_POLL_INTERVAL_MS = 4000;
+import { useTiers } from "../context/TiersContext";
+import { sectionsFor, queueFor, tierForRide, metaFor } from "../utils/tiers";
+import TierSwitcher from "../components/TierSwitcher";
+import TierPane from "../components/TierPane";
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
+  // Which service the driver is working on. Each one shows only its own work.
+  const { current: currentTier, legacy: tiersLegacy, loaded: tiersLoaded } = useTiers();
+  const show = sectionsFor(currentTier, { legacy: tiersLegacy });
   const [isOnline, setIsOnline] = useState(false);
   const [available, setAvailable] = useState([]);
   // Arrivo Express Phase 3 -- the Partner Venues program area lock. Non-null while
@@ -63,10 +69,7 @@ export default function DashboardScreen({ navigation }) {
   // saves polling for orders that would not come.
   const { data: dash, error: dashError, paying, now: subNow, reload: reloadDash, subscribe } = useSubscription(token, user?.email);
   const subscribed = dash ? canReceiveOrders(dash.subscription, subNow) : true;
-  // ArrivoAir, ArrivoBoat and ArrivoRemovals jobs our team assigned.
-  const { jobs: serviceJobs, busyId: jobBusyId, error: jobError, advance: advanceJob } = useServiceJobs(token, true);
   // Someone mid-flight or mid-move is not offered airport pickups.
-  const onServiceJob = busyOnServiceJob(serviceJobs);
 
   // While online (whether waiting for a request or mid-trip), periodically
   // report this phone's GPS position to the backend. This is what makes
@@ -161,7 +164,7 @@ export default function DashboardScreen({ navigation }) {
 
   // Poll for new ride requests while online and not already on a trip.
   useEffect(() => {
-    if (isOnline && !activeRide && subscribed && !onServiceJob) {
+    if (isOnline && !activeRide && subscribed) {
       refreshAvailable();
       pollRef.current = setInterval(refreshAvailable, POLL_INTERVAL_MS);
     } else {
@@ -169,7 +172,7 @@ export default function DashboardScreen({ navigation }) {
       setAvailable([]);
     }
     return () => clearInterval(pollRef.current);
-  }, [isOnline, activeRide, subscribed, onServiceJob, refreshAvailable]);
+  }, [isOnline, activeRide, subscribed, refreshAvailable]);
 
   // Keep the active-trip card's data fresh while on a trip — status changes,
   // fare adjustments, or a listening-device activation from another path
@@ -212,6 +215,19 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  // Working on one service at a time: leaving ArrivoExpress for another service
+  // switches the Express opt-in off, so offers never arrive for a service the
+  // driver is not looking at. They flip it on again when they come back.
+  const prevTierRef = useRef(currentTier);
+  useEffect(() => {
+    const prev = prevTierRef.current;
+    prevTierRef.current = currentTier;
+    if (prev === "express" && currentTier !== "express" && acceptsInstant && !tiersLegacy) {
+      setAcceptsInstant(false);
+      setInstantAvailability(token, false).catch(() => setAcceptsInstant(true));
+    }
+  }, [currentTier]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const refreshInstantOffers = useCallback(async () => {
     try {
       const { offers } = await getInstantOffers(token);
@@ -224,7 +240,7 @@ export default function DashboardScreen({ navigation }) {
   // Poll ArrivoExpress offers only while genuinely eligible to receive them:
   // online, opted in, verified, and not already mid-trip.
   useEffect(() => {
-    if (isOnline && acceptsInstant && instantVerified && !activeRide && subscribed && !onServiceJob) {
+    if (isOnline && acceptsInstant && instantVerified && !activeRide && subscribed) {
       refreshInstantOffers();
       instantPollRef.current = setInterval(refreshInstantOffers, INSTANT_POLL_INTERVAL_MS);
     } else {
@@ -232,7 +248,7 @@ export default function DashboardScreen({ navigation }) {
       setInstantOffers([]);
     }
     return () => clearInterval(instantPollRef.current);
-  }, [isOnline, acceptsInstant, instantVerified, activeRide, subscribed, onServiceJob, refreshInstantOffers]);
+  }, [isOnline, acceptsInstant, instantVerified, activeRide, subscribed, refreshInstantOffers]);
 
   // Drives the live per-offer countdown text -- only ticks while there's
   // actually something to count down, so this never runs for drivers who
@@ -373,7 +389,7 @@ export default function DashboardScreen({ navigation }) {
             value={isOnline}
             onValueChange={toggleOnline}
             disabled={!!activeRide}
-            trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+            trackColor={{ false: tint(0.15), true: colors.amber }}
             thumbColor="#fff"
           />
         </View>
@@ -382,7 +398,10 @@ export default function DashboardScreen({ navigation }) {
         <InspectionBanner inspection={dash?.inspection} />
         <SubscriptionCard subscription={dash?.subscription} now={subNow} paying={paying} onSubscribe={subscribe} />
 
-        {instantEnabled ? (
+        <TierSwitcher />
+        {tiersLoaded && show.pane ? <TierPane /> : null}
+
+        {instantEnabled && show.express ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <View style={styles.rowBetween}>
               <View style={{ flex: 1, marginRight: spacing.sm }}>
@@ -397,7 +416,7 @@ export default function DashboardScreen({ navigation }) {
                 value={acceptsInstant}
                 onValueChange={toggleInstant}
                 disabled={!!activeRide || !instantVerified}
-                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                trackColor={{ false: tint(0.15), true: colors.amber }}
                 thumbColor="#fff"
               />
             </View>
@@ -406,23 +425,7 @@ export default function DashboardScreen({ navigation }) {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {dashError && !dash ? <Text style={styles.error}>{dashError}</Text> : null}
-        {jobError ? <Text style={styles.error}>{jobError}</Text> : null}
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
-
-        {serviceJobs.length ? (
-          <>
-            <Text style={styles.sectionLabel}>Your jobs</Text>
-            {serviceJobs.map((job) => (
-              <ServiceJobCard
-                key={job.id}
-                job={job}
-                busy={jobBusyId === job.id}
-                disabled={jobBusyId !== null && jobBusyId !== job.id}
-                onAdvance={advanceJob}
-              />
-            ))}
-          </>
-        ) : null}
 
         {activeRide ? (
           <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
@@ -430,13 +433,9 @@ export default function DashboardScreen({ navigation }) {
           <Card tone="dark">
             <Text style={styles.offlineText}>Subscribe for today to start receiving orders.</Text>
           </Card>
-        ) : isOnline && onServiceJob ? (
-          <Card tone="dark">
-            <Text style={styles.offlineText}>New ride requests are paused while your job is under way.</Text>
-          </Card>
         ) : isOnline ? (
           <>
-            {acceptsInstant ? (
+            {show.express && acceptsInstant ? (
               <>
                 <Text style={styles.sectionLabel}>ArrivoExpress requests</Text>
                 {instantOffers.map((offer) => (
@@ -453,48 +452,51 @@ export default function DashboardScreen({ navigation }) {
               </>
             ) : null}
 
-            <Text style={styles.sectionLabel}>Nearby requests</Text>
-            {areaLockedToVenue ? (
-              <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
-                <Text style={styles.meta}>
-                  🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup — you'll see the full
-                  queue again once it's done.
-                </Text>
-              </Card>
+            {show.queue ? (
+              <>
+                <Text style={styles.sectionLabel}>Nearby requests</Text>
+                {areaLockedToVenue ? (
+                  <Card tone="dark" style={{ marginBottom: spacing.sm, borderColor: "#D9A86C", borderWidth: 1 }}>
+                    <Text style={styles.meta}>
+                      🍸 Staying close to {areaLockedToVenue} while you finish this reserved pickup. You will see the full
+                      queue again once it's done.
+                    </Text>
+                  </Card>
+                ) : null}
+                {queueFor(available, show.queueTier).length === 0 ? (
+                  <Card tone="dark">
+                    <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
+                      <ActivityIndicator color={colors.amber} />
+                      <Text style={styles.waitingText}>Searching for ride requests…</Text>
+                    </View>
+                  </Card>
+                ) : (
+                  queueFor(available, show.queueTier).map((ride) => (
+                    <RequestCard
+                      key={ride.id}
+                      ride={ride}
+                      busy={busyRideId === ride.id}
+                      // Once ANY accept is in flight, every OTHER card's Accept
+                      // button must be disabled too: busyRideId alone only
+                      // disabled the one row being accepted (it swaps to a
+                      // spinner via the `busy` prop above), leaving every other
+                      // still-visible request card tappable. That let a driver
+                      // fire off Accept on two different rides before either
+                      // network response came back, only for the backend to
+                      // reject the second as already-taken (or worse, race).
+                      disabled={busyRideId !== null && busyRideId !== ride.id}
+                      onAccept={() => handleAccept(ride.id)}
+                    />
+                  ))
+                )}
+              </>
             ) : null}
-            {available.length === 0 ? (
-              <Card tone="dark">
-                <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
-                  <ActivityIndicator color={colors.amber} />
-                  <Text style={styles.waitingText}>Searching for ride requests…</Text>
-                </View>
-              </Card>
-            ) : (
-              available.map((ride) => (
-                <RequestCard
-                  key={ride.id}
-                  ride={ride}
-                  busy={busyRideId === ride.id}
-                  // Once ANY accept is in flight, every OTHER card's Accept
-                  // button must be disabled too — busyRideId alone only
-                  // disabled the one row being accepted (it swaps to a
-                  // spinner via the `busy` prop above), leaving every other
-                  // still-visible request card tappable. That let a driver
-                  // fire off Accept on two different rides before either
-                  // network response came back, only for the backend to
-                  // reject the second as already-taken (or worse, race).
-                  disabled={busyRideId !== null && busyRideId !== ride.id}
-                  onAccept={() => handleAccept(ride.id)}
-                />
-              ))
-            )}
           </>
         ) : (
           <Card tone="dark">
             <Text style={styles.offlineText}>Go online to start receiving ride requests.</Text>
           </Card>
         )}
-
         <ParasyteSignature />
       </ScrollView>
     </View>
@@ -506,6 +508,15 @@ export default function DashboardScreen({ navigation }) {
 // the airport) — surfaced here so a driver can immediately tell which
 // direction a request runs, since the pickup_address/stops alone don't
 // make that obvious at a glance.
+function tripTypeLabel(ride) {
+  const tier = tierForRide(ride);
+  if (["campus", "air", "boat", "removals"].includes(tier)) return metaFor(tier).name;
+  const bookingType = ride.booking_type;
+  if (bookingType === "dropoff") return "Airport Drop-off";
+  if (bookingType === "one_way") return "Airport Pickup";
+  return "Chauffeur";
+}
+
 // A "dropoff" ride has no flight-landing event to anchor timing on (unlike
 // an arrival pickup), so the rider scheduled an explicit pickup date/time
 // instead — shown here so a driver doesn't mistake a next-week booking for
@@ -534,14 +545,14 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
   return (
     <Card tone="dark" style={{ marginBottom: spacing.sm }}>
       <View style={styles.rowBetween}>
-        <Tag label={rideBadge(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+        <Tag label={tripTypeLabel(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         {/* A fleet-companion row is always fare_naira = 0 — the rider
             already paid for the whole convoy as one line item on their
             primary ride (see FLEET_PRICE_NAIRA in services/fare.js and
             createFleetCompanions in routes/rides.js). Showing a bare "₦0"
             here would read as a broken/free ride rather than what it
             actually is: already paid, just billed elsewhere. */}
-        <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
+        <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : ride.quote_pending ? "Price set by RideArrivo" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
       </View>
       {/* is_preferred_for_you comes from GET /available — set when this
           rider asked to keep the same driver for their return trip and this
@@ -558,6 +569,8 @@ function RequestCard({ ride, busy, disabled, onAccept }) {
       {ride.flight_number ? <Tag label={`Flight ${ride.flight_number}`} tone="teal" /> : null}
       {ride.stops?.length ? <Text style={styles.meta}>→ {ride.stops.join(", ")}</Text> : null}
       <Text style={styles.meta}>Rider: {ride.rider_name}</Text>
+      {ride.passenger_count && ride.service ? <Text style={styles.meta}>Passengers: {ride.passenger_count}</Text> : null}
+      {ride.rider_note && ride.service ? <Text style={styles.meta}>Note: {ride.rider_note}</Text> : null}
       {/* Arrivo Express Phase 3 -- the Partner Venues program: this reserved
           pickup came from a partner venue, not the rider's own address. */}
       {ride.partner_venue_id ? (
@@ -734,6 +747,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
     activateListeningDevice(token, ride.id).catch(() => setListeningError(true));
   };
 
+  const ownPosition = useOwnPosition(true);
   useEffect(() => {
     if (countdown === 0 && panicState === "counting") setPanicState("active");
   }, [countdown, panicState]);
@@ -757,17 +771,20 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
         pickup={ride.pickup_lat != null ? { lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng) } : null}
         destination={ride.destination_lat != null ? { lat: Number(ride.destination_lat), lng: Number(ride.destination_lng) } : null}
         etaLabel={isInProgress ? "Trip in progress" : "Heading to pickup"}
-        height={170}
+        driverLocation={ownPosition}
+        heading={isInProgress ? "destination" : "pickup"}
+        live={isInProgress}
+        height={190}
       />
       <Card tone="dark" style={{ marginTop: spacing.md }}>
         <View style={styles.rowBetween}>
           <Tag label={ride.ride_status.replace("_", " ").toUpperCase()} tone={isInProgress ? "teal" : "amber"} />
-          <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
+          <Text style={styles.fare}>{ride.is_fleet_companion ? "Included in client's fleet booking" : ride.quote_pending ? "Price set by RideArrivo" : `₦${ride.fare_naira?.toLocaleString()}`}</Text>
         </View>
         {ride.is_fleet_companion ? <Tag label="🚙 Fleet escort" tone="teal" /> : null}
         <Text style={styles.tripTitle}>{ride.pickup_address}</Text>
         <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
-          <Tag label={rideBadge(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
+          <Tag label={tripTypeLabel(ride)} tone={ride.booking_type === "dropoff" ? "amber" : "teal"} />
         </View>
         {scheduledLabel(ride) ? <Text style={styles.scheduledText}>📅 Scheduled: {scheduledLabel(ride)}</Text> : null}
         {arriveByLabel(ride) ? <Text style={styles.scheduledText}>⏰ Please arrive by {arriveByLabel(ride)} (30 min early)</Text> : null}
@@ -840,7 +857,7 @@ function ActiveTripCard({ ride, busy, onAdvance, onCancelled, token, navigation,
           <Text style={styles.cancelPickerTitle}>Why are you cancelling?</Text>
           <Text style={styles.cancelPickerBody}>
             Under Arrivo Ride Guarantee, an accepted trip can only be cancelled for one of these reasons. We'll find
-            the rider a new driver right away — they won't need to rebook.
+            the rider a new driver right away, they won't need to rebook.
           </Text>
           <View style={styles.cancelReasonRow}>
             {CANCEL_REASONS.map((r) => (
@@ -932,24 +949,24 @@ const styles = StyleSheet.create({
   fare: { color: colors.amber, fontSize: 15, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 11.5, marginTop: 4 },
   scheduledText: { color: colors.amber, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
-  error: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
   cardTitleLight: { color: colors.dark.text, fontWeight: "700", fontSize: 13.5 },
   countdownText: { color: colors.dark.textMuted, fontSize: 11, marginTop: 6, fontWeight: "600" },
-  countdownUrgent: { color: "#FF9B8A", fontSize: 11, marginTop: 6, fontWeight: "700" },
+  countdownUrgent: { color: "#C2362B", fontSize: 11, marginTop: 6, fontWeight: "700" },
   sosButton: { borderColor: colors.coral, borderWidth: 1.5 },
   panicCountingCard: { backgroundColor: "rgba(225,82,61,0.18)", borderColor: colors.coral, borderWidth: 1 },
-  panicCountingText: { color: "#FF9B8A", fontSize: 13, fontWeight: "700" },
+  panicCountingText: { color: "#C2362B", fontSize: 13, fontWeight: "700" },
   panicActiveCard: { backgroundColor: "rgba(225,82,61,0.22)", borderColor: colors.coral, borderWidth: 1 },
-  panicActiveTitle: { color: "#FF9B8A", fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  panicActiveTitle: { color: "#C2362B", fontSize: 14, fontWeight: "700", marginBottom: 4 },
   panicActiveBody: { color: colors.dark.text, fontSize: 12, lineHeight: 17 },
-  panicErrorText: { color: "#FF9B8A", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
+  panicErrorText: { color: "#C2362B", fontSize: 11.5, fontWeight: "600", marginTop: 8, lineHeight: 16 },
   listeningOnText: { color: colors.dark.textMuted, fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   awaitingPaymentText: { color: colors.amber, fontSize: 12.5, fontWeight: "600", textAlign: "center", lineHeight: 18 },
   cancelPickerCard: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: tint(0.05),
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: tint(0.09),
     padding: spacing.md,
   },
   cancelPickerTitle: { color: colors.dark.text, fontSize: 15, fontWeight: "700", marginBottom: 6 },
@@ -957,7 +974,7 @@ const styles = StyleSheet.create({
   cancelReasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   cancelReasonChip: {
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: tint(0.15),
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -965,5 +982,5 @@ const styles = StyleSheet.create({
   cancelReasonChipActive: { backgroundColor: colors.amber, borderColor: colors.amber },
   cancelReasonChipText: { color: colors.dark.text, fontSize: 12, fontWeight: "600" },
   cancelReasonChipTextActive: { color: colors.ink },
-  cancelPickerError: { color: "#FF9B8A", fontSize: 12, fontWeight: "600", marginTop: 8 },
+  cancelPickerError: { color: "#C2362B", fontSize: 12, fontWeight: "600", marginTop: 8 },
 });

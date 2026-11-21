@@ -22,8 +22,9 @@ import { useAuth } from "../context/AuthContext";
 import { splitPhone, validatePhone } from "../utils/phoneValidation";
 import { createOnTheGoRequest } from "../services/api";
 import { formatLagos } from "../utils/lagosTime";
-
-const SUPPORT_PHONE_DIAL = "+2348162706078";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
+import { whatsappUrl } from "../utils/supportContacts";
 
 // The short path for someone flying in within about 3 hours who hasn't got
 // time for the full Plan Route flow. Essentials only: where from, where to,
@@ -32,6 +33,7 @@ const SUPPORT_PHONE_DIAL = "+2348162706078";
 // confirms a driver and takes payment then, which is the whole point of it
 // being quicker.
 export default function OnTheGoScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
 
@@ -54,16 +56,16 @@ export default function OnTheGoScreen({ navigation, route }) {
   const submit = async () => {
     setError(null);
     if (!pickup.trim()) {
-      setError("Where are we picking you up?");
+      setError(t("onTheGo.errPickup"));
       return;
     }
     if (!destination.trim()) {
-      setError("Where are you heading?");
+      setError(t("onTheGo.errDestination"));
       return;
     }
     const count = Number(passengers);
     if (!Number.isInteger(count) || count < 1) {
-      setError("How many people are travelling?");
+      setError(t("onTheGo.errPassengers"));
       return;
     }
     const phoneResult = validatePhone(phone.dial, phone.national);
@@ -108,50 +110,48 @@ export default function OnTheGoScreen({ navigation, route }) {
           }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>On the Go</Text>
+          <Text style={styles.title}>{t("onTheGo.onTheGo")}</Text>
           <Text style={styles.meta}>
-            Travelling soon and short on time? Give us the basics and we'll call you back to confirm
-            a driver. No payment needed up front.
+            {t("onTheGo.travellingSoonAndShortOn")}
           </Text>
 
           {sent ? (
             <Card tone="dark" style={{ marginTop: spacing.lg }}>
-              <Text style={styles.successTitle}>We're on it</Text>
+              <Text style={styles.successTitle}>{t("onTheGo.weReOnIt")}</Text>
               <Text style={[styles.meta, { marginTop: 6 }]}>
-                Request #{sent.id} is with our team.{requestedPickupAt ? ` You asked for ${formatLagos(requestedPickupAt)}.` : ""} We'll ring {sent.contact_phone} shortly to
-                confirm your driver and sort payment.
+                {t("onTheGo.requestWithTeam", { id: sent.id })}{requestedPickupAt ? ` ${t("onTheGo.youAskedFor", { time: formatLagos(requestedPickupAt) })}` : ""} {t("onTheGo.weWillRing", { phone: sent.contact_phone })}
               </Text>
               <Button
-                label="Message us on WhatsApp"
+                label={t("onTheGo.messageUsOnWhatsapp")}
                 variant="ghost"
                 tone="dark"
                 style={{ marginTop: spacing.md }}
                 onPress={() =>
-                  Linking.openURL(`https://wa.me/${SUPPORT_PHONE_DIAL.replace("+", "")}`).catch(() => {})
+                  Linking.openURL(whatsappUrl()).catch(() => {})
                 }
               />
             </Card>
           ) : (
             <>
               <Card tone="dark" style={{ marginTop: spacing.lg }}>
-                <Text style={styles.cardLabel}>Where to?</Text>
+                <Text style={styles.cardLabel}>{t("onTheGo.whereTo")}</Text>
                 <AddressAutocomplete
                   style={{ marginBottom: spacing.sm }}
                   value={pickup}
                   onChangeText={setPickup}
                   onSelect={() => {}}
-                  placeholder="Enter pickup address"
+                  placeholder={t("onTheGo.enterPickupAddress")}
                 />
                 <AddressAutocomplete
                   value={destination}
                   onChangeText={setDestination}
                   onSelect={() => {}}
-                  placeholder="Enter destination"
+                  placeholder={t("onTheGo.enterDestination")}
                 />
               </Card>
 
               <Card tone="dark" style={{ marginTop: spacing.md }}>
-                <Text style={styles.cardLabel}>Your details</Text>
+                <Text style={styles.cardLabel}>{t("onTheGo.yourDetails")}</Text>
                 {requestedPickupAt ? (
                   <Text style={[styles.meta, { marginBottom: spacing.sm }]}>
                     Time you asked for: {formatLagos(requestedPickupAt)}
@@ -161,7 +161,7 @@ export default function OnTheGoScreen({ navigation, route }) {
                   style={styles.input}
                   value={flightNumber}
                   onChangeText={setFlightNumber}
-                  placeholder="Flight number (optional)"
+                  placeholder={t("onTheGo.flightNumberOptional")}
                   placeholderTextColor={colors.dark.textMuted}
                   autoCapitalize="characters"
                 />
@@ -169,7 +169,7 @@ export default function OnTheGoScreen({ navigation, route }) {
                   style={styles.input}
                   value={passengers}
                   onChangeText={setPassengers}
-                  placeholder="Passengers"
+                  placeholder={t("onTheGo.passengers")}
                   placeholderTextColor={colors.dark.textMuted}
                   keyboardType="number-pad"
                 />
@@ -177,7 +177,7 @@ export default function OnTheGoScreen({ navigation, route }) {
                   style={styles.input}
                   value={details}
                   onChangeText={setDetails}
-                  placeholder="Anything we should know (optional)"
+                  placeholder={t("onTheGo.anythingWeShouldKnowOptional")}
                   placeholderTextColor={colors.dark.textMuted}
                   maxLength={1000}
                   multiline
@@ -188,27 +188,28 @@ export default function OnTheGoScreen({ navigation, route }) {
                   national={phone.national}
                   onChangeDial={(dial) => setPhone((p) => ({ ...p, dial }))}
                   onChangeNational={(national) => setPhone((p) => ({ ...p, national }))}
-                  placeholder="Contact number"
+                  placeholder={t("onTheGo.contactNumber")}
                 />
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 {sending ? (
                   <ActivityIndicator color={colors.amber} style={{ marginTop: spacing.sm }} />
                 ) : (
-                  <Button label="Send request" variant="primary" onPress={submit} />
+                  <Button label={t("onTheGo.sendRequest")} variant="primary" onPress={submit} />
                 )}
               </Card>
 
               <Pressable
                 style={styles.whatsappRow}
                 onPress={() =>
-                  Linking.openURL(`https://wa.me/${SUPPORT_PHONE_DIAL.replace("+", "")}`).catch(() => {})
+                  Linking.openURL(whatsappUrl()).catch(() => {})
                 }
               >
-                <Text style={styles.whatsappText}>Rather just talk to someone? Message us on WhatsApp</Text>
+                <Text style={styles.whatsappText}>{t("onTheGo.ratherJustTalkToSomeone")}</Text>
               </Pressable>
             </>
           )}
+          <ParasyteSignature />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -221,7 +222,7 @@ const styles = StyleSheet.create({
   meta: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   successTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 4, marginBottom: 8 },
   input: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,

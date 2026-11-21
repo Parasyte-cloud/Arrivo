@@ -1,325 +1,183 @@
-// ArrivoAir / ArrivoBoat / ArrivoRemovals requests against a REAL Postgres and the real route.
-//   DATABASE_URL=postgres://... node routes/serviceRequests.integration.test.js
-//
-// What matters most is checked hardest: a rider only ever touches their own
-// requests, a driver only the jobs assigned to them, support cannot change
-// anything, nobody but staff ever receives a phone number, a double tap or a
-// race never makes two of anything, and the status can only move forward.
-
+// Against a REAL Postgres: a RIDER orders any service; only drivers holding that tier see it;
+// the trip cannot start until Ops sets the price. PArAsYtE
+// These tests are about services and tiers, not the daily subscription.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 const assert = require("assert");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+delete process.env.OPS_ALERT_EMAILS; delete process.env.OPS_ALERT_WHATSAPP;
 
 const express = require("express");
 require("express-async-errors");
 const { pool, ready } = require("../db/db");
-const router = require("./serviceRequests");
-const { maskCounterpartyPhones } = require("../services/contactPrivacy");
 
 let passed = 0;
-async function test(name, fn) {
+const test = (name, fn) => (async () => {
   try { await fn(); console.log(`  ok  ${name}`); passed++; }
-  catch (e) { console.log(`FAIL  ${name}\n      ${e.stack.split("\n").slice(0, 3).join("\n      ")}`); process.exitCode = 1; }
-}
+  catch (e) { console.log(`FAIL  ${name}\n      ${e.stack || e.message}`); process.exitCode = 1; }
+})();
 
 const app = express();
 app.use(express.json());
-app.use("/api/service-requests", maskCounterpartyPhones, router);
+app.use("/api/admin", require("./admin"));
+app.use("/api/safety", require("./safety"));
+app.use("/api/rides", require("./rides"));
+app.use("/api/service-requests", require("./serviceRequests"));
 app.use((err, req, res, next) => res.status(500).json({ error: "server error", detail: err.message }));
 const server = http.createServer(app);
-
-async function api(path, { method = "GET", as, body } = {}) {
+async function call(method, path, token, body) {
   const { port } = server.address();
-  const res = await fetch(`http://127.0.0.1:${port}/api/service-requests${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...(as ? { Authorization: `Bearer ${as.token}` } : {}) },
-    body: body === undefined || method === "GET" ? undefined : JSON.stringify(body),
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
   });
-  const text = await res.text();
-  let json = {}; try { json = JSON.parse(text); } catch (_) {}
-  return { status: res.status, body: json, text };
+  return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-const stamp = Date.now();
-let seq = 0;
-const madeUsers = [];
-async function mkUser(role, phone) {
-  seq++;
+const made = { users: [], rides: [], drivers: [], vehicles: [] };
+const stamp = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+async function makeUser(role, name) {
+  const r = await pool.query("INSERT INTO users (name, email, password_hash, role, agreed_to_terms) VALUES ($1,$2,'x',$3,true) RETURNING *", [name, `wr-${stamp()}@example.com`, role]);
+  made.users.push(r.rows[0].id);
+  return r.rows[0];
+}
+const tokenFor = (u) => jwt.sign({ id: u.id, email: u.email, role: u.role }, process.env.JWT_SECRET);
+async function makeDriver(name) {
+  const user = await makeUser("driver", name);
+  const v = await pool.query("INSERT INTO vehicles (owner_user_id, make_model, plate_number) VALUES ($1,'Toyota Camry','LND123') RETURNING id", [user.id]);
+  made.vehicles.push(v.rows[0].id);
+  const d = await pool.query("INSERT INTO drivers (user_id, vehicle_id, is_verified) VALUES ($1,$2,true) RETURNING *", [user.id, v.rows[0].id]);
+  made.drivers.push(d.rows[0].id);
+  return { user, driver: d.rows[0], token: tokenFor(user) };
+}
+async function makeRide(rider, drv, fields = {}) {
+  const f = { ride_status: "in_progress", booking_type: "one_way", fare_naira: 8000, ...fields };
   const r = await pool.query(
-    "INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1,$2,$3,'x',$4) RETURNING id",
-    [`${role} Person${seq} Surname`, `sr-${role}-${seq}-${stamp}@example.com`, phone, role]
-  );
-  const id = r.rows[0].id;
-  madeUsers.push(id);
-  const u = { id, role, phone, token: jwt.sign({ id, email: `u${id}@example.com`, role, tv: 0 }, process.env.JWT_SECRET, { algorithm: "HS256" }) };
-  if (role === "driver") {
-    const d = await pool.query("INSERT INTO drivers (user_id, is_verified) VALUES ($1, true) RETURNING id", [id]);
-    u.driverId = d.rows[0].id;
-  }
-  return u;
+    `INSERT INTO rides (rider_id, driver_id, pickup_address, fare_naira, ride_status, booking_type, tip_naira, overage_naira, overage_reason, completed_at, tracking_started_at, payment_status, promo_discount_naira, promo_code)
+     VALUES ($1,$2,'Ikeja',$3,$4,$5,$6,$7,$8,$9,$10,'paid',$11,$12) RETURNING *`,
+    [rider.id, drv ? drv.driver.id : null, f.fare_naira, f.ride_status, f.booking_type, f.tip_naira || 0, f.overage_naira || 0, f.overage_reason || null,
+     f.completed_at || null, f.tracking_started_at || new Date(Date.now() - 60 * 60000), f.promo || 0, f.promo_code || null]);
+  made.rides.push(r.rows[0].id);
+  return r.rows[0];
 }
-let phoneSeq = 2000;
-const nextPhone = () => `+23481${++phoneSeq}${String(phoneSeq).slice(-3)}66`;
-const inHours = (h) => new Date(Date.now() + h * 3600 * 1000).toISOString();
+const P = { lat: 6.5244, lng: 3.3792, accuracy: 10 };
 
-const removalsBody = (extra = {}) => ({
-  tier: "removals", pickupAddress: "12 Admiralty Way, Lekki", destinationAddress: "4 Banana Island Rd",
-  requestedAt: inHours(72), option: "two_bed", crewSize: 4, contactPhone: nextPhone(), details: "Has a piano", ...extra,
-});
-const airBody = (extra = {}) => ({
-  tier: "air", pickupAddress: "Lagos Heliport", destinationAddress: "Abuja", requestedAt: inHours(24),
-  passengerCount: 3, option: "helicopter", contactPhone: nextPhone(), ...extra,
-});
-const boatBody = (extra = {}) => ({
-  tier: "boat", pickupAddress: "Falomo Jetty", destinationAddress: "Lekki Beach", requestedAt: inHours(48),
-  passengerCount: 8, option: "speedboat", contactPhone: nextPhone(), ...extra,
-});
 
+const SERVICES = ["campus", "air", "boat", "removals"];
 (async () => {
   await ready;
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  await new Promise((r) => server.listen(0, r));
+  const rider = await makeUser("rider", "Ada Rider"), rider2 = await makeUser("rider", "Bayo Rider"), admin = await makeUser("admin", "Ops Admin");
+  const holder = await makeDriver("Holder Driver"), other = await makeDriver("Other Driver");
+  const rt = tokenFor(rider), at = tokenFor(admin);
+  const good = (service) => ({ confirmAge18: true, service, pickupAddress: "Pickup " + service, destinationAddress: "Dest " + service, contactPhone: "+2348012345678", passengerCount: 2, details: "two boxes" });
 
-  const rider = await mkUser("rider", nextPhone());
-  const other = await mkUser("rider", nextPhone());
-  const driver = await mkUser("driver", nextPhone());
-  const driver2 = await mkUser("driver", nextPhone());
-  const admin = await mkUser("admin", nextPhone());
-  const ops = await mkUser("operations", nextPhone());
-  const support = await mkUser("support", nextPhone());
-
-  console.log("Rider:");
-
-  await test("sign-in is required everywhere", async () => {
-    assert.strictEqual((await api("/")).status, 401);
-    assert.strictEqual((await api("/", { method: "POST", body: airBody() })).status, 401);
-    assert.strictEqual((await api("/driver/jobs")).status, 401);
-    assert.strictEqual((await api("/staff/queue")).status, 401);
-    assert.strictEqual((await api("/1/confirm", { method: "POST", body: {} })).status, 401);
+  await test("validation: real service, real addresses, dialable phone, future time, riders only", async () => {
+    assert.equal((await call("POST", "/api/service-requests", null, good("boat"))).status, 401);
+    assert.equal((await call("POST", "/api/service-requests", rt, good("ride"))).status, 400);
+    assert.equal((await call("POST", "/api/service-requests", rt, { ...good("boat"), pickupAddress: "x" })).status, 400);
+    assert.equal((await call("POST", "/api/service-requests", rt, { ...good("boat"), contactPhone: "abc" })).status, 400);
+    assert.equal((await call("POST", "/api/service-requests", rt, { ...good("boat"), requestedPickupAt: "2020-01-01T10:00:00Z" })).status, 400);
+    assert.equal((await call("POST", "/api/service-requests", rt, { ...good("boat"), passengerCount: 0 })).status, 400);
+    assert.equal((await call("POST", "/api/service-requests", holder.token, good("boat"))).status, 403, "a driver cannot order");
   });
 
-  await test("each of the three tiers can be requested and starts pending", async () => {
-    for (const body of [airBody(), boatBody(), removalsBody()]) {
-      const r = await api("/", { method: "POST", as: rider, body });
-      assert.strictEqual(r.status, 201, r.text);
-      assert.strictEqual(r.body.request.status, "pending");
-      assert.strictEqual(r.body.request.tier, body.tier);
-      assert.strictEqual(r.body.request.quotedFareNaira, null);
-    }
+  for (const service of SERVICES) {
+    await test(`${service}: any rider orders it, only tier holders see it, no start until priced`, async () => {
+      const r = await call("POST", "/api/service-requests", tokenFor(rider2), good(service));
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      const job = r.body.ride; made.rides.push(job.id);
+      assert.equal(job.service, service); assert.equal(job.quote_pending, true); assert.equal(job.ride_status, "requested");
+      assert.equal((await call("POST", "/api/service-requests", tokenFor(rider2), good(service))).body.duplicate, true, "a double tap is one order");
+
+      const has = async (d) => (await call("GET", "/api/rides/available", d.token)).body.rides.find((x) => x.id === job.id);
+      await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1,$2,'active') ON CONFLICT (driver_id, tier) DO UPDATE SET status='active'", [holder.driver.id, service]);
+      assert.equal(await has(other), undefined, "a driver without the tier never sees it");
+      const seen = await has(holder);
+      assert.ok(seen, "a driver with the tier does"); assert.equal(seen.quote_pending, true);
+      assert.equal((await call("POST", `/api/rides/${job.id}/accept`, other.token)).body.code, "TIER_NOT_GRANTED");
+      assert.equal((await call("POST", `/api/rides/${job.id}/accept`, holder.token)).status, 200);
+
+      const early = await call("PATCH", `/api/rides/${job.id}/status`, holder.token, { status: "in_progress" });
+      assert.equal(early.status, 409); assert.equal(early.body.code, "QUOTE_PENDING");
+      assert.equal((await call("PATCH", `/api/admin/service-jobs/${job.id}/quote`, rt, { quoteNaira: 90000 })).status, 403, "riders cannot price");
+      assert.equal((await call("PATCH", `/api/admin/service-jobs/${job.id}/quote`, at, { quoteNaira: 0 })).status, 400);
+      const q = await call("PATCH", `/api/admin/service-jobs/${job.id}/quote`, at, { quoteNaira: 90000, paid: true });
+      assert.equal(q.status, 200); assert.equal(q.body.ride.quote_pending, false); assert.equal(Number(q.body.ride.fare_naira), 90000);
+      assert.equal((await call("PATCH", `/api/rides/${job.id}/status`, holder.token, { status: "in_progress" })).status, 200);
+      assert.equal((await call("PATCH", `/api/rides/${job.id}/status`, holder.token, { status: "completed" })).status, 200);
+      const rc = await call("GET", `/api/rides/${job.id}/receipt`, tokenFor(rider2));
+      assert.equal(rc.body.receipt.service, service); assert.equal(rc.body.receipt.totalNaira, 90000);
+    });
+  }
+
+  await test("Campus needs the 18+ confirmation (the old 16+ field no longer counts); the catalogue lists every service", async () => {
+    const no = await call("POST", "/api/service-requests", rt, { ...good("campus"), confirmAge18: false });
+    assert.equal(no.status, 400); assert.equal(no.body.code, "CAMPUS_AGE_CONFIRM");
+    const old16 = await call("POST", "/api/service-requests", rt, { ...good("campus"), confirmAge18: undefined, confirmAge16: true });
+    assert.equal(old16.status, 400); assert.equal(old16.body.code, "CAMPUS_AGE_CONFIRM");
+    const yes = await call("POST", "/api/service-requests", rt, good("campus")); made.rides.push(yes.body.ride.id);
+    assert.equal(yes.status, 201);
+    const cat = await call("GET", "/api/service-requests/catalogue", rt);
+    assert.equal(cat.status, 200);
+    assert.deepStrictEqual(cat.body.services.map((s) => s.id), ["express", "transfer", "campus", "removals", "chauffeur", "air", "boat"]);
+    assert.deepStrictEqual([...new Set(cat.body.services.map((s) => s.group))], ["ride", "move", "charter"]);
+    assert.equal(cat.body.services.find((s) => s.id === "campus").minAge, 18);
+    process.env.ARRIVO_NOW_ENABLED = "true";
+    assert.equal((await call("GET", "/api/service-requests/catalogue", rt)).body.services[0].enabled, true);
+    delete process.env.ARRIVO_NOW_ENABLED;
+    assert.equal((await call("GET", "/api/service-requests/catalogue", rt)).body.services[0].enabled, false);
   });
 
-  await test("a bad request says why and stores nothing", async () => {
-    const before = (await pool.query("SELECT count(*)::int AS n FROM service_requests WHERE user_id=$1", [rider.id])).rows[0].n;
-    for (const bad of [
-      airBody({ tier: "express" }), airBody({ pickupAddress: "" }), airBody({ requestedAt: inHours(-5) }),
-      airBody({ option: "yacht" }), airBody({ passengerCount: 99 }), removalsBody({ crewSize: 3 }),
-      airBody({ contactPhone: "0801" }),
-    ]) {
-      const r = await api("/", { method: "POST", as: rider, body: bad });
-      assert.strictEqual(r.status, 400, r.text);
-      assert.ok(r.body.error);
-    }
-    const after = (await pool.query("SELECT count(*)::int AS n FROM service_requests WHERE user_id=$1", [rider.id])).rows[0].n;
-    assert.strictEqual(after, before);
+  await test("map points: a service job lands on the live map like an Express trip; bad points are ignored, never an error", async () => {
+    const mapper = await makeUser("rider", "Map Rider"); const mt = tokenFor(mapper);
+    const ok = await call("POST", "/api/service-requests", mt, { ...good("air"), pickupLat: 6.4281, pickupLng: 3.4219, destinationLat: "6.5774", destinationLng: 3.3212 });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body)); made.rides.push(ok.body.ride.id);
+    const row = (await pool.query("SELECT pickup_lat, pickup_lng, destination_lat, destination_lng FROM rides WHERE id=$1", [ok.body.ride.id])).rows[0];
+    assert.equal(Number(row.pickup_lat), 6.4281); assert.equal(Number(row.destination_lng), 3.3212);
+    const bad = await call("POST", "/api/service-requests", mt, { ...good("removals"), pickupAddress: "Somewhere else 12", pickupLat: 999, pickupLng: 3.4, destinationLat: "abc", destinationLng: 3.3 });
+    assert.equal(bad.status, 201); made.rides.push(bad.body.ride.id);
+    const r2 = (await pool.query("SELECT pickup_lat, destination_lat FROM rides WHERE id=$1", [bad.body.ride.id])).rows[0];
+    assert.equal(r2.pickup_lat, null); assert.equal(r2.destination_lat, null);
   });
 
-  await test("the same idempotency key never makes two requests, even in parallel", async () => {
-    const body = airBody({ idempotencyKey: `k-${stamp}` });
-    const results = await Promise.all([1, 2, 3, 4, 5].map(() => api("/", { method: "POST", as: rider, body })));
-    for (const r of results) assert.ok([200, 201].includes(r.status), r.text);
-    assert.strictEqual(new Set(results.map((r) => r.body.request.id)).size, 1);
-    assert.strictEqual(results.filter((r) => r.status === 201).length, 1);
-    const n = (await pool.query("SELECT count(*)::int AS n FROM service_requests WHERE user_id=$1 AND idempotency_key=$2", [rider.id, `k-${stamp}`])).rows[0].n;
-    assert.strictEqual(n, 1);
+  await test("one account cannot flood Ops: orders are rate limited per user", async () => {
+    const flooder = tokenFor(await makeUser("rider", "Flood Rider")); let last = 0;
+    for (let i = 0; i < 18; i++) { const r = await call("POST", "/api/service-requests", flooder, { ...good("air"), pickupAddress: "Flood pickup " + i }); if (r.body.ride) made.rides.push(r.body.ride.id); last = r.status; }
+    assert.equal(last, 429);
   });
 
-  await test("two different riders can use the same key independently", async () => {
-    const key = `shared-${stamp}`;
-    const a = await api("/", { method: "POST", as: rider, body: boatBody({ idempotencyKey: key }) });
-    const b = await api("/", { method: "POST", as: other, body: boatBody({ idempotencyKey: key }) });
-    assert.strictEqual(a.status, 201); assert.strictEqual(b.status, 201);
-    assert.notStrictEqual(a.body.request.id, b.body.request.id);
+  await test("Ops alert: skipped loudly when nobody is configured, formats and sends when they are", async () => {
+    const { sendServiceRequestAlert } = require("../services/serviceRequestAlert");
+    const r = await call("POST", "/api/service-requests", rt, good("boat")); made.rides.push(r.body.ride.id);
+    assert.deepStrictEqual(await sendServiceRequestAlert(pool, r.body.ride.id), { skipped: true });
+    const wa = require("../services/whatsapp"); const sent = []; const orig = wa.sendWhatsAppMessage;
+    wa.sendWhatsAppMessage = async (to, text) => { sent.push({ to, text }); return { ok: true }; };
+    process.env.OPS_ALERT_WHATSAPP = "+2348000000001";
+    delete require.cache[require.resolve("../services/serviceRequestAlert")];
+    const out = await require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, r.body.ride.id);
+    wa.sendWhatsAppMessage = orig; delete process.env.OPS_ALERT_WHATSAPP;
+    assert.equal(out.delivered, 1); assert.equal(sent[0].to, "+2348000000001");
+    assert.match(sent[0].text, /NEW BOAT REQUEST #\d+: set the price/); assert.match(sent[0].text, /Pickup boat/);
+    assert.equal(await require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, 99999999).then((x) => x.skipped), true);
   });
 
-  await test("my list is mine only, newest first, and carries no phone number", async () => {
-    const mine = await api("/", { as: rider });
-    assert.strictEqual(mine.status, 200);
-    assert.ok(mine.body.requests.length >= 3);
-    const ids = mine.body.requests.map((r) => r.id);
-    assert.deepStrictEqual(ids, [...ids].sort((x, y) => y - x));
-    assert.ok(!/\+234\d{8,}/.test(mine.text), "rider list leaked a phone number");
-    const theirs = await api("/", { as: other });
-    for (const r of theirs.body.requests) assert.ok(!ids.includes(r.id));
+  await test("a rider's order shows in their own ride history; other riders do not see it", async () => {
+    const r = await call("POST", "/api/service-requests", rt, good("campus")); made.rides.push(r.body.ride.id);
+    assert.ok((await call("GET", "/api/rides/mine", rt)).body.rides.some((x) => x.id === r.body.ride.id));
+    assert.ok(!(await call("GET", "/api/rides/mine", tokenFor(rider2))).body.rides.some((x) => x.id === r.body.ride.id));
   });
 
-  await test("a rider cannot read or cancel someone else's request", async () => {
-    const made = await api("/", { method: "POST", as: rider, body: airBody() });
-    const id = made.body.request.id;
-    assert.strictEqual((await api(`/${id}`, { as: other })).status, 404);
-    assert.strictEqual((await api(`/${id}/cancel`, { method: "POST", as: other })).status, 404);
-    assert.strictEqual((await api(`/${id}`, { as: rider })).status, 200);
-  });
-
-  await test("odd ids are refused, not crashed on", async () => {
-    for (const bad of ["abc", "0", "-3", "1.5", "99999999999"]) {
-      assert.strictEqual((await api(`/${bad}`, { as: rider })).status, 400, bad);
-    }
-    assert.strictEqual((await api("/987654", { as: rider })).status, 404);
-  });
-
-  await test("a rider can cancel a pending request, once", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: boatBody() })).body.request.id;
-    const first = await api(`/${id}/cancel`, { method: "POST", as: rider });
-    assert.strictEqual(first.status, 200);
-    assert.strictEqual(first.body.request.status, "cancelled");
-    assert.strictEqual((await api(`/${id}/cancel`, { method: "POST", as: rider })).status, 409);
-  });
-
-  console.log("Staff:");
-
-  await test("riders and drivers cannot see the staff queue; all three staff roles can", async () => {
-    assert.strictEqual((await api("/staff/queue", { as: rider })).status, 403);
-    assert.strictEqual((await api("/staff/queue", { as: driver })).status, 403);
-    for (const s of [admin, ops, support]) assert.strictEqual((await api("/staff/queue", { as: s })).status, 200);
-  });
-
-  await test("staff see the rider's contact numbers, oldest request first", async () => {
-    const q = await api("/staff/queue", { as: ops });
-    assert.ok(q.body.requests.length >= 3);
-    const created = q.body.requests.map((r) => r.id);
-    assert.deepStrictEqual(created, [...created].sort((a, b) => a - b));
-    assert.ok(q.body.requests.every((r) => r.contactPhone && r.riderName));
-    assert.ok(q.body.requests.every((r) => ["pending", "confirmed", "in_progress"].includes(r.status)));
-  });
-
-  await test("support is read only: cannot confirm or cancel", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: removalsBody() })).body.request.id;
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: support, body: { fareNaira: 90000, driverId: driver.driverId } })).status, 403);
-    assert.strictEqual((await api(`/${id}/staff-cancel`, { method: "POST", as: support })).status, 403);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: rider, body: { fareNaira: 90000, driverId: driver.driverId } })).status, 403);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: driver, body: { fareNaira: 90000, driverId: driver.driverId } })).status, 403);
-  });
-
-  await test("operations can read the queue but cannot change anything", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: removalsBody() })).body.request.id;
-    assert.strictEqual((await api("/staff/queue", { as: ops })).status, 200);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: ops, body: { fareNaira: 90000, driverId: driver.driverId } })).status, 403);
-    assert.strictEqual((await api(`/${id}/staff-cancel`, { method: "POST", as: ops })).status, 403);
-    assert.strictEqual((await api(`/${id}`, { as: rider })).body.request.status, "pending");
-  });
-
-  await test("confirm needs a valid fare and a real, verified driver", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: removalsBody() })).body.request.id;
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 10, driverId: driver.driverId } })).status, 400);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 90000 } })).status, 400);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 90000, driverId: 2000000 } })).status, 400);
-    const unverified = await mkUser("driver", nextPhone());
-    await pool.query("UPDATE drivers SET is_verified=false WHERE id=$1", [unverified.driverId]);
-    const r = await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 90000, driverId: unverified.driverId } });
-    assert.strictEqual(r.status, 400);
-    assert.ok(/verified/.test(r.body.error));
-    assert.strictEqual((await api(`/${id}`, { as: rider })).body.request.status, "pending");
-  });
-
-  console.log("Confirm and run a job:");
-
-  let jobId;
-  await test("admin confirms with a price and a driver; the rider sees the price", async () => {
-    jobId = (await api("/", { method: "POST", as: rider, body: removalsBody() })).body.request.id;
-    const r = await api(`/${jobId}/confirm`, { method: "POST", as: admin, body: { fareNaira: 120000, driverId: driver.driverId } });
-    assert.strictEqual(r.status, 200, r.text);
-    assert.strictEqual(r.body.request.status, "confirmed");
-    const seen = await api(`/${jobId}`, { as: rider });
-    assert.strictEqual(seen.body.request.quotedFareNaira, 120000);
-    assert.ok(!/driver/i.test(Object.keys(seen.body.request).join(",")), "rider view must not expose driver internals");
-  });
-
-  await test("confirming twice, or two staff at once, only works once", async () => {
-    assert.strictEqual((await api(`/${jobId}/confirm`, { method: "POST", as: admin, body: { fareNaira: 1500, driverId: driver2.driverId } })).status, 409);
-    const id = (await api("/", { method: "POST", as: rider, body: airBody() })).body.request.id;
-    const results = await Promise.all([
-      api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 500000, driverId: driver.driverId } }),
-      api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 600000, driverId: driver2.driverId } }),
-    ]);
-    assert.deepStrictEqual(results.map((r) => r.status).sort(), [200, 409]);
-    const row = (await pool.query("SELECT driver_id, quoted_fare_naira FROM service_requests WHERE id=$1", [id])).rows[0];
-    const winner = results.find((r) => r.status === 200);
-    assert.strictEqual(row.quoted_fare_naira, winner.body.request.quotedFareNaira);
-  });
-
-  await test("the assigned driver sees the job with a first name and no phone numbers", async () => {
-    const r = await api("/driver/jobs", { as: driver });
-    assert.strictEqual(r.status, 200);
-    const job = r.body.jobs.find((j) => j.id === jobId);
-    assert.ok(job);
-    assert.strictEqual(job.fareNaira, 120000);
-    assert.strictEqual(job.riderFirstName, "rider");
-    assert.ok(!/\+234\d{8,}/.test(r.text), "driver list leaked a phone number");
-    assert.ok(!r.text.includes("Surname"));
-  });
-
-  await test("another driver, a rider or staff-as-driver sees nothing of it", async () => {
-    assert.ok(!(await api("/driver/jobs", { as: driver2 })).body.jobs.some((j) => j.id === jobId));
-    assert.strictEqual((await api("/driver/jobs", { as: rider })).status, 403);
-    assert.strictEqual((await api(`/${jobId}/status`, { method: "PATCH", as: driver2, body: { status: "in_progress" } })).status, 404);
-    assert.strictEqual((await api(`/${jobId}/status`, { method: "PATCH", as: rider, body: { status: "in_progress" } })).status, 403);
-  });
-
-  await test("the driver cannot skip steps or invent statuses", async () => {
-    for (const s of ["completed", "cancelled", "pending", "confirmed", "banana", undefined]) {
-      assert.strictEqual((await api(`/${jobId}/status`, { method: "PATCH", as: driver, body: { status: s } })).status, 409, String(s));
-    }
-  });
-
-  await test("start then complete; tapping start twice does no harm", async () => {
-    const a = await api(`/${jobId}/status`, { method: "PATCH", as: driver, body: { status: "in_progress" } });
-    assert.strictEqual(a.status, 200);
-    assert.strictEqual(a.body.job.status, "in_progress");
-    assert.strictEqual((await api(`/${jobId}/status`, { method: "PATCH", as: driver, body: { status: "in_progress" } })).status, 409);
-    assert.strictEqual((await api(`/${jobId}/cancel`, { method: "POST", as: rider })).status, 409, "rider cannot cancel mid trip");
-    const b = await api(`/${jobId}/status`, { method: "PATCH", as: driver, body: { status: "completed" } });
-    assert.strictEqual(b.status, 200);
-    const row = (await pool.query("SELECT status, completed_at FROM service_requests WHERE id=$1", [jobId])).rows[0];
-    assert.strictEqual(row.status, "completed");
-    assert.ok(row.completed_at);
-    assert.ok(!(await api("/driver/jobs", { as: driver })).body.jobs.some((j) => j.id === jobId), "finished job leaves the list");
-  });
-
-  await test("a finished job cannot be reopened or cancelled by anyone", async () => {
-    assert.strictEqual((await api(`/${jobId}/status`, { method: "PATCH", as: driver, body: { status: "in_progress" } })).status, 409);
-    assert.strictEqual((await api(`/${jobId}/staff-cancel`, { method: "POST", as: admin })).status, 409);
-    assert.strictEqual((await api(`/${jobId}/cancel`, { method: "POST", as: rider })).status, 409);
-  });
-
-  await test("a cancelled request disappears from the staff queue and cannot be confirmed", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: boatBody() })).body.request.id;
-    assert.strictEqual((await api(`/${id}/staff-cancel`, { method: "POST", as: admin })).status, 200);
-    assert.ok(!(await api("/staff/queue", { as: ops })).body.requests.some((r) => r.id === id));
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 5000, driverId: driver.driverId } })).status, 409);
-    assert.strictEqual((await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 5000, driverId: driver.driverId } })).body.error.includes("cancelled"), true);
-  });
-
-  await test("staff can cancel a confirmed job and it leaves the driver's list", async () => {
-    const id = (await api("/", { method: "POST", as: rider, body: airBody() })).body.request.id;
-    await api(`/${id}/confirm`, { method: "POST", as: admin, body: { fareNaira: 700000, driverId: driver2.driverId } });
-    assert.ok((await api("/driver/jobs", { as: driver2 })).body.jobs.some((j) => j.id === id));
-    assert.strictEqual((await api(`/${id}/staff-cancel`, { method: "POST", as: admin })).status, 200);
-    assert.ok(!(await api("/driver/jobs", { as: driver2 })).body.jobs.some((j) => j.id === id));
-  });
-
-  console.log("Database rules:");
-
-  await test("the table itself refuses a bad tier or status", async () => {
-    await assert.rejects(pool.query("INSERT INTO service_requests (user_id,tier,pickup_address,destination_address,requested_at,contact_phone) VALUES ($1,'express','a','b',now(),'+2348000000000')", [rider.id]));
-    await assert.rejects(pool.query("UPDATE service_requests SET status='lost' WHERE user_id=$1", [rider.id]));
-  });
-
-  // cleanup
-  await pool.query("DELETE FROM service_requests WHERE user_id = ANY($1)", [madeUsers]);
-  await pool.query("DELETE FROM drivers WHERE user_id = ANY($1)", [madeUsers]);
-  await pool.query("DELETE FROM users WHERE id = ANY($1)", [madeUsers]);
+  await pool.query("DELETE FROM safety_events WHERE ride_id = ANY($1::int[])", [made.rides]).catch(() => {});
+  await pool.query("DELETE FROM ride_welfare WHERE ride_id = ANY($1::int[])", [made.rides]).catch(() => {});
+  await pool.query("DELETE FROM rides WHERE id = ANY($1::int[])", [made.rides]).catch(() => {});
+  await pool.query("DELETE FROM driver_tier_access WHERE driver_id = ANY($1::int[])", [made.drivers]).catch(() => {});
+  await pool.query("DELETE FROM drivers WHERE id = ANY($1::int[])", [made.drivers]).catch(() => {});
+  await pool.query("DELETE FROM vehicles WHERE id = ANY($1::int[])", [made.vehicles]).catch(() => {});
+  await pool.query("DELETE FROM users WHERE id = ANY($1::int[])", [made.users]).catch(() => {});
   server.close();
-  console.log(`\n${passed} passed`);
+  console.log(`${passed} passed`);
   await pool.end();
-})().catch((e) => { console.error(e); process.exit(1); });
+})();

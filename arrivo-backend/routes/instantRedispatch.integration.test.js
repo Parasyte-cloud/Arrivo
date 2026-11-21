@@ -78,6 +78,8 @@ async function makeDriver(distanceKm, tag) {
      VALUES ($1, $2, true, true, true, $3, $4, now()) RETURNING id`,
     [user.id, vehicle.id, kmNorth(distanceKm), PICKUP.lng]
   )).rows[0];
+  // Express work only reaches drivers who hold the express tier.
+  await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1, 'express', 'active')", [driver.id]);
   return driver.id;
 }
 

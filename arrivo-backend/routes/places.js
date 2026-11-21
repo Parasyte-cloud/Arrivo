@@ -1,6 +1,6 @@
 const express = require("express");
 const { requireAuth } = require("../middleware/auth");
-const { placesAutocomplete, placeDetails, reverseGeocode } = require("../services/googleMaps");
+const { placesAutocomplete, placeDetails, reverseGeocode, computeRoute } = require("../services/googleMaps");
 
 const router = express.Router();
 
@@ -48,6 +48,25 @@ router.get("/reverse-geocode", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Reverse geocode failed:", err.message);
     res.status(502).json({ error: "Couldn't look up an address for that location right now." });
+  }
+});
+
+// GET /api/places/route?fromLat=&fromLng=&toLat=&toLng=
+// The road a car will take between two points, for the live map. 204 when
+// Google has no route, so the app quietly draws a straight line instead.
+router.get("/route", requireAuth, async (req, res) => {
+  const nums = ["fromLat", "fromLng", "toLat", "toLng"].map((k) => (req.query[k] === undefined || req.query[k] === "" ? NaN : Number(req.query[k])));
+  const [fromLat, fromLng, toLat, toLng] = nums;
+  const bad = nums.some((n) => !Number.isFinite(n))
+    || Math.abs(fromLat) > 90 || Math.abs(toLat) > 90 || Math.abs(fromLng) > 180 || Math.abs(toLng) > 180;
+  if (bad) return res.status(400).json({ error: "fromLat, fromLng, toLat and toLng must be valid coordinates" });
+  try {
+    const route = await computeRoute({ lat: fromLat, lng: fromLng }, { lat: toLat, lng: toLng });
+    if (!route) return res.status(204).end();
+    res.json(route);
+  } catch (err) {
+    console.error("Route lookup failed:", err.message);
+    res.status(502).json({ error: "Couldn't work out the route right now." });
   }
 });
 

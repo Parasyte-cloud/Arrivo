@@ -14,7 +14,7 @@ const axios = require("axios");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 process.env.PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_x";
-delete process.env.DRIVER_SUBSCRIPTION_ENFORCED;
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "true";
 
 const express = require("express");
 require("express-async-errors");
@@ -76,6 +76,9 @@ async function mkUser(role, { verified = true } = {}) {
   if (role === "driver") {
     const d = await pool.query("INSERT INTO drivers (user_id, is_verified) VALUES ($1, $2) RETURNING id", [id, verified]);
     u.driverId = d.rows[0].id;
+    // Which services a driver may take is Ops' call (driver_tier_access). These tests are
+    // about the subscription gate only, so every driver holds the two services they use.
+    await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1,'ride','active'),($1,'express','active') ON CONFLICT (driver_id, tier) DO UPDATE SET status = 'active'", [u.driverId]);
   }
   return u;
 }
@@ -251,7 +254,7 @@ const subRows = (driverId) => pool.query("SELECT * FROM driver_subscription_days
       const q = await api("/rides/available", { as: d });
       assert.notEqual(q.body.subscriptionRequired, true);
     } finally {
-      delete process.env.DRIVER_SUBSCRIPTION_ENFORCED;
+      process.env.DRIVER_SUBSCRIPTION_ENFORCED = "true";
     }
   });
 
@@ -311,6 +314,7 @@ const subRows = (driverId) => pool.query("SELECT * FROM driver_subscription_days
   await pool.query("DELETE FROM rides WHERE rider_id = ANY($1) OR driver_id IN (SELECT id FROM drivers WHERE user_id = ANY($1))", [madeUsers]);
   await pool.query("DELETE FROM driver_subscription_days WHERE driver_id IN (SELECT id FROM drivers WHERE user_id = ANY($1))", [madeUsers]);
   await pool.query("DELETE FROM used_payment_references WHERE used_for = 'driver_subscription' AND reference LIKE ANY(ARRAY['ok2000-%','old-%'])");
+  await pool.query("DELETE FROM driver_tier_access WHERE driver_id IN (SELECT id FROM drivers WHERE user_id = ANY($1))", [madeUsers]).catch(() => {});
   await pool.query("DELETE FROM drivers WHERE user_id = ANY($1)", [madeUsers]);
   await pool.query("DELETE FROM vehicles WHERE owner_user_id = ANY($1)", [madeUsers]);
   await pool.query("DELETE FROM users WHERE id = ANY($1)", [madeUsers]);

@@ -7,6 +7,8 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { getWallet, initializePayment, verifyWalletTopup } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -22,6 +24,7 @@ function transactionLabel(tx) {
 }
 
 export default function WalletScreen({ navigation }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const { formatFare } = useCurrency(token);
@@ -102,13 +105,13 @@ export default function WalletScreen({ navigation }) {
     setTopUpError(null);
 
     if (!amount || amount < 100) {
-      setTopUpError("Enter an amount of at least ₦100.");
+      setTopUpError(t("wallet.enterAnAmountOfAt"));
       return;
     }
 
     setTopUpStatus("opening");
     try {
-      const { authorizationUrl, reference } = await initializePayment(user.email, amount, token);
+      const { authorizationUrl, reference } = await initializePayment(token, { email: user.email, amountNaira: amount, purpose: "topup" });
       pendingTopUpRef.current = reference;
       await Linking.openURL(authorizationUrl);
       // Verification now happens automatically via the AppState listener above.
@@ -142,17 +145,17 @@ export default function WalletScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.amber} />}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Wallet</Text>
+        <Text style={styles.title}>{t("wallet.wallet")}</Text>
 
         {loadError ? <Text style={styles.errorText}>{loadError}</Text> : null}
 
         <Card tone="dark" tinted style={{ marginBottom: spacing.md }}>
-          <Text style={styles.balanceLabel}>Balance</Text>
+          <Text style={styles.balanceLabel}>{t("wallet.balance")}</Text>
           <Text style={styles.balance}>{formatFare(balance)}</Text>
         </Card>
 
         <Button
-          label="Membership"
+          label={t("wallet.membership")}
           variant="ghost"
           tone="dark"
           onPress={() => navigation.navigate("Home", { screen: "Membership" })}
@@ -160,7 +163,7 @@ export default function WalletScreen({ navigation }) {
         />
 
         <Button
-          label="Family Plan"
+          label={t("wallet.familyPlan")}
           variant="ghost"
           tone="dark"
           onPress={() => navigation.navigate("Home", { screen: "FamilyPlan" })}
@@ -168,7 +171,7 @@ export default function WalletScreen({ navigation }) {
         />
 
         <Button
-          label="Reserved Pickups (Partner Venues)"
+          label={t("wallet.reservedPickupsPartnerVenues")}
           variant="ghost"
           tone="dark"
           onPress={() => navigation.navigate("Home", { screen: "PartnerVenues" })}
@@ -176,12 +179,12 @@ export default function WalletScreen({ navigation }) {
         />
 
         {!showTopUp ? (
-          <Button label="Top Up Wallet" onPress={() => setShowTopUp(true)} trailingIcon />
+          <Button label={t("wallet.topUpWallet")} onPress={() => setShowTopUp(true)} trailingIcon />
         ) : (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
             <TextInput
               style={styles.input}
-              placeholder="Amount (₦)"
+              placeholder={t("wallet.amount")}
               placeholderTextColor={colors.dark.textMuted}
               keyboardType="number-pad"
               value={amountInput}
@@ -197,14 +200,14 @@ export default function WalletScreen({ navigation }) {
                 </Text>
               </View>
             ) : (
-              <Button label="Continue to payment" onPress={topUp} trailingIcon />
+              <Button label={t("wallet.continueToPayment")} onPress={topUp} trailingIcon />
             )}
           </Card>
         )}
 
-        <Text style={[styles.cardLabel, { marginTop: spacing.lg }]}>Recent activity</Text>
+        <Text style={[styles.cardLabel, { marginTop: spacing.lg }]}>{t("wallet.recentActivity")}</Text>
         {transactions.length === 0 ? (
-          <Text style={styles.emptyText}>No transactions yet.</Text>
+          <Text style={styles.emptyText}>{t("wallet.noTransactionsYet")}</Text>
         ) : (
           transactions.map((tx) => {
             const amount = Number(tx.amount_naira);
@@ -224,6 +227,7 @@ export default function WalletScreen({ navigation }) {
             );
           })
         )}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -248,7 +252,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.sm, textAlign: "center" },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   txLabel: { color: colors.dark.text, fontSize: 13.5, fontWeight: "600" },
   txDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },

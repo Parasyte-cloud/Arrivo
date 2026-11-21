@@ -3,7 +3,6 @@ import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { Card, Button, Tag } from "./UI";
 import { colors, spacing } from "../theme/tokens";
 import { dayLabel, inspectionView, naira, subscriptionView, tripsLabel } from "../tiers/dashboard";
-import { SERVICE_TIERS, dueLabel, formatNaira, headcount, jobStatusLabel, nextStep, optionName } from "../tiers/jobs";
 
 const RED = "#FF9B8A";
 const RED_BG = "rgba(225,82,61,0.18)";
@@ -74,35 +73,6 @@ export function SubscriptionCard({ subscription, now, paying, onSubscribe }) {
         </View>
       ) : null}
     </View>
-  );
-}
-
-// A job our team assigned: an ArrivoAir flight, an ArrivoBoat trip or an
-// ArrivoRemovals move. One button, forward only.
-export function ServiceJobCard({ job, busy, disabled, onAdvance }) {
-  const tier = SERVICE_TIERS[job.tier];
-  const step = nextStep(job);
-  const who = headcount(job);
-  return (
-    <Card tone="dark" style={{ marginBottom: spacing.sm }}>
-      <View style={styles.rowBetween}>
-        <Tag label={tier ? tier.label : "Job"} tone="amber" />
-        <Tag label={jobStatusLabel(job.status)} tone={job.status === "in_progress" ? "amber" : "teal"} />
-      </View>
-      <Text style={styles.jobTitle}>{job.pickupAddress}</Text>
-      <Text style={styles.meta}>To {job.destinationAddress}</Text>
-      <Text style={styles.jobWhen}>{dueLabel(job.requestedAt)}</Text>
-      <Text style={styles.meta}>
-        {[optionName(job.tier, job.option), who, `Rider: ${job.riderFirstName}`].filter(Boolean).join(" · ")}
-      </Text>
-      {job.details ? <Text style={styles.meta}>Notes: {job.details}</Text> : null}
-      {job.fareNaira != null ? <Text style={styles.fare}>{formatNaira(job.fareNaira)}</Text> : null}
-      {step ? (
-        <View style={{ marginTop: spacing.sm }}>
-          {busy ? <ActivityIndicator color={colors.amber} /> : <Button label={step.label} onPress={() => onAdvance(job, step.to)} disabled={disabled} trailingIcon />}
-        </View>
-      ) : null}
-    </Card>
   );
 }
 

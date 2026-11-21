@@ -1,3 +1,4 @@
+const { isValidPhone } = require("../services/phone");
 const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
@@ -10,6 +11,7 @@ const { getNgnPerUsd } = require("../services/fx");
 const { initializePaystackTransaction } = require("./payments");
 const { sendWhatsAppMessage } = require("../services/whatsapp");
 const { sendPasswordResetEmail } = require("../services/email");
+const { issueResetToken } = require("../services/passwordResetToken");
 
 const router = express.Router();
 
@@ -259,11 +261,15 @@ router.post(
         throw error;
       }
 
-      const resetToken = crypto.randomBytes(32).toString("hex");
+      const {
+        token: resetToken,
+        storedToken,
+      } = issueResetToken();
+
       const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
       await pool.query(
         "UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
-        [resetToken, resetExpires, rider.id]
+        [storedToken, resetExpires, rider.id]
       );
       const resetUrl =
         `${process.env.PASSWORD_RESET_BASE_URL || "https://ridearrivo.com/reset-password.html"}?token=${resetToken}`;
@@ -594,9 +600,14 @@ router.post(
             requestFingerprint,
             source,
             payment_status,
-            JSON.stringify(
-              normalizedRequest
-            ),
+            // contactPhone kept out of the fingerprint, see payments.js
+            // createRideFromAssistedBooking.
+            JSON.stringify({
+              ...normalizedRequest,
+              contactPhone: isValidPhone(String((req.body && req.body.phone) || "").trim())
+                ? String(req.body.phone).trim()
+                : null,
+            }),
             fareNaira,
             ngnPerUsd,
             quotedUsdAmount,

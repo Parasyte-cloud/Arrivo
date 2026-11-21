@@ -4,8 +4,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Same 6MB cap as the backend (routes/auth.js MAX_ID_DOCUMENT_BYTES) — an
 // ID photo needs to stay legible, so this is looser than the 4MB avatar cap.
@@ -16,6 +18,7 @@ const MAX_ID_DOCUMENT_BYTES = 6 * 1024 * 1024;
 // nothing). Now a rider can actually submit a photo of their ID here, see
 // its real review status, and resubmit if it's rejected.
 export default function VerifyIdScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { user, submitIdVerification } = useAuth();
   const [pickedUri, setPickedUri] = useState(null);
@@ -47,7 +50,7 @@ export default function VerifyIdScreen() {
     const asset = result.assets[0];
 
     if (asset.fileSize && asset.fileSize > MAX_ID_DOCUMENT_BYTES) {
-      setError("Please choose a photo smaller than 6MB.");
+      setError(t("verifyId.photoTooBig"));
       return;
     }
     if (!asset.base64) {
@@ -78,27 +81,27 @@ export default function VerifyIdScreen() {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}>
-        <Text style={styles.title}>Verified ID</Text>
+        <Text style={styles.title}>{t("verifyId.verifiedId")}</Text>
 
         {status === "verified" ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: "#8FD9C4", borderWidth: 1 }}>
-            <Text style={styles.statusHeading}>✅ Your ID is verified</Text>
+            <Text style={styles.statusHeading}>{t("verifyId.yourIdIsVerified")}</Text>
             <Text style={styles.meta}>
-              Thanks for confirming your identity. There's nothing else to do here.
+              {t("verifyId.thanksForConfirmingYourIdentity")}
             </Text>
           </Card>
         ) : status === "pending" ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-            <Text style={styles.statusHeading}>⏳ Under review</Text>
+            <Text style={styles.statusHeading}>{t("verifyId.underReview")}</Text>
             <Text style={styles.meta}>
-              We've received your ID and a team member will review it shortly. This usually doesn't take long. You don't need to do anything else right now.
+              {t("verifyId.weVeReceivedYourId")}
             </Text>
           </Card>
         ) : (
           <>
             {status === "rejected" ? (
               <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
-                <Text style={[styles.statusHeading, { color: colors.coral }]}>Verification rejected</Text>
+                <Text style={[styles.statusHeading, { color: colors.coral }]}>{t("verifyId.verificationRejected")}</Text>
                 <Text style={styles.meta}>
                   {user?.id_verification_rejection_reason || "Your last submission couldn't be verified."} Please take or choose a new, clear photo of a valid ID and resubmit below.
                 </Text>
@@ -106,33 +109,31 @@ export default function VerifyIdScreen() {
             ) : (
               <Card tone="dark" style={{ marginBottom: spacing.md }}>
                 <Text style={styles.meta}>
-                  Verifying your ID helps keep every trip safer for riders and drivers alike. Take a clear photo of a
-                  valid government ID (passport, driver's license, or national ID). Make sure your name and photo are
-                  visible and not blurry.
+                  {t("verifyId.verifyingYourIdHelpsKeep")}
                 </Text>
               </Card>
             )}
 
             {justSubmitted ? (
               <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
-                <Text style={styles.statusHeading}>Submitted</Text>
-                <Text style={styles.meta}>Your ID is now pending review.</Text>
+                <Text style={styles.statusHeading}>{t("verifyId.submitted")}</Text>
+                <Text style={styles.meta}>{t("verifyId.yourIdIsNowPending")}</Text>
               </Card>
             ) : null}
 
             <Card tone="dark" style={{ marginBottom: spacing.md }}>
-              <Text style={styles.cardLabel}>Your ID photo</Text>
+              <Text style={styles.cardLabel}>{t("verifyId.yourIdPhoto")}</Text>
               {pickedUri ? (
                 <Image source={{ uri: pickedUri }} style={styles.preview} />
               ) : (
                 <View style={styles.previewPlaceholder}>
-                  <Text style={styles.meta}>No photo selected yet</Text>
+                  <Text style={styles.meta}>{t("verifyId.noPhotoSelectedYet")}</Text>
                 </View>
               )}
               <View style={{ height: spacing.sm }} />
-              <Button label="Take a photo" onPress={() => pickIdPhoto(true)} variant="ghost" tone="dark" />
+              <Button label={t("verifyId.takeAPhoto")} onPress={() => pickIdPhoto(true)} variant="ghost" tone="dark" />
               <View style={{ height: spacing.sm }} />
-              <Button label="Choose from library" onPress={() => pickIdPhoto(false)} variant="ghost" tone="dark" />
+              <Button label={t("verifyId.chooseFromLibrary")} onPress={() => pickIdPhoto(false)} variant="ghost" tone="dark" />
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
             </Card>
 
@@ -144,6 +145,7 @@ export default function VerifyIdScreen() {
             />
           </>
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -155,11 +157,11 @@ const styles = StyleSheet.create({
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 10 },
   statusHeading: { color: colors.dark.text, fontWeight: "700", fontSize: 15, marginBottom: 6 },
   meta: { color: colors.dark.textMuted, fontSize: 12.5, lineHeight: 18 },
-  errorText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 8 },
+  errorText: { color: "#C2362B", fontSize: 11.5, marginTop: 8 },
   preview: { width: "100%", height: 200, borderRadius: radius.md, marginBottom: 4 },
   previewPlaceholder: {
     width: "100%", height: 140, borderRadius: radius.md, marginBottom: 4,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: colors.dark.hairline, borderStyle: "dashed",
+    backgroundColor: tint(0.05), borderWidth: 1, borderColor: colors.dark.hairline, borderStyle: "dashed",
   },
 });
