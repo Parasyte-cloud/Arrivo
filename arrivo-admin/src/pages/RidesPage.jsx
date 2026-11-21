@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthContext";
 import * as api from "../api";
 import { StatusPill, rideStatusTone } from "../components/StatusPill";
+import { RideRecordings } from "../components/RideRecordings";
 import { formatDateTime, downloadCsv } from "../utils";
 import { openInWindow } from "../lib/openWindow";
 import { confirmAction, askText, notify } from "../components/ConfirmDialog";
@@ -422,6 +423,7 @@ export function RidesPage() {
                               <div>{r.emergency_contact_name || "No name on file"}{r.emergency_contact_phone ? ` · ${r.emergency_contact_phone}` : ""}</div>
                             </div>
                           ) : null}
+                          {user?.role === "admin" ? <RideRecordings token={token} rideId={r.id} /> : null}
                           {r.fleet_size > 0 ? (
                             <div style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>
