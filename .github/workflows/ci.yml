@@ -64,3 +64,24 @@ jobs:
         env:
           VITE_API_BASE_URL: https://api.example.test
         run: npm run build
+
+  apps:
+    # The rider and driver apps keep their rules in small import-free modules so
+    # they can be tested with plain node, no device or bundler.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Rider and driver app tests
+        run: |
+          status=0
+          for app in arrivo-app arrivo-driver-app; do
+            for f in $(cd "$app" && find . -name '*.test.js' -not -path './node_modules/*' | sort); do
+              echo "== $app/$f"
+              (cd "$app" && node "$f") || status=1
+            done
+          done
+          exit $status

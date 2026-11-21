@@ -2028,6 +2028,26 @@ CREATE INDEX IF NOT EXISTS idx_api_error_log_ref ON api_error_log(ref);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_created ON api_error_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_api_error_log_code ON api_error_log(error_code, created_at DESC);
 
+-- Rider profile: the home address shown on the profile and offered as a quick pickup.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS home_address TEXT;
+
+-- DRIVER_SUBSCRIPTION_V1
+-- One row per driver per Lagos calendar day paid for. The day ends at 00:00
+-- Lagos. A driver with no row for today receives no orders. The unique
+-- (driver_id, day) makes a double tap or a replayed reference harmless.
+CREATE TABLE IF NOT EXISTS driver_subscription_days (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id),
+  day DATE NOT NULL,
+  amount_naira INTEGER NOT NULL,
+  paystack_reference TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, day)
+);
+-- Quarterly inspection: the day of the last pass. Due three months later.
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_inspection_on DATE;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_inspection_by INTEGER REFERENCES users(id);
+-- END DRIVER_SUBSCRIPTION_V1
 -- Console permissions per staff member (services/staffAccess.js). Only the
 -- areas that differ from the person's role preset are stored, e.g.
 -- {"wallet": "manage", "exports": "none"}. NULL means the preset as is.
@@ -2341,3 +2361,5 @@ CREATE TABLE IF NOT EXISTS rate_limit_hits (
   PRIMARY KEY (store, key)
 );
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);
+
+-- =====================================================

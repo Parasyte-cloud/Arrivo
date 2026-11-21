@@ -5,6 +5,8 @@
 // anything on, going online with no tier, and that work from one tier never
 // reaches a driver who does not hold it. Aimed at a throwaway database.
 
+// These tests are about services and tiers, not the daily subscription.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 const assert = require("assert");
 const http = require("http");
 const fs = require("fs");

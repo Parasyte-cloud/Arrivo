@@ -230,6 +230,23 @@ export function requestCallSupport(token, sessionId, note) {
   return request(`/api/calls/${encodeURIComponent(sessionId)}/support`, authed(token, { method: "POST", body: JSON.stringify({ note }) }));
 }
 
+// Dashboard: profile, today's trips and earnings, subscription and inspection.
+export function getDriverDashboard(token) {
+  return request("/api/driver-subscription/dashboard", authed(token));
+}
+// Paystack: the server prices nothing here. The amount is checked again when the
+// payment is verified, and only exactly the daily price activates a day.
+export function initializeSubscriptionPayment(token, email, amountNaira) {
+  return request("/api/payments/initialize", authed(token, {
+    method: "POST",
+    body: JSON.stringify({ email, amountNaira, purpose: "driver_subscription" }),
+  }));
+}
+export function verifySubscriptionPayment(token, reference) {
+  return request("/api/driver-subscription/verify", authed(token, { method: "POST", body: JSON.stringify({ reference }) }));
+}
+
+
 // Lets the backend push "New ride" and "Ride assigned to you" to this phone
 // (arrivo-backend/services/dispatch.js). Same endpoint the rider app uses.
 export function registerPushToken(token, pushToken) {

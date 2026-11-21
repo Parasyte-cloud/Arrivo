@@ -18,6 +18,10 @@ import { useLocationReporting } from "../hooks/useLocationReporting";
 import { useOwnPosition } from "../hooks/useOwnPosition";
 import { useT } from "../context/LanguageContext";
 import { PickupPinPrompt, ReportRiderPanel } from "../components/SafetyPanels";
+import ParasyteSignature from "../components/ParasyteSignature";
+import { InspectionBanner, ProfileStatsCard, SubscriptionCard } from "../components/DashboardPanels";
+import { useSubscription } from "../hooks/useSubscription";
+import { canReceiveOrders } from "../tiers/dashboard";
 
 const POLL_INTERVAL_MS = 8000;
 // ArrivoExpress offers expire fast server-side (ARRIVO_NOW_OFFER_TTL_SECONDS,
@@ -27,7 +31,6 @@ import { useTiers } from "../context/TiersContext";
 import { sectionsFor, queueFor, tierForRide, metaFor } from "../utils/tiers";
 import TierSwitcher from "../components/TierSwitcher";
 import TierPane from "../components/TierPane";
-import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function DashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -60,6 +63,13 @@ export default function DashboardScreen({ navigation }) {
   const [instantError, setInstantError] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const instantPollRef = useRef(null);
+
+  // Daily subscription, inspection reminder and today's numbers. The server is
+  // the authority on who may receive orders; this only decides what to show and
+  // saves polling for orders that would not come.
+  const { data: dash, error: dashError, paying, now: subNow, reload: reloadDash, subscribe } = useSubscription(token, user?.email);
+  const subscribed = dash ? canReceiveOrders(dash.subscription, subNow) : true;
+  // Someone mid-flight or mid-move is not offered airport pickups.
 
   // While online (whether waiting for a request or mid-trip), periodically
   // report this phone's GPS position to the backend. This is what makes
@@ -101,13 +111,14 @@ export default function DashboardScreen({ navigation }) {
 
   const refreshAvailable = useCallback(async () => {
     try {
-      const { rides, areaLockedToVenue: lockedVenue } = await getAvailableRides(token);
+      const { rides, areaLockedToVenue: lockedVenue, subscriptionRequired } = await getAvailableRides(token);
+      if (subscriptionRequired) reloadDash();
       setAvailable(rides);
       setAreaLockedToVenue(lockedVenue || null);
     } catch (e) {
       setError(e.message);
     }
-  }, [token]);
+  }, [token, reloadDash]);
 
   // isOnline used to always start false on every mount (app cold start, or
   // even just this screen remounting), regardless of whatever the backend's
@@ -153,7 +164,7 @@ export default function DashboardScreen({ navigation }) {
 
   // Poll for new ride requests while online and not already on a trip.
   useEffect(() => {
-    if (isOnline && !activeRide) {
+    if (isOnline && !activeRide && subscribed) {
       refreshAvailable();
       pollRef.current = setInterval(refreshAvailable, POLL_INTERVAL_MS);
     } else {
@@ -161,7 +172,7 @@ export default function DashboardScreen({ navigation }) {
       setAvailable([]);
     }
     return () => clearInterval(pollRef.current);
-  }, [isOnline, activeRide, refreshAvailable]);
+  }, [isOnline, activeRide, subscribed, refreshAvailable]);
 
   // Keep the active-trip card's data fresh while on a trip — status changes,
   // fare adjustments, or a listening-device activation from another path
@@ -181,7 +192,10 @@ export default function DashboardScreen({ navigation }) {
       await setOnlineStatus(token, value);
     } catch (e) {
       setIsOnline(!value); // revert on failure
-      if (e.code === "SELFIE_REQUIRED") {
+      if (e.code === "SUBSCRIPTION_REQUIRED") {
+        // Not an error to show: the red subscribe card already says what to do.
+        reloadDash();
+      } else if (e.code === "SELFIE_REQUIRED") {
         // Not an error to show: send the driver to the selfie check.
         navigation.navigate("Selfie");
       } else {
@@ -226,7 +240,7 @@ export default function DashboardScreen({ navigation }) {
   // Poll ArrivoExpress offers only while genuinely eligible to receive them:
   // online, opted in, verified, and not already mid-trip.
   useEffect(() => {
-    if (isOnline && acceptsInstant && instantVerified && !activeRide) {
+    if (isOnline && acceptsInstant && instantVerified && !activeRide && subscribed) {
       refreshInstantOffers();
       instantPollRef.current = setInterval(refreshInstantOffers, INSTANT_POLL_INTERVAL_MS);
     } else {
@@ -234,7 +248,7 @@ export default function DashboardScreen({ navigation }) {
       setInstantOffers([]);
     }
     return () => clearInterval(instantPollRef.current);
-  }, [isOnline, acceptsInstant, instantVerified, activeRide, refreshInstantOffers]);
+  }, [isOnline, acceptsInstant, instantVerified, activeRide, subscribed, refreshInstantOffers]);
 
   // Drives the live per-offer countdown text -- only ticks while there's
   // actually something to count down, so this never runs for drivers who
@@ -287,6 +301,7 @@ export default function DashboardScreen({ navigation }) {
       setActiveRide(ride);
       setAvailable([]);
     } catch (e) {
+      if (e.code === "SUBSCRIPTION_REQUIRED") reloadDash();
       setError(e.message); // e.g. "already accepted by another driver" — refresh the list either way
       refreshAvailable();
     } finally {
@@ -304,6 +319,7 @@ export default function DashboardScreen({ navigation }) {
       const { ride } = await updateRideStatus(token, activeRide.id, nextStatus);
       if (nextStatus === "completed" || nextStatus === "cancelled") {
         setActiveRide(null);
+        reloadDash(); // today's trips and earnings
       } else {
         setActiveRide(ride);
       }
@@ -355,7 +371,7 @@ export default function DashboardScreen({ navigation }) {
             onRefresh={async () => {
               setRefreshing(true);
               try {
-                await (activeRide ? checkForActiveRide() : refreshAvailable());
+                await Promise.all([reloadDash(), activeRide ? checkForActiveRide() : refreshAvailable()]);
               } finally {
                 setRefreshing(false);
               }
@@ -377,6 +393,10 @@ export default function DashboardScreen({ navigation }) {
             thumbColor="#fff"
           />
         </View>
+
+        <ProfileStatsCard profile={dash?.profile} today={dash?.today} />
+        <InspectionBanner inspection={dash?.inspection} />
+        <SubscriptionCard subscription={dash?.subscription} now={subNow} paying={paying} onSubscribe={subscribe} />
 
         <TierSwitcher />
         {tiersLoaded && show.pane ? <TierPane /> : null}
@@ -404,10 +424,15 @@ export default function DashboardScreen({ navigation }) {
         ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {dashError && !dash ? <Text style={styles.error}>{dashError}</Text> : null}
         {instantError ? <Text style={styles.error}>{instantError}</Text> : null}
 
         {activeRide ? (
           <ActiveTripCard ride={activeRide} busy={busyRideId === activeRide.id} onAdvance={advanceTrip} pinNeeded={pinRideId === activeRide.id} onPinVerified={() => { setPinRideId(null); advanceTrip("in_progress"); }} onCancelled={handleRideGuaranteeCancelled} token={token} navigation={navigation} />
+        ) : isOnline && !subscribed ? (
+          <Card tone="dark">
+            <Text style={styles.offlineText}>Subscribe for today to start receiving orders.</Text>
+          </Card>
         ) : isOnline ? (
           <>
             {show.express && acceptsInstant ? (

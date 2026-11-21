@@ -12,6 +12,8 @@ const jwt = require("jsonwebtoken");
 const axios = require("axios");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+// These tests are about something else; the daily subscription gate has its own suite.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 process.env.PAYSTACK_SECRET_KEY = "sk_test_stub_for_tests";
 // Small limits so the rate-limit tests below can reach them (read at require time).
 process.env.PAYMENT_INIT_RATE_LIMIT = "5";

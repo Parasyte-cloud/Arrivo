@@ -366,8 +366,12 @@ async function acceptInstantOffer({
       || driver.vehicle_type
         === request.vehicle_type;
 
+    const subscribed = await require("./driverSubscriptionDb")
+      .hasActiveSubscription(client, driver.id);
+
     if (
       !driver.is_verified
+      || !subscribed
       || !driver.is_online
       || !driver.accepts_instant
       || !locationFresh

@@ -1,5 +1,7 @@
 // Against a REAL Postgres: a RIDER orders any service; only drivers holding that tier see it;
 // the trip cannot start until Ops sets the price. PArAsYtE
+// These tests are about services and tiers, not the daily subscription.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 const assert = require("assert");
 const http = require("http");
 const jwt = require("jsonwebtoken");

@@ -1,5 +1,7 @@
 // Against a REAL Postgres: Ops-created jobs for Campus, Air, Boat and Removals run the whole
 // trip: queue gated by tier, accept, start, "Are you safe?", complete, receipt. PArAsYtE
+// These tests are about services and tiers, not the daily subscription.
+process.env.DRIVER_SUBSCRIPTION_ENFORCED = "false";
 const assert = require("assert");
 const http = require("http");
 const jwt = require("jsonwebtoken");
