@@ -42,8 +42,9 @@ const STATUS_LABELS = {
 };
 
 export function ExportsPage() {
-  const { token, user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { token, user, can } = useAuth();
+  // Who exported what is for people who manage Exports.
+  const isAdmin = can("exports", "manage");
 
   const [datasets, setDatasets] = useState([]);
   const [maxRows, setMaxRows] = useState(null);

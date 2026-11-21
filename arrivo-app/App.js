@@ -6,10 +6,11 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
-import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { useTranslation } from "react-i18next";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { usePushNotifications } from "./hooks/usePushNotifications";
@@ -18,6 +19,7 @@ import UpdateRequiredScreen from "./components/UpdateRequiredScreen";
 import { loadBookingConfig } from "./services/bookingConfig";
 import LaunchIntro from "./components/LaunchIntro";
 import { CallOverlayProvider } from "./components/CallOverlay";
+import { installCrashReporter } from "./services/api";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -29,6 +31,8 @@ import TrackingScreen from "./screens/TrackingScreen";
 import ChauffeurScreen from "./screens/ChauffeurScreen";
 import OnTheGoScreen from "./screens/OnTheGoScreen";
 import ArrivoExpressScreen from "./screens/ArrivoExpressScreen";
+import CampusScreen from "./screens/CampusScreen";
+import ServiceRequestScreen from "./screens/ServiceRequestScreen";
 import OwnerScreen from "./screens/OwnerScreen";
 import MembershipScreen from "./screens/MembershipScreen";
 import FamilyPlanScreen from "./screens/FamilyPlanScreen";
@@ -43,7 +47,10 @@ import RidePreferencesScreen from "./screens/RidePreferencesScreen";
 import SupportScreen from "./screens/SupportScreen";
 import ChatScreen from "./screens/ChatScreen";
 
-import { colors } from "./theme/tokens";
+import { colors, tint, isDark } from "./theme/tokens";
+
+// JS crashes get a ref and are sent to the server (services/api.js).
+installCrashReporter();
 
 const Stack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator();
@@ -60,20 +67,23 @@ Notifications.setNotificationHandler({
 });
 
 const navTheme = {
-  ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.ink, card: colors.ink, border: "rgba(255,255,255,0.08)" },
+  ...DefaultTheme,
+  dark: isDark,
+  colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.sheet, text: colors.ink, border: tint(0.10), primary: colors.amber },
 };
 
 const stackScreenOptions = {
-  headerStyle: { backgroundColor: colors.ink },
-  headerTintColor: colors.cream,
-  headerTitleStyle: { color: colors.cream },
-  contentStyle: { backgroundColor: colors.ink },
+  headerStyle: { backgroundColor: colors.sheet },
+  headerTintColor: colors.ink,
+  headerTitleStyle: { color: colors.ink },
+  headerShadowVisible: false,
+  contentStyle: { backgroundColor: colors.bg },
 };
 
 // Home tab is its own stack so booking flows (Route -> Checkout / Tracking / Chauffeur / Owner)
 // can be pushed on top without losing the bottom tab bar structure.
 function HomeStack() {
+  const { t } = useTranslation();
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
@@ -90,18 +100,20 @@ function HomeStack() {
           ),
         }}
       />
-      <Stack.Screen name="Route" component={RouteScreen} options={{ title: "Plan Route" }} />
-      <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: "Confirm & Pay" }} />
-      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: "Live Tracking" }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Message driver" }} />
-      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: "Chauffeur Booking" }} />
-      <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: "On the Go" }} />
-      <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ title: "ArrivoExpress" }} />
-      <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: "Owner Dashboard" }} />
-      <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: "Membership" }} />
-      <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: "Family Plan" }} />
-      <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: "Reserved Pickups" }} />
-      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: "Scan to Start Tracking" }} />
+      <Stack.Screen name="Route" component={RouteScreen} options={{ title: t("nav.planRoute") }} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: t("nav.confirmPay") }} />
+      <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: t("nav.liveTracking") }} />
+      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: t("nav.messageDriver") }} />
+      <Stack.Screen name="Chauffeur" component={ChauffeurScreen} options={{ title: t("nav.chauffeurBooking") }} />
+      <Stack.Screen name="ServiceRequest" component={ServiceRequestScreen} options={({ route }) => ({ title: t(`services.${route.params?.service || "campus"}`) })} />
+      <Stack.Screen name="OnTheGo" component={OnTheGoScreen} options={{ title: t("nav.onTheGo") }} />
+      <Stack.Screen name="ArrivoExpress" component={ArrivoExpressScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Campus" component={CampusScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Owner" component={OwnerScreen} options={{ title: t("nav.ownerDashboard") }} />
+      <Stack.Screen name="Membership" component={MembershipScreen} options={{ title: t("nav.membership") }} />
+      <Stack.Screen name="FamilyPlan" component={FamilyPlanScreen} options={{ title: t("nav.familyPlan") }} />
+      <Stack.Screen name="PartnerVenues" component={PartnerVenuesScreen} options={{ title: t("nav.reservedPickups") }} />
+      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: t("nav.scanTracking") }} />
     </Stack.Navigator>
   );
 }
@@ -117,32 +129,34 @@ const ICONS = {
 // VerifyIdScreen can push on top of it with a real back button, instead of
 // only being reachable as a modal or another tab.
 function ProfileStack() {
+  const { t } = useTranslation();
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: "Verified ID" }} />
-      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: "Emergency Contacts" }} />
-      <Stack.Screen name="RidePreferences" component={RidePreferencesScreen} options={{ title: "Ride Preferences" }} />
-      <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />
+      <Stack.Screen name="VerifyId" component={VerifyIdScreen} options={{ title: t("nav.verifiedId") }} />
+      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: t("nav.emergencyContacts") }} />
+      <Stack.Screen name="RidePreferences" component={RidePreferencesScreen} options={{ title: t("nav.ridePreferences") }} />
+      <Stack.Screen name="Support" component={SupportScreen} options={{ title: t("nav.support") }} />
     </Stack.Navigator>
   );
 }
 
 function MainTabs() {
+  const { t } = useTranslation();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.amber,
-        tabBarInactiveTintColor: "#5F5F8F",
-        tabBarStyle: { backgroundColor: colors.ink, borderTopColor: "rgba(255,255,255,0.08)" },
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: colors.sheet, borderTopColor: tint(0.10) },
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size - 4} color={color} />,
       })}
     >
-      <Tab.Screen name="Home" component={HomeStack} />
-      <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="Profile" component={ProfileStack} />
+      <Tab.Screen name="Home" component={HomeStack} options={{ title: t("nav.tab_home") }} />
+      <Tab.Screen name="Activity" component={ActivityScreen} options={{ title: t("nav.tab_activity") }} />
+      <Tab.Screen name="Wallet" component={WalletScreen} options={{ title: t("nav.tab_wallet") }} />
+      <Tab.Screen name="Profile" component={ProfileStack} options={{ title: t("nav.tab_profile") }} />
     </Tab.Navigator>
   );
 }
@@ -187,7 +201,7 @@ function RootNavigator() {
   if (initializing) {
     // Restoring a saved session token — brief splash-like loading state.
     return (
-      <View style={{ flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color={colors.amber} size="large" />
       </View>
     );
@@ -221,7 +235,7 @@ export default function App() {
         <AuthProvider>
           <CallOverlayProvider>
             <NavigationContainer theme={navTheme}>
-              <StatusBar style="light" />
+              <StatusBar style={isDark ? "light" : "dark"} />
               <RootNavigator />
             </NavigationContainer>
           </CallOverlayProvider>

@@ -42,9 +42,9 @@ const hours = (h) => new Date(NOW + h * 3600 * 1000);
 console.log("Booking rules from config:");
 test("with no config the bundled constants apply", () => {
   W.resetBookingRules();
-  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 12, maxAdvanceDays: null });
-  assert.strictEqual(W.isStandardBookingBlocked(hours(11.9), NOW), true);
-  assert.strictEqual(W.isStandardBookingBlocked(hours(12), NOW), false);
+  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 3, maxAdvanceDays: null });
+  assert.strictEqual(W.isStandardBookingBlocked(hours(2.9), NOW), true);
+  assert.strictEqual(W.isStandardBookingBlocked(hours(3), NOW), false);
 });
 test("a config with a longer notice moves the blocking line", () => {
   W.resetBookingRules();
@@ -59,22 +59,22 @@ test("a config with a longer notice moves the blocking line", () => {
 test("bad fields are ignored one by one", () => {
   W.resetBookingRules();
   W.setBookingRulesFromConfig({ minHours: "soon", standardMinHours: 72, maxAdvanceDays: -4 });
-  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 72, onTheGoOnlyHours: 12, maxAdvanceDays: null });
+  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 72, onTheGoOnlyHours: 3, maxAdvanceDays: null });
   W.setBookingRulesFromConfig({ minHours: 0 });
   W.setBookingRulesFromConfig({ minHours: 5000 });
   W.setBookingRulesFromConfig({ minHours: 6.5 });
-  assert.strictEqual(W.getBookingRules().onTheGoOnlyHours, 12);
+  assert.strictEqual(W.getBookingRules().onTheGoOnlyHours, 3);
   W.resetBookingRules();
 });
 test("garbage config never changes anything", () => {
   W.resetBookingRules();
   for (const junk of [null, undefined, "x", 5, [], {}]) W.setBookingRulesFromConfig(junk);
-  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 12, maxAdvanceDays: null });
+  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 3, maxAdvanceDays: null });
 });
 test("a config that contradicts itself is refused whole", () => {
   W.resetBookingRules();
   W.setBookingRulesFromConfig({ minHours: 60, standardMinHours: 24 });
-  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 12, maxAdvanceDays: null });
+  assert.deepStrictEqual(W.getBookingRules(), { standardMinHours: 48, onTheGoOnlyHours: 3, maxAdvanceDays: null });
 });
 test("maxAdvanceDays null clears an earlier limit", () => {
   W.resetBookingRules();

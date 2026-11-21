@@ -1,5 +1,6 @@
 const OPERATIONS_GET_RULES = [
   /^\/api\/auth\/me\/?$/,
+  /^\/api\/admin\/riders\/?$/,
   /^\/api\/admin\/drivers\/?$/,
   /^\/api\/admin\/rides\/?$/,
   /^\/api\/admin\/rides\/live\/?$/,
@@ -31,6 +32,8 @@ const OPERATIONS_WRITE_RULES = [
 
 // Operations sees the same Rides section as support.
 const OPERATIONS_STAFF_GET = [
+  // Their own console permissions, so the console knows which pages to show.
+  /^\/api\/staff\/access\/(me|catalog)\/?$/,
   /^\/api\/staff\/rides\/?$/,
   /^\/api\/staff\/rides\/\d+\/?$/,
   /^\/api\/staff\/duty\/?$/,

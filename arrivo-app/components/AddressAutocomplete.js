@@ -23,7 +23,8 @@ function newSessionToken() {
 // enableSuggestions=false gives the same looking field with no Places calls
 // behind it. Middle stops use that: they don't need coordinates (only pickup
 // and the final destination price the trip) and every lookup is billed.
-export default function AddressAutocomplete({ value, onChangeText, onSelect, placeholder, style, inputStyle, enableSuggestions = true }) {
+// bare drops the box and the pencil so the field can sit inside another card (the map-first sheet draws its own).
+export default function AddressAutocomplete({ value, onChangeText, onSelect, placeholder, style, inputStyle, enableSuggestions = true, bare = false }) {
   const { token } = useAuth();
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -78,7 +79,7 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
       {/* The box and the pencil are the whole point of this wrapper. These
           rows used to be bare text next to a coloured dot, so riders couldn't
           tell they were tappable at all. */}
-      <View style={[styles.field, focused && styles.fieldFocused]}>
+      <View style={[styles.field, bare ? styles.fieldBare : focused && styles.fieldFocused]}>
         {/* Suggestions off on purpose. The keyboard strip sits right above
             this field, and a rider reaching for a Places result can hit a
             word suggestion instead and rewrite the address they typed. The
@@ -101,7 +102,7 @@ export default function AddressAutocomplete({ value, onChangeText, onSelect, pla
           importantForAutofill="no"
           keyboardType="default"
         />
-        <Ionicons name="pencil" size={13} color={colors.dark.textMuted} style={styles.pencil} />
+        {bare ? null : <Ionicons name="pencil" size={13} color={colors.dark.textMuted} style={styles.pencil} />}
       </View>
       {focused && loading ? (
         <View style={styles.loadingRow}>
@@ -133,6 +134,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   fieldFocused: { borderColor: colors.amber },
+  fieldBare: { backgroundColor: "transparent", borderWidth: 0, paddingHorizontal: 0 },
   input: { flex: 1, color: colors.dark.text, fontSize: 13, paddingVertical: 10 },
   pencil: { marginLeft: 6 },
   loadingRow: { paddingVertical: 4, paddingLeft: 4 },
@@ -151,5 +153,5 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.dark.hairline,
   },
   suggestionText: { color: colors.dark.text, fontSize: 12.5 },
-  errorText: { color: "#FF9B8A", fontSize: 10.5, marginTop: 2 },
+  errorText: { color: "#C2362B", fontSize: 10.5, marginTop: 2 },
 });

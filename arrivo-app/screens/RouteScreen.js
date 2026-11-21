@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { messageWithCode } from "../utils/errorRef";
+import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -9,9 +11,12 @@ import AddressAutocomplete from "../components/AddressAutocomplete";
 import { BookingWindowNotice } from "../components/BookingWindowNotice";
 import { isStandardBookingBlocked, getBookingRules } from "../utils/bookingWindow";
 import { lagosDayLabel, lagosParts, lagosScheduleInstant, earliestInstant } from "../utils/lagosTime";
+import { flightNumberProblem, flightDateProblem, pnrProblem, addDays } from "../utils/flightFields";
 import useMinuteTick from "../hooks/useMinuteTick";
-import { colors, spacing, radius } from "../theme/tokens";
+import { colors, spacing, radius, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
+import ServiceSwitcher from "../components/ServiceSwitcher";
+import { goToService } from "../utils/services";
 import PhoneInput from "../components/PhoneInput";
 import { validateOptionalPhone, splitPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import { getFareQuote, getReverseGeocode, getEmergencyContacts } from "../services/api";
@@ -22,6 +27,8 @@ import {
   premiumUpgradePrice,
 } from "../utils/premiumUpgrade";
 import { AddonOptions } from "../components/AddonOptions";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // The upgrade only makes sense on Sedan/SUV. Executive is already the premium
 // tier and Pickup is a cargo vehicle. Wording and price live in
@@ -119,6 +126,7 @@ function scheduleDayLabel(offset, now) {
 const QUOTE_DEBOUNCE_MS = 400;
 
 export default function RouteScreen({ navigation, route }) {
+  const { t } = useTranslation();
   const { token, user } = useAuth();
   const { formatFare, isNigeria } = useCurrency(token);
 
@@ -171,6 +179,12 @@ export default function RouteScreen({ navigation, route }) {
   const [fleetSize, setFleetSize] = useState(0); // 0 | 2 | 3
   const [luxury, setLuxury] = useState(false); // only meaningful for sedan/suv
   const [flightNumber, setFlightNumber] = useState(route?.params?.flightNumber || "");
+  // The flight is tracked by number and date. The surname helps support find the booking; the
+  // booking code (PNR) is optional and only ever used by support, never to look a flight up.
+  const todayLagos = (() => { const p = lagosParts(); return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`; })();
+  const [flightDate, setFlightDate] = useState("");  // Not pre-filled: a rider flying tomorrow who never touched it would get today's flight tracked.
+  const [passengerSurname, setPassengerSurname] = useState("");
+  const [pnr, setPnr] = useState("");
   const [emergencyContactName, setEmergencyContactName] = useState("");
   // Country code is picked, never typed — same PhoneInput and same
   // validation as the saved contacts on Profile -> Emergency contacts and
@@ -253,6 +267,9 @@ export default function RouteScreen({ navigation, route }) {
   const [quote, setQuote] = useState(null); // { fareNaira, distanceKm, durationMin } | null
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState(null);
+  // Server said there's no phone on file. Asked inline, then the quote runs again.
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [quoteRetry, setQuoteRetry] = useState(0);
   const quoteDebounceRef = useRef(null);
   // See the quote-fetch effect below for what this guards against.
   const quoteRequestIdRef = useRef(0);
@@ -268,7 +285,7 @@ export default function RouteScreen({ navigation, route }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setLocationError("Location permission denied. You can still type your pickup address above.");
+        setLocationError(t("route.locationPermissionDeniedYouCan"));
         return;
       }
       let position;
@@ -281,7 +298,7 @@ export default function RouteScreen({ navigation, route }) {
         // timeout guarantees this always resolves.
         position = await Promise.race([
           Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(t("route.locationTimeout"))), 12000)),
         ]);
       } catch (e) {
         // GPS itself never produced a fix — most commonly a weak/no signal
@@ -290,7 +307,7 @@ export default function RouteScreen({ navigation, route }) {
         // couldn't resolve to an address) so the wording actually points
         // at what went wrong, instead of one generic catch-all hiding
         // which of the two very different failure modes actually happened.
-        setLocationError("Couldn't get a GPS signal. Try again near a window or outdoors, or type your pickup address above.");
+        setLocationError(t("route.couldnTGetAGps"));
         return;
       }
 
@@ -299,7 +316,7 @@ export default function RouteScreen({ navigation, route }) {
         setPickup(result.address);
         setPickupCoords({ lat: result.lat, lng: result.lng });
       } catch (e) {
-        setLocationError("Got your location, but couldn't look up an address for it. You can still type your pickup address above.");
+        setLocationError(t("route.gotYourLocationButCouldn"));
       }
     } finally {
       setLocatingPickup(false);
@@ -464,20 +481,24 @@ export default function RouteScreen({ navigation, route }) {
         setQuote(result);
       } catch (e) {
         if (quoteRequestIdRef.current !== requestId) return;
-        setQuoteError(e.message || "Couldn't calculate a fare for this trip. Please try again.");
+        if (e.code === "PHONE_REQUIRED" || e.code === "PHONE_INVALID") { setPhoneNeeded(true); return; }
+        setQuoteError(messageWithCode(e, "Couldn't calculate a fare for this trip. Please try again."));
       } finally {
         if (quoteRequestIdRef.current === requestId) setQuoteLoading(false);
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(quoteDebounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, groupTooLarge, adults, children]);
+  }, [bookingType, vehicle, securityEscort, fleetSize, luxury, fullDayCount, pickupCoords, destinationCoords, excludedArea, groupTooLarge, adults, children, quoteRetry]);
 
   // Flight number is required for one-way airport pickups — it's the only
   // way to actually track the rider's flight and get a real ETA (see
   // TrackingScreen, which fetches live flight status from it). Not
   // required for charter/Chauffeur bookings, which aren't tied to a flight.
   const needsFlightNumber = bookingType === "one_way";
+  const flightNumberMsg = flightNumberProblem(flightNumber);
+  const flightDateMsg = needsFlightNumber ? (flightDate.trim() ? flightDateProblem(flightDate, todayLagos) : "Choose the day your flight lands.") : null;
+  const pnrMsg = pnrProblem(pnr);
 
   // Only drop-offs carry a date the rider picks. An airport pickup is timed
   // off the flight, so there's nothing here to measure it against and the rule
@@ -501,7 +522,7 @@ export default function RouteScreen({ navigation, route }) {
   // Everything already typed, handed to On the Go so the rider is not made to
   // start again.
   const lateRequestPrefill = {
-    service: "Airport drop-off",
+    service: t("labels.booking_dropoff"),
     pickupAddress: pickup.trim(),
     destinationAddress: stops.map((x) => String(x || "").trim()).filter(Boolean)[0] || "",
     flightNumber: flightNumber.trim() || undefined,
@@ -515,7 +536,7 @@ export default function RouteScreen({ navigation, route }) {
 
   const canConfirm =
     !excludedArea && !groupTooLarge && pickup.trim().length > 0 && destination.trim().length > 0 &&
-    (!needsFlightNumber || flightNumber.trim().length > 0) &&
+    (!needsFlightNumber || flightNumber.trim().length > 0) && !flightNumberMsg && !flightDateMsg && !pnrMsg &&
     scheduledTimeValid && !bookingWindowBlocked && emergencyPhoneResult.valid &&
     coordsResolved && !!quote && !quoteLoading;
 
@@ -527,10 +548,13 @@ export default function RouteScreen({ navigation, route }) {
       durationMin: quote.durationMin,
       appliedPromo: quote.promo || null,
       appliedPromoDiscountNaira: quote.promo ? quote.originalFareNaira - quote.fareNaira : 0,
-      label: `${VEHICLES.find((v) => v.id === vehicle).label}${needsMultipleVehicles ? ` × ${vehicleCount}` : ""}. ${selectedBooking.label}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${fullDayCount} days` : ""}`,
+      label: `${t(`labels.vehicle_${vehicle}`)}${needsMultipleVehicles ? ` × ${vehicleCount}` : ""}. ${t(`labels.booking_${bookingType}`)}${bookingType === "full_day" && fullDayCount > 1 ? ` × ${t("route.daysCount", { count: fullDayCount })}` : ""}`,
       pickupAddress: pickup,
       stops,
       flightNumber: flightNumber.trim() || undefined,
+      flightDate: needsFlightNumber ? flightDate.trim() : undefined,
+      passengerSurname: passengerSurname.trim() || undefined,
+      pnr: pnr.trim() || undefined,
       vehicleType: vehicle,
       bookingType: selectedBooking.id,
       durationDays: bookingType === "full_day" ? fullDayCount : selectedBooking.days,
@@ -562,7 +586,8 @@ export default function RouteScreen({ navigation, route }) {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Set your route</Text>
+        <ServiceSwitcher current="ride" onSelect={(id) => goToService(navigation, id, { replace: true })} />
+        <Text style={styles.title}>{t("route.setYourRoute")}</Text>
 
         {partnerVenueId ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: "#D9A86C", borderWidth: 1 }}>
@@ -570,7 +595,7 @@ export default function RouteScreen({ navigation, route }) {
                 straight from partner_venues.name, which the partnerships
                 team edits from the admin dashboard, so onboarding a new
                 venue never needs an app change or a copy update. */}
-            <Text style={styles.cardLabel}>🍸 {partnerVenueName} x RideArrivo</Text>
+            <Text style={styles.cardLabel}>{t("route.xRidearrivo", { partnerVenueName })}</Text>
             <Text style={styles.partnerVenueHint}>
               Reserved pickup from {partnerVenueName}. Just pick your time below.
               {partnerVenuePerk ? ` ${partnerVenuePerk}` : ""}
@@ -579,7 +604,7 @@ export default function RouteScreen({ navigation, route }) {
         ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Booking type</Text>
+          <Text style={styles.cardLabel}>{t("route.bookingType")}</Text>
           <View style={styles.bookingRow}>
             {BOOKING_TYPES.map((b) => (
               <Pressable
@@ -587,13 +612,13 @@ export default function RouteScreen({ navigation, route }) {
                 onPress={() => setBookingType(b.id)}
                 style={[styles.bookingChip, bookingType === b.id && styles.bookingChipActive]}
               >
-                <Text style={[styles.bookingChipText, bookingType === b.id && styles.bookingChipTextActive]}>{b.label}</Text>
+                <Text style={[styles.bookingChipText, bookingType === b.id && styles.bookingChipTextActive]}>{t(`labels.booking_${b.id}`)}</Text>
               </Pressable>
             ))}
           </View>
           {bookingType === "full_day" ? (
             <View style={{ marginTop: spacing.sm }}>
-              <Text style={styles.meta}>Number of days</Text>
+              <Text style={styles.meta}>{t("route.numberOfDays")}</Text>
               <TextInput
                 style={[styles.input, { marginTop: 6 }]}
                 value={fullDayCountInput}
@@ -617,7 +642,7 @@ export default function RouteScreen({ navigation, route }) {
               value={pickup}
               onChangeText={setPickup}
               onSelect={(resolved) => setPickupCoords(resolved)}
-              placeholder="Enter pickup address"
+              placeholder={t("route.enterPickupAddress")}
             />
           </View>
           <Pressable onPress={useCurrentLocationForPickup} style={styles.addStop} disabled={locatingPickup}>
@@ -639,7 +664,7 @@ export default function RouteScreen({ navigation, route }) {
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
                   onSelect={(resolved) => setDestinationCoords(resolved)}
-                  placeholder="Enter destination"
+                  placeholder={t("route.enterDestination")}
                 />
               ) : (
                 // Same field, suggestions off. Middle stops never needed coords
@@ -650,14 +675,14 @@ export default function RouteScreen({ navigation, route }) {
                   value={stop}
                   onChangeText={(v) => updateStop(i, v)}
                   onSelect={() => {}}
-                  placeholder={`Enter stop ${i + 1}`}
+                  placeholder={t("route.enterStop", { number: i + 1 })}
                 />
               )}
             </View>
           ))}
           <Pressable onPress={addStop} style={styles.addStop}>
             <Ionicons name="add-circle-outline" size={16} color={colors.tealBright} />
-            <Text style={styles.addStopText}>Add destination</Text>
+            <Text style={styles.addStopText}>{t("route.addDestination")}</Text>
           </Pressable>
           {needsCoords && (!pickup.trim() || !destination.trim()) ? (
             // The same "Enter a pickup address and destination to continue"
@@ -668,7 +693,7 @@ export default function RouteScreen({ navigation, route }) {
             // those six sections it was actually complaining about. Shown
             // here too, right against the fields it's actually about.
             <Text style={[styles.hintText, { marginTop: 8 }]}>
-              Fill in both fields above to see your fare and continue.
+              {t("route.fillInBothFieldsAbove")}
             </Text>
           ) : null}
         </Card>
@@ -676,38 +701,84 @@ export default function RouteScreen({ navigation, route }) {
         {needsCoords && pickup.trim() && destination.trim() && !coordsResolved ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.amber, borderWidth: 1 }}>
             <Text style={styles.hintText}>
-              Tap one of the suggested addresses that appears under pickup/destination as you type. Typing an
-              address without selecting a suggestion won't let us calculate your fare or confirm the booking.
+              {t("route.tapOneOfTheSuggested")}
             </Text>
           </Card>
         ) : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Flight number{needsFlightNumber ? "" : " (optional)"}</Text>
+          <Text style={styles.cardLabel}>{needsFlightNumber ? t("route.flightNumber") : t("route.flightNumberOptional")}</Text>
           {needsFlightNumber ? (
             <Text style={styles.addonNote}>
-              Required: this is how we track your flight and know your real arrival time.
+              {t("route.requiredThisIsHowWe")}
             </Text>
           ) : bookingType === "dropoff" ? (
             <Text style={styles.addonNote}>
-              Lets us keep an eye on delays that might affect your pickup time.
+              {t("route.letsUsKeepAnEye")}
             </Text>
           ) : null}
           <TextInput
             style={styles.flightInput}
             value={flightNumber}
             onChangeText={(v) => setFlightNumber(v.toUpperCase())}
-            placeholder="e.g. BA075"
+            placeholder={t("route.eGBa")}
             placeholderTextColor={colors.dark.textMuted}
             autoCapitalize="characters"
           />
+          {flightNumberMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{flightNumberMsg}</Text> : null}
+          {needsFlightNumber ? (
+            <>
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Flight date</Text>
+              <Text style={styles.addonNote}>The day your flight lands (Lagos time).</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginVertical: 6 }}>
+                {[["Today", todayLagos], ["Tomorrow", addDays(todayLagos, 1)]].map(([label, day]) => (
+                  <Pressable key={label} onPress={() => setFlightDate(day)} style={[styles.flightDayChip, flightDate === day && styles.flightDayChipOn]}>
+                    <Text style={styles.addonNote}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput
+                style={styles.flightInput}
+                value={flightDate}
+                onChangeText={setFlightDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="none"
+                keyboardType="numbers-and-punctuation"
+              />
+              {flightDateMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{flightDateMsg}</Text> : null}
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Passenger surname (optional)</Text>
+              <TextInput
+                style={styles.flightInput}
+                value={passengerSurname}
+                onChangeText={setPassengerSurname}
+                placeholder="As on the ticket"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="words"
+              />
+              <View style={{ height: 10 }} />
+              <Text style={styles.cardLabel}>Booking code, PNR (optional)</Text>
+              <Text style={styles.addonNote}>Only our support team can see it, to confirm your booking with the airline. It does not track your flight.</Text>
+              <TextInput
+                style={styles.flightInput}
+                value={pnr}
+                onChangeText={(v) => setPnr(v.toUpperCase())}
+                placeholder="e.g. AB12CD"
+                placeholderTextColor={colors.dark.textMuted}
+                autoCapitalize="characters"
+              />
+              {pnrMsg ? <Text style={[styles.addonNote, { color: colors.dark.danger || "#ff7a7a" }]}>{pnrMsg}</Text> : null}
+            </>
+          ) : null}
         </Card>
 
         {needsScheduledTime ? (
           <Card tone="dark" style={{ marginBottom: spacing.md }}>
-            <Text style={styles.cardLabel}>Pickup time</Text>
+            <Text style={styles.cardLabel}>{t("route.pickupTime")}</Text>
             <Text style={styles.addonNote}>
-              When should we pick you up for the airport? There's no flight to track here, so we go by the time you set.
+              {t("route.whenShouldWePickYou")}
             </Text>
             <View style={{ height: 8 }} />
             <View style={styles.bookingRow}>
@@ -725,7 +796,7 @@ export default function RouteScreen({ navigation, route }) {
             </View>
             <View style={{ height: 10 }} />
             <View style={styles.stopRow}>
-              <Text style={styles.passengerLabel}>Hour (0-23)</Text>
+              <Text style={styles.passengerLabel}>{t("route.hour")}</Text>
               <TextInput
                 style={styles.passengerInput}
                 value={scheduleHour}
@@ -736,7 +807,7 @@ export default function RouteScreen({ navigation, route }) {
               />
             </View>
             <View style={{ height: 6 }} />
-            <Text style={styles.passengerLabel}>Minute</Text>
+            <Text style={styles.passengerLabel}>{t("route.minute")}</Text>
             <View style={[styles.bookingRow, { marginTop: 6 }]}>
               {SCHEDULE_MINUTES.map((m) => (
                 <Pressable
@@ -752,9 +823,9 @@ export default function RouteScreen({ navigation, route }) {
               Pickup: {scheduleDayLabel(scheduleDayOffset, now)} at {scheduledDateObj ? `${String(lagosParts(scheduledDateObj).hour).padStart(2, "0")}:${scheduleMinute}` : "--:--"} (Lagos time)
             </Text>
             {scheduledHourInvalid ? (
-              <Text style={styles.warningText}>Enter an hour from 0 to 23.</Text>
+              <Text style={styles.warningText}>{t("route.enterAnHourFromTo")}</Text>
             ) : !scheduledTimeValid ? (
-              <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+              <Text style={styles.warningText}>{t("route.pleaseChooseAPickupTime")}</Text>
             ) : null}
           </Card>
         ) : null}
@@ -762,7 +833,7 @@ export default function RouteScreen({ navigation, route }) {
         {excludedArea ? (
           <Card tone="dark" style={{ marginBottom: spacing.md, borderColor: colors.coral, borderWidth: 1 }}>
             <Text style={styles.warningText}>
-              We don't currently operate in {excludedArea.name}. Please choose a different pickup or destination.
+              {t("route.weDonTCurrentlyOperate", { name: excludedArea.name })}
             </Text>
           </Card>
         ) : null}
@@ -779,9 +850,9 @@ export default function RouteScreen({ navigation, route }) {
         />
 
         <Card tone="dark" style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Passengers</Text>
+          <Text style={styles.cardLabel}>{t("route.passengers")}</Text>
           <View style={styles.stopRow}>
-            <Text style={styles.passengerLabel}>Adults</Text>
+            <Text style={styles.passengerLabel}>{t("route.adults")}</Text>
             <TextInput
               style={styles.passengerInput}
               value={adults}
@@ -791,7 +862,7 @@ export default function RouteScreen({ navigation, route }) {
             />
           </View>
           <View style={styles.stopRow}>
-            <Text style={styles.passengerLabel}>Children</Text>
+            <Text style={styles.passengerLabel}>{t("route.children")}</Text>
             <TextInput
               style={styles.passengerInput}
               value={children}
@@ -802,19 +873,19 @@ export default function RouteScreen({ navigation, route }) {
           </View>
           {groupTooLarge ? (
             <Text style={styles.warningText}>
-              {passengerCount} passengers is more than we can automatically match to vehicles (up to {MAX_AUTO_VEHICLE_COUNT * maxForVehicle} in {VEHICLES.find((v) => v.id === vehicle).label}s). Please contact RideArrivo directly to arrange a larger group booking.
+              {t("route.groupTooLarge", { passengers: passengerCount, max: MAX_AUTO_VEHICLE_COUNT * maxForVehicle, vehicle: t(`labels.vehicle_${vehicle}`) })}
             </Text>
           ) : needsMultipleVehicles ? (
             <Text style={styles.hintText}>
-              This vehicle fits up to {maxForVehicle}: we'll book {vehicleCount} × {VEHICLES.find((v) => v.id === vehicle).label} to fit all {passengerCount} passengers, and the fare covers all {vehicleCount}.
+              {t("route.multiVehicle", { max: maxForVehicle, count: vehicleCount, vehicle: t(`labels.vehicle_${vehicle}`), passengers: passengerCount })}
             </Text>
           ) : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Luggage</Text>
+          <Text style={styles.cardLabel}>{t("route.luggage")}</Text>
           <View style={styles.stopRow}>
-            <Text style={styles.passengerLabel}>Carry-on bags</Text>
+            <Text style={styles.passengerLabel}>{t("route.carryOnBags")}</Text>
             <TextInput
               style={styles.passengerInput}
               value={carryOnBags}
@@ -824,7 +895,7 @@ export default function RouteScreen({ navigation, route }) {
             />
           </View>
           <View style={styles.stopRow}>
-            <Text style={styles.passengerLabel}>Checked bags</Text>
+            <Text style={styles.passengerLabel}>{t("route.checkedBags")}</Text>
             <TextInput
               style={styles.passengerInput}
               value={checkedBags}
@@ -836,19 +907,19 @@ export default function RouteScreen({ navigation, route }) {
           <View style={[styles.toggleRow, { marginTop: 6 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.addonNote}>
-                One or more checked bags is heavy or oversized (over 32kg, a large duffel, cooler, sports or musical equipment, etc.)
+                {t("route.oneOrMoreCheckedBags")}
               </Text>
             </View>
             <Switch
               value={bulkyLuggage}
               onValueChange={setBulkyLuggage}
-              trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+              trackColor={{ false: tint(0.15), true: colors.amber }}
             />
           </View>
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Choose a vehicle</Text>
+          <Text style={styles.cardLabel}>{t("route.chooseAVehicle")}</Text>
           {VEHICLES.map((v) => {
             // A vehicle is only actually unselectable if even multiplying it
             // (see vehicleCount above) can't realistically fit the group —
@@ -870,13 +941,13 @@ export default function RouteScreen({ navigation, route }) {
                 <View>
                   <Text style={[styles.vehicleLabel, vehicle === v.id && { color: colors.amber }]}>
                     {vehicle === v.id ? "● " : "○ "}
-                    {v.label}
+                    {t(`labels.vehicle_${v.id}`)}
                   </Text>
                   <Text style={styles.vehicleCapacity}>
-                    Fits up to {MAX_PASSENGERS[v.id]} passengers
-                    {neededForThisVehicle > 1 ? ` · needs ${neededForThisVehicle} for your group` : ""}
-                    {v.id === "pickup" ? " · best for heavy or bulky luggage" : ""}
-                    {!tooSmall && neededForThisVehicle === 1 && recommendedVehicle === v.id ? " · Recommended for your luggage" : ""}
+                    {t("route.fitsUpTo", { max: MAX_PASSENGERS[v.id] })}
+                    {neededForThisVehicle > 1 ? ` · ${t("route.needsForGroup", { count: neededForThisVehicle })}` : ""}
+                    {v.id === "pickup" ? ` · ${t("route.bestForLuggage")}` : ""}
+                    {!tooSmall && neededForThisVehicle === 1 && recommendedVehicle === v.id ? ` · ${t("route.recommendedLuggage")}` : ""}
                   </Text>
                 </View>
               </Pressable>
@@ -896,7 +967,7 @@ export default function RouteScreen({ navigation, route }) {
               <Switch
                 value={luxury}
                 onValueChange={setLuxury}
-                trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+                trackColor={{ false: tint(0.15), true: colors.amber }}
               />
             </View>
           ) : null}
@@ -912,14 +983,14 @@ export default function RouteScreen({ navigation, route }) {
         />
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Emergency contact (optional)</Text>
-          <Text style={styles.addonNote}>Someone we can reach if we can't reach you during this ride.</Text>
+          <Text style={styles.cardLabel}>{t("route.emergencyContactOptional")}</Text>
+          <Text style={styles.addonNote}>{t("route.someoneWeCanReachIf")}</Text>
           <View style={{ height: 6 }} />
           <TextInput
             style={styles.flightInput}
             value={emergencyContactName}
             onChangeText={setEmergencyContactName}
-            placeholder="Contact name"
+            placeholder={t("route.contactName")}
             placeholderTextColor={colors.dark.textMuted}
           />
           <View style={{ height: 8 }} />
@@ -932,12 +1003,12 @@ export default function RouteScreen({ navigation, route }) {
               emergencyPhoneTouchedRef.current = true;
               setEmergencyNational(value);
             }}
-            placeholder="Contact phone number"
+            placeholder={t("route.contactPhoneNumber")}
           />
         </Card>
 
         {!pickup.trim() || !destination.trim() ? (
-          <Text style={styles.warningText}>Enter a pickup address and destination to continue.</Text>
+          <Text style={styles.warningText}>{t("route.enterAPickupAddressAnd")}</Text>
         ) : bookingWindowBlocked ? (
           <BookingWindowNotice
             navigation={navigation}
@@ -946,20 +1017,22 @@ export default function RouteScreen({ navigation, route }) {
             earliestLabel="Use the earliest time I can book"
           />
         ) : needsFlightNumber && !flightNumber.trim() ? (
-          <Text style={styles.warningText}>Enter your flight number so we can track your arrival.</Text>
+          <Text style={styles.warningText}>{t("route.enterYourFlightNumberSo")}</Text>
         ) : scheduledHourInvalid ? (
-          <Text style={styles.warningText}>Enter an hour from 0 to 23 for your pickup time.</Text>
+          <Text style={styles.warningText}>{t("route.enterAnHourFromTo2")}</Text>
         ) : !scheduledTimeValid ? (
-          <Text style={styles.warningText}>Please choose a pickup time in the future.</Text>
+          <Text style={styles.warningText}>{t("route.pleaseChooseAPickupTime")}</Text>
         ) : !emergencyPhoneResult.valid ? (
           <Text style={styles.warningText}>{emergencyPhoneResult.message}</Text>
+        ) : phoneNeeded ? (
+          <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setQuoteRetry((n) => n + 1); }} />
         ) : quoteError ? (
           <Text style={styles.warningText}>{quoteError}</Text>
         ) : null}
 
         {!quoteLoading && quote?.promo ? (
           <Text style={styles.promoText}>
-            {quote.promo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} — {quote.promoDiscountPercent}% off
+            {quote.promo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} · {quote.promoDiscountPercent}% off
             applied, you saved {formatFare(quote.originalFareNaira - quote.fareNaira)}
           </Text>
         ) : null}
@@ -968,7 +1041,7 @@ export default function RouteScreen({ navigation, route }) {
         {quoteLoading ? (
           <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
             <ActivityIndicator color={colors.amber} />
-            <Text style={styles.quotingText}>Calculating your fare…</Text>
+            <Text style={styles.quotingText}>{t("route.calculatingYourFare")}</Text>
           </View>
         ) : (
           <Button
@@ -978,6 +1051,7 @@ export default function RouteScreen({ navigation, route }) {
             onPress={confirm}
           />
         )}
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -993,11 +1067,16 @@ const styles = StyleSheet.create({
   // passenger and luggage rows further down.
   addressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: spacing.sm },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
-  thread: { width: 2, height: 16, backgroundColor: "rgba(255,255,255,0.25)", marginLeft: 3.5 },
+  thread: { width: 2, height: 16, backgroundColor: tint(0.21), marginLeft: 3.5 },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 18, marginTop: 4 },
   addStopText: { color: colors.tealBright, fontSize: 12, fontWeight: "600" },
   hintText: { color: colors.amber, fontSize: 11, marginTop: 8, marginLeft: 18, lineHeight: 15 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
+  flightDayChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: colors.dark.fieldBg, borderWidth: 1, borderColor: "transparent",
+  },
+  flightDayChipOn: { borderColor: colors.dark.text },
   flightInput: {
     backgroundColor: colors.dark.fieldBg,
     color: colors.dark.text,
@@ -1035,7 +1114,7 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: "row", alignItems: "center" },
   addonNote: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   partnerVenueHint: { color: colors.dark.textMuted, fontSize: 12.5, marginTop: 6, lineHeight: 17 },
-  warningText: { color: "#FF9B8A", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
+  warningText: { color: "#C2362B", fontSize: 11.5, marginTop: 6, lineHeight: 16 },
   quotingText: { color: colors.dark.textMuted, fontSize: 12, marginTop: 6 },
-  promoText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
+  promoText: { color: colors.success, fontSize: 12.5, fontWeight: "600", marginTop: 10, lineHeight: 17 },
 });

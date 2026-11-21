@@ -3,14 +3,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 async function request(path, token, options = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  // A request that never answers used to leave its button spinning for ever, which looked like a frozen page.
+  // Give up after 30 seconds with a plain message so the person can try again.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal: options.signal || ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") throw Object.assign(new Error("The server took too long to answer. It may still have gone through, so check the list before trying again."), { status: 0, timeout: true });
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // A 401 means the token is missing/expired/invalid — every page's own
@@ -50,7 +63,11 @@ export const getSupportTickets = (token, status) =>
 export const setSupportTicketStatus = (token, id, status) =>
   request(`/api/support/tickets/${id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
 
-export const getDrivers = (token) => request("/api/admin/drivers", token);
+export const getDrivers = (token, archived = false) => request(`/api/admin/drivers${archived ? "?archived=1" : ""}`, token);
+export const archiveDriver = (token, id, archived) =>
+  request(`/api/admin/drivers/${id}/archive`, token, { method: "PATCH", body: JSON.stringify({ archived }) });
+export const deleteDriver = (token, id) => request(`/api/admin/drivers/${id}`, token, { method: "DELETE" });
+export const completeDeskRide = (token, id) => request(`/api/staff/rides/${id}/complete`, token, { method: "POST", body: JSON.stringify({}) });
 export const verifyDriver = (token, id, isVerified) =>
   request(`/api/admin/drivers/${id}/verify`, token, { method: "PATCH", body: JSON.stringify({ isVerified }) });
 
@@ -68,6 +85,13 @@ export const getRides = (token, { status, search, from, to } = {}) => {
 };
 export const updateRide = (token, id, payload) =>
   request(`/api/admin/rides/${id}`, token, { method: "PATCH", body: JSON.stringify(payload) });
+// Ops creates a job for a quote-first service (campus, air, boat, removals).
+export const createServiceJob = (token, payload) =>
+  request("/api/admin/service-jobs", token, { method: "POST", body: JSON.stringify(payload) });
+export const quoteServiceJob = (token, id, payload) =>
+  request(`/api/admin/service-jobs/${id}/quote`, token, { method: "PATCH", body: JSON.stringify(payload) });
+export const assignRideDriver = (token, id, driverId) =>
+  request(`/api/admin/rides/${id}/driver`, token, { method: "PATCH", body: JSON.stringify({ driverId }) });
 
 // GET /api/admin/rides/live — every in-progress ride with the driver's last
 // known position. This existed on the backend before any frontend used it
@@ -100,6 +124,24 @@ export const getDriverQrImage = async (token, driverId) => {
 };
 
 export const getRiders = (token) => request("/api/admin/riders", token);
+
+// One rider's submitted ID photo. The riders list only says whether one exists
+// (has_id_document); the image itself is admin-only and comes from here, one
+// rider at a time, so the list stays light and no one else's photo is in it.
+// Same blob approach as the driver QR above: an <img src> cannot send the token.
+// A 403 is passed back with its status so the page can say "admins only"
+// instead of showing it as a fault.
+export const getRiderIdDocumentImage = async (token, riderId) => {
+  const res = await fetch(`${API_BASE_URL}/api/admin/riders/${riderId}/id-document`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(body.error || "Couldn't load this ID photo."), { status: res.status });
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
 export const verifyRiderId = (token, id, status, rejectionReason) =>
   request(`/api/admin/riders/${id}/verify-id`, token, {
     method: "PATCH",
@@ -118,6 +160,20 @@ export const adjustRiderWallet = (token, riderId, amountNaira, description) =>
 export const getMemberships = (token) => request("/api/admin/memberships", token);
 
 export const getFlightIssues = (token) => request("/api/admin/flight-issues", token);
+export const getFlightCredits = (token, q = "") => request(`/api/admin/flight-credits?q=${encodeURIComponent(q)}`, token);
+export const findCreditAccounts = (token, q) => request(`/api/admin/flight-credits/find-accounts?q=${encodeURIComponent(q)}`, token);
+export const moveFlightCredit = (token, id, toUserId, note) =>
+  request(`/api/admin/flight-credits/${id}/move`, token, { method: "POST", body: JSON.stringify({ toUserId, note }) });
+export const applyFlightCredit = (token, rideId) =>
+  request(`/api/admin/rides/${rideId}/flight-credit`, token, { method: "POST" });
+
+// ── Driver tiers (owner, and people the owner names) ──
+export const getDriverTiers = (token, q = "") => request(`/api/admin/driver-tiers${q ? `?q=${encodeURIComponent(q)}` : ""}`, token);
+export const grantDriverTier = (token, driverId, tier, note) =>
+  request("/api/admin/driver-tiers/grant", token, { method: "POST", body: JSON.stringify({ driverId, tier, note }) });
+export const revokeDriverTier = (token, driverId, tier, note) =>
+  request("/api/admin/driver-tiers/revoke", token, { method: "POST", body: JSON.stringify({ driverId, tier, note }) });
+export const getDriverTierEvents = (token, driverId) => request(`/api/admin/driver-tiers/events/${driverId}`, token);
 
 export const getVehicles = (token) => request("/api/admin/vehicles", token);
 
@@ -273,9 +329,50 @@ export const setSupportLead = (token, userId, isLead) =>
   request(`/api/staff/lead/${userId}`, token, { method: "PUT", body: JSON.stringify({ isLead }) });
 export const getPeople = (token) => request("/api/staff/people", token);
 export const getPeopleEvents = (token) => request("/api/staff/people/events", token);
-export const promotePerson = (token, email, role, note) =>
-  request("/api/staff/people/promote", token, { method: "POST", body: JSON.stringify({ email, role, note }) });
+export const promotePerson = (
+  token,
+  email,
+  role,
+  note,
+  name = ""
+) =>
+request("/api/staff/people/promote", token, {
+  method: "POST",
+  body: JSON.stringify({
+    email,
+    role,
+    note,
+    ...(name.trim() ? { name: name.trim() } : {}),
+  }),
+});
+
 export const changePersonRole = (token, id, role, note) =>
   request(`/api/staff/people/${id}/role`, token, { method: "PUT", body: JSON.stringify({ role, note }) });
 export const setCanManageStaff = (token, id, allowed) =>
   request(`/api/staff/people/${id}/manage`, token, { method: "PUT", body: JSON.stringify({ allowed }) });
+
+// Console permissions (arrivo-backend/services/staffAccess.js).
+export const getMyAccess = (token) => request("/api/staff/access/me", token);
+export const getAccessCatalog = (token) => request("/api/staff/access/catalog", token);
+export const setPersonPermissions = (token, id, permissions) =>
+  request(`/api/staff/people/${id}/permissions`, token, { method: "PUT", body: JSON.stringify({ permissions }) });
+
+// Trip Tracker: every ride that is waiting, en route or on the road (plus anything finished in
+// the last two hours), and one ride with its live flight status.
+export const getActiveTrips = (token) => request("/api/admin/trips/active", token);
+export const getDispatchSheet = (token) => request("/api/admin/trips/dispatch-sheet", token);
+export const getTrip = (token, id) => request(`/api/admin/trips/${id}`, token);
+// The booking code (PNR) is encrypted at rest and never in a list. Each reveal is recorded against the staff member.
+export const revealTripPnr = (token, id) => request(`/api/admin/trips/${id}/pnr`, token, { method: "POST" });
+
+export const resendPersonSetup = (token, id) =>
+  request(`/api/staff/people/${id}/resend-setup`, {
+    method: "POST",
+    token,
+  });
+// Dispatch (arrivo-backend/services/dispatch.js).
+export const getTripDrivers = (token, id) => request(`/api/admin/trips/${id}/drivers`, token);
+export const getTripDispatch = (token, id) => request(`/api/admin/trips/${id}/dispatch`, token);
+export const assignTripDriver = (token, id, driverId, note) =>
+  request(`/api/admin/trips/${id}/assign-driver`, token, { method: "POST", body: JSON.stringify({ driverId, note }) });
+export const alertTripDrivers = (token, id) => request(`/api/admin/trips/${id}/alert-drivers`, token, { method: "POST" });

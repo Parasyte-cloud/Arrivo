@@ -3,12 +3,13 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator, Pressable, Keyboa
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint, isDark } from "../theme/tokens";
 import { PrivacyPolicyModal } from "../components/PrivacyPolicyModal";
 import { useAuth } from "../context/AuthContext";
 import PhoneInput from "../components/PhoneInput";
 import { validateOptionalPhone, DEFAULT_DIAL } from "../utils/phoneValidation";
 import OAuthButtons from "../components/OAuthButtons";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function SignupScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -98,7 +99,7 @@ export default function SignupScreen({ navigation }) {
       <GradientBackground />
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]} keyboardShouldPersistTaps="handled">
-        <Image source={require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
+        <Image source={isDark ? require("../assets/wordmark-brand-dark.png") : require("../assets/wordmark-brand.png")} style={styles.brand} resizeMode="contain" />
         <Text style={styles.subBrand}>DRIVER</Text>
         <Text style={styles.subtitle}>Step 1 of 2: your account</Text>
 
@@ -166,6 +167,7 @@ export default function SignupScreen({ navigation }) {
 
         <OAuthButtons
           disabled={!agreedToTerms}
+          onBlocked={() => setError("Tick the box above to agree first, then choose Google or Apple.")}
           busy={oauthBusy}
           onGoogleIdToken={handleGoogleIdToken}
           onGoogleError={setError}
@@ -178,6 +180,7 @@ export default function SignupScreen({ navigation }) {
         <Pressable onPress={() => navigation.navigate("Login")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>Already have an account? Log in</Text>
         </Pressable>
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -203,7 +206,7 @@ const styles = StyleSheet.create({
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: spacing.xs, marginBottom: spacing.sm },
   checkboxTouch: { paddingTop: 1 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(18,18,59,0.35)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: tint(0.35),
     alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.amber, borderColor: colors.amber },
@@ -213,7 +216,7 @@ const styles = StyleSheet.create({
   error: { color: colors.coral, fontSize: 12.5, marginTop: 4, textAlign: "center" },
   link: { color: colors.tealBright, fontSize: 13, fontWeight: "600", textAlign: "center" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(18,18,59,0.15)" },
+  dividerLine: { flex: 1, height: 1, backgroundColor: tint(0.15) },
   dividerText: { color: colors.textMuted, fontSize: 12 },
   oauthHint: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

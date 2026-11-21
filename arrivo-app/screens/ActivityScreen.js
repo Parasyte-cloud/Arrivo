@@ -8,8 +8,11 @@ import { colors, spacing } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getRideHistory, getSharedWithMeRides } from "../services/api";
 import { useCurrency } from "../hooks/useCurrency";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 export default function ActivityScreen({ navigation }) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { formatRideFare } = useCurrency(token);
@@ -49,12 +52,12 @@ export default function ActivityScreen({ navigation }) {
         contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.amber} />}
       >
-        <Text style={styles.title}>Activity</Text>
+        <Text style={styles.title}>{t("activity.activity")}</Text>
 
         {loading && rides.length === 0 ? <ActivityIndicator color={colors.amber} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {!loading && !error && rides.length === 0 ? (
-          <Text style={styles.empty}>No rides yet. Book your first airport pickup from Home.</Text>
+          <Text style={styles.empty}>{t("activity.noRidesYetBookYour")}</Text>
         ) : null}
 
         {rides.map((ride) => (
@@ -74,7 +77,7 @@ export default function ActivityScreen({ navigation }) {
                     {ride.ride_status === "completed" && !ride.rider_rating ? " · tap to rate" : ""}
                   </Text>
                 </View>
-                <Text style={styles.tripPrice}>{formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
+                <Text style={styles.tripPrice}>{ride.quote_pending ? t("services.pricePending") : formatRideFare(ride.fare_naira, ride.quoted_usd_amount)}</Text>
               </View>
             </Card>
           </Pressable>
@@ -82,7 +85,7 @@ export default function ActivityScreen({ navigation }) {
 
         {sharedRides.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>Rides you're sharing</Text>
+            <Text style={styles.sectionTitle}>{t("activity.ridesYouReSharing")}</Text>
             {sharedRides.map((ride) => (
               <Pressable
                 key={`shared-${ride.id}`}
@@ -102,6 +105,7 @@ export default function ActivityScreen({ navigation }) {
             ))}
           </>
         ) : null}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -115,6 +119,6 @@ const styles = StyleSheet.create({
   tripTitle: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
   tripDate: { color: colors.dark.textMuted, fontSize: 11, marginTop: 2 },
   tripPrice: { color: colors.dark.text, fontSize: 13, fontWeight: "700" },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.xl },
 });

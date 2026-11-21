@@ -66,8 +66,9 @@ const madeUsers = [];
 async function makeRider(tag, { walletBalance = 0 } = {}) {
   const email = `idem-${tag}-${stamp}-${Math.random().toString(36).slice(2)}@example.com`;
   const inserted = await pool.query(
-    `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira)
-     VALUES ($1, $2, 'test-hash', 'rider', true, true, $3) RETURNING id`,
+    // Riders need a phone on file to book (services/riderPhone.js).
+    `INSERT INTO users (name, email, password_hash, role, agreed_to_terms, email_verified, wallet_balance_naira, phone)
+     VALUES ($1, $2, 'test-hash', 'rider', true, true, $3, '+2348012345678') RETURNING id`,
     [`Idem ${tag}`, email, walletBalance]
   );
   const id = inserted.rows[0].id;
@@ -119,6 +120,9 @@ function randomKey() {
 }
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 
 console.log("idempotencyKey is required for money-moving payment methods:");

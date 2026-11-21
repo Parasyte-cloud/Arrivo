@@ -718,6 +718,22 @@ ON support_assisted_bookings(
   created_at
 );
 
+-- EasyBook invoicing (easybookings.ridearrivo.com). Every EasyBook request
+-- gets an invoice number and an unguessable token. The token is what the
+-- public invoice page and the emailed link use to look the invoice up, so
+-- nobody can read anyone else's invoice by counting ids. receipt_sent_at is
+-- claimed with an UPDATE ... WHERE receipt_sent_at IS NULL before the email
+-- goes out, so a repeated webhook delivery cannot send two receipts.
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_token TEXT;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS invoice_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ;
+ALTER TABLE support_assisted_bookings ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_number
+ON support_assisted_bookings(invoice_number) WHERE invoice_number IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_assisted_bookings_invoice_token
+ON support_assisted_bookings(invoice_token) WHERE invoice_token IS NOT NULL;
+
 
 
 -- ── On-the-Go requests ──
@@ -1873,7 +1889,7 @@ CREATE TABLE IF NOT EXISTS staff_contact_access (
   ride_id INTEGER REFERENCES rides(id) ON DELETE SET NULL,
   subject_user_id INTEGER NOT NULL REFERENCES users(id),
   subject_role TEXT NOT NULL, -- 'rider' | 'driver'
-  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone'
+  action TEXT NOT NULL,       -- 'view_number' | 'call_in_app' | 'call_from_phone' | 'view_pnr'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_contact_access_subject ON staff_contact_access(subject_user_id, created_at DESC);
@@ -2029,3 +2045,345 @@ CREATE TABLE IF NOT EXISTS staff_role_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_role_events_created ON staff_role_events(created_at DESC);
+
+-- Failed requests and app-side errors, looked up by the ref a rider reads out
+-- (RA-XXXXXX). Written by middleware/errorTrail.js and POST /api/client-errors.
+-- No request bodies, no passwords or card data. Rows older than 30 days are
+-- deleted by the same middleware.
+CREATE TABLE IF NOT EXISTS api_error_log (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ref TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('server', 'client')),
+  status INTEGER,
+  method TEXT,
+  path TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  role TEXT,
+  error_code TEXT,
+  message TEXT,
+  detail TEXT,
+  platform TEXT,
+  app_version TEXT,
+  app_build TEXT,
+  user_agent TEXT,
+  screen TEXT,
+  context JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_ref ON api_error_log(ref);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_created ON api_error_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_api_error_log_code ON api_error_log(error_code, created_at DESC);
+
+-- Console permissions per staff member (services/staffAccess.js). Only the
+-- areas that differ from the person's role preset are stored, e.g.
+-- {"wallet": "manage", "exports": "none"}. NULL means the preset as is.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_permissions JSONB;
+-- When someone last signed in with a password, so the Team page can show
+-- accounts nobody is using any more.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Staff invitation lifecycle.
+-- Kept separately from reset_token because ordinary password resets and
+-- privileged staff invitations are different governance events.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invited_by INTEGER
+  REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_expires_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_activated_at TIMESTAMPTZ;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_delivery_status TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS staff_invite_last_attempt_at TIMESTAMPTZ;
+
+
+-- ============================================================
+-- AIRPORT_FLIGHT_TRACKING_V1
+--
+-- A flight is tracked by flight number and date. A PNR is an airline reservation record that no
+-- public status service can look up, so it is optional, stored encrypted (services/pnrVault.js,
+-- key FLIGHT_PNR_KEY) and used by support to confirm the booking with the airline.
+-- flight_tracking_state is what Ops sees: tracked | delayed | cancelled | diverted | landed |
+-- unknown | not_yet | pnr_only | no_flight. "unknown" is a real answer, never a guess.
+-- ============================================================
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_date DATE;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_surname TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_enc TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS pnr_masked TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_state TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_tracking_reason TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_checked_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_rides_flight_tracking ON rides(flight_tracking_state)
+  WHERE flight_tracking_state IS NOT NULL AND ride_status IN ('requested', 'accepted');
+
+-- ── AIRPORT_FLIGHT_CREDIT_V1 ───────────────────────────────────────────────
+-- A cancelled arrival flight keeps the fare as wallet credit for a future booking
+-- (services/flightCredit.js). Written only when FLIGHT_CANCEL_CREDIT=on.
+CREATE TABLE IF NOT EXISTS flight_credits (
+  id SERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL UNIQUE REFERENCES rides(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_naira NUMERIC NOT NULL CHECK (amount_naira > 0),
+  status TEXT NOT NULL DEFAULT 'held', -- 'held' | 'moved'
+  flight_number TEXT,
+  flight_date DATE,
+  passenger_surname TEXT,
+  wallet_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  moved_to_user_id INTEGER REFERENCES users(id),
+  source TEXT NOT NULL DEFAULT 'scheduler', -- 'scheduler' | 'ops'
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_flight_credits_user ON flight_credits(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS flight_credit_events (
+  id SERIAL PRIMARY KEY,
+  credit_id INTEGER NOT NULL REFERENCES flight_credits(id),
+  actor_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  detail JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS flight_eta TIMESTAMPTZ; -- latest estimated landing from the provider, for Ops ordering
+
+-- ── One wallet across services: service tag, holds, settlements ──
+-- A rider has ONE wallet balance (users.wallet_balance_naira). Every movement is
+-- tagged with the service it was for, so finance can see what each service earned
+-- without the rider ever seeing six balances. The tag never changes a balance.
+ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS service TEXT NOT NULL DEFAULT 'ridearrivo';
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_service ON wallet_transactions(service, created_at);
+
+-- A hold sets money aside for one trip in another service (ArrivoExpress first).
+-- Placing it debits the wallet at once, so the balance every other flow sees is
+-- already "available" and held money can never be spent twice. Capture keeps the
+-- money (the unused part of the hold goes back); release returns all of it.
+-- (service, idempotency_key) and (service, external_ref) are UNIQUE so a retried
+-- call, or two calls for the same trip, can never hold twice.
+CREATE TABLE IF NOT EXISTS wallet_holds (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  service TEXT NOT NULL,
+  amount_naira NUMERIC(14,2) NOT NULL CHECK (amount_naira > 0),
+  status TEXT NOT NULL DEFAULT 'held' CHECK (status IN ('held', 'captured', 'released')),
+  idempotency_key TEXT NOT NULL,
+  external_ref TEXT NOT NULL,
+  hold_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  release_transaction_id INTEGER REFERENCES wallet_transactions(id),
+  captured_amount_naira NUMERIC(14,2) CHECK (captured_amount_naira IS NULL OR captured_amount_naira >= 0),
+  settlement_id INTEGER,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  captured_at TIMESTAMPTZ,
+  released_at TIMESTAMPTZ,
+  UNIQUE (service, idempotency_key),
+  UNIQUE (service, external_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_holds_user ON wallet_holds(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_holds_open ON wallet_holds(status, expires_at) WHERE status = 'held';
+
+-- A settlement is the instruction "move this much from the wallet funds account to
+-- this service's account". It is built from captured holds that no earlier
+-- settlement has taken, and needs two different admins: one creates it, another
+-- approves it (maker and checker). Money is moved at the bank by a person; this
+-- table is the record and the guard against settling the same trip twice.
+CREATE TABLE IF NOT EXISTS wallet_settlements (
+  id SERIAL PRIMARY KEY,
+  service TEXT NOT NULL,
+  amount_naira NUMERIC(14,2) NOT NULL CHECK (amount_naira > 0),
+  hold_count INTEGER NOT NULL CHECK (hold_count > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'cancelled')),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  approved_by INTEGER REFERENCES users(id),
+  bank_reference TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  approved_at TIMESTAMPTZ,
+  CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wallet_holds_settlement_fk') THEN
+    ALTER TABLE wallet_holds ADD CONSTRAINT wallet_holds_settlement_fk
+      FOREIGN KEY (settlement_id) REFERENCES wallet_settlements(id);
+  END IF;
+END $$;
+
+-- ── Top-ups routed to the holding account, and the daily balance check ──
+-- funds_route says where Paystack settles a payment: 'holding' (the wallet funds
+-- account, customer money) or NULL/'direct' (the main account). wallet_transactions
+-- keeps the route a top-up was credited with, so finance can see any top-up whose
+-- money did not land in the holding account.
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS funds_route TEXT;
+ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS funding_route TEXT;
+
+-- One row per check. 'snapshot' is written by the daily job (once per Lagos day);
+-- 'bank' is written when finance types in the real holding-account balance, and
+-- keeps the difference between that and what the ledger says it should be.
+CREATE TABLE IF NOT EXISTS wallet_reconciliations (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('snapshot', 'bank')),
+  lagos_day DATE NOT NULL,
+  expected_naira NUMERIC(16,2) NOT NULL,
+  rider_balances_naira NUMERIC(16,2) NOT NULL,
+  held_naira NUMERIC(16,2) NOT NULL,
+  unsettled_naira NUMERIC(16,2) NOT NULL,
+  driver_wallets_naira NUMERIC(16,2) NOT NULL DEFAULT 0,
+  bank_balance_naira NUMERIC(16,2),
+  difference_naira NUMERIC(16,2),
+  status TEXT NOT NULL CHECK (status IN ('ok', 'attention', 'mismatch')),
+  findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+  recorded_by INTEGER REFERENCES users(id),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_recon_snapshot_day ON wallet_reconciliations(lagos_day) WHERE kind = 'snapshot';
+CREATE INDEX IF NOT EXISTS idx_wallet_recon_recent ON wallet_reconciliations(created_at DESC);
+
+-- Drivers can be archived (hidden, reversible) and tagged with the tier they drive for.
+-- Kept at the very end of this file on purpose: every ALTER holds its table lock until the
+-- whole script ends, so touching drivers last keeps the lock order the same as the rest of
+-- the app and stops a start up from deadlocking with a request that is inserting rides.
+-- Nothing is archived automatically: existing drivers stay exactly as they are. Test or
+-- legacy accounts are archived on purpose from ArrivoOps (Drivers page, Archive button).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'tier') THEN
+    ALTER TABLE drivers ADD COLUMN tier TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'drivers' AND column_name = 'archived_at') THEN
+    ALTER TABLE drivers ADD COLUMN archived_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+-- ── Driver tier access ──
+-- A driver can work more than one service (tier), and only people with manage
+-- access to the "driver-tiers" console area (the owner, plus anyone the owner
+-- names) decide which. One row per driver and tier. status:
+--   requested  the driver asked for it in the app, nobody has decided yet
+--   active     switched on, the driver gets that tier's work
+--   revoked    switched off, or a request declined (note says why)
+-- Kept at the very end of this file, after the drivers ALTERs, for the same
+-- lock-order reason as the block above.
+CREATE TABLE IF NOT EXISTS driver_tier_access (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL CHECK (tier IN ('ride', 'express', 'chauffeur', 'air', 'boat', 'removals', 'campus')),
+  status TEXT NOT NULL CHECK (status IN ('requested', 'active', 'revoked')),
+  decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  decided_at TIMESTAMPTZ,
+  note TEXT,
+  requested_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, tier)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_tier_access_tier_status ON driver_tier_access(tier, status);
+
+-- Every request, grant and withdrawal, newest first in the console. The access
+-- table only holds the latest state, this keeps the history.
+CREATE TABLE IF NOT EXISTS driver_tier_events (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('requested', 'granted', 'revoked')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_driver_tier_events_driver ON driver_tier_events(driver_id, created_at DESC);
+
+-- Drivers who exist when this first runs keep exactly the work they have today
+-- (airport rides, ArrivoExpress, chauffeur) plus any single tier an admin had
+-- tagged them with, so nobody is locked out on deploy. It runs once: the marker
+-- row below stops a later restart from switching on a driver who signed up after
+-- the rollout, or from undoing a withdrawal. A marker, not a date, so it does not
+-- matter when the deploy lands.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM system_config WHERE key = 'driver_tier_backfill_done') THEN
+    INSERT INTO driver_tier_access (driver_id, tier, status, note, decided_at)
+    SELECT d.id, t.tier, 'active', 'Existing driver at rollout', now()
+      FROM drivers d
+      CROSS JOIN (VALUES ('ride'), ('express'), ('chauffeur')) AS t(tier)
+    ON CONFLICT (driver_id, tier) DO NOTHING;
+
+    INSERT INTO driver_tier_access (driver_id, tier, status, note, decided_at)
+    SELECT d.id, d.tier, 'active', 'Existing tier tag at rollout', now()
+      FROM drivers d
+     WHERE d.tier IN ('ride', 'express', 'chauffeur', 'air', 'boat', 'removals', 'campus')
+    ON CONFLICT (driver_id, tier) DO NOTHING;
+
+    INSERT INTO system_config (key, value) VALUES ('driver_tier_backfill_done', 'true')
+    ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;
+
+-- Rider welfare check: where the rider was last seen during a trip, and
+-- whether we have asked "Are you safe?". One row per ride. Kept in the
+-- database, not in memory, so it survives a restart and works across
+-- several server instances.
+CREATE TABLE IF NOT EXISTS ride_welfare (
+  ride_id INTEGER PRIMARY KEY REFERENCES rides(id) ON DELETE CASCADE,
+  anchor_lat DOUBLE PRECISION NOT NULL,
+  anchor_lng DOUBLE PRECISION NOT NULL,
+  anchor_at TIMESTAMPTZ NOT NULL,
+  last_ping_at TIMESTAMPTZ NOT NULL,
+  multiplier INTEGER NOT NULL DEFAULT 1,
+  asked_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'asking', 'raised')),
+  raised_at TIMESTAMPTZ,
+  raised_reason TEXT
+);
+
+
+-- ── Service jobs (Campus, Air, Boat, Removals) ──────────────────────────────
+-- These services are quote first: Ops agrees the price, creates the job, and
+-- assigns a driver who holds the service. The job is an ordinary row on rides,
+-- tagged with its service, so the safety check, the receipt, the driver queue,
+-- tier access and manual assignment all work for it without a second pipeline.
+-- NULL means a normal ride (RideArrivo, Express or Chauffeur, told apart by
+-- booking_type and the instant request link as before).
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS service TEXT
+  CHECK (service IS NULL OR service IN ('campus', 'air', 'boat', 'removals'));
+
+-- A rider-ordered service job (Campus, Air, Boat, Removals) has no fixed price
+-- until Ops confirms one. While true, drivers who hold the tier can see and
+-- accept the job, but cannot start it, so nobody drives an unpriced trip.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS quote_pending BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS rider_note TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS passenger_count INTEGER;
+
+-- Every step of getting a driver onto a ride (services/dispatch.js): drivers
+-- alerted when it was booked, reminders, and assignments or changes made from
+-- the ops console, with who made them.
+CREATE TABLE IF NOT EXISTS ride_dispatch_events (
+  id BIGSERIAL PRIMARY KEY,
+  ride_id INTEGER NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('alerted', 'preferred_released', 'reminder', 'accepted', 'assigned', 'reassigned')),
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  from_driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+  drivers_alerted INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ride_dispatch_events_ride ON ride_dispatch_events(ride_id, id DESC);
+
+-- Request counters shared by every backend instance (services/pgRateLimitStore.js).
+-- With two or more servers an in-memory limit would let a user make the limit
+-- once per server. Rows are tiny and expire; a cleanup removes the old ones.
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  store TEXT NOT NULL,
+  key TEXT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  reset_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (store, key)
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);

@@ -54,6 +54,8 @@ async function makeDriver(name = "Driver") {
   made.vehicles.push(v.rows[0].id);
   const d = await pool.query("INSERT INTO drivers (user_id, vehicle_id, is_verified) VALUES ($1,$2,true) RETURNING *", [user.id, v.rows[0].id]);
   made.drivers.push(d.rows[0].id);
+  // Going online and ArrivoExpress both need a tier the owner switched on.
+  await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1, 'ride', 'active'), ($1, 'express', 'active')", [d.rows[0].id]);
   return { user, driver: d.rows[0], token: tokenFor(user) };
 }
 async function makeRide(rider, drv, { status = "accepted", express = true } = {}) {
@@ -72,6 +74,9 @@ const sw = (key, on) => systemConfig.setConfig(key, on ? "true" : "false", null)
 const png = "data:image/png;base64," + Buffer.from("fakeimagebytes").toString("base64");
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
   await ready;
   await new Promise((r) => server.listen(0, r));
   await pool.query("DELETE FROM system_config WHERE key IN ('safety_pickup_pin_required','safety_selfie_required')");

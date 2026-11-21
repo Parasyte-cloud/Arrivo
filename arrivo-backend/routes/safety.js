@@ -19,10 +19,12 @@ const pickupPin = require("../services/pickupPin");
 const shareLinks = require("../services/shareLinks");
 const selfie = require("../services/driverSelfie");
 const complaints = require("../services/complaints");
+const welfare = require("../services/welfareCheck");
+const { welfareCheck } = require("../services/welfareRuntime");
 
 const router = express.Router();
 
-const ERRORS = [pickupPin.PinError, shareLinks.ShareError, selfie.SelfieError, complaints.ComplaintError];
+const ERRORS = [welfare.WelfareError, pickupPin.PinError, shareLinks.ShareError, selfie.SelfieError, complaints.ComplaintError];
 function handle(fn) {
   return async (req, res) => {
     try {
@@ -50,6 +52,23 @@ router.get("/track/:token", publicLimiter, handle(async (req, res) => {
 }));
 
 router.use(requireAuth);
+
+// Rider welfare check. The phone sends its position about every 30 seconds
+// while the trip is in progress; the answer says whether to ask "Are you safe?".
+const welfareLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
+router.post("/rides/:id/welfare/ping", welfareLimiter, requireRole("rider"), handle(async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const { lat, lng, accuracy } = req.body || {};
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return res.status(400).json({ error: "lat and lng are required" });
+  res.json(await welfareCheck.ping({ rideId: id, userId: req.user.id, lat, lng, accuracy }));
+}));
+router.post("/rides/:id/welfare/answer", welfareLimiter, requireRole("rider"), handle(async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  if (typeof req.body?.safe !== "boolean") return res.status(400).json({ error: "safe must be true or false" });
+  res.json(await welfareCheck.answer({ rideId: id, userId: req.user.id, safe: req.body.safe }));
+}));
 
 router.get("/rides/:id/pin", requireRole("rider"), handle(async (req, res) => {
   const id = rideIdOf(req);

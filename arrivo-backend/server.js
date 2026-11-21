@@ -36,6 +36,8 @@ const paymentExceptionsRouter = require("./routes/paymentExceptions");
 const audioRecordingsRouter = require("./routes/audioRecordings");
 const adminExpressRouter = require("./routes/adminExpress");
 const adminCashoutsRouter = require("./routes/adminCashouts");
+const internalWalletRouter = require("./routes/internalWallet");
+const adminWalletSettlementRouter = require("./routes/adminWalletSettlement");
 const safetyRouter = require("./routes/safety");
 const adminSafetyRouter = require("./routes/adminSafety");
 const driverCashoutRouter = require("./routes/driverCashout");
@@ -45,8 +47,10 @@ const emergencyContactsRouter = require("./routes/emergencyContacts");
 const callsRouter = require("./routes/calls");
 const staffRidesRouter = require("./routes/staffRides");
 const { startRideTeamSweep } = require("./services/rideTeam");
+const { startWelfareSweep } = require("./services/welfareRuntime");
 const chatRouter = require("./routes/chat");
 const onTheGoRouter = require("./routes/onTheGo");
+const serviceRequestsRouter = require("./routes/serviceRequests");
 const instantRidesRouter = require("./routes/instantRides");
 const alertsRouter = require("./routes/alerts");
 const eventsRouter = require("./routes/events-sse");
@@ -55,6 +59,7 @@ const supportRouter = require("./routes/support");
 const familyRouter = require("./routes/family");
 const partnerVenuesRouter = require("./routes/partnerVenues");
 const publicBookingRequestsRouter = require("./routes/publicBookingRequests");
+const easybookRouter = require("./routes/easybook");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -76,6 +81,10 @@ app.set("trust proxy", 1);
 //  4. Origin lock, off unless ORIGIN_LOCK_MODE is set (middleware/originLock.js).
 app.disable("x-powered-by");
 app.use(secureHeaders());
+// Ref and error code on every failed request, logged and kept for 30 days
+// (middleware/errorTrail.js). Early so it sees every response.
+const { errorTrail, pgStore } = require("./middleware/errorTrail");
+app.use(errorTrail({ store: pgStore(pool) }));
 app.use(createHealthRouter({ query: (sql) => pool.query(sql) }));
 app.use(originLock());
 
@@ -104,6 +113,12 @@ const ALLOWED_ORIGINS = [
   // deploy, so it needs its own origin here. Rename this if the subdomain
   // ends up called something other than easybook.
   "https://easybook.ridearrivo.com",
+  // The live host is easybookings (with an s). Without this entry the browser
+  // blocks every call from that page unless EXTRA_ALLOWED_ORIGINS happens to
+  // carry it, which is a quiet way to lose bookings.
+  "https://easybookings.ridearrivo.com",
+  // The booking page's permanent address.
+  "https://book.ridearrivo.com",
   // membership.ridearrivo.com (RideArrivo Membership signup/plan picker)
   // posts to /api/auth/google and /api/auth/apple directly from the
   // browser, same as login.html/signup.html on the main site, so a
@@ -142,6 +157,8 @@ app.use(csrfOriginCheck(ALLOWED_ORIGINS));
 // handle raw parsing itself. Every other route gets normal JSON parsing.
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payments/webhook") return next();
+  // Signed service calls: the signature covers the raw body, so the wallet router reads it itself.
+  if (req.originalUrl.startsWith("/api/internal/wallet")) return next();
   // Bumped from the 100kb default — profile photos come in as base64 inside
   // the JSON body, which is roughly a third larger than the raw image bytes.
   express.json({ limit: "6mb" })(req, res, next);
@@ -160,8 +177,11 @@ app.use("/api/admin/exports", adminExportsRouter);
 // Before the general admin router: staff listening is admin-only and Bearer-only.
 app.use("/api/admin/recordings", audioRecordingsRouter.adminRouter);
 app.use("/api/recordings", audioRecordingsRouter);
+app.use("/api/admin/driver-tiers", require("./routes/adminDriverTiers"));
 app.use("/api/admin/express", adminExpressRouter);
 app.use("/api/admin/cashouts", adminCashoutsRouter);
+app.use("/api/admin/wallet-settlements", adminWalletSettlementRouter);
+app.use("/api/internal/wallet", internalWalletRouter);
 app.use("/api/admin/safety", adminSafetyRouter);
 app.use("/api/safety", safetyRouter);
 app.use("/api/internal/exports", adminExportsRouter.workspaceRouter);
@@ -179,9 +199,11 @@ app.use("/api/places", placesRouter);
 app.use("/api/emergency-contacts", emergencyContactsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/staff/people", require("./routes/staffPeople"));
+app.use("/api/staff/access", require("./routes/staffAccessRoutes"));
 app.use("/api/staff", staffRidesRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/on-the-go", onTheGoRouter);
+app.use("/api/service-requests", serviceRequestsRouter);
 app.use("/api/instant-rides", maskCounterpartyPhones, instantRidesRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/events", eventsRouter);
@@ -190,6 +212,8 @@ app.use("/api/support", supportRouter);
 app.use("/api/family", familyRouter);
 app.use("/api/partner-venues", partnerVenuesRouter);
 app.use("/api/public", publicBookingRequestsRouter);
+app.use("/api/public", easybookRouter);
+app.use("/api", require("./routes/errorLog"));
 
 // Catches anything express-async-errors forwards (thrown/rejected errors
 // from any route above), plus body-parser errors like malformed JSON.
@@ -198,7 +222,9 @@ app.use("/api/public", publicBookingRequestsRouter);
 // instead of the JSON error shape every client in this codebase expects.
 app.use((err, req, res, next) => {
   if (!res.headersSent && respondIfCorsRejection(err, res)) return;
-  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err.message);
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl} [${req.requestId}]:`, err.message);
+  // Saved with the ref so we can see what really broke. Never sent to the client.
+  res.locals.errorDetail = err.stack ? String(err.stack).split("\n").slice(0, 4).join(" | ") : err.message;
   if (res.headersSent) return next(err);
   res.status(err.status || 500).json({ error: "Something went wrong on our end. Please try again." });
 });
@@ -206,6 +232,9 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 
 ready.then(() => {
+  if (!require("./services/pnrVault").available()) {
+    console.warn("[flight] FLIGHT_PNR_KEY is not set: booking codes (PNR) cannot be stored. Riders who give one are flagged on the ride for Ops.");
+  }
   app.listen(PORT, () => {
     console.log(`Arrivo backend running on http://localhost:${PORT}`);
   });
@@ -217,4 +246,7 @@ ready.then(() => {
   // Keeps every open ride staffed: fills gaps and moves rides off anyone who
   // has gone off duty. See services/rideTeam.js.
   startRideTeamSweep();
+  // Raises a welfare alert when "Are you safe?" went unanswered and the
+  // phone has gone quiet. See services/welfareCheck.js.
+  startWelfareSweep();
 });

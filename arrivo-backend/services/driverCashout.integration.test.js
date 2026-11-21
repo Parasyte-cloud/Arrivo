@@ -108,6 +108,9 @@ const row = async (id) => (await pool.query("SELECT * FROM wallet_withdrawals WH
 const setSwitch = (on) => systemConfig.setConfig("driver_cashout_enabled", on ? "true" : "false", null);
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
   await ready;
   await new Promise((r) => server.listen(0, r));
   await pool.query("DELETE FROM wallet_withdrawals");

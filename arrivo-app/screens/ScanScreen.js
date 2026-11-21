@@ -6,6 +6,7 @@ import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { scanRideQr, isNetworkError } from "../services/api";
 import { getCachedActiveRide, queuePendingScan } from "../services/rideCache";
+import { useTranslation } from "react-i18next";
 
 // The driver's printed placard QR encodes a URL like
 // https://ridearrivo.com/scan.html?token=XXXX&name=...&vehicle=...&plate=...
@@ -40,6 +41,7 @@ function driverInfoConflicts(cachedRide, scanned) {
 }
 
 export default function ScanScreen({ navigation }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const [status, setStatus] = useState("idle"); // idle | verifying | error | offline-no-cache
@@ -76,7 +78,7 @@ export default function ScanScreen({ navigation }) {
       if (cached && driverInfoConflicts(cached, driverInfo)) {
         setStatus("error");
         setMessage(
-          `No internet connection, and this doesn't look like your assigned driver (expected ${cached.driverName}). Please connect to WiFi to confirm, or check you're scanning the right placard.`
+          t("scan.offlineMismatch", { driver: cached.driverName })
         );
         scannedRef.current = false;
         return;
@@ -98,7 +100,7 @@ export default function ScanScreen({ navigation }) {
     const parsed = parseScanPayload(data);
     if (!parsed.scanToken) {
       setStatus("error");
-      setMessage("That QR code doesn't look like a RideArrivo driver placard.");
+      setMessage(t("scan.notAPlacard"));
       scannedRef.current = false;
       return;
     }
@@ -171,16 +173,16 @@ export default function ScanScreen({ navigation }) {
       />
       <View style={styles.overlay}>
         <View style={styles.frame} />
-        <Text style={styles.hint}>Point your camera at the QR code on your driver's placard</Text>
+        <Text style={styles.hint}>{t("scan.pointYourCameraAtThe")}</Text>
         {status === "verifying" ? (
           <View style={styles.statusBox}>
             <ActivityIndicator color="#fff" />
-            <Text style={styles.statusText}>Confirming your ride…</Text>
+            <Text style={styles.statusText}>{t("scan.confirmingYourRide")}</Text>
           </View>
         ) : null}
         {status === "offline-no-cache" && offlineDriverInfo ? (
           <View style={styles.statusBox}>
-            <Text style={styles.offlineTitle}>📡 No internet connection</Text>
+            <Text style={styles.offlineTitle}>{t("scan.noInternetConnection")}</Text>
             {offlineDriverInfo.name ? (
               <Text style={styles.offlineDriver}>
                 Your driver: {offlineDriverInfo.name}
@@ -189,11 +191,10 @@ export default function ScanScreen({ navigation }) {
               </Text>
             ) : null}
             <Text style={styles.statusText}>
-              Connect to WiFi (airport WiFi works fine, no SIM data needed) and tap Retry to confirm your ride and
-              start live tracking.
+              {t("scan.connectToWifiAirportWifi")}
             </Text>
             <Pressable onPress={retryOffline} style={[styles.retryBtn, { marginTop: 10 }]}>
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t("scan.retry")}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -211,7 +212,7 @@ export default function ScanScreen({ navigation }) {
                   onPress={() => navigation.navigate("Wallet")}
                   style={styles.retryBtn}
                 >
-                  <Text style={styles.retryText}>Top up wallet</Text>
+                  <Text style={styles.retryText}>{t("scan.topUpWallet")}</Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -234,7 +235,7 @@ export default function ScanScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: colors.fill, alignItems: "center", justifyContent: "center" },
   permissionText: { color: colors.dark.text, fontSize: 14, textAlign: "center", lineHeight: 20 },
   overlay: {
     ...StyleSheet.absoluteFillObject,

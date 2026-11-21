@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "scheme": "ridearrivo",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -19,7 +19,7 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups and show your live route.",
+                "NSLocationWhenInUseUsageDescription": "RideArrivo uses your location to find nearby pickups, show your live route, and check that you are safe during a trip.",
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
@@ -36,7 +36,8 @@
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDJtWs4Rht40RU1LdMTSv9zVYTjzfQuT7o"
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "adaptiveIcon": {
@@ -68,7 +69,7 @@
         "webClientId": "425853448895-r6ha3gh7b4i4lcsl3lohncuk3ecblsl3.apps.googleusercontent.com"
       },
       "eas": {
-        "projectId": "2ac1ed4e-98a9-4efc-8db4-1bab621da448"
+        "projectId": "a40b2923-8cac-40fa-8c78-65b92fe35744"
       }
     },
     "newArchEnabled": true,
@@ -149,7 +150,9 @@
             ]
           }
         }
-      ]
-    ]
+      ],
+      "./plugins/withAllowNonModularIncludes.js"
+    ],
+    "owner": "ahmadazeez"
   }
 }

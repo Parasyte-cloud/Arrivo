@@ -1,20 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
+import { messageWithCode, errorCodeLine } from "../utils/errorRef";
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, ScrollView, Linking, AppState } from "react-native";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing } from "../theme/tokens";
+import PhoneRequiredPrompt from "../components/PhoneRequiredPrompt";
 import { initializePayment, verifyPayment, createRide, getWallet, getMembership, getMyFamilyPlan } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../hooks/useCurrency";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 function formatNaira(amount) {
   return "₦" + Number(amount || 0).toLocaleString();
 }
 
 export default function CheckoutScreen({ route, navigation }) {
+  const { t } = useTranslation();
   const {
     amountNaira = 12500, label = "Airport Pickup", pickupAddress = "Murtala Muhammed Airport",
-    stops = [], flightNumber, vehicleType, bookingType = "one_way", durationDays = 1,
+    stops = [], flightNumber, flightDate, passengerSurname, pnr, vehicleType, bookingType = "one_way", durationDays = 1,
     securityEscort = false, fleetSize = 0, luxury = false, emergencyContactName, emergencyContactPhone,
     distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
     scheduledPickupAt, linkedRideId, adults = 1, children = 0, hoursPerDay,
@@ -33,6 +38,10 @@ export default function CheckoutScreen({ route, navigation }) {
   const [paymentMethod, setPaymentMethod] = useState("card"); // card | wallet | membership | family_wallet
 
   const [status, setStatus] = useState("idle"); // idle | opening | verifying | success | error
+  // The server wants a phone number before it will create the ride. Ask for it here,
+  // save it, and let the rider tap pay again, rather than telling them to go to Profile.
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [phoneSaved, setPhoneSaved] = useState(false);
   const [message, setMessage] = useState(null);
   const [agreedCancellation, setAgreedCancellation] = useState(false);
   const [dashCamConsent, setDashCamConsent] = useState(false);
@@ -124,9 +133,10 @@ export default function CheckoutScreen({ route, navigation }) {
         // the card had already been charged.
         try {
           const { ride } = await createRide(token, {
-            pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
+            pickupAddress, stops, flightNumber, flightDate, passengerSurname, pnr, vehicleType, fareNaira: amountNaira,
             paymentReference: reference, bookingType, durationDays,
             agreedCancellationPolicy: true, securityEscort, fleetSize, luxury, paymentMethod: "card",
+            riderPhone: user?.phone || user?.whatsapp_number || undefined,
             emergencyContactName, emergencyContactPhone, dashCamConsent,
             distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
             scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
@@ -137,17 +147,17 @@ export default function CheckoutScreen({ route, navigation }) {
         } catch (createErr) {
           setStatus("error");
           setMessage(
-            `Your payment went through, but we couldn't finish booking your ride (${createErr.message || "please try again"}). ` +
-              `You were charged. Contact support with reference ${reference} and we'll sort it out.`
+            t("checkout.paidButNotBooked", { reason: createErr.message || t("checkout.pleaseTryAgain"), reference }) +
+              (errorCodeLine(createErr) ? `\n\n${errorCodeLine(createErr)}` : "")
           );
         }
       } else {
         setStatus("error");
-        setMessage(`Payment status: ${verification.status}. If you were charged, contact support with reference ${reference}.`);
+        setMessage(t("checkout.paymentStatus", { status: verification.status, reference }));
       }
     } catch (e) {
       setStatus("error");
-      setMessage(e.message || "Something went wrong confirming your payment.");
+      setMessage(messageWithCode(e, "Something went wrong confirming your payment."));
     }
   };
 
@@ -199,7 +209,7 @@ export default function CheckoutScreen({ route, navigation }) {
       // above once the user switches back to this app from the browser.
     } catch (e) {
       setStatus("error");
-      setMessage(e.message || "Something went wrong starting the payment.");
+      setMessage(messageWithCode(e, "Something went wrong starting the payment."));
     }
   };
 
@@ -213,9 +223,10 @@ export default function CheckoutScreen({ route, navigation }) {
     setStatus("verifying");
     try {
       const { ride } = await createRide(token, {
-        pickupAddress, stops, flightNumber, vehicleType, fareNaira: amountNaira,
+        pickupAddress, stops, flightNumber, flightDate, passengerSurname, pnr, vehicleType, fareNaira: amountNaira,
         bookingType, durationDays, agreedCancellationPolicy: true,
         securityEscort, fleetSize, luxury, paymentMethod,
+        riderPhone: user?.phone || user?.whatsapp_number || undefined,
         emergencyContactName, emergencyContactPhone, dashCamConsent,
         distanceKm, durationMin, pickupLat, pickupLng, destinationLat, destinationLng,
         scheduledPickupAt, linkedRideId, adults, children, hoursPerDay,
@@ -228,20 +239,26 @@ export default function CheckoutScreen({ route, navigation }) {
       setStatus("success");
       onRideCreated(ride);
     } catch (e) {
-      setStatus("error");
-      setMessage(e.message || "Something went wrong confirming your ride.");
       submittingRef.current = false;
+      if (e.code === "PHONE_REQUIRED" || e.code === "PHONE_INVALID") {
+        setPhoneNeeded(true);
+        setMessage(null);
+        setStatus("idle");
+        return;
+      }
+      setStatus("error");
+      setMessage(messageWithCode(e, "Something went wrong confirming your ride."));
     }
   };
 
   const pay = () => {
     if (!agreedCancellation) {
-      setMessage("Please agree to the Cancellation & Refund Policy before paying.");
+      setMessage(t("checkout.agreeCancellation"));
       setStatus("error");
       return;
     }
     if (!dashCamConsent) {
-      setMessage("Please agree to the dash cam recording notice before paying.");
+      setMessage(t("checkout.agreeDashCam"));
       setStatus("error");
       return;
     }
@@ -257,17 +274,17 @@ export default function CheckoutScreen({ route, navigation }) {
       <View style={styles.screen}>
         <GradientBackground variant="dark" />
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, flexGrow: 1, justifyContent: "center" }}>
-          <Text style={[styles.title, { textAlign: "center" }]}>You're booked! ✓</Text>
+          <Text style={[styles.title, { textAlign: "center" }]}>{t("checkout.youReBooked")}</Text>
           <Card tone="dark" tinted style={{ marginTop: spacing.md, marginBottom: spacing.lg }}>
-            <Text style={styles.cardLabel}>Know when you're flying back?</Text>
+            <Text style={styles.cardLabel}>{t("checkout.knowWhenYouReFlying")}</Text>
             <Text style={styles.note}>
-              Book your airport drop-off now and we'll have it all set, or come back and book it any time under "Book a Ride" once you know your return date and time.
+              {t("checkout.bookDropoffNow")}
             </Text>
           </Card>
           <Button label="Add my return drop-off" onPress={bookReturnDropoff} trailingIcon />
           <View style={{ height: 10 }} />
           <Pressable onPress={goToTrackingNow} style={{ alignItems: "center", paddingVertical: 10 }}>
-            <Text style={styles.note}>Not yet, maybe later</Text>
+            <Text style={styles.note}>{t("checkout.notYetMaybeLater")}</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -290,22 +307,21 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
           {appliedPromo && appliedPromoDiscountNaira > 0 ? (
             <Text style={styles.promoAppliedText}>
-              {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied — you
+              {appliedPromo === "early_bird" ? "🌅 Arrivo Early Bird" : "⏰ Arrivo Morning Commuter"} discount applied, you
               saved {formatFare(appliedPromoDiscountNaira)}
             </Text>
           ) : null}
           {partnerVenueId ? (
             <Text style={styles.promoAppliedText}>
-              🍸 {partnerVenueName} x RideArrivo — reserved pickup{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
+              🍸 {partnerVenueName} x RideArrivo: reserved pickup{partnerVenuePerk ? `. ${partnerVenuePerk}` : ""}
             </Text>
           ) : null}
         </Card>
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>How would you like to pay?</Text>
+          <Text style={styles.cardLabel}>{t("checkout.howWouldYouLikeTo")}</Text>
           <Text style={styles.note}>
-            Every ride is paid in full now, like a plane ticket: never cash, and never at the end of the trip. You
-            can still tip your driver afterwards if you'd like.
+            {t("checkout.everyRideIsPaidIn")}
           </Text>
           <View style={{ height: 8 }} />
           {loadingOptions ? (
@@ -327,7 +343,7 @@ export default function CheckoutScreen({ route, navigation }) {
                   {paymentMethod === "wallet" ? "● " : "○ "}Wallet{walletBalance != null ? ` (${formatNaira(walletBalance)})` : ""}
                 </Text>
                 {!walletSufficient && walletBalance != null ? (
-                  <Text style={styles.payOptionNote}>Not enough balance for this fare</Text>
+                  <Text style={styles.payOptionNote}>{t("checkout.notEnoughBalanceForThis")}</Text>
                 ) : null}
               </Pressable>
               {hasMembership ? (
@@ -348,7 +364,7 @@ export default function CheckoutScreen({ route, navigation }) {
                     {paymentMethod === "family_wallet" ? "● " : "○ "}Family Wallet ({formatNaira(familyPlan.walletBalanceNaira)})
                   </Text>
                   {!familyWalletSufficient ? (
-                    <Text style={styles.payOptionNote}>Your Family Wallet is empty. Top up to continue riding.</Text>
+                    <Text style={styles.payOptionNote}>{t("checkout.yourFamilyWalletIsEmpty")}</Text>
                   ) : null}
                 </Pressable>
               ) : null}
@@ -357,14 +373,14 @@ export default function CheckoutScreen({ route, navigation }) {
 
           {paymentMethod === "family_wallet" && familyPlan?.myRole === "admin" && familyMembers.length > 0 ? (
             <View style={{ marginTop: spacing.md }}>
-              <Text style={styles.note}>Who is this ride for?</Text>
+              <Text style={styles.note}>{t("checkout.whoIsThisRideFor")}</Text>
               <View style={[styles.bookingRow, { marginTop: spacing.sm }]}>
                 <Pressable
                   onPress={() => setFamilyMemberUserId(null)}
                   style={[styles.bookingChip, familyMemberUserId === null && styles.bookingChipActive]}
                 >
                   <Text style={[styles.bookingChipText, familyMemberUserId === null && styles.bookingChipTextActive]}>
-                    Me
+                    {t("checkout.me")}
                   </Text>
                 </Pressable>
                 {familyMembers
@@ -388,7 +404,7 @@ export default function CheckoutScreen({ route, navigation }) {
         {paymentMethod === "card" ? (
           <Card tone="dark" style={{ marginBottom: spacing.lg }}>
             <Text style={styles.note}>
-              Payment is handled by Paystack's secure checkout. RideArrivo never sees or stores your card details.
+              {t("checkout.paymentIsHandledByPaystack")}
             </Text>
           </Card>
         ) : null}
@@ -407,7 +423,7 @@ export default function CheckoutScreen({ route, navigation }) {
             {dashCamConsent ? <Text style={styles.checkmark}>✓</Text> : null}
           </View>
           <Text style={styles.agreeText}>
-            I agree that this ride may be recorded by an in-vehicle dash cam for safety, and that footage is stored for 30 days and then automatically deleted.
+            {t("checkout.iAgreeThatThisRide")}
           </Text>
         </Pressable>
 
@@ -420,7 +436,9 @@ export default function CheckoutScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {status === "success" ? <Text style={[styles.statusText, { color: "#8FD9C4" }]}>Confirmed ✓</Text> : null}
+        {status === "success" ? <Text style={[styles.statusText, { color: colors.success }]}>{t("checkout.confirmed")}</Text> : null}
+        {phoneNeeded ? <PhoneRequiredPrompt onSaved={() => { setPhoneNeeded(false); setPhoneSaved(true); }} /> : null}
+        {phoneSaved && !phoneNeeded ? <Text style={[styles.statusText, { color: colors.success }]}>Your number is saved. Tap the button again to confirm your ride.</Text> : null}
         {status === "error" && message ? <Text style={styles.errorText}>{message}</Text> : null}
 
         <Button
@@ -436,6 +454,7 @@ export default function CheckoutScreen({ route, navigation }) {
           disabled={isBusy}
           trailingIcon
         />
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -452,7 +471,7 @@ const styles = StyleSheet.create({
   label: { color: colors.dark.text, fontSize: 14, fontWeight: "600", flexShrink: 1, flexBasis: "60%", paddingRight: 8 },
   amount: { color: colors.amber, fontSize: 18, fontWeight: "700", flexShrink: 0 },
   note: { color: colors.dark.textMuted, fontSize: 12, lineHeight: 18 },
-  promoAppliedText: { color: "#8FD9C4", fontSize: 12.5, fontWeight: "600", marginTop: 8 },
+  promoAppliedText: { color: colors.success, fontSize: 12.5, fontWeight: "600", marginTop: 8 },
   cardLabel: { color: colors.dark.text, fontWeight: "600", fontSize: 12, marginBottom: 8 },
   bookingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   bookingChip: {
@@ -471,7 +490,7 @@ const styles = StyleSheet.create({
   },
   payOptionActive: { borderColor: colors.amber, backgroundColor: "rgba(244,163,0,0.12)" },
   payOptionLabel: { color: colors.dark.text, fontSize: 13, fontWeight: "600" },
-  payOptionNote: { color: "#FF9B8A", fontSize: 10.5, marginTop: 4, marginLeft: 14 },
+  payOptionNote: { color: "#C2362B", fontSize: 10.5, marginTop: 4, marginLeft: 14 },
   agreeRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: spacing.lg },
   checkbox: {
     width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.dark.surfaceBorder,
@@ -481,6 +500,6 @@ const styles = StyleSheet.create({
   checkmark: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   agreeText: { color: colors.dark.textMuted, fontSize: 12, flex: 1 },
   statusText: { color: colors.dark.text, fontSize: 12.5, marginTop: 8, textAlign: "center" },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
-  warningText: { color: "#FF9B8A", fontSize: 12, lineHeight: 17 },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md, textAlign: "center" },
+  warningText: { color: "#C2362B", fontSize: 12, lineHeight: 17 },
 });

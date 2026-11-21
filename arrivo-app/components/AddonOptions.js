@@ -1,13 +1,14 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Switch } from "react-native";
 import { Card } from "./UI";
-import { colors, radius, spacing } from "../theme/tokens";
+import { colors, radius, spacing, tint } from "../theme/tokens";
 import {
   securityEscortDescription,
   fleetChipLabel,
   fleetDescription,
   FLEET_SIZES,
 } from "../utils/addonPricing";
+import { useTranslation } from "react-i18next";
 
 // The two paid add-ons that sit between the vehicle picker and the emergency
 // contact on Plan Route. Pulled out of RouteScreen so the pricing labels can be
@@ -26,12 +27,13 @@ export function AddonOptions({
   ngnPerUsd,
   formatFare,
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <Card tone="dark" style={{ marginBottom: spacing.md }}>
         <View style={styles.toggleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.cardLabel}>Security escort</Text>
+            <Text style={styles.cardLabel}>{t("addonOptions.securityEscort")}</Text>
             <Text style={styles.addonNote}>
               {securityEscortDescription(ngnPerUsd, formatFare)}
             </Text>
@@ -39,13 +41,13 @@ export function AddonOptions({
           <Switch
             value={securityEscort}
             onValueChange={onSecurityEscortChange}
-            trackColor={{ false: "rgba(255,255,255,0.18)", true: colors.amber }}
+            trackColor={{ false: tint(0.15), true: colors.amber }}
           />
         </View>
       </Card>
 
       <Card tone="dark" style={{ marginBottom: spacing.md }}>
-        <Text style={styles.cardLabel}>Fleet accompaniment</Text>
+        <Text style={styles.cardLabel}>{t("addonOptions.fleetAccompaniment")}</Text>
         <Text style={styles.addonNote}>{fleetDescription(fleetSize, formatFare)}</Text>
         {/* Prices live on the chips so a rider can compare them without
             having to select one first. The row wraps, since the labels are

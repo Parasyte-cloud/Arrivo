@@ -109,6 +109,9 @@ async function signup(tag) {
 }
 
 (async () => {
+  // Requiring db/db starts the idempotent schema script. Wait for it, or the first
+  // inserts below race its ALTER TABLE statements and Postgres reports a deadlock.
+  await require("../db/db").ready;
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 
 console.log("Google sign-in never touches the Apple exchange:");
@@ -124,6 +127,23 @@ await test("google login succeeds and does not 500", async () => {
   assert.strictEqual(appleCalled, false, "google login must not call Apple");
   if (r.body.user) made.push(r.body.user.id);
   appleHandler = null;
+});
+
+console.log("");
+console.log("The server can say whether sign-in is set up:");
+
+await test("oauth-status reports readiness with no secrets in it", async () => {
+  process.env.GOOGLE_OAUTH_CLIENT_IDS = "a.apps.googleusercontent.com, b.apps.googleusercontent.com";
+  const r = await call("/api/auth/oauth-status");
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.google.configured, true);
+  assert.deepStrictEqual(r.body.google.clientIds, ["a.apps.googleusercontent.com", "b.apps.googleusercontent.com"]);
+  assert.ok(r.body.apple.audiences.includes("com.ridearrivo.rider") && r.body.apple.audiences.includes("com.ridearrivo.driver"));
+  assert.strictEqual(r.body.apple.revocationConfigured, true, "the test sets the three Apple vars");
+  assert.ok(!JSON.stringify(r.body).includes("BEGIN"), "never the private key");
+  delete process.env.GOOGLE_OAUTH_CLIENT_IDS;
+  const none = await call("/api/auth/oauth-status");
+  assert.strictEqual(none.body.google.configured, false);
 });
 
 console.log("");

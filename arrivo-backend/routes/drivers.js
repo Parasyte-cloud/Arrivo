@@ -5,6 +5,9 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateImageDataUrl } = require("../services/imageValidation");
 const { processTelemetry } = require("../services/telemetry/telemetryService");
 const { MapboxRoutingProvider } = require("../services/routing/MapboxRoutingProvider");
+const { createDriverTiers, TierError } = require("../services/driverTiers");
+
+const driverTiers = createDriverTiers(pool);
 
 // Lazily constructed so a missing MAPBOX_ACCESS_TOKEN doesn't crash
 // server startup — it only matters the moment a reroute is actually
@@ -101,6 +104,28 @@ router.post("/profile", requireAuth, requireRole("driver"), async (req, res) => 
   res.status(201).json({ driver: await getDriverWithVehicle(req.user.id) });
 });
 
+// GET /api/drivers/tiers: the services Ops has switched ON for this driver, and
+// nothing else. A service that is off, asked for or withdrawn is not listed at
+// all, so a driver never sees a service they have not been given. Only their own
+// rows, never who decided.
+router.get("/tiers", requireAuth, requireRole("driver"), async (req, res) => {
+  const driver = await getDriverForUser(req.user.id);
+  if (!driver) return res.status(404).json({ error: "Complete your driver profile first" });
+  const on = (await driverTiers.listForDriver(driver.id)).filter((t) => t.status === "active");
+  res.set("Cache-Control", "no-store");
+  res.json({
+    tiers: on.map(({ slug, name, tagline, accent, live }) => ({ slug, name, tagline, accent, live, status: "active" })),
+    active: on.map((t) => t.slug),
+  });
+});
+
+// POST /api/drivers/tiers/request: closed. Services are switched on by the owner,
+// or by someone the owner named, in the ArrivoOps console. A driver cannot ask
+// from the app, so the app has nothing to show for services they do not hold.
+router.post("/tiers/request", requireAuth, requireRole("driver"), (req, res) => {
+  res.status(403).json({ error: "RideArrivo Ops switches services on for you. Contact Ops if you need another one.", code: "tier_request_closed" });
+});
+
 // GET /api/drivers/me
 router.get("/me", requireAuth, requireRole("driver"), async (req, res) => {
   const driver = await getDriverWithVehicle(req.user.id);
@@ -170,6 +195,13 @@ router.patch("/status", requireAuth, requireRole("driver"), async (req, res) => 
 
   if (req.body.isOnline && !driver.is_verified) {
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can go online." });
+  }
+
+  if (req.body.isOnline && !(await driverTiers.activeSlugs(driver.id)).length) {
+    return res.status(403).json({
+      error: "No service is switched on for your account yet. Ask RideArrivo Ops to switch one on.",
+      code: "NO_TIER",
+    });
   }
 
   if (req.body.isOnline) {

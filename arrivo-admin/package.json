@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node src/rideDeskHelpers.test.js && node src/opsExceptions.test.js"
   },
   "dependencies": {
     "@stream-io/video-react-sdk": "^1.39.3",

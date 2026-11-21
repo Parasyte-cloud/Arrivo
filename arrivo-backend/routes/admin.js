@@ -1,8 +1,16 @@
 const express = require("express");
+const { logSafetyEvent } = require("../services/safetyEvents");
 const QRCode = require("qrcode");
 const { pool } = require("../db/db");
 const { requireAuth, requireRole, requireAnyRole } = require("../middleware/auth");
 const { listConfig, setConfig } = require("../services/systemConfig");
+const { lookupFlight } = require("../services/flightLookup");
+const pnrVault = require("../services/pnrVault");
+const flightCredit = require("../services/flightCredit");
+const { phoneHint } = require("../services/rideTeam");
+const { sendPushNotification } = require("../services/pushNotifications");
+const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
+const { sendDriverAssignedEmail } = require("../services/email");
 
 const router = express.Router();
 
@@ -14,19 +22,88 @@ router.use(requireAuth, requireAnyRole(["admin", "support", "operations"]));
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
+// Drivers who signed up through the new engine have ids like "engine:abc". They are managed in
+// Driver Verification, not here, so any change aimed at one is refused with a clear message.
+router.use("/drivers/:id", (req, res, next) => {
+  if (/^user:\d+$/.test(req.params.id)) return res.status(409).json({ error: "This person has not finished their driver profile yet, so there is nothing to change. Ask them to open the driver app and complete it." });
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "This driver is managed in Driver Verification, not on this page." });
+  next();
+});
+
 router.get("/drivers", async (req, res) => {
+  // The list starts from driver ACCOUNTS (users with role "driver"), not from driver profiles. Signup is two steps:
+  // an account, then a profile (POST /api/drivers/profile). Starting from the profile table hid everyone who stopped
+  // after step 1, so Ops could not find people who had registered. Those rows come back with profile_incomplete = true.
+  const archivedView = req.query.archived === "1";
   const result = await pool.query(
-    `SELECT drivers.id, drivers.is_verified, drivers.is_online, drivers.rating,
-            drivers.license_number, drivers.lasdri_number, drivers.spoken_languages, drivers.created_at,
+    `SELECT drivers.id, COALESCE(drivers.is_verified, false) AS is_verified, COALESCE(drivers.is_online, false) AS is_online, drivers.rating,
+            drivers.license_number, drivers.lasdri_number, drivers.spoken_languages,
+            COALESCE(drivers.created_at, users.created_at) AS created_at,
             drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+            drivers.tier, drivers.archived_at,
+            COALESCE((SELECT array_agg(a.tier ORDER BY a.tier) FROM driver_tier_access a WHERE a.driver_id = drivers.id AND a.status = 'active'), '{}') AS tiers,
             users.id as user_id, users.name, users.email, users.phone,
-            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type
-     FROM drivers
-     JOIN users ON users.id = drivers.user_id
+            vehicles.make_model, vehicles.plate_number, vehicles.vehicle_type,
+            (drivers.id IS NULL) AS profile_incomplete
+     FROM users
+     LEFT JOIN drivers ON drivers.user_id = users.id
      LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
-     ORDER BY drivers.is_verified ASC, drivers.created_at DESC`
+     WHERE (users.role = 'driver' OR drivers.id IS NOT NULL)
+       AND ${archivedView ? "drivers.archived_at IS NOT NULL" : "drivers.archived_at IS NULL"}
+     ORDER BY COALESCE(drivers.is_verified, false) ASC, COALESCE(drivers.created_at, users.created_at) DESC`
   );
-  res.json({ drivers: result.rows });
+  const engine = archivedView ? { status: "skipped", drivers: [] } : await require("../services/engineDrivers").fetchEngineDrivers();
+  const legacy = result.rows.map((r) => (r.profile_incomplete ? { ...r, id: `user:${r.user_id}`, source: "legacy", verification_stage: "profile not completed" } : { ...r, source: "legacy" }));
+  const merged = [...legacy, ...engine.drivers].sort(
+    (a, b) => Number(a.is_verified) - Number(b.is_verified) || new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+  res.json({ drivers: merged, engineStatus: engine.status });
+});
+
+const DRIVER_TIERS = ["ride", "express", "chauffeur", "air", "boat", "removals", "campus"];
+
+// Archive hides a driver and takes them off the road. It is reversible. Restoring leaves
+// them unverified so someone has to verify them again on purpose.
+router.patch("/drivers/:id/archive", requireRole("admin"), async (req, res) => {
+  const archived = req.body && req.body.archived !== false;
+  const r = archived
+    ? await pool.query("UPDATE drivers SET archived_at = now(), is_online = false, is_verified = false WHERE id = $1 RETURNING id", [req.params.id])
+    : await pool.query("UPDATE drivers SET archived_at = NULL WHERE id = $1 RETURNING id", [req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, archived });
+});
+
+// Delete is for test accounts only: it refuses while the driver has any trip history.
+router.delete("/drivers/:id", requireRole("admin"), async (req, res) => {
+  const d = await pool.query("SELECT id, archived_at FROM drivers WHERE id = $1", [req.params.id]);
+  if (!d.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  if (!d.rows[0].archived_at) return res.status(409).json({ error: "Archive the driver first, then delete." });
+  const trips = await pool.query("SELECT 1 FROM rides WHERE driver_id = $1 LIMIT 1", [req.params.id]);
+  if (trips.rows[0]) return res.status(409).json({ error: "This driver has trip history, so it stays archived instead of deleted." });
+  // The delete gets its own short time limit so a locked row answers with an error instead of hanging the page.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("DELETE FROM drivers WHERE id = $1", [req.params.id]);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (e.code === "23503") return res.status(409).json({ error: "This driver is still linked to other records, so it stays archived instead of deleted." });
+    if (e.code === "57014") return res.status(503).json({ error: "The database was busy, so nothing was deleted. Try again in a moment." });
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ id: Number(req.params.id), deleted: true });
+});
+
+router.patch("/drivers/:id/tier", requireRole("admin"), async (req, res) => {
+  const tier = req.body && req.body.tier;
+  if (tier !== null && !DRIVER_TIERS.includes(tier)) return res.status(400).json({ error: `tier must be one of: ${DRIVER_TIERS.join(", ")}` });
+  const r = await pool.query("UPDATE drivers SET tier = $1 WHERE id = $2 RETURNING id", [tier, req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "Driver not found" });
+  res.json({ id: r.rows[0].id, tier });
 });
 
 router.patch("/drivers/:id/verify", requireRole("admin"), async (req, res) => {
@@ -128,8 +205,10 @@ router.get("/rides", async (req, res) => {
     const idx = params.length;
     conditions.push(
       `(LOWER(riders.name) LIKE $${idx} OR LOWER(riders.email) LIKE $${idx} OR LOWER(COALESCE(riders.phone, '')) LIKE $${idx}
-        OR LOWER(COALESCE(driver_users.name, '')) LIKE $${idx} OR LOWER(rides.pickup_address) LIKE $${idx})`
+        OR LOWER(COALESCE(driver_users.name, '')) LIKE $${idx} OR LOWER(rides.pickup_address) LIKE $${idx}
+        OR LOWER(COALESCE(rides.flight_number, '')) LIKE $${idx} OR rides.id::text = $${idx + 1})`
     );
+    params.push(String(search).trim().replace(/^#/, ""));
   }
   if (from) {
     params.push(from);
@@ -191,6 +270,100 @@ router.patch("/rides/:id", requireRole("admin"), async (req, res) => {
   res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
 });
 
+// PATCH /rides/:id/driver — manual driver assignment, for when a ride needs a
+// driver put on it (or taken off it) by hand instead of waiting for a driver
+// to self-accept from the available-rides list (see routes/rides.js GET
+// /available and PATCH /:id/accept). This is deliberately a thin, separate
+// route rather than folded into the generic PATCH /rides/:id above: it only
+// ever touches driver_id/ride_status, never money, so it carries none of
+// that route's completion guardrails and doesn't need to.
+// POST /api/admin/service-jobs: Ops creates a job for a quote-first service
+// (Campus, Air, Boat, Removals). It is a normal ride row tagged with its
+// service, so a driver who holds the service sees it in their queue, and the
+// "Are you safe?" check and the receipt work on it like any other trip.
+// Payment is agreed with the customer outside the app (invoice or transfer);
+// `paid: true` records that it has been settled.
+router.post("/service-jobs", requireRole("admin"), async (req, res) => {
+  const { SERVICE_JOB_TIERS } = require("../services/driverTiers");
+  const b = req.body || {};
+  const service = String(b.service || "").toLowerCase();
+  if (!SERVICE_JOB_TIERS.includes(service)) return res.status(400).json({ error: `service must be one of: ${SERVICE_JOB_TIERS.join(", ")}.` });
+  const pickup = String(b.pickup || "").trim();
+  const destination = String(b.destination || "").trim();
+  if (pickup.length < 3) return res.status(400).json({ error: "Add a pickup address." });
+  if (destination.length < 3) return res.status(400).json({ error: "Add a destination." });
+  const quote = Number(b.quoteNaira);
+  if (!Number.isInteger(quote) || quote < 0 || quote > 50000000) return res.status(400).json({ error: "quoteNaira must be a whole number of naira, 0 or more." });
+  const email = String(b.riderEmail || "").trim().toLowerCase();
+  const rider = (await pool.query("SELECT id, role FROM users WHERE lower(email) = $1", [email])).rows[0];
+  if (!rider || rider.role !== "rider") return res.status(404).json({ error: "No rider account with that email. They need to sign up in the rider app first." });
+  const paid = b.paid === true;
+  const created = await pool.query(
+    `INSERT INTO rides (rider_id, pickup_address, stops, booking_type, service, fare_naira, payment_status, payment_method,
+                        ride_status, agreed_cancellation_policy, admin_notes)
+     VALUES ($1, $2, $3, 'service_job', $4, $5, $6, $7, 'requested', true, $8) RETURNING *`,
+    [rider.id, pickup, JSON.stringify([destination]), service, quote, paid ? "paid" : "pending", paid ? "invoice" : null,
+     b.notes ? String(b.notes).slice(0, 1000) : null]
+  );
+  const ride = created.rows[0];
+  await logSafetyEvent(pool, "service_job_created", { rideId: ride.id, userId: req.user.id, detail: { service, quoteNaira: quote, paid } });
+  res.status(201).json({ ride: { ...ride, stops: JSON.parse(ride.stops || "[]") } });
+});
+
+// PATCH /api/admin/service-jobs/:id/quote: Ops sets the agreed price on a rider-ordered
+// service job, which lets the driver start it. `paid: true` records that it is settled.
+router.patch("/service-jobs/:id/quote", requireRole("admin"), async (req, res) => {
+  const quote = Number(req.body && req.body.quoteNaira);
+  if (!Number.isInteger(quote) || quote < 1 || quote > 50000000) return res.status(400).json({ error: "quoteNaira must be a whole number of naira, 1 or more." });
+  const paid = req.body.paid === true;
+  const r = await pool.query(
+    `UPDATE rides SET fare_naira = $2, quote_pending = false, payment_status = $3,
+            payment_method = CASE WHEN $3 = 'paid' THEN 'invoice' ELSE payment_method END, updated_at = now()
+     WHERE id = $1 AND service IS NOT NULL AND ride_status IN ('requested','accepted') RETURNING *`,
+    [req.params.id, quote, paid ? "paid" : "pending"]);
+  if (!r.rows[0]) return res.status(404).json({ error: "No open service job with that id." });
+  await logSafetyEvent(pool, "service_job_quoted", { rideId: r.rows[0].id, userId: req.user.id, detail: { quoteNaira: quote, paid } });
+  res.json({ ride: { ...r.rows[0], stops: JSON.parse(r.rows[0].stops || "[]") } });
+});
+
+router.patch("/rides/:id/driver", requireRole("admin"), async (req, res) => {
+  const { driverId } = req.body;
+  const existing = await pool.query("SELECT * FROM rides WHERE id = $1", [req.params.id]);
+  const ride = existing.rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  if (["completed", "cancelled"].includes(ride.ride_status)) {
+    return res.status(400).json({ error: `This ride is already ${ride.ride_status} — its driver can't be changed from here.` });
+  }
+
+  // driverId: null un-assigns and sends the ride back to "requested" (waiting
+  // for a driver), same as a driver cancelling an accepted ride.
+  if (driverId === null || driverId === undefined) {
+    const updated = await pool.query(
+      `UPDATE rides SET driver_id = NULL,
+              ride_status = CASE WHEN ride_status IN ('accepted', 'in_progress') THEN 'requested' ELSE ride_status END,
+              updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [ride.id]
+    );
+    return res.json({ ride: { ...updated.rows[0], stops: JSON.parse(updated.rows[0].stops || "[]") } });
+  }
+
+  // One implementation for "ops puts a driver on a ride": services/dispatch.js assignDriver. It locks the
+  // ride row (so a self-accept at the same moment cannot be overwritten), logs the dispatch event, notes
+  // a driver who does not hold the service (never blocks staff), and tells the driver and the rider.
+  // POST /api/admin/trips/:id/assign-driver is the same call.
+  const dispatch = require("../services/dispatch");
+  try {
+    const out = await dispatch.assignDriver({ rideId: ride.id, driverId: Number(driverId), actorId: req.user.id, note: req.body.note });
+    const finalRide = (await pool.query("SELECT * FROM rides WHERE id = $1", [ride.id])).rows[0];
+    res.json({ ride: { ...finalRide, stops: JSON.parse(finalRide.stops || "[]") }, tierNote: out.tierNote });
+  } catch (e) {
+    if (e instanceof dispatch.DispatchError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
+});
+
 // ── Live tracking ────────────────────────────────────────────────────────
 
 // GET /api/admin/rides/live — every ride currently in progress, with the
@@ -217,6 +390,251 @@ router.get("/rides/live", async (req, res) => {
   res.json({
     rides: result.rows.map((r) => ({ ...r, stops: JSON.parse(r.stops || "[]") })),
   });
+});
+
+// ── Trip tracker ─────────────────────────────────────────────────────────
+//
+// The Ops Console "Trip Tracker" page: every ride that is waiting for a driver,
+// has a driver on the way, or is on the road, plus anything that finished in the
+// last two hours so the team can see the end of a trip. The driver's position comes
+// from drivers.current_lat/current_lng, the same source as the Live Map above.
+
+const TRIP_SELECT = `
+  SELECT rides.id, rides.ride_status, rides.payment_status, rides.pickup_address, rides.stops,
+         rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
+         rides.flight_number, to_char(rides.flight_date, 'YYYY-MM-DD') AS flight_date, rides.passenger_surname,
+         rides.pnr_masked, (rides.pnr_enc IS NOT NULL) AS has_pnr,
+         rides.flight_tracking_state, rides.flight_tracking_reason, rides.flight_checked_at, rides.flight_eta,
+         rides.booking_type, rides.vehicle_type, rides.fare_naira, rides.distance_km, rides.duration_min,
+         rides.scheduled_pickup_at, rides.tracking_started_at, rides.completed_at, rides.created_at,
+         rides.emergency_contact_name, rides.emergency_contact_phone, rides.admin_notes,
+         riders.id as rider_id, riders.name as rider_name, riders.phone as rider_phone, riders.email as rider_email,
+         driver_users.id as driver_user_id, driver_users.name as driver_name, driver_users.phone as driver_phone,
+         vehicles.make_model, vehicles.plate_number,
+         drivers.current_lat, drivers.current_lng, drivers.location_updated_at,
+         (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) as has_active_panic
+  FROM rides
+  JOIN users riders ON riders.id = rides.rider_id
+  LEFT JOIN drivers ON drivers.id = rides.driver_id
+  LEFT JOIN users driver_users ON driver_users.id = drivers.user_id
+  LEFT JOIN vehicles ON vehicles.id = drivers.vehicle_id
+`;
+
+const numOrNull = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+
+function shapeTrip(r) {
+  let stops = [];
+  try { stops = JSON.parse(r.stops || "[]"); } catch { stops = []; }
+  return {
+    ...r,
+    stops,
+    pickup_lat: numOrNull(r.pickup_lat),
+    pickup_lng: numOrNull(r.pickup_lng),
+    destination_lat: numOrNull(r.destination_lat),
+    destination_lng: numOrNull(r.destination_lng),
+    current_lat: numOrNull(r.current_lat),
+    current_lng: numOrNull(r.current_lng),
+    distance_km: numOrNull(r.distance_km),
+    duration_min: numOrNull(r.duration_min),
+  };
+}
+
+// Since #74 a list shows the last three digits of a number and nothing more.
+// Full numbers come with one ride's detail, and that view is logged (below).
+function hideTripNumbers(trip) {
+  const { rider_email, rider_phone, driver_phone, emergency_contact_phone, ...rest } = trip;
+  return {
+    ...rest,
+    rider_phone: null,
+    driver_phone: null,
+    emergency_contact_phone: null,
+    rider_phone_hint: phoneHint(rider_phone),
+    driver_phone_hint: phoneHint(driver_phone),
+    emergency_contact_phone_hint: phoneHint(emergency_contact_phone),
+    numbers_hidden: true,
+  };
+}
+
+// Same record as GET /api/staff/rides/:id: one row per person, ride and kind of
+// access in 10 minutes, so a refresh does not bury the log (staff_contact_access).
+async function logNumberView(staffId, rideId, subjectUserId, subjectRole) {
+  if (!subjectUserId) return;
+  await pool.query(
+    `INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action)
+     SELECT $1, $2, $3, $4, 'view_number'
+     WHERE NOT EXISTS (
+       SELECT 1 FROM staff_contact_access
+       WHERE staff_user_id = $1 AND ride_id = $2 AND subject_user_id = $3 AND action = 'view_number'
+         AND created_at > now() - interval '10 minutes')`,
+    [staffId, rideId, subjectUserId, subjectRole]
+  );
+}
+
+// One round trip for a whole sheet: every rider and driver number shown, deduped against the last 10 minutes.
+async function logNumberViews(staffId, trips) {
+  const rideIds = [], subjectIds = [], roles = [];
+  for (const t of trips) {
+    if (t.rider_id) { rideIds.push(t.id); subjectIds.push(t.rider_id); roles.push("rider"); }
+    if (t.driver_phone && t.driver_user_id) { rideIds.push(t.id); subjectIds.push(t.driver_user_id); roles.push("driver"); }
+  }
+  if (!rideIds.length) return;
+  try {
+    await pool.query(
+      `INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action)
+       SELECT $1, v.ride_id, v.subject_id, v.role, 'view_number'
+       FROM unnest($2::int[], $3::int[], $4::text[]) AS v(ride_id, subject_id, role)
+       WHERE v.subject_id IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM staff_contact_access s
+         WHERE s.staff_user_id = $1 AND s.ride_id = v.ride_id AND s.subject_user_id = v.subject_id
+           AND s.action = 'view_number' AND s.created_at > now() - interval '10 minutes')`,
+      [staffId, rideIds, subjectIds, roles]
+    );
+  } catch (err) {
+    console.error("dispatch-sheet audit write failed (sheet still served):", err.message);
+  }
+}
+
+// GET /api/admin/trips/active
+router.get("/trips/active", async (req, res) => {
+  const result = await pool.query(
+    `${TRIP_SELECT}
+     WHERE rides.created_at > now() - interval '30 days'
+       AND (rides.ride_status IN ('requested', 'accepted', 'in_progress')
+            OR (rides.ride_status = 'completed' AND rides.completed_at > now() - interval '2 hours'))
+     ORDER BY (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) DESC,
+              CASE rides.ride_status WHEN 'in_progress' THEN 0 WHEN 'accepted' THEN 1 WHEN 'requested' THEN 2 ELSE 3 END,
+              COALESCE(rides.scheduled_pickup_at, rides.created_at) ASC
+     LIMIT 200`
+  );
+  res.json({ trips: result.rows.map((r) => hideTripNumbers(shapeTrip(r))), generatedAt: new Date().toISOString() });
+});
+
+// GET /api/admin/trips/dispatch-sheet
+// The fallback if the console or the live map is down: every live ride with the
+// full phone numbers on one page, to print or keep on a phone. It shows numbers,
+// so each ride leaves the same trace as opening it (staff_contact_access).
+// Declared before /trips/:id so "dispatch-sheet" is not read as a ride id.
+router.get("/trips/dispatch-sheet", async (req, res) => {
+  const result = await pool.query(
+    `${TRIP_SELECT}
+     WHERE rides.created_at > now() - interval '30 days'
+       AND rides.ride_status IN ('requested', 'accepted', 'in_progress')
+     ORDER BY (rides.panic_triggered_at IS NOT NULL AND rides.panic_resolved_at IS NULL) DESC,
+              COALESCE(rides.scheduled_pickup_at, rides.created_at) ASC
+     LIMIT 200`
+  );
+  const trips = result.rows.map(shapeTrip);
+  // Record who saw which numbers, same trace as opening a ride and with the same 10 minute dedupe. This is the fallback
+  // for when the console or live map is down, so the audit write is ONE statement on ONE connection (not up to 400
+  // parallel inserts that would take the whole pool) and a failure is logged, never allowed to stop the page.
+  await logNumberViews(req.user.id, trips);
+  res.json({
+    generatedAt: new Date().toISOString(),
+    trips: trips.map((t) => ({
+      id: t.id, status: t.ride_status, panic: !!t.has_active_panic,
+      pickup: t.pickup_address, stops: t.stops, flight: t.flight_number,
+      scheduledAt: t.scheduled_pickup_at, vehicle: t.vehicle_type,
+      riderName: t.rider_name, riderPhone: t.rider_phone,
+      emergencyName: t.emergency_contact_name, emergencyPhone: t.emergency_contact_phone,
+      driverName: t.driver_name, driverPhone: t.driver_phone,
+      car: [t.make_model, t.plate_number].filter(Boolean).join(" "),
+    })),
+  });
+});
+
+// Flight lookups are paid and quota-limited. services/flightLookup.js caches each flight and day
+// (five minutes, ninety seconds while the plane is in the air), so many people with the page open
+// still cost one query. It never throws, and "unknown" is a real answer shown to Ops.
+async function cachedFlight(trip) {
+  const looked = await lookupFlight({
+    flightNumber: trip.flight_number, date: trip.flight_date || null,
+    direction: trip.booking_type === "dropoff" ? "departure" : "arrival",
+  });
+  return {
+    configured: looked.reason !== "no_provider",
+    flight: looked.flight,
+    error: looked.reason === "provider_error" ? "Flight lookup is temporarily unavailable." : null,
+    tracking: { state: looked.state, label: looked.label, reason: looked.reason, delayMin: looked.delayMin ?? null },
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+// ── Dispatch (services/dispatch.js) ────────────────────────────────────────
+// GET  /trips/:id/drivers        approved drivers to pick from, best first
+// GET  /trips/:id/dispatch       who was alerted, who took it, who changed it
+// POST /trips/:id/assign-driver  { driverId, note? }  put a driver on the ride, or swap one
+// POST /trips/:id/alert-drivers  push "New ride" to online drivers again
+const dispatch = require("../services/dispatch");
+const rideIdOf = (req) => (/^\d+$/.test(req.params.id) ? Number(req.params.id) : null);
+
+router.get("/trips/:id/drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const drivers = await dispatch.driverOptions(id);
+  if (!drivers) return res.status(404).json({ error: "Ride not found" });
+  res.json({ drivers });
+});
+
+router.get("/trips/:id/dispatch", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  res.json({ events: await dispatch.dispatchHistory(id) });
+});
+
+router.post("/trips/:id/assign-driver", async (req, res) => {
+  const id = rideIdOf(req);
+  const driverId = Number(req.body && req.body.driverId);
+  if (!id || !Number.isInteger(driverId) || driverId < 1) return res.status(400).json({ error: "Need a ride and a driver." });
+  try {
+    const out = await dispatch.assignDriver({ rideId: id, driverId, actorId: req.user.id, note: req.body.note });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    if (e instanceof dispatch.DispatchError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
+});
+
+router.post("/trips/:id/alert-drivers", async (req, res) => {
+  const id = rideIdOf(req);
+  if (!id) return res.status(400).json({ error: "Invalid ride id" });
+  const ride = (await pool.query("SELECT ride_status, driver_id FROM rides WHERE id = $1", [id])).rows[0];
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.ride_status !== "requested" || ride.driver_id) return res.status(409).json({ error: "This ride already has a driver." });
+  res.json(await dispatch.alertDrivers(id, "alerted"));
+});
+
+// GET /api/admin/trips/:id — one ride (any status) plus live flight status when it has a flight number.
+router.get("/trips/:id", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const result = await pool.query(`${TRIP_SELECT} WHERE rides.id = $1`, [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: "Ride not found" });
+  const trip = shapeTrip(result.rows[0]);
+  // This view returns full numbers, so it leaves the same trace as the Ride Desk.
+  if (trip.rider_phone || trip.rider_email || trip.emergency_contact_phone) await logNumberView(req.user.id, trip.id, trip.rider_id, "rider");
+  if (trip.driver_phone) await logNumberView(req.user.id, trip.id, trip.driver_user_id, "driver");
+  const flight = trip.flight_number ? await cachedFlight(trip) : null;
+  res.json({ trip, flight });
+});
+
+// POST /api/admin/trips/:id/pnr: shows the booking code for one ride so support can confirm it with
+// the airline. The code is encrypted at rest and never in a list or the trip payload; every reveal
+// is recorded with who asked, the same trail as viewing a phone number.
+router.post("/trips/:id/pnr", async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Invalid ride id" });
+  const row = (await pool.query("SELECT id, rider_id, pnr_enc FROM rides WHERE id = $1", [req.params.id])).rows[0];
+  if (!row) return res.status(404).json({ error: "Ride not found" });
+  if (!row.pnr_enc) return res.status(404).json({ error: "No booking code was given for this ride." });
+  let pnr;
+  try { pnr = pnrVault.open(row.pnr_enc, row.id); }
+  catch (err) {
+    console.error(`[flight] PNR for ride #${row.id} could not be opened:`, err.message);
+    return res.status(503).json({ error: "The booking code is unavailable right now." });
+  }
+  await pool.query(
+    "INSERT INTO staff_contact_access (staff_user_id, ride_id, subject_user_id, subject_role, action) VALUES ($1, $2, $3, 'rider', 'view_pnr')",
+    [req.user.id, row.id, row.rider_id]
+  );
+  res.set("Cache-Control", "no-store").json({ pnr });
 });
 
 // ── Panic alerts ─────────────────────────────────────────────────────────
@@ -312,10 +730,18 @@ router.get("/waitlist", async (req, res) => {
 // last activity. This is what makes a "signed up but never booked" person
 // visible — before this, that data existed only as a row in the database
 // with no page to see it.
+//
+// The ID photo is NOT in this list. users.id_document_url holds the whole image
+// as a data URL (up to 6MB), so selecting it here put up to 200 riders' passport
+// and NIN photos into one response, readable by every role that may open this
+// list (including Operations, which is read only). The list carries a
+// has_id_document flag instead; the image is fetched one rider at a time from
+// GET /riders/:id/id-document below, which only admins can call.
 router.get("/riders", async (req, res) => {
   const result = await pool.query(
-    `SELECT users.id, users.name, users.email, users.phone, users.preferred_language, users.created_at,
-            users.id_document_url, users.id_verification_status, users.id_verification_submitted_at,
+    `SELECT users.id, users.name, users.email, users.phone, users.whatsapp_number, users.preferred_language, users.created_at,
+            (users.id_document_url IS NOT NULL AND users.id_document_url <> '') AS has_id_document,
+            users.id_verification_status, users.id_verification_submitted_at,
             users.id_verification_reviewed_at, users.id_verification_rejection_reason,
             users.wallet_balance_naira,
             COUNT(rides.id) as ride_count,
@@ -336,6 +762,36 @@ router.get("/riders", async (req, res) => {
       wallet_balance_naira: Number(r.wallet_balance_naira),
     })),
   });
+});
+
+// GET /api/admin/riders/:id/id-document — the one rider's submitted ID photo,
+// as an image. Admin only: it is the passport or NIN picture, so it is not
+// something support or Operations can pull (Operations is also refused by the
+// read-only allowlist, which only lets the exact /riders list path through).
+// The console fetches it with its login token and shows it from a blob URL,
+// because an <img src> cannot send an Authorization header.
+//
+// Only PNG, JPEG and WEBP are ever served, with the type fixed by us and
+// nosniff, so a bad value in the column can never be handed to a browser as
+// HTML or SVG. no-store keeps the photo out of any shared or browser cache.
+router.get("/riders/:id/id-document", requireRole("admin"), async (req, res) => {
+  if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ error: "Invalid rider id" });
+  const result = await pool.query(
+    "SELECT id_document_url FROM users WHERE id = $1 AND role = 'rider' AND deleted_at IS NULL",
+    [req.params.id]
+  );
+  const stored = result.rows[0]?.id_document_url;
+  if (!stored) return res.status(404).json({ error: "No ID document on file for this rider" });
+  const match = /^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(stored);
+  if (!match) return res.status(422).json({ error: "The stored ID document is not a readable image" });
+  const type = match[1] === "png" ? "image/png" : match[1] === "webp" ? "image/webp" : "image/jpeg";
+  res.set({
+    "Content-Type": type,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+    "Content-Disposition": "inline",
+  });
+  res.send(Buffer.from(match[2], "base64"));
 });
 
 // ── Wallet ledger ────────────────────────────────────────────────────────
@@ -708,6 +1164,51 @@ router.patch("/partner-venues/:id", requireRole("admin"), async (req, res) => {
     ]
   );
   res.json({ venue: updated.rows[0] });
+});
+
+// ── Cancelled flight credits (services/flightCredit.js) ───────────────────
+// The fare of a cancelled arrival is kept as wallet credit. This is the Ops side: find a credit by
+// rider name, passenger surname, email, phone, flight number or ride number, apply one by hand when
+// the provider missed a cancellation, and move one to the account that should really have it.
+
+router.get("/flight-credits", async (req, res) => {
+  const rows = await flightCredit.searchCredits({ q: String(req.query.q || ""), status: req.query.status ? String(req.query.status) : null });
+  // No credit ever expires on its own (that needs counsel). Held credits older than this many
+  // days are flagged so a person contacts the rider. 0 turns the flag off.
+  const n = Number(process.env.FLIGHT_CREDIT_REVIEW_DAYS);
+  const reviewAfterDays = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 180;
+  res.json({ enabled: flightCredit.creditEnabled(), reviewAfterDays, credits: rows });
+});
+
+// Find the account a credit should go to: by name, email or phone.
+router.get("/flight-credits/find-accounts", async (req, res) => {
+  const words = flightCredit.nameKey(String(req.query.q || "")).split(" ").filter(Boolean).slice(0, 4);
+  if (!words.length) return res.json({ accounts: [] });
+  const params = [];
+  const where = words.map((w) => {
+    params.push(`%${w}%`);
+    return `(lower(name) LIKE $${params.length} OR lower(email) LIKE $${params.length} OR coalesce(phone,'') LIKE $${params.length})`;
+  });
+  const r = await pool.query(`SELECT id, name, email, phone FROM users WHERE ${where.join(" AND ")} ORDER BY name LIMIT 20`, params);
+  res.json({ accounts: r.rows });
+});
+
+router.post("/rides/:id/flight-credit", requireRole("admin"), async (req, res) => {
+  if (!flightCredit.creditEnabled()) return res.status(409).json({ error: "Flight credit is switched off (FLIGHT_CANCEL_CREDIT)." });
+  const result = await flightCredit.applyCredit(Number(req.params.id), { actorId: req.user.id, source: "ops" });
+  if (!result.done) return res.status(409).json({ error: `Not credited: ${result.why}.` });
+  res.json({ credited: true, amount: result.amount, creditId: result.creditId });
+});
+
+router.post("/flight-credits/:id/move", requireRole("admin"), async (req, res) => {
+  const toUserId = Number(req.body?.toUserId);
+  if (!Number.isInteger(toUserId) || toUserId <= 0) return res.status(400).json({ error: "toUserId is required." });
+  const result = await flightCredit.moveCredit(Number(req.params.id), toUserId, { actorId: req.user.id, note: req.body?.note || "" });
+  if (!result.done) {
+    const why = { already_spent: "The rider has already spent this credit.", not_held: "This credit was already moved.", same_account: "That is the same account.", target_not_found: "No such account.", not_found: "No such credit." }[result.why] || result.why;
+    return res.status(409).json({ error: why });
+  }
+  res.json({ moved: true, amount: result.amount });
 });
 
 module.exports = router;
