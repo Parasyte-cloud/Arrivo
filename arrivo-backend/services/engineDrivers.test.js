@@ -46,5 +46,11 @@ const row = { driver: { id: "d1", displayName: "Ada", status: "pending", verific
     await fetchEngineDrivers({ env, fetchImpl: f, now: 1000 }); await fetchEngineDrivers({ env, fetchImpl: f, now: 2000 });
     assert.strictEqual(n, 1);
   });
+  await test("a new-engine driver always has a findable name, and phone and email come through for search", async () => {
+    const a = mapDriver({ driver: { id: "x1", displayName: "", email: "a@b.co", phone: "+2348011112222", status: "pending" } });
+    assert.strictEqual(a.name, "a@b.co"); assert.strictEqual(a.phone, "+2348011112222"); assert.strictEqual(a.email, "a@b.co");
+    assert.strictEqual(mapDriver({ driver: { id: "x2", displayName: "Ada" } }).name, "Ada");
+    assert.strictEqual(mapDriver({ driver: { id: "x3" } }).name, "Unnamed driver");
+  });
   console.log(`\n${passed} passed`);
 })();

@@ -18,9 +18,10 @@ function mapDriver(row, now = Date.now()) {
   return {
     id: `engine:${d.id}`,
     source: "engine",
-    name: d.displayName || "Driver",
-    email: null,
-    phone: null,
+    // Never a bare "Driver": Ops search by name, phone or email, so fall back to whatever identifies the person.
+    name: d.displayName || d.email || d.phone || "Unnamed driver",
+    email: d.email || d.contactEmail || null,
+    phone: d.phone || d.contactPhone || null,
     user_id: null,
     make_model: [v.make, v.model, v.year].filter(Boolean).join(" ") || null,
     plate_number: v.plate || null,
