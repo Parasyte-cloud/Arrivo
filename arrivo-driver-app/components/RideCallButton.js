@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   link: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, paddingHorizontal: 8, minHeight: 44 },
   linkText: { color: colors.dark.text, fontSize: 14, fontWeight: "600" },
   scrim: { flex: 1, backgroundColor: "rgba(8,8,30,0.72)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: colors.ink, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg, paddingBottom: 36, alignItems: "center", gap: spacing.sm },
+  sheet: { backgroundColor: colors.fill, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg, paddingBottom: 36, alignItems: "center", gap: spacing.sm },
   ringIcon: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.amber, alignItems: "center", justifyContent: "center", marginBottom: spacing.xs },
   sheetTitle: { color: "#fff", fontSize: 22, fontWeight: "800" },
   sheetBody: { color: "rgba(255,255,255,0.75)", fontSize: 15, lineHeight: 21 },

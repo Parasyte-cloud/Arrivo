@@ -6,13 +6,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Button, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../context/LanguageContext";
 import { TRANSLATIONS } from "../i18n/translations";
 import { formatNumber } from "../i18n/i18n";
 import { getCashout, getCashoutBanks, saveCashoutBank, withdrawCashout } from "../services/api";
 import { parseAmount, statusTone, errorKey, newIdempotencyKey, filterBanks } from "../utils/cashout";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // Turn a wallet balance into money in the driver's own bank account.
 // Text comes from i18n/translations.js.
@@ -195,6 +196,7 @@ export default function CashoutScreen() {
             ))}
           </>
         ) : null}
+        <ParasyteSignature />
       </ScrollView>
 
       <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>
@@ -228,12 +230,12 @@ const styles = StyleSheet.create({
   link: { color: colors.tealBright, fontSize: 12.5, fontWeight: "600" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   input: {
-    backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: tint(0.07), borderRadius: 12, borderWidth: 1, borderColor: tint(0.13),
     paddingHorizontal: 14, paddingVertical: 13, color: colors.dark.text, fontSize: 14, marginBottom: spacing.sm,
   },
-  bankRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)" },
+  bankRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: tint(0.07) },
   sectionLabel: { color: colors.dark.textMuted, fontSize: 12, fontWeight: "600", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   notice: { color: colors.amber, fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.sm },
 });

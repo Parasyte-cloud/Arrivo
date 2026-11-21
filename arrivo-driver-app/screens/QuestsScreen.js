@@ -4,12 +4,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Card, Tag } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getDriverQuests } from "../services/api";
 import { formatNumber } from "../i18n/i18n";
 import { useT } from "../context/LanguageContext";
 import { questState, questProgressPct, tripsLeft, timeLeftLabel, questRules, sortQuests } from "../utils/quests";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 // ArrivoExpress quests: finish a number of real trips, earn a fixed reward.
 // Text comes from i18n/translations.js.
@@ -113,6 +114,7 @@ export default function QuestsScreen() {
         {(quests || []).map((q) => (
           <QuestCard key={q.id} quest={q} />
         ))}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -126,11 +128,11 @@ const styles = StyleSheet.create({
   questTitle: { color: colors.dark.text, fontSize: 14, fontWeight: "700" },
   meta: { color: colors.dark.textMuted, fontSize: 11, marginTop: 3, textTransform: "capitalize" },
   reward: { color: colors.amber, fontSize: 18, fontWeight: "800", marginBottom: 4 },
-  barTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.12)", overflow: "hidden" },
+  barTrack: { height: 8, borderRadius: 4, backgroundColor: tint(0.1), overflow: "hidden" },
   barFill: { height: 8, borderRadius: 4, backgroundColor: colors.amber },
   progressText: { color: colors.dark.text, fontSize: 12, marginTop: spacing.sm },
   rulesToggle: { color: colors.tealBright, fontSize: 12, fontWeight: "600", marginTop: spacing.sm },
   rule: { color: colors.dark.textMuted, fontSize: 11.5, lineHeight: 17, marginTop: 4 },
-  error: { color: "#FF9B8A", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
+  error: { color: "#C2362B", fontSize: 12.5, marginBottom: spacing.md, textAlign: "center" },
   empty: { color: colors.dark.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.lg },
 });

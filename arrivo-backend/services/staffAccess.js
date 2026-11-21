@@ -24,6 +24,8 @@ const rank = (level) => Math.max(0, LEVELS.indexOf(level));
 // before rides).
 //   work: true  means a change that only needs "view" because it's part of
 //               doing the job, not managing the area (log a call, go on duty).
+//   need: "manage"  means even a read needs manage, for a view that is more
+//               sensitive than the page around it (a rider's ID photo).
 const AREAS = [
   { id: "ride-desk", label: "Ride Desk", rules: [
     { path: /^\/api\/staff\/(duty|rides\/\d+\/contact-log)\/?$/, work: true },
@@ -36,9 +38,20 @@ const AREAS = [
   { id: "wallet", label: "Wallet", rules: [
     { path: /^\/api\/admin\/riders\/\d+\/wallet-adjust\/?$/ },
     { path: /^\/api\/admin\/wallet-transactions(\/|$)/ },
+    // Flight credits are wallet money. Above the Rides area on purpose: anyone granted Rides manage must not
+    // be able to issue or move credit, and the list shows full email and phone.
+    { path: /^\/api\/admin\/(flight-credits|rides\/\d+\/flight-credit)(\/|$)/ },
   ] },
-  { id: "riders", label: "Riders", rules: [{ path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ }] },
+  { id: "riders", label: "Riders", rules: [
+    // The ID photo (passport or NIN) is more sensitive than the list around it, so reading it needs manage, not
+    // just view. Admin and the owner have manage; the support and operations presets only have view.
+    { path: /^\/api\/admin\/riders\/\d+\/id-document\/?$/, need: "manage" },
+    { path: /^\/api\/admin\/(riders|waitlist)(\/|$)/ },
+  ] },
   { id: "drivers", label: "Drivers", rules: [{ path: /^\/api\/admin\/drivers(\/|$)/ }] },
+  // Which services each driver may work. Not given to admins by default: the
+  // owner holds it and hands it to named people (see OWNER_ONLY_AREAS).
+  { id: "driver-tiers", label: "Driver Tiers", rules: [{ path: /^\/api\/admin\/driver-tiers(\/|$)/ }] },
   { id: "live-map", label: "Live Map", rules: [
     { path: /^\/api\/admin\/rides\/live\/?$/ },
     { path: /^\/api\/live-map(\/|$)/ },
@@ -66,7 +79,7 @@ const AREAS = [
 const AREA_IDS = AREAS.map((a) => a.id);
 // How the Team page lists them: the same order as the console sidebar.
 const DISPLAY_ORDER = [
-  "ride-desk", "panics", "riders", "drivers", "rides", "support", "flight-issues", "vehicles",
+  "ride-desk", "panics", "riders", "drivers", "driver-tiers", "rides", "support", "flight-issues", "vehicles",
   "memberships", "wallet", "arrivo-express", "express-pricing", "safety", "trip-tracker", "live-map", "analytics", "exports",
 ];
 
@@ -74,8 +87,12 @@ const all = (level) => Object.fromEntries(AREA_IDS.map((id) => [id, level]));
 
 // Starting points. Support starts narrow on purpose: they see customer data,
 // so they get what the job needs and more is granted per person.
+// Areas only the owner can hand out. An admin who can manage staff may change
+// most things on the Team page, but never who decides driver tiers.
+const OWNER_ONLY_AREAS = ["driver-tiers"];
+
 const PRESETS = {
-  admin: all("manage"),
+  admin: { ...all("manage"), "driver-tiers": "none" },
   support: {
     ...all("none"),
     "ride-desk": "manage",
@@ -92,6 +109,8 @@ const PRESETS = {
     ...all("none"),
     "ride-desk": "view",
     panics: "view",
+    // The list only (see operationsReadOnly.js). Verify-ID and wallet adjustments stay admin-only writes.
+    riders: "view",
     drivers: "view",
     rides: "view",
     "flight-issues": "view",
@@ -137,7 +156,7 @@ function diffFromPreset(role, wanted) {
 function findRule(path) {
   for (const area of AREAS) {
     for (const rule of area.rules) {
-      if (rule.path.test(path)) return { area: area.id, work: !!rule.work };
+      if (rule.path.test(path)) return { area: area.id, work: !!rule.work, need: rule.need || null };
     }
   }
   return null;
@@ -150,7 +169,7 @@ const READS = new Set(["GET", "HEAD", "OPTIONS"]);
 function requirementFor(method, path) {
   const hit = findRule(path);
   if (!hit) return null;
-  const need = READS.has(String(method).toUpperCase()) || hit.work ? "view" : "manage";
+  const need = hit.need || (READS.has(String(method).toUpperCase()) || hit.work ? "view" : "manage");
   return { area: hit.area, need };
 }
 
@@ -158,12 +177,17 @@ function requirementFor(method, path) {
 function check(person, method, path) {
   const req = requirementFor(method, path);
   if (!req) return null;
+  // The waitlist shares the Riders area (one page in the console), but it holds sign-up emails of people who
+  // are not riders yet. Operations may read the riders list, not the waitlist.
+  if (person && person.role === "operations" && /^\/api\/admin\/waitlist(\/|$)/.test(path)) {
+    return { ok: false, area: req.area, need: req.need, has: "none" };
+  }
   const perms = effectivePermissions(person) || {};
   const has = perms[req.area] || "none";
   return { ok: rank(has) >= rank(req.need), area: req.area, need: req.need, has };
 }
 
 module.exports = {
-  LEVELS, AREAS, AREA_IDS, DISPLAY_ORDER, PRESETS, STAFF_ROLES,
+  LEVELS, AREAS, AREA_IDS, DISPLAY_ORDER, PRESETS, STAFF_ROLES, OWNER_ONLY_AREAS,
   effectivePermissions, diffFromPreset, cleanOverrides, requirementFor, check, rank,
 };

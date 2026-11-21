@@ -5,8 +5,8 @@ const { pool } = require("../db/db");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { getDriverForUser } = require("./drivers");
 const { sendBookingConfirmationEmail, sendDriverAssignedEmail } = require("../services/email");
+const notifyPlatform = require("../services/notifyPlatform");
 const { sendPushNotification } = require("../services/pushNotifications");
-const { sendWhatsAppMessage, driverAssignedMessage } = require("../services/whatsapp");
 const { verifyPaystackTransaction } = require("./payments");
 const { getDistanceDuration } = require("../services/googleMaps");
 const {
@@ -25,6 +25,8 @@ const { creditMembershipCashback } = require("../services/membershipCashback");
 const { recordQuestProgress } = require("../services/driverQuests");
 const { isStandardBookingBlocked, blockedBookingResponse } = require("../services/bookingWindow");
 const { sendPanicAlert } = require("../services/panicAlert");
+const receipts = require("../services/receipt");
+const dispatch = require("../services/dispatch");
 const { getActivePlanForUser } = require("../services/familyPlan");
 const { getConfigNumber, getConfigBool } = require("../services/systemConfig");
 const { isWithinRadiusKm } = require("../services/routeDeviation");
@@ -37,6 +39,7 @@ const { isWithinRadiusKm } = require("../services/routeDeviation");
 // the same reason LUXURY_SURCHARGE_USD in services/fare.js is.
 const MIN_WALLET_BALANCE_USD = 100;
 
+const { RIDE_TIER_SQL, HOLDS_TIER_SQL, tierForRide } = require("../services/driverTiers");
 const router = express.Router();
 
 // A rider whose first POST succeeded but whose response was lost (dropped
@@ -201,6 +204,8 @@ async function withIdempotentMoneyBooking(res, userId, idempotencyKey, requestBo
     await completeIdempotentRide(client, idem.recordId, { rideId: ride.id, responseStatus: 201, responseBody });
     await client.query("COMMIT");
     res.status(201).json(responseBody);
+    // Tell the drivers who can take it (services/dispatch.js). Never throws.
+    dispatch.alertDrivers(ride.id);
 
     if (onFreshSuccess) {
       try {
@@ -850,12 +855,13 @@ async function createRideHandler(req, res) {
 
     // The website used to send this from PATCH /:id/payment. A ride that is
     // paid at creation returns early there, so it is sent here instead.
-    if (cardPaymentRequired) {
+    if (cardPaymentRequired && !notifyPlatform.platformOwnsBookingEmail()) {
       pool.query("SELECT email FROM users WHERE id = $1", [req.user.id])
         .then((rider) => rider.rows[0] && sendBookingConfirmationEmail(rider.rows[0].email, cardRide))
         .catch((e) => console.error("Booking confirmation email failed:", e.message));
     }
     res.status(201).json({ ride: withParsedStops(cardRide) });
+    dispatch.alertDrivers(cardRide.id);
   } catch (err) {
     await cardClient.query("ROLLBACK");
     console.error("Card ride creation failed:", err.message);
@@ -1142,6 +1148,7 @@ router.get("/available", requireAuth, requireRole("driver"), async (req, res) =>
      LEFT JOIN partner_venues ON partner_venues.id = rides.partner_venue_id
      WHERE rides.ride_status = 'requested' AND rides.driver_id IS NULL
        AND (rides.preferred_driver_id IS NULL OR rides.preferred_driver_id = $1)
+       AND ${HOLDS_TIER_SQL("$1", RIDE_TIER_SQL("rides"))}
        AND (
          rides.scheduled_pickup_at IS NULL
          OR rides.preferred_driver_id = $1
@@ -1188,6 +1195,20 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     return res.status(403).json({ error: "Your account isn't verified yet. An admin needs to approve your driver profile before you can accept rides." });
   }
 
+  // The ride's service must be one this driver has switched on. GET /available
+  // already hides the others, this stops a direct call with an old ride id.
+  const target = (await pool.query("SELECT booking_type, service FROM rides WHERE id = $1", [req.params.id])).rows[0];
+  if (target) {
+    const need = tierForRide(target);
+    if (!(await pool.query("SELECT 1 FROM driver_tier_access WHERE driver_id = $1 AND tier = $2 AND status = 'active'", [driver.id, need])).rowCount) {
+      return res.status(403).json({
+        error: "This service is not switched on for your account. Ask RideArrivo Ops.",
+        code: "TIER_NOT_GRANTED",
+        tier: need,
+      });
+    }
+  }
+
   // Defense in depth — GET /available already hides a preferred-driver ride
   // from everyone else's queue, but this stops a direct API call (an old
   // cached ride id, for instance) from bypassing that.
@@ -1212,33 +1233,14 @@ router.post("/:id/accept", requireAuth, requireRole("driver"), async (req, res) 
     )
   ).rows[0];
 
-  const driverUser = await pool.query("SELECT name FROM users WHERE id = $1", [req.user.id]);
-  const driverName = driverUser.rows[0]?.name || "Your driver";
-  sendPushNotification(
-    ride.rider_push_token,
-    "Driver on the way",
-    `${driverName} accepted your ride and is heading your way.`,
-    { rideId: ride.id, type: "ride_accepted" }
+  // Push, WhatsApp and email to the rider, the same whether the driver accepted
+  // or ops assigned it (services/dispatch.js). Fire and forget: a slow send
+  // never holds up the response the driver app is waiting on.
+  dispatch.tellRiderDriverAssigned(ride.id, driver.id).catch((e) => console.error("Driver-assigned notice failed:", e.message));
+  pool.query(
+    "INSERT INTO ride_dispatch_events (ride_id, kind, actor_id, driver_id) VALUES ($1, 'accepted', $2, $3)",
+    [ride.id, req.user.id, driver.id]
   ).catch(() => {});
-
-  // "It should have those [driver/vehicle] information and also it should
-  // be sent to their WhatsApp number and email" — sent in parallel with the
-  // push above, fire-and-forget same as every other notification in this
-  // file (a slow/failed WhatsApp or email send should never hold up the
-  // accept response the driver app is waiting on).
-  const vehicleInfo = await pool.query(
-    `SELECT vehicles.make_model, vehicles.plate_number FROM vehicles WHERE vehicles.id = (SELECT vehicle_id FROM drivers WHERE id = $1)`,
-    [driver.id]
-  );
-  const vehicleLabel = vehicleInfo.rows[0]?.make_model
-    ? `${vehicleInfo.rows[0].make_model}${vehicleInfo.rows[0].plate_number ? " (" + vehicleInfo.rows[0].plate_number + ")" : ""}`
-    : null;
-  if (ride.rider_whatsapp_number) {
-    sendWhatsAppMessage(ride.rider_whatsapp_number, driverAssignedMessage(ride, driverName, vehicleLabel)).catch(() => {});
-  }
-  if (ride.rider_email) {
-    sendDriverAssignedEmail(ride.rider_email, ride, driverName, vehicleLabel).catch(() => {});
-  }
 
   res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
 });
@@ -1280,6 +1282,13 @@ router.patch("/:id/status", requireAuth, requireRole("driver"), async (req, res)
   const nextAllowed = VALID_STATUS_TRANSITIONS[currentStatus] || [];
   if (!nextAllowed.includes(status)) {
     return res.status(400).json({ error: `Can't move a ride from '${currentStatus}' to '${status}'.` });
+  }
+
+  if (status === "in_progress" && existing.rows[0].quote_pending) {
+    return res.status(409).json({
+      error: "Ops is still confirming the price with the rider. You can start this trip once it is set.",
+      code: "QUOTE_PENDING",
+    });
   }
 
   if (status === "in_progress") {
@@ -1641,6 +1650,10 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
   if (!ride.payment_reference) {
     return res.status(400).json({ error: "This ride has no payment reference to verify." });
   }
+  // Never mark a cancelled ride paid. If money did arrive it goes to Ops as a payment exception to refund.
+  if (ride.ride_status === "cancelled") {
+    return res.status(409).json({ error: "This ride was cancelled, so it can't be marked paid. If you were charged, contact support and we will refund you.", code: "RIDE_CANCELLED" });
+  }
 
   let verification;
   try {
@@ -1688,7 +1701,8 @@ router.patch("/:id/payment", requireAuth, async (req, res) => {
   }
 
   const rider = await pool.query("SELECT email FROM users WHERE id = $1", [req.user.id]);
-  if (rider.rows[0]) {
+  // The Notification Platform sends booking emails once NOTIFY_PLATFORM_BOOKING_EMAIL=true.
+  if (rider.rows[0] && !notifyPlatform.platformOwnsBookingEmail()) {
     sendBookingConfirmationEmail(rider.rows[0].email, newRide).catch((e) =>
       console.error("Booking confirmation email failed:", e.message)
     );
@@ -1769,6 +1783,20 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 
   res.json({ ride: withParsedStops(await attachShareParticipants(ride)) });
+});
+
+// GET /api/rides/:id/receipt: the receipt for a finished trip, for the rider
+// who booked it or the driver who drove it. Same shape for every service.
+router.get("/:id/receipt", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "Invalid ride id" });
+  try {
+    res.set("Cache-Control", "no-store");
+    res.json({ receipt: await receipts.getReceipt(pool, id, req.user.id) });
+  } catch (e) {
+    if (e instanceof receipts.ReceiptError) return res.status(e.status).json({ error: e.message, code: e.code });
+    throw e;
+  }
 });
 
 // GET /api/rides/:id/share — the rider (or assigned driver, or admin) calls

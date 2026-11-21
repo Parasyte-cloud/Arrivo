@@ -1,0 +1,94 @@
+const express = require("express");
+const { pool } = require("../db/db");
+const { requireAuth } = require("../middleware/auth");
+const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const { SERVICE_JOB_TIERS } = require("../services/driverTiers");
+const { logSafetyEvent } = require("../services/safetyEvents");
+
+const rateLimit = require("express-rate-limit");
+const { pool: limitPool } = require("../db/db");
+const { PgRateLimitStore } = require("../services/pgRateLimitStore");
+
+const router = express.Router();
+
+// Each order pages Ops and shows to drivers, so one account cannot flood them.
+const orderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.SERVICE_REQUEST_RATE_LIMIT) || 15,
+  store: new PgRateLimitStore({ pool: limitPool, name: "service-requests" }),
+  keyGenerator: (req) => `u${req.user && req.user.id}`,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
+  handler: (req, res) => res.status(429).json({ error: "Too many requests. Please wait a while, or message us on WhatsApp." }),
+});
+
+// POST /api/service-requests
+// Any rider can order any service. The ride is saved with its service, so the
+// drivers who hold that tier (and only them) see it in their queue at once.
+// There is no fixed price list for these services, so the ride starts with
+// quote_pending set: a driver can take it, Ops confirms the price with the rider,
+// and the trip cannot start until that price is on it.
+// body: { service, pickupAddress, destinationAddress, pickupLat?, pickupLng?, destinationLat?, destinationLng?, contactPhone, requestedPickupAt?, passengerCount?, details? }
+// GET /api/services: the home-screen catalogue (see services/catalogue.js).
+router.get("/catalogue", requireAuth, (req, res) => {
+  const { buildCatalogue } = require("../services/catalogue");
+  const { isArrivoNowEnabled } = require("./instantRides");
+  res.json({ services: buildCatalogue({ expressEnabled: isArrivoNowEnabled() }) });
+});
+
+router.post("/", requireAuth, orderLimiter, async (req, res) => {
+  const b = req.body || {};
+  const service = String(b.service || "").toLowerCase();
+  if (!SERVICE_JOB_TIERS.includes(service)) {
+    return res.status(400).json({ error: `service must be one of: ${SERVICE_JOB_TIERS.join(", ")}.` });
+  }
+  if (req.user.role !== "rider") return res.status(403).json({ error: "Only riders can order a service." });
+  // Campus is for students aged 18 and over (counsel's advice, 5 Nov 2026; under 18s only through the Family Package, not built yet); the rider confirms it before ordering.
+  if (service === "campus" && b.confirmAge18 !== true) {
+    return res.status(400).json({ error: "ArrivoCampus is for students aged 18 or over. Please confirm to continue.", code: "CAMPUS_AGE_CONFIRM" });
+  }
+  const pickup = String(b.pickupAddress || "").trim();
+  const destination = String(b.destinationAddress || "").trim();
+  if (pickup.length < 3) return res.status(400).json({ error: "Add a pickup address." });
+  if (destination.length < 3) return res.status(400).json({ error: "Add a destination." });
+  if (!b.contactPhone || !isValidPhone(b.contactPhone)) return res.status(400).json({ error: phoneErrorMessage("Contact phone number") });
+  let when = null;
+  if (b.requestedPickupAt) {
+    when = new Date(b.requestedPickupAt);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now()) return res.status(400).json({ error: "Pick a pickup time in the future." });
+  }
+  let passengers = null;
+  if (b.passengerCount !== undefined && b.passengerCount !== null && b.passengerCount !== "") {
+    passengers = Number(b.passengerCount);
+    if (!Number.isInteger(passengers) || passengers < 1 || passengers > 50) return res.status(400).json({ error: "passengerCount must be a whole number from 1 to 50." });
+  }
+  // Two identical requests within a minute are a double tap, not two orders.
+  // Optional map points from the address picker. They put the job on the live map for the rider and the driver,
+  // exactly like an ArrivoExpress trip. Anything that is not a real coordinate is ignored, never an error.
+  const coord = (v, lim) => { if (v === undefined || v === null || v === "") return null; const n = Number(v); return Number.isFinite(n) && Math.abs(n) <= lim ? n : null; };
+  let pLat = coord(b.pickupLat, 90), pLng = coord(b.pickupLng, 180), dLat = coord(b.destinationLat, 90), dLng = coord(b.destinationLng, 180);
+  if (pLat === null || pLng === null) { pLat = null; pLng = null; }
+  if (dLat === null || dLng === null) { dLat = null; dLng = null; }
+  const dup = await pool.query(
+    `SELECT * FROM rides WHERE rider_id = $1 AND service = $2 AND pickup_address = $3 AND ride_status = 'requested'
+       AND created_at > now() - interval '1 minute' LIMIT 1`, [req.user.id, service, pickup]);
+  if (dup.rows[0]) return res.status(200).json({ ride: dup.rows[0], duplicate: true });
+
+  const created = await pool.query(
+    `INSERT INTO rides (rider_id, pickup_address, stops, booking_type, service, fare_naira, payment_status,
+                        ride_status, agreed_cancellation_policy, quote_pending, scheduled_pickup_at, rider_note,
+                        contact_phone, passenger_count,
+                        pickup_lat, pickup_lng, destination_lat, destination_lng)
+     VALUES ($1, $2, $3, 'service_job', $4, 0, 'pending', 'requested', true, true, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+    [req.user.id, pickup, JSON.stringify([destination]), service, when,
+     b.details ? String(b.details).slice(0, 1000) : null, String(b.contactPhone).trim(), passengers,
+     pLat, pLng, dLat, dLng]
+  );
+  const ride = created.rows[0];
+  await logSafetyEvent(pool, "service_request_created", { rideId: ride.id, userId: req.user.id, detail: { service } });
+  require("../services/serviceRequestAlert").sendServiceRequestAlert(pool, ride.id); // fire and forget
+  res.status(201).json({ ride: { ...ride, stops: JSON.parse(ride.stops || "[]") } });
+});
+
+module.exports = router;

@@ -14,11 +14,14 @@ import { GradientBackground } from "../components/GradientBackground";
 import { colors, spacing, radius } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { getPartnerVenues } from "../services/api";
+import { useTranslation } from "react-i18next";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const CATEGORY_LABELS = { club: "Club", restaurant: "Restaurant", other: "Venue" };
 const CATEGORY_ICONS = { club: "musical-notes-outline", restaurant: "restaurant-outline", other: "location-outline" };
 
 export default function PartnerVenuesScreen({ navigation }) {
+  const { t } = useTranslation();
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [venues, setVenues] = useState([]);
@@ -58,9 +61,9 @@ export default function PartnerVenuesScreen({ navigation }) {
     <View style={styles.screen}>
       <GradientBackground variant="dark" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
-        <Text style={styles.title}>Reserved pickups</Text>
+        <Text style={styles.title}>{t("partnerVenues.reservedPickups")}</Text>
         <Text style={styles.subtitle}>
-          Book ahead from a partner club or restaurant — tell us when you're leaving, and a driver will be there.
+          {t("partnerVenues.bookAheadFromAPartner")}
         </Text>
 
         {loading ? (
@@ -71,7 +74,7 @@ export default function PartnerVenuesScreen({ navigation }) {
           </Card>
         ) : venues.length === 0 ? (
           <Card tone="dark" style={{ marginTop: spacing.md }}>
-            <Text style={styles.emptyText}>No partner venues yet — check back soon.</Text>
+            <Text style={styles.emptyText}>{t("partnerVenues.noPartnerVenuesYetCheck")}</Text>
           </Card>
         ) : (
           venues.map((venue) => (
@@ -82,7 +85,7 @@ export default function PartnerVenuesScreen({ navigation }) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.venueName}>
-                    {venue.name} <Text style={styles.venueBrandSuffix}>x RideArrivo</Text>
+                    {venue.name} <Text style={styles.venueBrandSuffix}>{t("partnerVenues.xRidearrivo")}</Text>
                   </Text>
                   <Tag label={CATEGORY_LABELS[venue.category] || "Venue"} tone="teal" />
                 </View>
@@ -92,7 +95,7 @@ export default function PartnerVenuesScreen({ navigation }) {
                 <Text style={styles.venuePerk}>🍸 {venue.perk_description}</Text>
               ) : null}
               <Button
-                label={`Reserve a pickup from ${venue.name}`}
+                label={t("partnerVenues.reserveFrom", { name: venue.name })}
                 onPress={() => reserveFrom(venue)}
                 style={{ marginTop: spacing.md }}
                 trailingIcon
@@ -100,6 +103,7 @@ export default function PartnerVenuesScreen({ navigation }) {
             </Card>
           ))
         )}
+        <ParasyteSignature />
       </ScrollView>
     </View>
   );
@@ -117,7 +121,7 @@ const styles = StyleSheet.create({
   venueName: { color: colors.dark.text, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
   venueBrandSuffix: { color: colors.dark.textMuted, fontSize: 13, fontWeight: "500" },
   venueAddress: { color: colors.dark.textMuted, fontSize: 13, lineHeight: 18 },
-  venuePerk: { color: "#8FD9C4", fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
+  venuePerk: { color: colors.success, fontSize: 13, fontWeight: "600", marginTop: spacing.sm },
   errorText: { color: colors.coral, fontSize: 14 },
   emptyText: { color: colors.dark.textMuted, fontSize: 14 },
 });

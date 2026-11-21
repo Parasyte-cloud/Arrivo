@@ -5,6 +5,7 @@ import { StatusPill, rideStatusTone } from "../components/StatusPill";
 import { StaffCallButton } from "../components/StaffCallButton";
 import { formatDateTime } from "../utils";
 import { greeting, callOutcome, statusLabel, tabsFor, reassignableTeams, canManageDuty, teamLine, firstName, roleOptions } from "../rideDeskHelpers";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 // Ride Desk: the one place support, operations and admins deal with a ride.
 // Every ride has a support agent, an operations person and (once accepted) a
@@ -71,6 +72,13 @@ function Detail({ rideId, me, isLead, onChanged }) {
   const r = d.ride;
   const callsOpen = true;
 
+  const complete = async () => {
+    if (!await confirmAction(`Mark ride #${rideId} completed? Only do this when the trip is finished and paid.`)) return;
+    setMoving(true);
+    try { await api.completeDeskRide(token, rideId); await load(); onChanged && onChanged(); }
+    catch (e) { setErr(e.message); } finally { setMoving(false); }
+  };
+
   const move = async (team, userId) => {
     if (!userId) return;
     setMoving(true);
@@ -109,6 +117,14 @@ function Detail({ rideId, me, isLead, onChanged }) {
               </select>
             </label>
           ))}
+        </div>
+      ) : null}
+
+      {r.paymentStatus === "paid" && r.status === "in_progress" ? (
+        <div className="desk-card" data-testid="desk-complete">
+          <div className="desk-eyebrow">Ride status</div>
+          <p className="desk-muted">Paid and finished? Close it here (only rides that are in progress). Cancelling and refunds stay with Admin.</p>
+          <button className="btn verify" disabled={moving} onClick={complete}>Mark completed</button>
         </div>
       ) : null}
 
@@ -232,9 +248,9 @@ function PeopleTab({ token, meId }) {
     setErr(null); setMsg(null);
     try { await fn(); setMsg(ok); await load(); } catch (e) { setErr(e.message); }
   };
-  const change = (p, r) => {
+  const change = async (p, r) => {
     const word = r === "rider" ? `Remove ${firstName(p.name)} from staff? They will be signed out and their open rides move to others.` : `Make ${firstName(p.name)} ${r}? They will be signed out and must sign in again.`;
-    if (window.confirm(word)) act(() => api.changePersonRole(token, p.id, r), `${firstName(p.name)} is now ${r === "rider" ? "removed from staff" : r}.`);
+    if (await confirmAction(word)) act(() => api.changePersonRole(token, p.id, r), `${firstName(p.name)} is now ${r === "rider" ? "removed from staff" : r}.`);
   };
   const eventText = { promote: "brought onto staff", change: "changed role", remove: "removed from staff", grant_manage: "given staff management", revoke_manage: "staff management taken away" };
   return (

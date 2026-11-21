@@ -133,4 +133,17 @@ function verifyAppleIdentityToken(identityToken) {
   });
 }
 
-module.exports = { verifyGoogleIdToken, verifyAppleIdentityToken, getAppleClientIds, NATIVE_APPLE_CLIENT_IDS };
+// What this deployment is ready to accept, with no secrets in it (client IDs are
+// public, they ship inside the apps). Used by GET /api/auth/oauth-status and one
+// log line at boot, so "sign-in does not work" can be answered by reading a
+// value instead of guessing. revocationConfigured comes from the caller because
+// that check lives in appleRevoke.js.
+function oauthReadiness(revocationConfigured) {
+  const googleClientIds = getGoogleClientIds();
+  return {
+    google: { configured: googleClientIds.length > 0, clientIds: googleClientIds },
+    apple: { audiences: getAppleClientIds(), revocationConfigured: !!revocationConfigured },
+  };
+}
+
+module.exports = { oauthReadiness, verifyGoogleIdToken, verifyAppleIdentityToken, getAppleClientIds, NATIVE_APPLE_CLIENT_IDS };

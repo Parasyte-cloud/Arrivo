@@ -73,6 +73,14 @@ function decideCredit(ride, looked, env = process.env, now = Date.now()) {
   if (!creditEnabled(env)) return { action: "none", why: "switched_off" };
   // Never act automatically on a lookup that was not pinned to a date: it could be another day's flight.
   if (!(ride.flight_date_str || ride.flight_date)) return { action: "none", why: "no_flight_date" };
+  // The date a rider picked must sit within a day of the pickup. A flight tomorrow with the date left on today
+  // would otherwise let today's cancelled flight cancel tomorrow's pickup.
+  if (ride.scheduled_pickup_at) {
+    const day = (v) => Date.parse(String(v instanceof Date ? v.toISOString() : v).slice(0, 10) + "T00:00:00Z");
+    const flightDay = ride.flight_date_str ? day(ride.flight_date_str) : day(ride.flight_date);
+    const pickupDay = day(new Date(new Date(ride.scheduled_pickup_at).getTime() + 3600000)); // Lagos date
+    if (Math.abs(pickupDay - flightDay) > 86400000) return { action: "none", why: "flight_date_far_from_pickup" };
+  }
   if (!seenCancelledEarlier(ride, now)) return { action: "wait", why: "first_sighting" };
   if (ride.payment_status === "paid") {
     if (!CASH_RAILS.includes(ride.payment_method)) return { action: "none", why: "needs_ops_rail" };

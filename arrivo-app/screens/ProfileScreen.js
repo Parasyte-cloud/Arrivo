@@ -6,13 +6,14 @@ import Svg, { Circle, Line } from "react-native-svg";
 import { useTranslation } from "react-i18next";
 import { Card, Button } from "../components/UI";
 import { GradientBackground } from "../components/GradientBackground";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, tint } from "../theme/tokens";
 import { useAuth } from "../context/AuthContext";
 import { DeleteAccountSection } from "../components/DeleteAccountSection";
 import PhoneInput from "../components/PhoneInput";
 import { validatePhone, splitPhone } from "../utils/phoneValidation";
 import { supportedLanguages } from "../i18n";
 import { getRideHistory } from "../services/api";
+import ParasyteSignature from "../components/ParasyteSignature";
 
 const LANGUAGE_LABELS = { en: "English", fr: "Français", zh: "中文", de: "Deutsch", hi: "हिन्दी", es: "Español", pt: "Português" };
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
@@ -21,15 +22,15 @@ function RouteStrip() {
   return (
     <Svg width={14} height={46} viewBox="0 0 14 46">
       <Circle cx={7} cy={6} r={5} fill={colors.tealBright} />
-      <Line x1={7} y1={12} x2={7} y2={34} stroke="rgba(255,255,255,0.35)" strokeWidth={2} strokeDasharray="3,3" />
+      <Line x1={7} y1={12} x2={7} y2={34} stroke={tint(0.3)} strokeWidth={2} strokeDasharray="3,3" />
       <Circle cx={7} cy={40} r={5} fill="none" stroke={colors.coral} strokeWidth={2} />
     </Svg>
   );
 }
 
 function statusStyle(status) {
-  if (status === "completed") return { color: "#8FD9C4" };
-  if (status === "cancelled") return { color: "#FF9B8A" };
+  if (status === "completed") return { color: colors.success };
+  if (status === "cancelled") return { color: "#C2362B" };
   return { color: colors.dark.textMuted };
 }
 
@@ -37,18 +38,18 @@ function statusStyle(status) {
 // and no logic behind it at all — tapping it did nothing. This maps the
 // real id_verification_status (see routes/auth.js submit-id-verification +
 // routes/admin.js verify-id) to a short label + color for that row.
-function idVerificationBadge(status) {
-  if (status === "verified") return { label: "Verified ✓", color: "#8FD9C4" };
-  if (status === "pending") return { label: "Pending review", color: colors.amber };
-  if (status === "rejected") return { label: "Rejected: resubmit", color: colors.coral };
-  return { label: "Not verified", color: colors.dark.textMuted };
+function idVerificationBadge(status, t) {
+  if (status === "verified") return { label: `${t("profile.verified")} ✓`, color: colors.success };
+  if (status === "pending") return { label: t("profile.pendingReview"), color: colors.amber };
+  if (status === "rejected") return { label: t("profile.rejectedResubmit"), color: colors.coral };
+  return { label: t("profile.notVerified"), color: colors.dark.textMuted };
 }
 
 // Same idea as idVerificationBadge above — email_verified was already
 // tracked on every account (set the moment someone clicks the link in
 // their signup email), just never actually shown anywhere in the app.
-function emailVerifiedBadge(verified) {
-  return verified ? { label: "Verified ✓", color: "#8FD9C4" } : { label: "Not verified", color: colors.dark.textMuted };
+function emailVerifiedBadge(verified, t) {
+  return verified ? { label: `${t("profile.verified")} ✓`, color: colors.success } : { label: t("profile.notVerified"), color: colors.dark.textMuted };
 }
 
 export default function ProfileScreen({ navigation }) {
@@ -98,7 +99,7 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     getRideHistory(token)
       .then((data) => setTrips(data.rides || []))
-      .catch(() => setTripsError("Couldn't load your trips."));
+      .catch(() => setTripsError(t("profile.couldnTLoadYourTrips")));
   }, []);
 
   const changeLanguage = async (code) => {
@@ -148,7 +149,7 @@ export default function ProfileScreen({ navigation }) {
     setAvatarError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setAvatarError("Please allow photo access to change your profile picture.");
+      setAvatarError(t("profile.pleaseAllowPhotoAccessTo"));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -162,11 +163,11 @@ export default function ProfileScreen({ navigation }) {
     const asset = result.assets[0];
 
     if (asset.fileSize && asset.fileSize > MAX_AVATAR_BYTES) {
-      setAvatarError("Please choose an image smaller than 4MB.");
+      setAvatarError(t("profile.pleaseChooseAnImageSmaller"));
       return;
     }
     if (!asset.base64) {
-      setAvatarError("Couldn't read that photo. Please try another.");
+      setAvatarError(t("profile.couldnTReadThatPhoto"));
       return;
     }
 
@@ -217,18 +218,18 @@ export default function ProfileScreen({ navigation }) {
         {avatarError ? <Text style={styles.errorText}>{avatarError}</Text> : null}
 
         <Card tone="dark" style={{ marginBottom: spacing.md }}>
-          <Text style={styles.cardLabel}>Contact details</Text>
+          <Text style={styles.cardLabel}>{t("profile.contactDetails")}</Text>
           <PhoneInput
             tone="dark"
             dial={whatsappDial}
             national={whatsappNational}
             onChangeDial={setWhatsappDial}
             onChangeNational={setWhatsappNational}
-            placeholder="WhatsApp number"
+            placeholder={t("profile.whatsappNumber")}
           />
           <TextInput
             style={styles.input}
-            placeholder="Country of residence"
+            placeholder={t("profile.countryOfResidence")}
             placeholderTextColor={colors.dark.textMuted}
             value={country}
             onChangeText={setCountry}
@@ -272,13 +273,13 @@ export default function ProfileScreen({ navigation }) {
           </Pressable>
         </Modal>
 
-        <Text style={styles.sectionTitle}>Your trips</Text>
+        <Text style={styles.sectionTitle}>{t("profile.yourTrips")}</Text>
         {trips === null && !tripsError ? (
           <ActivityIndicator color={colors.amber} style={{ marginBottom: spacing.md }} />
         ) : tripsError ? (
           <Text style={styles.errorText}>{tripsError}</Text>
         ) : trips.length === 0 ? (
-          <Text style={styles.meta}>No trips yet.</Text>
+          <Text style={styles.meta}>{t("profile.noTripsYet")}</Text>
         ) : (
           trips.map((ride) => {
             const stops = ride.stops || [];
@@ -289,9 +290,9 @@ export default function ProfileScreen({ navigation }) {
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <RouteStrip />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.tripLabel}>PICKUP</Text>
+                    <Text style={styles.tripLabel}>{t("profile.pickup")}</Text>
                     <Text style={styles.tripAddr}>{ride.pickup_address}</Text>
-                    <Text style={[styles.tripLabel, { marginTop: 6 }]}>DROP-OFF</Text>
+                    <Text style={[styles.tripLabel, { marginTop: 6 }]}>{t("profile.dropOff")}</Text>
                     <Text style={styles.tripAddr}>{dropoff}</Text>
                   </View>
                 </View>
@@ -311,16 +312,16 @@ export default function ProfileScreen({ navigation }) {
             onPress={() => navigation.navigate("VerifyId")}
           >
             <Text style={styles.link}>{t("profile.verifiedId")}</Text>
-            <Text style={{ color: idVerificationBadge(user?.id_verification_status).color, fontSize: 12, fontWeight: "600" }}>
-              {idVerificationBadge(user?.id_verification_status).label}
+            <Text style={{ color: idVerificationBadge(user?.id_verification_status, t).color, fontSize: 12, fontWeight: "600" }}>
+              {idVerificationBadge(user?.id_verification_status, t).label}
             </Text>
           </Pressable>
           <View style={styles.hairline} />
 
           <View style={styles.verifiedIdRow}>
-            <Text style={styles.link}>Email verification</Text>
-            <Text style={{ color: emailVerifiedBadge(user?.email_verified).color, fontSize: 12, fontWeight: "600" }}>
-              {emailVerifiedBadge(user?.email_verified).label}
+            <Text style={styles.link}>{t("profile.emailVerification")}</Text>
+            <Text style={{ color: emailVerifiedBadge(user?.email_verified, t).color, fontSize: 12, fontWeight: "600" }}>
+              {emailVerifiedBadge(user?.email_verified, t).label}
             </Text>
           </View>
           {!user?.email_verified ? (
@@ -328,7 +329,7 @@ export default function ProfileScreen({ navigation }) {
               <ActivityIndicator color={colors.amber} style={{ alignSelf: "flex-start", marginTop: 4 }} />
             ) : (
               <Pressable onPress={resendEmail} style={{ marginTop: 4 }}>
-                <Text style={styles.resendLink}>Resend verification email</Text>
+                <Text style={styles.resendLink}>{t("profile.resendVerificationEmail")}</Text>
               </Pressable>
             )
           ) : null}
@@ -349,6 +350,7 @@ export default function ProfileScreen({ navigation }) {
         <Button label={t("profile.logOut")} variant="ghost" tone="dark" onPress={logout} />
 
         <DeleteAccountSection />
+        <ParasyteSignature />
       </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -408,7 +410,7 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: colors.dark.bg0,
   },
   avatarEditBadgeText: { fontSize: 9, color: colors.ink },
-  errorText: { color: "#FF9B8A", fontSize: 12, marginBottom: spacing.md },
+  errorText: { color: "#C2362B", fontSize: 12, marginBottom: spacing.md },
   tripLabel: { color: colors.dark.textMuted, fontSize: 9.5, letterSpacing: 0.5 },
   tripAddr: { color: colors.dark.text, fontSize: 12.5 },
   tripMetaRow: {

@@ -54,6 +54,8 @@ async function makeDriver(name = "Driver") {
   made.vehicles.push(v.rows[0].id);
   const d = await pool.query("INSERT INTO drivers (user_id, vehicle_id, is_verified) VALUES ($1,$2,true) RETURNING *", [user.id, v.rows[0].id]);
   made.drivers.push(d.rows[0].id);
+  // Going online and ArrivoExpress both need a tier the owner switched on.
+  await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1, 'ride', 'active'), ($1, 'express', 'active')", [d.rows[0].id]);
   return { user, driver: d.rows[0], token: tokenFor(user) };
 }
 async function makeRide(rider, drv, { status = "accepted", express = true } = {}) {

@@ -19,20 +19,40 @@ test("every area has a level in every preset", () => {
   for (const role of a.STAFF_ROLES) for (const id of a.AREA_IDS) assert.ok(a.LEVELS.includes(a.PRESETS[role][id]), `${role}/${id}`);
 });
 
-test("admins keep everything they had", () => {
-  for (const id of a.AREA_IDS) assert.strictEqual(a.effectivePermissions(admin)[id], "manage");
+test("admins keep everything they had, except who decides driver tiers", () => {
+  for (const id of a.AREA_IDS) assert.strictEqual(a.effectivePermissions(admin)[id], id === "driver-tiers" ? "none" : "manage", id);
   assert.ok(a.check(admin, "PATCH", "/api/admin/riders/5/wallet-adjust").ok);
+});
+
+test("driver tiers belong to the owner and whoever the owner names", () => {
+  assert.deepStrictEqual(a.OWNER_ONLY_AREAS, ["driver-tiers"]);
+  assert.strictEqual(a.effectivePermissions({ role: "admin", is_owner: true })["driver-tiers"], "manage");
+  assert.strictEqual(a.check(admin, "GET", "/api/admin/driver-tiers").ok, false);
+  assert.strictEqual(a.check(admin, "POST", "/api/admin/driver-tiers/grant").ok, false);
+  assert.strictEqual(a.check(ops, "GET", "/api/admin/driver-tiers").ok, false);
+  // Named by the owner: view lets someone look, manage lets them change.
+  const named = (level) => ({ role: "support", staff_permissions: { "driver-tiers": level } });
+  assert.ok(a.check(named("view"), "GET", "/api/admin/driver-tiers").ok);
+  assert.strictEqual(a.check(named("view"), "POST", "/api/admin/driver-tiers/grant").ok, false);
+  assert.ok(a.check(named("manage"), "POST", "/api/admin/driver-tiers/grant").ok);
+  // The old drivers area does not reach it, in either direction.
+  assert.strictEqual(a.requirementFor("POST", "/api/admin/driver-tiers/grant").area, "driver-tiers");
+  assert.strictEqual(a.requirementFor("GET", "/api/admin/drivers").area, "drivers");
 });
 
 test("operations keep exactly the pages they had, read only", () => {
   const p = a.effectivePermissions(ops);
-  for (const id of ["ride-desk", "panics", "drivers", "rides", "flight-issues", "vehicles", "live-map", "analytics", "exports"]) assert.strictEqual(p[id], "view", id);
-  for (const id of ["riders", "wallet", "support", "memberships", "arrivo-express", "express-pricing", "safety"]) assert.strictEqual(p[id], "none", id);
+  for (const id of ["ride-desk", "panics", "riders", "drivers", "rides", "flight-issues", "vehicles", "live-map", "analytics", "exports"]) assert.strictEqual(p[id], "view", id);
+  for (const id of ["wallet", "support", "memberships", "arrivo-express", "express-pricing", "safety"]) assert.strictEqual(p[id], "none", id);
   assert.ok(a.check(ops, "GET", "/api/admin/drivers").ok);
   assert.ok(a.check(ops, "GET", "/api/admin/rides/live").ok);
   assert.ok(a.check(ops, "GET", "/api/rides/12/fleet").ok);
   assert.ok(!a.check(ops, "PATCH", "/api/admin/drivers/9/verify").ok);
-  assert.ok(!a.check(ops, "GET", "/api/admin/riders").ok);
+  // Riders list is readable now; everything that changes a rider or a wallet, and the waitlist, is not.
+  assert.ok(a.check(ops, "GET", "/api/admin/riders").ok);
+  assert.ok(!a.check(ops, "GET", "/api/admin/waitlist").ok);
+  assert.ok(!a.check(ops, "PATCH", "/api/admin/riders/5/wallet-adjust").ok);
+  assert.ok(!a.check(ops, "PATCH", "/api/admin/riders/5/verify-id").ok);
 });
 
 test("operations can still do their job on Ride Desk with view only", () => {
@@ -100,6 +120,22 @@ test("only differences from the preset are stored", () => {
   assert.deepStrictEqual(a.diffFromPreset("admin", a.PRESETS.admin), {});
 });
 
+test("a rider's ID photo needs manage on Riders, not just view", () => {
+  const path = "/api/admin/riders/5/id-document";
+  assert.deepStrictEqual(a.requirementFor("GET", path), { area: "riders", need: "manage" });
+  // Still the Riders list for everyone who may see it.
+  assert.deepStrictEqual(a.requirementFor("GET", "/api/admin/riders"), { area: "riders", need: "view" });
+  // Admin and the owner have manage. Support and Operations have view only, so they are refused.
+  assert.ok(a.check(admin, "GET", path).ok);
+  assert.ok(a.check(owner, "GET", path).ok);
+  assert.ok(!a.check(support, "GET", path).ok);
+  assert.ok(!a.check(ops, "GET", path).ok);
+  // The owner can still hand it to one person on purpose.
+  assert.ok(a.check({ ...support, staff_permissions: { riders: "manage" } }, "GET", path).ok);
+  // And taking Riders away from an admin takes the photo with it.
+  assert.ok(!a.check({ ...admin, staff_permissions: { riders: "view" } }, "GET", path).ok);
+});
+
 test("riders and drivers have no console permissions", () => {
   assert.strictEqual(a.effectivePermissions({ role: "rider" }), null);
   assert.strictEqual(a.effectivePermissions({ role: "driver" }), null);
@@ -118,3 +154,13 @@ test("who may change someone's access", () => {
 });
 
 console.log(`\nstaffAccess: ${passed} passed`);
+
+test("flight credits need the Wallet area, not Rides: Rides manage alone cannot issue or find credit", () => {
+  const s = { ...support, staff_permissions: { rides: "manage", wallet: "none" } };
+  assert.ok(!a.check(s, "GET", "/api/admin/flight-credits").ok);
+  assert.ok(!a.check(s, "GET", "/api/admin/flight-credits/find-accounts").ok);
+  assert.ok(!a.check(s, "POST", "/api/admin/rides/12/flight-credit").ok);
+  const w = { ...support, staff_permissions: { wallet: "manage" } };
+  assert.ok(a.check(w, "POST", "/api/admin/rides/12/flight-credit").ok);
+  assert.strictEqual(a.requirementFor("GET", "/api/admin/flight-credits").area, "wallet");
+});

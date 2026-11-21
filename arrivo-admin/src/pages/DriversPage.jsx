@@ -5,6 +5,17 @@ import { StatusPill } from "../components/StatusPill";
 import { formatDateTime, downloadCsv } from "../utils";
 import { PhoneLink } from "../components/PhoneLink";
 import { CallButton } from "../components/CallButton";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
+
+export const TIERS = [
+  { id: "ride", label: "RideArrivo", tone: "teal" },
+  { id: "express", label: "ArrivoExpress", tone: "coral" },
+  { id: "chauffeur", label: "Chauffeur", tone: "muted" },
+  { id: "air", label: "ArrivoAir", tone: "teal" },
+  { id: "boat", label: "ArrivoBoat", tone: "teal" },
+  { id: "removals", label: "ArrivoRemovals", tone: "coral" },
+  { id: "campus", label: "ArrivoCampus", tone: "muted" },
+];
 
 function exportDriversCsv(drivers) {
   downloadCsv(
@@ -14,6 +25,7 @@ function exportDriversCsv(drivers) {
       { label: "Name", value: (d) => d.name },
       { label: "Email", value: (d) => d.email },
       { label: "Phone", value: (d) => d.phone || "" },
+      { label: "Tiers", value: (d) => (d.tiers || []).map((id) => (TIERS.find((t) => t.id === id) || { label: id }).label).join(" | ") },
       { label: "Vehicle", value: (d) => d.make_model || "" },
       { label: "Plate number", value: (d) => d.plate_number || "" },
       { label: "Vehicle type", value: (d) => d.vehicle_type || "" },
@@ -33,20 +45,26 @@ export function DriversPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [engineStatus, setEngineStatus] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [tierFilter, setTierFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | pending | verified | incomplete
   const [qrModal, setQrModal] = useState(null); // { driverName, imageUrl } | null
   const [qrLoadingId, setQrLoadingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const { drivers } = await api.getDrivers(token);
+      const { drivers, engineStatus } = await api.getDrivers(token, showArchived);
       setDrivers(drivers);
+      setEngineStatus(engineStatus || null);
       setError(null);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, showArchived]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -62,7 +80,29 @@ export function DriversPage() {
     }
   };
 
-  const pendingCount = drivers.filter((d) => !d.is_verified).length;
+  const act = async (driver, fn, confirmText) => {
+    if (confirmText && !await confirmAction(confirmText)) return;
+    setBusyId(driver.id);
+    try { await fn(); await load(); } catch (e) { setError(e.message); } finally { setBusyId(null); }
+  };
+  const archive = (d, on) => act(d, () => api.archiveDriver(token, d.id, on), on ? `Archive ${d.name}? They go offline and are hidden. You can restore them later.` : null);
+  const remove = (d) => act(d, () => api.deleteDriver(token, d.id), `Delete ${d.name} for good? This only works for test drivers with no trips, and cannot be undone.`);
+
+  // Ops find people by name, phone, email or plate. Phone digits are compared without spaces, dashes or the leading 0 / +234.
+  const q = search.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, "").replace(/^(234|0)/, "");
+  const matchesSearch = (d) =>
+    !q ||
+    [d.name, d.email, d.plate_number, d.make_model, d.license_number].some((v) => String(v || "").toLowerCase().includes(q)) ||
+    (qDigits.length >= 4 && String(d.phone || "").replace(/\D/g, "").replace(/^(234|0)/, "").includes(qDigits));
+  const matchesStatus = (d) =>
+    statusFilter === "all" ||
+    (statusFilter === "incomplete" && d.profile_incomplete) ||
+    (statusFilter === "verified" && d.is_verified) ||
+    (statusFilter === "pending" && !d.is_verified && !d.profile_incomplete);
+  const shown = drivers.filter((d) => (tierFilter === "all" || (d.tiers || []).includes(tierFilter)) && matchesSearch(d) && matchesStatus(d));
+  const pendingCount = drivers.filter((d) => !d.is_verified && !d.profile_incomplete).length;
+  const incompleteCount = drivers.filter((d) => d.profile_incomplete).length;
 
   const viewPlacard = async (driver) => {
     setQrLoadingId(driver.id);
@@ -89,13 +129,39 @@ export function DriversPage() {
           <span className="eyebrow">Driver management</span>
           <h1>Drivers</h1>
         </div>
-        <button className="btn ghost" onClick={() => exportDriversCsv(drivers)}>Export CSV</button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            className="field"
+            type="search"
+            placeholder="Search name, phone, email or plate"
+            aria-label="Search drivers"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ minWidth: 240 }}
+          />
+          <select className="field" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="pending">Awaiting verification</option>
+            <option value="incomplete">Profile not completed</option>
+            <option value="verified">Verified</option>
+          </select>
+          <select className="field" value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} aria-label="Filter by tier">
+            <option value="all">All tiers</option>
+            {TIERS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+          <button className="btn ghost" onClick={() => setShowArchived((v) => !v)}>{showArchived ? "Show active" : "Show archived"}</button>
+          <button className="btn ghost" onClick={() => exportDriversCsv(shown)}>Export CSV</button>
+        </div>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-num" style={{ color: "var(--coral)" }}>{pendingCount}</div>
           <div className="stat-label">Awaiting verification</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--amber, var(--coral))" }}>{incompleteCount}</div>
+          <div className="stat-label">Profile not completed</div>
         </div>
         <div className="stat-card">
           <div className="stat-num">{drivers.length}</div>
@@ -107,18 +173,27 @@ export function DriversPage() {
         </div>
       </div>
 
+      {engineStatus && engineStatus !== "ok" && engineStatus !== "skipped" ? (
+        <div className="error-text" role="status">
+          {engineStatus === "not_configured" && "New ArrivoExpress drivers are not showing: set ARRIVO_ENGINE_URL and ARRIVO_ENGINE_OPS_TOKEN on this service."}
+          {engineStatus === "token_rejected" && "New ArrivoExpress drivers are not showing: the engine rejected the token. ARRIVO_ENGINE_OPS_TOKEN must equal ARRIVO_OPS_TOKEN on the engine."}
+          {engineStatus === "unreachable" && "New ArrivoExpress drivers are not showing: the engine could not be reached just now."}
+        </div>
+      ) : null}
+
       {error ? <div className="error-text">{error}</div> : null}
 
       <div className="table-wrap">
         {loading ? (
           <div className="empty-state">Loading drivers…</div>
-        ) : drivers.length === 0 ? (
-          <div className="empty-state">No drivers have signed up yet.</div>
+        ) : shown.length === 0 ? (
+          <div className="empty-state">{showArchived ? "No archived drivers." : drivers.length ? "No driver matches your search or filters." : "No drivers to show."}</div>
         ) : (
           <table>
             <thead>
               <tr>
                 <th>Driver</th>
+                <th>Tiers</th>
                 <th>Vehicle</th>
                 <th>License / LASDRI</th>
                 <th>Joined</th>
@@ -128,7 +203,7 @@ export function DriversPage() {
               </tr>
             </thead>
             <tbody>
-              {drivers.map((d) => (
+              {shown.map((d) => (
                 <tr key={d.id}>
                   <td>
                     <div style={{ fontWeight: 600 }}>{d.name}</div>
@@ -138,8 +213,20 @@ export function DriversPage() {
                           NOT usable as a Stream user id. d.user_id is the
                           driver's actual users.id, joined server-side (see
                           arrivo-backend/routes/admin.js GET /drivers). */}
-                      {!isOperations ? (<CallButton calleeUserId={d.user_id} calleeName={d.name} />) : null}
+                      {!isOperations && d.source !== "engine" ? (<CallButton calleeUserId={d.user_id} calleeName={d.name} />) : null}
                     </div>
+                  </td>
+                  <td>
+                    {(d.tiers || []).length ? (
+                      <div className="tier-pills">
+                        {(d.tiers || []).map((id) => {
+                          const t = TIERS.find((x) => x.id === id);
+                          return t ? <StatusPill key={id} label={t.label} tone={t.tone} /> : null;
+                        })}
+                      </div>
+                    ) : (
+                      <span className="muted">None switched on</span>
+                    )}
                   </td>
                   <td>
                     {d.make_model ? (
@@ -159,13 +246,17 @@ export function DriversPage() {
                     {d.created_at ? formatDateTime(d.created_at) : "—"}
                   </td>
                   <td>
-                    <StatusPill label={d.is_verified ? "Verified" : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
+                    <StatusPill label={d.profile_incomplete ? "Profile not completed" : d.is_verified ? "Verified" : d.verification_stage ? String(d.verification_stage).replace(/_/g, " ") : "Pending"} tone={d.is_verified ? "teal" : "coral"} />
                   </td>
                   <td>
                     <StatusPill label={d.is_online ? "Online" : "Offline"} tone={d.is_online ? "teal" : "muted"} />
                   </td>
                   <td>
-                    {isReadOnly ? (
+                    {d.profile_incomplete ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Signed up, has not finished the driver profile. Contact them to complete it in the driver app.</span>
+                    ) : d.source === "engine" ? (
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Managed in Driver Verification</span>
+                    ) : isReadOnly ? (
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>View only</span>
                     ) : (
                       <button
@@ -176,7 +267,17 @@ export function DriversPage() {
                         {busyId === d.id ? "…" : d.is_verified ? "Revoke" : "Verify"}
                       </button>
                     )}
-                    {d.is_verified && (
+                    {!isReadOnly && d.source !== "engine" && !d.profile_incomplete && (
+                      showArchived ? (
+                        <>
+                          <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, false)}>Restore</button>
+                          <button className="btn revoke" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => remove(d)}>Delete</button>
+                        </>
+                      ) : (
+                        <button className="btn" style={{ marginLeft: 8 }} disabled={busyId === d.id} onClick={() => archive(d, true)}>Archive</button>
+                      )
+                    )}
+                    {d.is_verified && d.source !== "engine" && !d.profile_incomplete && (
                       <button
                         className="btn"
                         style={{ marginLeft: 8 }}

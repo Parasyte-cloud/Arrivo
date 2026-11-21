@@ -285,6 +285,10 @@ function rideBody(overrides) {
     assert.strictEqual(pending.body.pendingVerification, true);
 
     await pool.query("UPDATE drivers SET is_verified = true WHERE id = $1", [driverRow.id]);
+    // Verified is not enough: the queue only shows the services the owner switched on.
+    const noTier = await call("/api/rides/available", { token: driverUser.token });
+    assert.deepStrictEqual(noTier.body.rides, [], "no tier, no rides");
+    await pool.query("INSERT INTO driver_tier_access (driver_id, tier, status) VALUES ($1, 'ride', 'active')", [driverRow.id]);
     const live = await call("/api/rides/available", { token: driverUser.token });
     assert.strictEqual(live.status, 200);
     const mine = live.body.rides.find((x) => x.id === booked.body.ride.id);

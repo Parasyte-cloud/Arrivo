@@ -6,6 +6,7 @@ import { formatDateTime, downloadCsv } from "../utils";
 import { CallButton } from "../components/CallButton";
 import { openInWindow } from "../lib/openWindow";
 import "../riders.css";
+import { confirmAction, askText, notify } from "../components/ConfirmDialog";
 
 const PAGE_SIZE = 50;
 
@@ -372,6 +373,32 @@ export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose
   const [adjusting, setAdjusting] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  // The ID photo is fetched for this one rider when the drawer opens. The list
+  // only knows has_id_document, never the image. { url, error, forbidden }.
+  const [idImage, setIdImage] = useState({ url: null, error: null, forbidden: false, loading: false });
+
+  useEffect(() => {
+    let live = true;
+    let objectUrl = null;
+    if (!rider.has_id_document) {
+      setIdImage({ url: null, error: null, forbidden: false, loading: false });
+      return undefined;
+    }
+    setIdImage({ url: null, error: null, forbidden: false, loading: true });
+    api.getRiderIdDocumentImage(token, rider.id)
+      .then((url) => {
+        objectUrl = url;
+        if (live) setIdImage({ url, error: null, forbidden: false, loading: false });
+        else URL.revokeObjectURL(url);
+      })
+      .catch((e) => {
+        if (live) setIdImage({ url: null, error: e.status === 403 ? null : e.message, forbidden: e.status === 403, loading: false });
+      });
+    return () => {
+      live = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [token, rider.id, rider.has_id_document]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -574,14 +601,22 @@ export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose
           {rider.id_verification_status === "rejected" && rider.id_verification_rejection_reason ? (
             <p className="rd-note warn">Last rejection reason: {rider.id_verification_rejection_reason}</p>
           ) : null}
-          {rider.id_document_url ? (
-            <a href={rider.id_document_url} target="_blank" rel="noreferrer">
-              <img className="rd-id-img" src={rider.id_document_url} alt={`${rider.name}'s submitted ID`} />
-            </a>
+          {rider.has_id_document ? (
+            idImage.url ? (
+              <a href={idImage.url} target="_blank" rel="noreferrer">
+                <img className="rd-id-img" src={idImage.url} alt={`${rider.name}'s submitted ID`} />
+              </a>
+            ) : idImage.loading ? (
+              <p className="rd-muted">Loading the ID photo…</p>
+            ) : idImage.forbidden ? (
+              <p className="rd-muted">An ID document is on file. Only admins can view the photo.</p>
+            ) : (
+              <p className="rd-note warn">An ID document is on file but could not be loaded: {idImage.error || "try again"}</p>
+            )
           ) : (
-            <p className="rd-muted">No ID document submitted.</p>
+            <p className="rd-muted">No ID document submitted. You can still verify or reject manually — for example if identity was confirmed by phone, in person, or a photo sent outside the app.</p>
           )}
-          {!isReadOnly && rider.id_document_url ? (
+          {!isReadOnly ? (
             rejecting ? (
               <div className="rd-form">
                 <textarea
@@ -597,7 +632,20 @@ export function RiderDrawer({ rider, token, isReadOnly, canAdjustWallet, onClose
               </div>
             ) : (
               <div className="rd-form-row">
-                <button className="btn verify" disabled={busy} onClick={() => review("verified")}>{busy ? "…" : "Verify"}</button>
+                <button
+                  className="btn verify"
+                  disabled={busy}
+                  onClick={async () => {
+                    // No document to actually look at here — this is a manual
+                    // override (identity confirmed some other way), not a
+                    // review of what's on screen, so it gets its own
+                    // confirmation instead of behaving like a normal "Verify".
+                    if (!rider.has_id_document && !await confirmAction(`No ID document is on file for ${rider.name}. Mark them verified anyway?`)) return;
+                    review("verified");
+                  }}
+                >
+                  {busy ? "…" : "Verify"}
+                </button>
                 <button className="btn revoke" disabled={busy} onClick={() => setRejecting(true)}>Reject</button>
               </div>
             )
@@ -625,8 +673,8 @@ function exportWaitlistCsv(token) {
         { label: "signed_up_at", value: (w) => w.created_at },
       ]
     );
-  }).catch((e) => {
+  }).catch(async (e) => {
     console.error("Failed to export waitlist CSV:", e.message);
-    window.alert("Couldn't export the waitlist CSV: " + (e.message || "please try again."));
+    await notify("Couldn't export the waitlist CSV: " + (e.message || "please try again."));
   });
 }

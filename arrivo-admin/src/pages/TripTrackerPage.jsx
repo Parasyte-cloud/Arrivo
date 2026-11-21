@@ -7,6 +7,8 @@ import { TripMap, tripColor } from "../components/TripMap";
 import { FlightMap } from "../components/FlightMap";
 import { openInWindow } from "../lib/openWindow";
 import { formatDateTime } from "../utils";
+import { DispatchPanel } from "../components/DispatchPanel";
+import { downloadDispatchSheet } from "../dispatchSheet";
 import "../tracker.css";
 
 const POLL_MS = 10000;
@@ -124,6 +126,13 @@ function Step({ done, active, title, time }) {
 
 export function TripTrackerPage({ focus = null }) {
   const { token } = useAuth();
+  const [sheetBusy, setSheetBusy] = useState(false);
+  async function saveDispatchSheet() {
+    setSheetBusy(true);
+    try { downloadDispatchSheet(await api.getDispatchSheet(token)); }
+    catch (err) { setError(err.message || "Could not build the dispatch sheet"); }
+    finally { setSheetBusy(false); }
+  }
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -289,6 +298,7 @@ export function TripTrackerPage({ focus = null }) {
           <h1>{focus ? (trip ? `Ride #${trip.id}${trip.flight_number ? ` · ${trip.flight_number}` : ""}` : `Tracking ${focus.ref}`) : "Trip Tracker"}</h1>
         </div>
         <div className="tt-head-right">
+          {!focus ? <button className="btn ghost" disabled={sheetBusy} onClick={saveDispatchSheet} title="Save every live ride with full phone numbers as a page that works offline. Each ride is logged as a number view.">{sheetBusy ? "Saving..." : "Offline dispatch sheet"}</button> : null}
           <span className={`tt-mode ${mapMode.mode}`} title={mapMode.reason}>{mapMode.mode === "google" ? "Google Maps" : "Basic map"}</span>
           {updatedAt ? <span className="tt-updated"><i className="tt-pulse" /> Updated {clock(updatedAt.toISOString())} · every 10s</span> : null}
         </div>
@@ -465,6 +475,8 @@ export function TripTrackerPage({ focus = null }) {
                 ) : null}
               </div>
             ) : null}
+
+            <DispatchPanel trip={trip} onChanged={load} />
 
             <div className="tt-block">
               <h3>People</h3>

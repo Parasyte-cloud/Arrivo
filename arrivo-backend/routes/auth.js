@@ -10,9 +10,11 @@ const { setSessionCookie, clearSessionCookie } = require("../middleware/sessionC
 const { sendPasswordResetEmail, sendWelcomeEmail, sendVerificationEmail } = require("../services/email");
 const { hashResetToken, issueResetToken } = require("../services/passwordResetToken");
 const { validateImageDataUrl } = require("../services/imageValidation");
-const { verifyGoogleIdToken, verifyAppleIdentityToken } = require("../services/oauth");
+const { verifyGoogleIdToken, verifyAppleIdentityToken, oauthReadiness } = require("../services/oauth");
 const { isValidPhone, phoneErrorMessage } = require("../services/phone");
+const conversions = require("../services/conversions");
 const { passwordProblem } = require("../services/passwordPolicy");
+const notifyPlatform = require("../services/notifyPlatform");
 
 const {
   findDeletionBlocker,
@@ -169,6 +171,18 @@ function publicUser(user) {
   return safe;
 }
 
+// Fire-and-forget: sends the signup to Meta and TikTok (server side) when the
+// website passed a consent-gated `marketing` block. Never delays or fails signup.
+function emitConversion(req, user) {
+  conversions.emitRegistration({
+    user,
+    marketing: req.body && req.body.marketing,
+    ip: req.ip,
+    userAgent: req.get("user-agent"),
+    gpc: req.get("sec-gpc") === "1",
+  }).catch(() => {});
+}
+
 // POST /api/auth/signup — full profile creation.
 // body: { firstName, lastName, email, passportNumber?, phone, password,
 //         confirmPassword, agreedToTerms, preferredLanguage?, role? }
@@ -248,9 +262,14 @@ router.post("/signup", signupLimiter, async (req, res) => {
   const requestBaseUrl = `${req.protocol}://${req.get("host")}/api/auth/verify-email`;
   const verifyUrl = `${process.env.EMAIL_VERIFY_BASE_URL || requestBaseUrl}?token=${verificationToken}`;
   sendVerificationEmail(user.email, verifyUrl).catch((e) => console.error("Verification email failed:", e.message));
-  sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
+  // The Notification Platform owns the welcome journey once NOTIFY_PLATFORM_CUSTOMER_EMAIL=true.
+  notifyPlatform.emitSignup(user, { emailVerified: false });
+  if (!notifyPlatform.platformOwnsCustomerEmail()) {
+    sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
+  }
 
   setSessionCookie(res, token);
+  emitConversion(req, user);
   res.status(201).json({ token, user: publicUser(user) });
 });
 
@@ -271,6 +290,7 @@ async function verifyEmailToken(token) {
     [user.id]
   );
 
+  notifyPlatform.emitEmailVerified(user);
   return { ok: true, message: "Your email has been verified. Thanks for confirming your account.", user };
 }
 
@@ -395,8 +415,29 @@ async function findOrCreateOAuthProfile({ providerColumn, providerId, email, nam
     [name || "RideArrivo user", email.toLowerCase(), passwordHash, role, providerId, !!emailVerified, avatarUrl || null]
   );
   const newUser = inserted.rows[0];
-  sendWelcomeEmail(newUser.email, newUser.name).catch((e) => console.error("Welcome email failed:", e.message));
+  notifyPlatform.emitSignup(newUser, { emailVerified: !!emailVerified });
+  if (!notifyPlatform.platformOwnsCustomerEmail()) {
+    sendWelcomeEmail(newUser.email, newUser.name).catch((e) => console.error("Welcome email failed:", e.message));
+  }
   return { user: newUser, isNewAccount: true };
+}
+
+// GET /api/auth/oauth-status: is this server ready for Google and Apple sign-in?
+// No secrets: booleans and public client IDs only. A brand-new Apple account is
+// refused when revocationConfigured is false (see POST /apple), and Google tokens
+// are rejected unless the app's client ID is in google.clientIds.
+router.get("/oauth-status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(oauthReadiness(isAppleRevocationConfigured()));
+});
+
+{
+  const r = oauthReadiness(isAppleRevocationConfigured());
+  console.log("[oauth] ready: google=%s (%d client ids), apple audiences=%s, apple revocation=%s",
+    r.google.configured, r.google.clientIds.length, r.apple.audiences.join(","), r.apple.revocationConfigured);
+  if (!r.apple.revocationConfigured) {
+    console.warn("[oauth] APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY are not all set: brand-new Sign in with Apple accounts will be refused until they are.");
+  }
 }
 
 // POST /api/auth/google — sign in (or sign up) with a Google ID token.
@@ -434,6 +475,7 @@ router.post("/google", async (req, res) => {
 
     const token = signToken(user);
     setSessionCookie(res, token);
+    if (isNewAccount) emitConversion(req, user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Google." });
@@ -525,6 +567,7 @@ router.post("/apple", async (req, res) => {
 
     const token = signToken(user);
     setSessionCookie(res, token);
+    if (isNewAccount) emitConversion(req, user);
     res.json({ token, user: publicUser(user), isNewAccount });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Something went wrong signing you in with Apple." });
@@ -714,7 +757,10 @@ router.post("/guest", signupLimiter, async (req, res) => {
 
   const user = inserted.rows[0];
   const token = signToken(user);
-  sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
+  notifyPlatform.emitSignup(user, { emailVerified: false });
+  if (!notifyPlatform.platformOwnsCustomerEmail()) {
+    sendWelcomeEmail(user.email, user.name).catch((e) => console.error("Welcome email failed:", e.message));
+  }
   res.status(201).json({ token, user: publicUser(user) });
 });
 
@@ -889,8 +935,11 @@ router.delete("/me", requireAuth, async (req, res) => {
   }
 
   try {
+    // Read the address before it is anonymised so the Notification Platform can stop this customer's journeys.
+    const before = await pool.query("SELECT id, email, name FROM users WHERE id = $1", [req.user.id]).then((r) => r.rows[0], () => null);
     const deleted = await anonymiseAccount(pool, req.user.id);
     if (!deleted) return res.status(404).json({ error: "No account found." });
+    if (before) notifyPlatform.emitAccountDeactivated(before);
     return res.json({ deleted: true, deletedAt: deleted.deleted_at, appleManualRevocationRequired });
   } catch (error) {
     // The mark is deliberately left in place. Apple is already revoked, so the
